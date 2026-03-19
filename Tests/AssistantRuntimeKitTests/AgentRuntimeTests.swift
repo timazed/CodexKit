@@ -1,0 +1,73 @@
+import AssistantRuntimeDemo
+import AssistantRuntimeKit
+import XCTest
+
+private struct AutoApprovalPresenter: ApprovalPresenting {
+    func requestApproval(_ request: ApprovalRequest) async throws -> ApprovalDecision {
+        XCTAssertEqual(request.toolInvocation.toolName, "demo.lookupProfile")
+        return .approved
+    }
+}
+
+final class AgentRuntimeTests: XCTestCase {
+    func testRuntimeStreamsToolApprovalAndCompletion() async throws {
+        let bridge = HostBridge(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "AssistantRuntimeKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: InMemoryAssistantBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        )
+
+        let runtime = AgentRuntime(hostBridge: bridge)
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        await runtime.replaceTool(
+            ToolDefinition(
+                name: "demo.lookupProfile",
+                description: "Lookup profile",
+                inputSchema: .object([:]),
+                approvalPolicy: .requiresApproval
+            ),
+            executor: AnyToolExecutor { invocation, _ in
+                .success(invocation: invocation, text: "demo-result")
+            }
+        )
+
+        let thread = try await runtime.createThread()
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "please use the tool"),
+            in: thread.id
+        )
+
+        var sawApproval = false
+        var sawToolResult = false
+        var sawTurnCompleted = false
+
+        for try await event in stream {
+            switch event {
+            case .approvalRequested:
+                sawApproval = true
+            case let .toolCallFinished(result):
+                sawToolResult = true
+                XCTAssertEqual(result.primaryText, "demo-result")
+            case .turnCompleted:
+                sawTurnCompleted = true
+            default:
+                break
+            }
+        }
+
+        XCTAssertTrue(sawApproval)
+        XCTAssertTrue(sawToolResult)
+        XCTAssertTrue(sawTurnCompleted)
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.filter { $0.role == .user }.count, 1)
+        XCTAssertEqual(messages.filter { $0.role == .assistant }.count, 1)
+    }
+}

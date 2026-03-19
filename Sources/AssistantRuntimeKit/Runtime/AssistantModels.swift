@@ -1,0 +1,163 @@
+import Foundation
+
+public struct AssistantRuntimeError: Error, LocalizedError, Equatable, Sendable {
+    public let code: String
+    public let message: String
+
+    public init(code: String, message: String) {
+        self.code = code
+        self.message = message
+    }
+
+    public var errorDescription: String? {
+        message
+    }
+
+    public static func signedOut() -> AssistantRuntimeError {
+        AssistantRuntimeError(code: "signed_out", message: "No ChatGPT session is available.")
+    }
+
+    public static func threadNotFound(_ threadID: String) -> AssistantRuntimeError {
+        AssistantRuntimeError(
+            code: "thread_not_found",
+            message: "The assistant thread \(threadID) could not be found."
+        )
+    }
+}
+
+public enum AssistantRole: String, Codable, Hashable, Sendable {
+    case user
+    case assistant
+    case tool
+    case system
+}
+
+public enum AssistantThreadStatus: String, Codable, Hashable, Sendable {
+    case idle
+    case streaming
+    case waitingForApproval
+    case waitingForToolResult
+    case failed
+}
+
+public enum AssistantTurnStatus: String, Codable, Hashable, Sendable {
+    case running
+    case completed
+    case failed
+}
+
+public struct AssistantUsage: Codable, Hashable, Sendable {
+    public var inputTokens: Int
+    public var cachedInputTokens: Int
+    public var outputTokens: Int
+
+    public init(inputTokens: Int = 0, cachedInputTokens: Int = 0, outputTokens: Int = 0) {
+        self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
+        self.outputTokens = outputTokens
+    }
+}
+
+public struct UserMessageRequest: Codable, Hashable, Sendable {
+    public var text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+}
+
+public struct AssistantThread: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var title: String?
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var status: AssistantThreadStatus
+
+    public init(
+        id: String,
+        title: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        status: AssistantThreadStatus = .idle
+    ) {
+        self.id = id
+        self.title = title
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.status = status
+    }
+}
+
+public struct AssistantTurn: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var threadID: String
+    public var status: AssistantTurnStatus
+    public var startedAt: Date
+
+    public init(
+        id: String,
+        threadID: String,
+        status: AssistantTurnStatus = .running,
+        startedAt: Date = Date()
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.status = status
+        self.startedAt = startedAt
+    }
+}
+
+public struct AssistantMessage: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var threadID: String
+    public var role: AssistantRole
+    public var text: String
+    public var createdAt: Date
+
+    public init(
+        id: String = UUID().uuidString,
+        threadID: String,
+        role: AssistantRole,
+        text: String,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.role = role
+        self.text = text
+        self.createdAt = createdAt
+    }
+}
+
+public struct AssistantTurnSummary: Codable, Hashable, Sendable {
+    public var threadID: String
+    public var turnID: String
+    public var usage: AssistantUsage?
+    public var completedAt: Date
+
+    public init(
+        threadID: String,
+        turnID: String,
+        usage: AssistantUsage? = nil,
+        completedAt: Date = Date()
+    ) {
+        self.threadID = threadID
+        self.turnID = turnID
+        self.usage = usage
+        self.completedAt = completedAt
+    }
+}
+
+public enum AssistantEvent: Sendable {
+    case threadStarted(AssistantThread)
+    case threadStatusChanged(threadID: String, status: AssistantThreadStatus)
+    case turnStarted(AssistantTurn)
+    case assistantMessageDelta(threadID: String, turnID: String, delta: String)
+    case messageCommitted(AssistantMessage)
+    case approvalRequested(ApprovalRequest)
+    case approvalResolved(ApprovalResolution)
+    case toolCallStarted(ToolInvocation)
+    case toolCallFinished(ToolResultEnvelope)
+    case turnCompleted(AssistantTurnSummary)
+    case turnFailed(AssistantRuntimeError)
+}
