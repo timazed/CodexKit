@@ -77,18 +77,28 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
                 )
             }
 
-            guard let firstResult = try await group.next() else {
-                throw AgentRuntimeError(
-                    code: "oauth_callback_missing_code",
-                    message: "The ChatGPT sign-in callback did not complete."
-                )
-            }
+            do {
+                guard let firstResult = try await group.next() else {
+                    throw AgentRuntimeError(
+                        code: "oauth_callback_missing_code",
+                        message: "The ChatGPT sign-in callback did not complete."
+                    )
+                }
 
-            await MainActor.run {
-                self.cancelActiveSession()
+                await MainActor.run {
+                    self.cancelActiveSession()
+                }
+                callbackServer.stop()
+                group.cancelAll()
+                return firstResult
+            } catch {
+                await MainActor.run {
+                    self.cancelActiveSession()
+                }
+                callbackServer.stop()
+                group.cancelAll()
+                throw error
             }
-            group.cancelAll()
-            return firstResult
         }
     }
 

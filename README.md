@@ -89,7 +89,7 @@ let backend = CodexResponsesBackend(
 )
 ```
 
-For browser-based ChatGPT OAuth, use the same type with `.oauth(redirectURI: ...)`. If you pass a localhost redirect URI, `CodexKit` will use the internal loopback callback flow automatically on Apple platforms.
+For browser-based ChatGPT OAuth, use `.oauth`. `CodexKit` uses the Codex-compatible localhost redirect `http://localhost:1455/auth/callback` internally and only starts the loopback listener while interactive auth is in progress.
 
 ## Agent Personality
 

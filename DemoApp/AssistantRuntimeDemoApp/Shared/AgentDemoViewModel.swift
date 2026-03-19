@@ -23,7 +23,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
 
-    private let redirectURI: URL
     private let model: String
     private let enableWebSearch: Bool
     private let stateURL: URL?
@@ -34,7 +33,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     init(
         runtime: AgentRuntime,
-        redirectURI: URL,
         model: String,
         enableWebSearch: Bool,
         stateURL: URL?,
@@ -43,7 +41,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
     ) {
         self.runtime = runtime
-        self.redirectURI = redirectURI
         self.model = model
         self.enableWebSearch = enableWebSearch
         self.stateURL = stateURL
@@ -78,7 +75,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
         lastError = nil
         runtime = AgentDemoRuntimeFactory.makeRuntime(
             authenticationMethod: authenticationMethod,
-            redirectURI: redirectURI,
             model: model,
             enableWebSearch: enableWebSearch,
             stateURL: stateURL,
@@ -97,6 +93,8 @@ final class AgentDemoViewModel: @unchecked Sendable {
             session = try await runtime.signIn()
             await refreshSnapshot()
         } catch {
+            await deviceCodePromptCoordinator.clear()
+            await refreshSnapshot()
             lastError = error.localizedDescription
         }
     }
@@ -274,6 +272,11 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     private func refreshSnapshot() async {
         session = await runtime.currentSession()
+        guard session != nil else {
+            clearConversationSnapshot()
+            return
+        }
+
         threads = await runtime.threads()
 
         let selectedThreadID = activeThreadID
@@ -290,6 +293,13 @@ final class AgentDemoViewModel: @unchecked Sendable {
             activeThreadID = nil
             messages = []
         }
+    }
+
+    private func clearConversationSnapshot() {
+        threads = []
+        messages = []
+        streamingText = ""
+        activeThreadID = nil
     }
 
     nonisolated private static func makeShippingQuote(invocation: ToolInvocation) -> ToolResultEnvelope {

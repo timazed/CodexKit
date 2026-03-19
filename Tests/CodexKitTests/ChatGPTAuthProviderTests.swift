@@ -27,12 +27,10 @@ final class ChatGPTAuthProviderTests: XCTestCase {
         )
     }
 
-    func testOAuthCanBeConstructedWithLoopbackRedirect() throws {
+    func testOAuthCanBeConstructed() throws {
         XCTAssertNoThrow(
             try ChatGPTAuthProvider(
-                method: .oauth(
-                    redirectURI: URL(string: "http://localhost:1455/auth/callback")!
-                )
+                method: .oauth
             )
         )
     }

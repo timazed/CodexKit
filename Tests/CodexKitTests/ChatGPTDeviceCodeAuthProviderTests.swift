@@ -34,9 +34,7 @@ final class ChatGPTDeviceCodeAuthProviderTests: XCTestCase {
         let presenter = RecordingDeviceCodePresenter()
         let session = makeTestURLSession()
         let provider = ChatGPTDeviceCodeAuthProvider(
-            configuration: ChatGPTOAuthConfiguration(
-                redirectURI: URL(string: "assistantdemoapp://oauth/callback")!
-            ),
+            configuration: .init(),
             urlSession: session,
             presenter: presenter
         )

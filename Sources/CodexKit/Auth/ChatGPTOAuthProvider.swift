@@ -11,6 +11,8 @@ import UIKit
 import AppKit
 #endif
 
+let codexBrowserOAuthRedirectURI = URL(string: "http://localhost:1455/auth/callback")!
+
 public struct ChatGPTOAuthConfiguration: Sendable {
     public let issuerURL: URL
     public let clientID: String
@@ -21,6 +23,30 @@ public struct ChatGPTOAuthConfiguration: Sendable {
     public let userAgentProduct: String
 
     public init(
+        issuerURL: URL = URL(string: "https://auth.openai.com")!,
+        clientID: String = "app_EMoamEEZ73f0CkXaXp7hrann",
+        scopes: [String] = [
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+            "api.connectors.read",
+            "api.connectors.invoke",
+        ],
+        originator: String = "codex_cli_rs",
+        forcedWorkspaceID: String? = nil,
+        userAgentProduct: String = "CodexKit"
+    ) {
+        self.issuerURL = issuerURL
+        self.clientID = clientID
+        self.redirectURI = codexBrowserOAuthRedirectURI
+        self.scopes = scopes
+        self.originator = originator
+        self.forcedWorkspaceID = forcedWorkspaceID
+        self.userAgentProduct = userAgentProduct
+    }
+
+    init(
         issuerURL: URL = URL(string: "https://auth.openai.com")!,
         clientID: String = "app_EMoamEEZ73f0CkXaXp7hrann",
         redirectURI: URL,

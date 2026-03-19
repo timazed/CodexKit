@@ -22,13 +22,10 @@ enum DemoAuthenticationMethod: String, CaseIterable, Identifiable {
 }
 
 enum AgentDemoRuntimeFactory {
-    private static let browserOAuthRedirectURI = URL(string: "http://localhost:1455/auth/callback")!
-
     #if canImport(AuthenticationServices)
     @MainActor
     @available(iOS 13.0, macOS 10.15, *)
     static func makeLive(
-        redirectURI: URL,
         model: String = "gpt-5.4",
         enableWebSearch: Bool = false,
         stateURL: URL? = nil,
@@ -38,7 +35,6 @@ enum AgentDemoRuntimeFactory {
         let deviceCodePromptCoordinator = DeviceCodePromptCoordinator()
         let runtime = makeRuntime(
             authenticationMethod: .deviceCode,
-            redirectURI: redirectURI,
             model: model,
             enableWebSearch: enableWebSearch,
             stateURL: stateURL,
@@ -48,7 +44,6 @@ enum AgentDemoRuntimeFactory {
         )
         return AgentDemoViewModel(
             runtime: runtime,
-            redirectURI: redirectURI,
             model: model,
             enableWebSearch: enableWebSearch,
             stateURL: stateURL,
@@ -64,7 +59,6 @@ enum AgentDemoRuntimeFactory {
     @available(iOS 13.0, macOS 10.15, *)
     static func makeRuntime(
         authenticationMethod: DemoAuthenticationMethod,
-        redirectURI: URL,
         model: String = "gpt-5.4",
         enableWebSearch: Bool = false,
         stateURL: URL? = nil,
@@ -83,7 +77,7 @@ enum AgentDemoRuntimeFactory {
 
         case .browserOAuth:
             authProvider = try! ChatGPTAuthProvider(
-                method: .oauth(redirectURI: browserOAuthRedirectURI)
+                method: .oauth
             )
         }
 

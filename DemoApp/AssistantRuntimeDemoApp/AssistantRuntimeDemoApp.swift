@@ -6,7 +6,6 @@ struct AssistantRuntimeDemoApp: App {
 
     init() {
         let viewModel = AgentDemoRuntimeFactory.makeLive(
-            redirectURI: URL(string: "assistantdemoapp://oauth/callback")!,
             enableWebSearch: true,
             keychainAccount: "AssistantRuntimeDemoApp"
         )

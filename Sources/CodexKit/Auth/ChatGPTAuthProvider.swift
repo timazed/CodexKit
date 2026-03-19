@@ -2,7 +2,7 @@ import Foundation
 
 public enum ChatGPTAuthenticationMethod: Sendable {
     case deviceCode
-    case oauth(redirectURI: URL)
+    case oauth
 }
 
 public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendable {
@@ -37,11 +37,10 @@ public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendabl
             self.userAgentProduct = userAgentProduct
         }
 
-        fileprivate func oauthConfiguration(redirectURI: URL) -> ChatGPTOAuthConfiguration {
+        fileprivate var oauthConfiguration: ChatGPTOAuthConfiguration {
             ChatGPTOAuthConfiguration(
                 issuerURL: issuerURL,
                 clientID: clientID,
-                redirectURI: redirectURI,
                 scopes: scopes,
                 originator: originator,
                 forcedWorkspaceID: forcedWorkspaceID,
@@ -49,10 +48,13 @@ public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendabl
             )
         }
 
-        fileprivate var deviceCodeConfiguration: ChatGPTOAuthConfiguration {
-            // Device-code auth does not use an app callback, but the lower-level
-            // shared configuration still expects a redirect URI.
-            oauthConfiguration(redirectURI: URL(string: "codexkit://device-code")!)
+        fileprivate var deviceCodeConfiguration: ChatGPTDeviceCodeAuthProvider.Configuration {
+            ChatGPTDeviceCodeAuthProvider.Configuration(
+                issuerURL: issuerURL,
+                clientID: clientID,
+                originator: originator,
+                userAgentProduct: userAgentProduct
+            )
         }
     }
 
@@ -78,9 +80,9 @@ public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendabl
                 presenter: deviceCodePresenter
             )
 
-        case let .oauth(redirectURI):
+        case .oauth:
             implementation = ChatGPTOAuthProvider(
-                configuration: configuration.oauthConfiguration(redirectURI: redirectURI),
+                configuration: configuration.oauthConfiguration,
                 urlSession: urlSession
             )
         }

@@ -17,12 +17,31 @@ public protocol ChatGPTDeviceCodePresenting: Sendable {
 }
 
 public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @unchecked Sendable {
-    private let configuration: ChatGPTOAuthConfiguration
+    public struct Configuration: Sendable {
+        public let issuerURL: URL
+        public let clientID: String
+        public let originator: String
+        public let userAgentProduct: String
+
+        public init(
+            issuerURL: URL = URL(string: "https://auth.openai.com")!,
+            clientID: String = "app_EMoamEEZ73f0CkXaXp7hrann",
+            originator: String = "codex_cli_rs",
+            userAgentProduct: String = "CodexKit"
+        ) {
+            self.issuerURL = issuerURL
+            self.clientID = clientID
+            self.originator = originator
+            self.userAgentProduct = userAgentProduct
+        }
+    }
+
+    private let configuration: Configuration
     private let urlSession: URLSession
     private let presenter: any ChatGPTDeviceCodePresenting
 
     public init(
-        configuration: ChatGPTOAuthConfiguration,
+        configuration: Configuration,
         urlSession: URLSession = .shared,
         presenter: any ChatGPTDeviceCodePresenting
     ) {

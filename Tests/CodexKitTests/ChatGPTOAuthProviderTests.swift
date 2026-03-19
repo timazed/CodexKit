@@ -6,13 +6,22 @@ private final class MockWebAuthenticationProvider: ChatGPTWebAuthenticationProvi
 
     func authenticate(
         authorizeURL: URL,
-        callbackScheme: String
+        callbackScheme _: String
     ) async throws -> URL {
         self.authorizeURL = authorizeURL
 
         let components = URLComponents(url: authorizeURL, resolvingAgainstBaseURL: false)
         let state = components?.queryItems?.first(where: { $0.name == "state" })?.value ?? ""
-        return URL(string: "\(callbackScheme)://oauth/callback?code=test-auth-code&state=\(state)")!
+        let redirectURI = components?
+            .queryItems?
+            .first(where: { $0.name == "redirect_uri" })?
+            .value ?? codexBrowserOAuthRedirectURI.absoluteString
+        var callbackComponents = URLComponents(string: redirectURI)!
+        callbackComponents.queryItems = [
+            URLQueryItem(name: "code", value: "test-auth-code"),
+            URLQueryItem(name: "state", value: state),
+        ]
+        return callbackComponents.url!
     }
 }
 
@@ -30,9 +39,8 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
     func testInteractiveSignInExchangesCodeForTokens() async throws {
         let mockBrowser = MockWebAuthenticationProvider()
         let session = makeTestURLSession()
-        let redirectURI = URL(string: "assistant-runtime://oauth/callback")!
         let provider = ChatGPTOAuthProvider(
-            configuration: ChatGPTOAuthConfiguration(redirectURI: redirectURI),
+            configuration: ChatGPTOAuthConfiguration(),
             urlSession: session,
             webAuthenticationProvider: mockBrowser
         )
@@ -76,7 +84,7 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
                     let form = parseFormURLEncodedBody(body)
                     XCTAssertEqual(form["grant_type"], "authorization_code")
                     XCTAssertEqual(form["code"], "test-auth-code")
-                    XCTAssertEqual(form["redirect_uri"], redirectURI.absoluteString)
+                    XCTAssertEqual(form["redirect_uri"], codexBrowserOAuthRedirectURI.absoluteString)
                     XCTAssertNotNil(form["code_verifier"])
                 }
             )
@@ -92,6 +100,13 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         XCTAssertEqual(
             URLComponents(url: try XCTUnwrap(mockBrowser.authorizeURL), resolvingAgainstBaseURL: false)?
                 .queryItems?
+                .first(where: { $0.name == "redirect_uri" })?
+                .value,
+            codexBrowserOAuthRedirectURI.absoluteString
+        )
+        XCTAssertEqual(
+            URLComponents(url: try XCTUnwrap(mockBrowser.authorizeURL), resolvingAgainstBaseURL: false)?
+                .queryItems?
                 .first(where: { $0.name == "scope" })?
                 .value,
             "openid profile email offline_access api.connectors.read api.connectors.invoke"
@@ -101,9 +116,8 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
     func testRefreshUsesRefreshTokenGrant() async throws {
         let mockBrowser = MockWebAuthenticationProvider()
         let session = makeTestURLSession()
-        let redirectURI = URL(string: "assistant-runtime://oauth/callback")!
         let provider = ChatGPTOAuthProvider(
-            configuration: ChatGPTOAuthConfiguration(redirectURI: redirectURI),
+            configuration: ChatGPTOAuthConfiguration(),
             urlSession: session,
             webAuthenticationProvider: mockBrowser
         )
