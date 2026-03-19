@@ -120,6 +120,8 @@ This is the main way to shape tone, style, and behavioral guidance for the embed
 
 The checked-in demo app lives under `DemoApp/` and consumes the local Swift package products through SPM.
 
+![CodexKit demo](preview.png)
+
 To open the demo app:
 
 ```sh
