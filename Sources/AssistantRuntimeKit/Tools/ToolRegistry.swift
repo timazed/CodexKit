@@ -2,11 +2,14 @@ import Foundation
 
 public enum ToolRegistryError: Error, LocalizedError, Sendable {
     case duplicateTool(String)
+    case invalidToolName(String)
 
     public var errorDescription: String? {
         switch self {
         case let .duplicateTool(name):
             return "A tool named \(name) is already registered."
+        case let .invalidToolName(name):
+            return "Invalid tool name \(name). Tool names must match ^[a-zA-Z0-9_-]+$."
         }
     }
 }
@@ -25,6 +28,10 @@ public actor ToolRegistry {
         _ definition: ToolDefinition,
         executor: AnyToolExecutor
     ) throws {
+        guard ToolDefinition.isValidName(definition.name) else {
+            throw ToolRegistryError.invalidToolName(definition.name)
+        }
+
         guard entries[definition.name] == nil else {
             throw ToolRegistryError.duplicateTool(definition.name)
         }
@@ -35,7 +42,11 @@ public actor ToolRegistry {
     public func replace(
         _ definition: ToolDefinition,
         executor: AnyToolExecutor
-    ) {
+    ) throws {
+        guard ToolDefinition.isValidName(definition.name) else {
+            throw ToolRegistryError.invalidToolName(definition.name)
+        }
+
         entries[definition.name] = Entry(definition: definition, executor: executor)
     }
 

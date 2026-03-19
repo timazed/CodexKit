@@ -4,7 +4,7 @@ import XCTest
 
 private struct AutoApprovalPresenter: ApprovalPresenting {
     func requestApproval(_ request: ApprovalRequest) async throws -> ApprovalDecision {
-        XCTAssertEqual(request.toolInvocation.toolName, "demo.lookupProfile")
+        XCTAssertEqual(request.toolInvocation.toolName, "demo_lookup_profile")
         return .approved
     }
 }
@@ -26,9 +26,9 @@ final class AgentRuntimeTests: XCTestCase {
         _ = try await runtime.restore()
         _ = try await runtime.signIn()
 
-        await runtime.replaceTool(
+        try await runtime.replaceTool(
             ToolDefinition(
-                name: "demo.lookupProfile",
+                name: "demo_lookup_profile",
                 description: "Lookup profile",
                 inputSchema: .object([:]),
                 approvalPolicy: .requiresApproval

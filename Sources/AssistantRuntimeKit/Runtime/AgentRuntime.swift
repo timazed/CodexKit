@@ -60,8 +60,8 @@ public actor AgentRuntime {
     public func replaceTool(
         _ definition: ToolDefinition,
         executor: AnyToolExecutor
-    ) async {
-        await toolRegistry.replace(definition, executor: executor)
+    ) async throws {
+        try await toolRegistry.replace(definition, executor: executor)
     }
 
     @discardableResult

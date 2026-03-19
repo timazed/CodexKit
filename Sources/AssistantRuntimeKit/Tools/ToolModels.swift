@@ -6,6 +6,8 @@ public enum ToolApprovalPolicy: String, Codable, Hashable, Sendable {
 }
 
 public struct ToolDefinition: Identifiable, Hashable, Sendable {
+    private static let validNamePattern = "^[a-zA-Z0-9_-]+$"
+
     public var id: String { name }
     public let name: String
     public let description: String
@@ -25,6 +27,10 @@ public struct ToolDefinition: Identifiable, Hashable, Sendable {
         self.inputSchema = inputSchema
         self.approvalPolicy = approvalPolicy
         self.approvalMessage = approvalMessage
+    }
+
+    public static func isValidName(_ name: String) -> Bool {
+        name.range(of: validNamePattern, options: .regularExpression) != nil
     }
 }
 

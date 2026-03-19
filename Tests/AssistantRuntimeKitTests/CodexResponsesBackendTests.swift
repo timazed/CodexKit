@@ -88,7 +88,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         )
 
         let tool = ToolDefinition(
-            name: "demo.lookupProfile",
+            name: "demo_lookup_profile",
             description: "Lookup a profile",
             inputSchema: .object([
                 "type": .string("object"),
@@ -105,7 +105,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                 body: Data(
                     """
                     event: response.output_item.done
-                    data: {"type":"response.output_item.done","item":{"type":"function_call","name":"demo.lookupProfile","arguments":"{\\"name\\":\\"Taylor\\"}","call_id":"call_1"}}
+                    data: {"type":"response.output_item.done","item":{"type":"function_call","name":"demo_lookup_profile","arguments":"{\\"name\\":\\"Taylor\\"}","call_id":"call_1"}}
 
                     event: response.completed
                     data: {"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
@@ -116,7 +116,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                     let body = try XCTUnwrap(requestBodyData(for: request))
                     let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
                     let toolsJSON = json?["tools"] as? [[String: Any]]
-                    XCTAssertEqual(toolsJSON?.first?["name"] as? String, "demo.lookupProfile")
+                    XCTAssertEqual(toolsJSON?.first?["name"] as? String, "demo_lookup_profile")
                 }
             )
         )
@@ -165,7 +165,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             switch event {
             case let .toolCallRequested(invocation):
                 sawToolCall = true
-                XCTAssertEqual(invocation.toolName, "demo.lookupProfile")
+                XCTAssertEqual(invocation.toolName, "demo_lookup_profile")
                 try await turnStream.submitToolResult(
                     .success(invocation: invocation, text: "profile[name=Taylor]"),
                     for: invocation.id

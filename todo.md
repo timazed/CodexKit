@@ -17,6 +17,7 @@
 - [x] Add a runnable iOS demo app target for live validation
 - [x] Add a device-code ChatGPT sign-in path for iOS when redirect-based auth is rejected upstream
 - [x] Fix iOS demo app compatibility-mode letterboxing by declaring a launch screen
+- [x] Enforce live-backend-safe tool names and update the demo tool identifier
 - [ ] Validate the live path in a real iOS app session
 
 ## Remaining Work To Reach The Original Goal

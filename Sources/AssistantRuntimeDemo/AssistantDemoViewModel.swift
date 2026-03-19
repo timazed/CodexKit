@@ -60,7 +60,7 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
 
     public func registerDemoTool() async {
         let definition = ToolDefinition(
-            name: "demo.lookupProfile",
+            name: "demo_lookup_profile",
             description: "Return a deterministic demo profile payload.",
             inputSchema: .object([
                 "type": .string("object"),
@@ -72,20 +72,24 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
             approvalMessage: "Allow the demo app to run the registered profile lookup tool?"
         )
 
-        await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, _ in
-            let requestedMessage: String
-            if case let .object(arguments) = invocation.arguments,
-               let message = arguments["message"]?.stringValue {
-                requestedMessage = message
-            } else {
-                requestedMessage = "No message"
-            }
+        do {
+            try await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, _ in
+                let requestedMessage: String
+                if case let .object(arguments) = invocation.arguments,
+                   let message = arguments["message"]?.stringValue {
+                    requestedMessage = message
+                } else {
+                    requestedMessage = "No message"
+                }
 
-            return .success(
-                invocation: invocation,
-                text: "profile[name=Taylor, source=demo, input=\(requestedMessage)]"
-            )
-        })
+                return .success(
+                    invocation: invocation,
+                    text: "profile[name=Taylor, source=demo, input=\(requestedMessage)]"
+                )
+            })
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     public func createThread() async {
