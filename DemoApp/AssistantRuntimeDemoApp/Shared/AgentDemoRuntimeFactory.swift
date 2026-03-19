@@ -68,21 +68,18 @@ enum AgentDemoRuntimeFactory {
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator
     ) -> AgentRuntime {
-        let configuration = ChatGPTOAuthConfiguration(redirectURI: redirectURI)
         let authProvider: any ChatGPTAuthProviding
 
         switch authenticationMethod {
         case .deviceCode:
-            authProvider = ChatGPTDeviceCodeAuthProvider(
-                configuration: configuration,
-                presenter: deviceCodePromptCoordinator
+            authProvider = try! ChatGPTAuthProvider(
+                method: .deviceCode,
+                deviceCodePresenter: deviceCodePromptCoordinator
             )
+
         case .browserOAuth:
-            authProvider = ChatGPTOAuthProvider(
-                configuration: ChatGPTOAuthConfiguration(
-                    redirectURI: browserOAuthRedirectURI
-                ),
-                webAuthenticationProvider: LoopbackChatGPTWebAuthenticationProvider()
+            authProvider = try! ChatGPTAuthProvider(
+                method: .oauth(redirectURI: browserOAuthRedirectURI)
             )
         }
 

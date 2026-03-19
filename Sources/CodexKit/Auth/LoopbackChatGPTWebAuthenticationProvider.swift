@@ -14,7 +14,7 @@ import AppKit
 
 #if canImport(AuthenticationServices) && canImport(Network)
 @available(iOS 13.0, macOS 10.15, *)
-public final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthenticationProviding, @unchecked Sendable {
+final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthenticationProviding, @unchecked Sendable {
     private let callbackServerFactory: @Sendable (URL) throws -> LoopbackCallbackServing
     private let presentationAnchorProvider: @MainActor @Sendable () -> ASPresentationAnchor?
 
@@ -23,7 +23,7 @@ public final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWe
     @MainActor
     private var activeAuthenticationContinuation: CheckedContinuation<URL, Error>?
 
-    public override convenience init() {
+    override convenience init() {
         self.init(
             callbackServerFactory: { redirectURL in
                 try LoopbackCallbackServer(redirectURL: redirectURL)
@@ -43,7 +43,7 @@ public final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWe
         super.init()
     }
 
-    public func authenticate(
+    func authenticate(
         authorizeURL: URL,
         callbackScheme _: String
     ) async throws -> URL {

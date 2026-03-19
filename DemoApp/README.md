@@ -24,7 +24,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 The demo uses the new configuration-first surface:
 
 - `AgentRuntime.Configuration`
-- `ChatGPTDeviceCodeAuthProvider`
+- `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
 - `FileRuntimeStateStore`

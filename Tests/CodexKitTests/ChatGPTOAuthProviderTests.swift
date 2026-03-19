@@ -1,4 +1,4 @@
-import CodexKit
+@testable import CodexKit
 import XCTest
 
 private final class MockWebAuthenticationProvider: ChatGPTWebAuthenticationProviding, @unchecked Sendable {

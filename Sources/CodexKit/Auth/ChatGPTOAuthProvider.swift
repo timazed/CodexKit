@@ -178,7 +178,18 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
     private let urlSession: URLSession
     private let webAuthenticationProvider: any ChatGPTWebAuthenticationProviding
 
-    public init(
+    public convenience init(
+        configuration: ChatGPTOAuthConfiguration,
+        urlSession: URLSession = .shared
+    ) {
+        self.init(
+            configuration: configuration,
+            urlSession: urlSession,
+            webAuthenticationProvider: Self.makeDefaultWebAuthenticationProvider(for: configuration)
+        )
+    }
+
+    init(
         configuration: ChatGPTOAuthConfiguration,
         urlSession: URLSession = .shared,
         webAuthenticationProvider: any ChatGPTWebAuthenticationProviding
@@ -228,6 +239,24 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
     }
 
     public func signOut(session _: ChatGPTSession?) async {}
+
+    private static func makeDefaultWebAuthenticationProvider(
+        for configuration: ChatGPTOAuthConfiguration
+    ) -> any ChatGPTWebAuthenticationProviding {
+        if configuration.redirectURI.isLoopbackOAuthRedirect {
+            #if canImport(AuthenticationServices) && canImport(Network)
+            return LoopbackChatGPTWebAuthenticationProvider()
+            #else
+            return UnsupportedChatGPTWebAuthenticationProvider()
+            #endif
+        }
+
+        #if canImport(AuthenticationServices)
+        return SystemChatGPTWebAuthenticationProvider()
+        #else
+        return UnsupportedChatGPTWebAuthenticationProvider()
+        #endif
+    }
 
     private func buildAuthorizeURL(
         pkce: PKCECodes,
@@ -357,6 +386,32 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
             originator: configuration.originator,
             product: configuration.userAgentProduct
         )
+    }
+}
+
+private struct UnsupportedChatGPTWebAuthenticationProvider: ChatGPTWebAuthenticationProviding {
+    func authenticate(
+        authorizeURL _: URL,
+        callbackScheme _: String
+    ) async throws -> URL {
+        throw AgentRuntimeError(
+            code: "oauth_authentication_unsupported",
+            message: "Browser-based ChatGPT sign-in is not supported on this platform."
+        )
+    }
+}
+
+private extension URL {
+    var isLoopbackOAuthRedirect: Bool {
+        guard let scheme = scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = host?.lowercased(),
+              host == "localhost" || host == "127.0.0.1",
+              port != nil else {
+            return false
+        }
+
+        return true
     }
 }
 
