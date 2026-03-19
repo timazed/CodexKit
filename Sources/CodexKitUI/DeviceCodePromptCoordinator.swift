@@ -4,7 +4,7 @@ import Observation
 
 @MainActor
 @Observable
-public final class DeviceCodeSignInCoordinator: ChatGPTDeviceCodePresenting, @unchecked Sendable {
+public final class DeviceCodePromptCoordinator: ChatGPTDeviceCodePresenting, @unchecked Sendable {
     public private(set) var currentPrompt: ChatGPTDeviceCodePrompt?
 
     public init() {}

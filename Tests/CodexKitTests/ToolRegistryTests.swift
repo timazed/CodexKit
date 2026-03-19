@@ -1,39 +1,22 @@
 import CodexKit
+import CodexKitDemo
 import XCTest
 
 final class ToolRegistryTests: XCTestCase {
-    func testRegisteredToolExecutesThroughRegistry() async throws {
-        let registry = ToolRegistry()
-        let definition = ToolDefinition(
-            name: "demo_echo",
-            description: "Echo tool",
-            inputSchema: .object([:])
-        )
-
-        try await registry.register(definition, executor: AnyToolExecutor { invocation, _ in
-            .success(invocation: invocation, text: "ok")
-        })
-
-        let result = await registry.execute(
-            ToolInvocation(
-                id: "call-1",
-                threadID: "thread-1",
-                turnID: "turn-1",
-                toolName: "demo_echo",
-                arguments: .object([:])
+    func testInvalidToolNameIsRejectedDuringRegistration() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
             ),
-            session: nil
-        )
-
-        XCTAssertTrue(result.success)
-        XCTAssertEqual(result.primaryText, "ok")
-    }
-
-    func testInvalidToolNameIsRejectedBeforeRegistration() async {
-        let registry = ToolRegistry()
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: SilentApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
 
         do {
-            try await registry.register(
+            try await runtime.registerTool(
                 ToolDefinition(
                     name: "demo.lookupProfile",
                     description: "Invalid live backend name",
@@ -49,8 +32,54 @@ final class ToolRegistryTests: XCTestCase {
                 error.localizedDescription,
                 "Invalid tool name demo.lookupProfile. Tool names must match ^[a-zA-Z0-9_-]+$."
             )
-        } catch {
-            XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testDuplicateInitialToolNamesAreRejectedInConfiguration() {
+        XCTAssertThrowsError(
+            try AgentRuntime(configuration: .init(
+                authProvider: DemoChatGPTAuthProvider(),
+                secureStore: KeychainSessionSecureStore(
+                    service: "CodexKitTests.ChatGPTSession",
+                    account: UUID().uuidString
+                ),
+                backend: InMemoryAgentBackend(),
+                approvalPresenter: SilentApprovalPresenter(),
+                stateStore: InMemoryRuntimeStateStore(),
+                tools: [
+                    .init(
+                        definition: ToolDefinition(
+                            name: "demo_echo",
+                            description: "Echo tool",
+                            inputSchema: .object([:])
+                        ),
+                        executor: AnyToolExecutor { invocation, _ in
+                            .success(invocation: invocation, text: "ok")
+                        }
+                    ),
+                    .init(
+                        definition: ToolDefinition(
+                            name: "demo_echo",
+                            description: "Echo tool again",
+                            inputSchema: .object([:])
+                        ),
+                        executor: AnyToolExecutor { invocation, _ in
+                            .success(invocation: invocation, text: "ok")
+                        }
+                    ),
+                ]
+            ))
+        ) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "A tool named demo_echo is already registered."
+            )
+        }
+    }
+}
+
+private struct SilentApprovalPresenter: ApprovalPresenting {
+    func requestApproval(_: ApprovalRequest) async throws -> ApprovalDecision {
+        .approved
     }
 }

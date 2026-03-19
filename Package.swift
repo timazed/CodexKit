@@ -13,6 +13,10 @@ let package = Package(
             targets: ["CodexKit"]
         ),
         .library(
+            name: "CodexKitUI",
+            targets: ["CodexKitUI"]
+        ),
+        .library(
             name: "CodexKitDemo",
             targets: ["CodexKitDemo"]
         ),
@@ -22,12 +26,16 @@ let package = Package(
             name: "CodexKit"
         ),
         .target(
-            name: "CodexKitDemo",
+            name: "CodexKitUI",
             dependencies: ["CodexKit"]
+        ),
+        .target(
+            name: "CodexKitDemo",
+            dependencies: ["CodexKit", "CodexKitUI"]
         ),
         .testTarget(
             name: "CodexKitTests",
-            dependencies: ["CodexKit", "CodexKitDemo"]
+            dependencies: ["CodexKit", "CodexKitUI", "CodexKitDemo"]
         ),
     ]
 )

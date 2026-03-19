@@ -1,28 +1,62 @@
 import Foundation
 
 public actor AgentRuntime {
-    private let backend: any AssistantBackend
-    private let stateStore: any RuntimeStateStoring
+    public struct ToolRegistration: Sendable {
+        public let definition: ToolDefinition
+        public let executor: AnyToolExecutor
 
-    public let sessionManager: ChatGPTSessionManager
-    public let toolRegistry: ToolRegistry
-    public let approvalCoordinator: ApprovalCoordinator
+        public init(
+            definition: ToolDefinition,
+            executor: AnyToolExecutor
+        ) {
+            self.definition = definition
+            self.executor = executor
+        }
+    }
+
+    public struct Configuration: Sendable {
+        public let authProvider: any ChatGPTAuthProviding
+        public let secureStore: any SessionSecureStoring
+        public let backend: any AgentBackend
+        public let approvalPresenter: any ApprovalPresenting
+        public let stateStore: any RuntimeStateStoring
+        public let tools: [ToolRegistration]
+
+        public init(
+            authProvider: any ChatGPTAuthProviding,
+            secureStore: any SessionSecureStoring,
+            backend: any AgentBackend,
+            approvalPresenter: any ApprovalPresenting,
+            stateStore: any RuntimeStateStoring,
+            tools: [ToolRegistration] = []
+        ) {
+            self.authProvider = authProvider
+            self.secureStore = secureStore
+            self.backend = backend
+            self.approvalPresenter = approvalPresenter
+            self.stateStore = stateStore
+            self.tools = tools
+        }
+    }
+
+    private let backend: any AgentBackend
+    private let stateStore: any RuntimeStateStoring
+    private let sessionManager: ChatGPTSessionManager
+    private let toolRegistry: ToolRegistry
+    private let approvalCoordinator: ApprovalCoordinator
 
     private var state: StoredRuntimeState = .empty
 
-    public init(
-        hostBridge: HostBridge,
-        toolRegistry: ToolRegistry = ToolRegistry()
-    ) {
-        self.backend = hostBridge.backend
-        self.stateStore = hostBridge.stateStore
+    public init(configuration: Configuration) throws {
+        self.backend = configuration.backend
+        self.stateStore = configuration.stateStore
         self.sessionManager = ChatGPTSessionManager(
-            authProvider: hostBridge.authProvider,
-            secureStore: hostBridge.secureStore
+            authProvider: configuration.authProvider,
+            secureStore: configuration.secureStore
         )
-        self.toolRegistry = toolRegistry
+        self.toolRegistry = try ToolRegistry(initialTools: configuration.tools)
         self.approvalCoordinator = ApprovalCoordinator(
-            presenter: hostBridge.approvalPresenter
+            presenter: configuration.approvalPresenter
         )
     }
 
@@ -38,15 +72,19 @@ public actor AgentRuntime {
         try await sessionManager.signIn()
     }
 
+    public func currentSession() async -> ChatGPTSession? {
+        await sessionManager.currentSession()
+    }
+
     public func signOut() async throws {
         try await sessionManager.signOut()
     }
 
-    public func threads() -> [AssistantThread] {
+    public func threads() -> [AgentThread] {
         state.threads.sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    public func messages(for threadID: String) -> [AssistantMessage] {
+    public func messages(for threadID: String) -> [AgentMessage] {
         state.messagesByThread[threadID] ?? []
     }
 
@@ -65,7 +103,7 @@ public actor AgentRuntime {
     }
 
     @discardableResult
-    public func createThread(title: String? = nil) async throws -> AssistantThread {
+    public func createThread(title: String? = nil) async throws -> AgentThread {
         let session = try await sessionManager.requireSession()
         var thread = try await backend.createThread(session: session)
         if let title {
@@ -76,7 +114,7 @@ public actor AgentRuntime {
     }
 
     @discardableResult
-    public func resumeThread(id: String) async throws -> AssistantThread {
+    public func resumeThread(id: String) async throws -> AgentThread {
         let session = try await sessionManager.requireSession()
         let thread = try await backend.resumeThread(id: id, session: session)
         try await upsertThread(thread)
@@ -86,13 +124,13 @@ public actor AgentRuntime {
     public func sendMessage(
         _ request: UserMessageRequest,
         in threadID: String
-    ) async throws -> AsyncThrowingStream<AssistantEvent, Error> {
+    ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
         guard let thread = thread(for: threadID) else {
-            throw AssistantRuntimeError.threadNotFound(threadID)
+            throw AgentRuntimeError.threadNotFound(threadID)
         }
 
         let session = try await sessionManager.requireSession()
-        let userMessage = AssistantMessage(
+        let userMessage = AgentMessage(
             threadID: threadID,
             role: .user,
             text: request.text
@@ -127,10 +165,10 @@ public actor AgentRuntime {
     }
 
     private func consumeTurnStream(
-        _ turnStream: any AssistantTurnStreaming,
+        _ turnStream: any AgentTurnStreaming,
         for threadID: String,
         session: ChatGPTSession,
-        continuation: AsyncThrowingStream<AssistantEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     ) async {
         do {
             for try await backendEvent in turnStream.events {
@@ -174,8 +212,8 @@ public actor AgentRuntime {
 
             continuation.finish()
         } catch {
-            let runtimeError = (error as? AssistantRuntimeError)
-                ?? AssistantRuntimeError(
+            let runtimeError = (error as? AgentRuntimeError)
+                ?? AgentRuntimeError(
                     code: "turn_failed",
                     message: error.localizedDescription
                 )
@@ -189,7 +227,7 @@ public actor AgentRuntime {
     private func resolveToolInvocation(
         _ invocation: ToolInvocation,
         session: ChatGPTSession,
-        continuation: AsyncThrowingStream<AssistantEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     ) async throws -> ToolResultEnvelope {
         if let definition = await toolRegistry.definition(named: invocation.toolName),
            definition.approvalPolicy == .requiresApproval {
@@ -239,11 +277,11 @@ public actor AgentRuntime {
         return await toolRegistry.execute(invocation, session: session)
     }
 
-    private func thread(for threadID: String) -> AssistantThread? {
+    private func thread(for threadID: String) -> AgentThread? {
         state.threads.first { $0.id == threadID }
     }
 
-    private func upsertThread(_ thread: AssistantThread) async throws {
+    private func upsertThread(_ thread: AgentThread) async throws {
         if let index = state.threads.firstIndex(where: { $0.id == thread.id }) {
             state.threads[index] = thread
         } else {
@@ -253,11 +291,11 @@ public actor AgentRuntime {
     }
 
     private func setThreadStatus(
-        _ status: AssistantThreadStatus,
+        _ status: AgentThreadStatus,
         for threadID: String
     ) async throws {
         guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
-            throw AssistantRuntimeError.threadNotFound(threadID)
+            throw AgentRuntimeError.threadNotFound(threadID)
         }
 
         state.threads[index].status = status
@@ -265,7 +303,7 @@ public actor AgentRuntime {
         try await persistState()
     }
 
-    private func appendMessage(_ message: AssistantMessage) async throws {
+    private func appendMessage(_ message: AgentMessage) async throws {
         state.messagesByThread[message.threadID, default: []].append(message)
 
         if let index = state.threads.firstIndex(where: { $0.id == message.threadID }) {

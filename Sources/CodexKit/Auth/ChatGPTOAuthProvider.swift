@@ -83,7 +83,7 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
     ) async throws -> URL {
         let anchor = try await MainActor.run { () throws -> ASPresentationAnchor in
             guard let anchor = presentationAnchorProvider() else {
-                throw AssistantRuntimeError(
+                throw AgentRuntimeError(
                     code: "oauth_presentation_anchor_unavailable",
                     message: "The ChatGPT sign-in sheet could not be presented because no active window was available."
                 )
@@ -106,7 +106,7 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
                     }
 
                     continuation.resume(
-                        throwing: error ?? AssistantRuntimeError(
+                        throwing: error ?? AgentRuntimeError(
                             code: "oauth_authentication_cancelled",
                             message: "The ChatGPT sign-in flow did not complete."
                         )
@@ -124,7 +124,7 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
                     self?.activeSession = nil
                     self?.activePresentationContextProvider = nil
                     continuation.resume(
-                        throwing: AssistantRuntimeError(
+                        throwing: AgentRuntimeError(
                             code: "oauth_authentication_start_failed",
                             message: "The ChatGPT sign-in flow could not be started."
                         )
@@ -199,7 +199,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
         let callback = try OAuthCallback(url: callbackURL)
 
         guard callback.state == state.value else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_state_mismatch",
                 message: "The ChatGPT sign-in response could not be validated."
             )
@@ -217,7 +217,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
         reason _: ChatGPTAuthRefreshReason
     ) async throws -> ChatGPTSession {
         guard let refreshToken = session.refreshToken, !refreshToken.isEmpty else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "missing_refresh_token",
                 message: "This ChatGPT session cannot be refreshed because no refresh token is available."
             )
@@ -257,7 +257,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
         }
 
         guard let url = components?.url else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_authorize_url_invalid",
                 message: "The ChatGPT authorize URL could not be created."
             )
@@ -303,7 +303,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
     private func sendTokenRequest(_ request: URLRequest) async throws -> TokenResponse {
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_token_response_invalid",
                 message: "The ChatGPT token exchange returned an invalid response."
             )
@@ -311,7 +311,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = simplifyAuthErrorBody(data)
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_token_exchange_failed",
                 message: "ChatGPT token exchange failed with status \(httpResponse.statusCode): \(body)"
             )
@@ -406,7 +406,7 @@ private struct OAuthCallback {
 
     init(url: URL) throws {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_callback_invalid",
                 message: "The ChatGPT sign-in callback URL could not be parsed."
             )
@@ -415,20 +415,20 @@ private struct OAuthCallback {
         let queryItems = components.queryItems ?? []
 
         if let errorDescription = queryItems.first(where: { $0.name == "error_description" || $0.name == "error" })?.value {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_callback_failed",
                 message: "ChatGPT sign-in failed: \(errorDescription)"
             )
         }
 
         guard let code = queryItems.first(where: { $0.name == "code" })?.value, !code.isEmpty else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_callback_missing_code",
                 message: "The ChatGPT sign-in callback did not include an authorization code."
             )
         }
         guard let state = queryItems.first(where: { $0.name == "state" })?.value, !state.isEmpty else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_callback_missing_state",
                 message: "The ChatGPT sign-in callback did not include a state parameter."
             )
@@ -484,7 +484,7 @@ struct JWTClaims: Decodable {
     static func decode(from jwt: String) throws -> JWTClaims {
         let parts = jwt.split(separator: ".")
         guard parts.count >= 2 else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "jwt_invalid",
                 message: "A ChatGPT token could not be decoded."
             )
@@ -580,7 +580,7 @@ private extension Data {
         }
 
         guard let data = Data(base64Encoded: normalized) else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "jwt_payload_invalid",
                 message: "A ChatGPT token payload could not be decoded."
             )

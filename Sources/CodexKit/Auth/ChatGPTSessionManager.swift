@@ -50,7 +50,7 @@ public actor ChatGPTSessionManager {
 
     public func requireSession() async throws -> ChatGPTSession {
         guard let session else {
-            throw AssistantRuntimeError.signedOut()
+            throw AgentRuntimeError.signedOut()
         }
         if session.requiresRefresh() {
             return try await refresh(reason: .unauthorized)
@@ -60,7 +60,7 @@ public actor ChatGPTSessionManager {
 
     private func requireStoredSession() throws -> ChatGPTSession {
         guard let session else {
-            throw AssistantRuntimeError.signedOut()
+            throw AgentRuntimeError.signedOut()
         }
         return session
     }

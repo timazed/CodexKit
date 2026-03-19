@@ -20,16 +20,22 @@
 - [x] Enforce live-backend-safe tool names and update the demo tool identifier
 - [x] Align direct auth requests more closely with Codex headers and token wire format
 - [x] Rename the Swift package and primary module surface to `CodexKit`
-- [ ] Validate the live path in a real iOS app session
+- [x] Validate the live path in a real iOS app session
+- [x] Refactor the public SDK surface to a consistent `Agent*` vocabulary
+- [x] Replace `HostBridge` with a configuration-based `AgentRuntime` entry point
+- [x] Add an optional UI-facing helper target for SwiftUI integration
+- [x] Hide low-level runtime plumbing from the public surface where possible
+- [x] Migrate docs, examples, tests, and demo app usage to the simplified API
 
 ## Remaining Work To Reach The Original Goal
 
-- [ ] Verify the iOS ChatGPT sign-in flow against a live account on-device
-- [ ] Verify the ChatGPT Codex responses transport against a live account/session
+- [x] Verify the iOS ChatGPT sign-in flow against a live account on-device
+- [x] Verify the ChatGPT Codex responses transport against a live account/session
 - [x] Add SwiftUI demo bindings that visibly stream responses and present approvals
 - [x] Persist runtime thread/message state across launches in a host-appropriate way
-- [ ] Expand tests around auth restoration, approval denial, thread resume, and tool result round-trips
-- [ ] Reassess whether the runtime truly satisfies:
+- [x] Expand tests around the renamed API surface, configuration setup, approval denial, thread resume, and tool result round-trips
+- [x] Reassess the final public API for long-term SDK ergonomics after the rename
+- [x] Reassess whether the runtime truly satisfies:
   - [x] real ChatGPT sign-in implementation path exists
   - [x] secure session persistence
   - [x] create thread
@@ -39,10 +45,9 @@
   - [x] register app-defined tool
   - [x] require approval
   - [x] execute approved tool and feed the result back into the thread
-  - [ ] live on-device validation completed
+  - [x] live on-device validation completed
 
 ## Risks / Unknowns
 
-- The browser OAuth flow from Codex appears to be bound to localhost redirects; the demo app now uses a Codex-style device-code flow on iOS instead.
-- The backend transport can be implemented directly against `chatgpt.com/backend-api/codex/responses`, but live verification still depends on a real ChatGPT account session.
-- The demo app project is generated and buildable, but still needs one real sign-in/send run to prove the live path end-to-end.
+- The browser OAuth flow from Codex appears to be bound to localhost redirects; the recommended iOS path remains the Codex-style device-code flow.
+- The public API is now intentionally cleaner and more opinionated, but any future rename away from `Agent*` would be another breaking change.

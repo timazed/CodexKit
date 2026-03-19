@@ -1,12 +1,12 @@
 import Foundation
 
 public struct StoredRuntimeState: Codable, Hashable, Sendable {
-    public var threads: [AssistantThread]
-    public var messagesByThread: [String: [AssistantMessage]]
+    public var threads: [AgentThread]
+    public var messagesByThread: [String: [AgentMessage]]
 
     public init(
-        threads: [AssistantThread] = [],
-        messagesByThread: [String: [AssistantMessage]] = [:]
+        threads: [AgentThread] = [],
+        messagesByThread: [String: [AgentMessage]] = [:]
     ) {
         self.threads = threads
         self.messagesByThread = messagesByThread

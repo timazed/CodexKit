@@ -26,7 +26,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
         switch status {
         case errSecSuccess:
             guard let data = result as? Data else {
-                throw AssistantRuntimeError(
+                throw AgentRuntimeError(
                     code: "keychain_invalid_payload",
                     message: "Keychain returned an unexpected session payload."
                 )
@@ -35,7 +35,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
         case errSecItemNotFound:
             return nil
         default:
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "keychain_read_failed",
                 message: "Failed to read the stored ChatGPT session from Keychain."
             )
@@ -54,7 +54,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
         }
 
         guard addStatus == errSecDuplicateItem else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "keychain_write_failed",
                 message: "Failed to store the ChatGPT session in Keychain."
             )
@@ -69,7 +69,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
         )
 
         guard updateStatus == errSecSuccess else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "keychain_update_failed",
                 message: "Failed to update the ChatGPT session in Keychain."
             )
@@ -79,7 +79,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
     public func deleteSession() throws {
         let status = SecItemDelete(baseQuery() as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "keychain_delete_failed",
                 message: "Failed to remove the ChatGPT session from Keychain."
             )

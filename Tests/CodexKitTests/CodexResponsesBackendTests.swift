@@ -48,7 +48,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         )
 
         let turnStream = try await backend.beginTurn(
-            thread: AssistantThread(id: "thread-1"),
+            thread: AgentThread(id: "thread-1"),
             history: [],
             message: UserMessageRequest(text: "Hi there"),
             tools: [],
@@ -56,8 +56,8 @@ final class CodexResponsesBackendTests: XCTestCase {
         )
 
         var deltas: [String] = []
-        var completedMessage: AssistantMessage?
-        var summary: AssistantTurnSummary?
+        var completedMessage: AgentMessage?
+        var summary: AgentTurnSummary?
 
         for try await event in turnStream.events {
             switch event {
@@ -151,7 +151,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         )
 
         let turnStream = try await backend.beginTurn(
-            thread: AssistantThread(id: "thread-1"),
+            thread: AgentThread(id: "thread-1"),
             history: [],
             message: UserMessageRequest(text: "Find the profile"),
             tools: [tool],
@@ -159,7 +159,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         )
 
         var sawToolCall = false
-        var finalAssistantMessage: AssistantMessage?
+        var finalAssistantMessage: AgentMessage?
 
         for try await event in turnStream.events {
             switch event {

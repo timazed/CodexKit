@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AssistantRuntimeError: Error, LocalizedError, Equatable, Sendable {
+public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     public let code: String
     public let message: String
 
@@ -13,30 +13,30 @@ public struct AssistantRuntimeError: Error, LocalizedError, Equatable, Sendable 
         message
     }
 
-    public static func signedOut() -> AssistantRuntimeError {
-        AssistantRuntimeError(code: "signed_out", message: "No ChatGPT session is available.")
+    public static func signedOut() -> AgentRuntimeError {
+        AgentRuntimeError(code: "signed_out", message: "No ChatGPT session is available.")
     }
 
-    public static func threadNotFound(_ threadID: String) -> AssistantRuntimeError {
-        AssistantRuntimeError(
+    public static func threadNotFound(_ threadID: String) -> AgentRuntimeError {
+        AgentRuntimeError(
             code: "thread_not_found",
             message: "The assistant thread \(threadID) could not be found."
         )
     }
 
-    public static func unauthorized(_ message: String = "The ChatGPT session is no longer authorized.") -> AssistantRuntimeError {
-        AssistantRuntimeError(code: "unauthorized", message: message)
+    public static func unauthorized(_ message: String = "The ChatGPT session is no longer authorized.") -> AgentRuntimeError {
+        AgentRuntimeError(code: "unauthorized", message: message)
     }
 }
 
-public enum AssistantRole: String, Codable, Hashable, Sendable {
+public enum AgentRole: String, Codable, Hashable, Sendable {
     case user
     case assistant
     case tool
     case system
 }
 
-public enum AssistantThreadStatus: String, Codable, Hashable, Sendable {
+public enum AgentThreadStatus: String, Codable, Hashable, Sendable {
     case idle
     case streaming
     case waitingForApproval
@@ -44,13 +44,13 @@ public enum AssistantThreadStatus: String, Codable, Hashable, Sendable {
     case failed
 }
 
-public enum AssistantTurnStatus: String, Codable, Hashable, Sendable {
+public enum AgentTurnStatus: String, Codable, Hashable, Sendable {
     case running
     case completed
     case failed
 }
 
-public struct AssistantUsage: Codable, Hashable, Sendable {
+public struct AgentUsage: Codable, Hashable, Sendable {
     public var inputTokens: Int
     public var cachedInputTokens: Int
     public var outputTokens: Int
@@ -70,19 +70,19 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
     }
 }
 
-public struct AssistantThread: Identifiable, Codable, Hashable, Sendable {
+public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String?
     public var createdAt: Date
     public var updatedAt: Date
-    public var status: AssistantThreadStatus
+    public var status: AgentThreadStatus
 
     public init(
         id: String,
         title: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        status: AssistantThreadStatus = .idle
+        status: AgentThreadStatus = .idle
     ) {
         self.id = id
         self.title = title
@@ -92,16 +92,16 @@ public struct AssistantThread: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct AssistantTurn: Identifiable, Codable, Hashable, Sendable {
+public struct AgentTurn: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var threadID: String
-    public var status: AssistantTurnStatus
+    public var status: AgentTurnStatus
     public var startedAt: Date
 
     public init(
         id: String,
         threadID: String,
-        status: AssistantTurnStatus = .running,
+        status: AgentTurnStatus = .running,
         startedAt: Date = Date()
     ) {
         self.id = id
@@ -111,17 +111,17 @@ public struct AssistantTurn: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct AssistantMessage: Identifiable, Codable, Hashable, Sendable {
+public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var threadID: String
-    public var role: AssistantRole
+    public var role: AgentRole
     public var text: String
     public var createdAt: Date
 
     public init(
         id: String = UUID().uuidString,
         threadID: String,
-        role: AssistantRole,
+        role: AgentRole,
         text: String,
         createdAt: Date = Date()
     ) {
@@ -133,16 +133,16 @@ public struct AssistantMessage: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct AssistantTurnSummary: Codable, Hashable, Sendable {
+public struct AgentTurnSummary: Codable, Hashable, Sendable {
     public var threadID: String
     public var turnID: String
-    public var usage: AssistantUsage?
+    public var usage: AgentUsage?
     public var completedAt: Date
 
     public init(
         threadID: String,
         turnID: String,
-        usage: AssistantUsage? = nil,
+        usage: AgentUsage? = nil,
         completedAt: Date = Date()
     ) {
         self.threadID = threadID
@@ -152,16 +152,16 @@ public struct AssistantTurnSummary: Codable, Hashable, Sendable {
     }
 }
 
-public enum AssistantEvent: Sendable {
-    case threadStarted(AssistantThread)
-    case threadStatusChanged(threadID: String, status: AssistantThreadStatus)
-    case turnStarted(AssistantTurn)
+public enum AgentEvent: Sendable {
+    case threadStarted(AgentThread)
+    case threadStatusChanged(threadID: String, status: AgentThreadStatus)
+    case turnStarted(AgentTurn)
     case assistantMessageDelta(threadID: String, turnID: String, delta: String)
-    case messageCommitted(AssistantMessage)
+    case messageCommitted(AgentMessage)
     case approvalRequested(ApprovalRequest)
     case approvalResolved(ApprovalResolution)
     case toolCallStarted(ToolInvocation)
     case toolCallFinished(ToolResultEnvelope)
-    case turnCompleted(AssistantTurnSummary)
-    case turnFailed(AssistantRuntimeError)
+    case turnCompleted(AgentTurnSummary)
+    case turnFailed(AgentRuntimeError)
 }

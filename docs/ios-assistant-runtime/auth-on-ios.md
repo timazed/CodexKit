@@ -2,213 +2,142 @@
 
 ## Upstream Codex Model
 
-Codex currently splits auth into two important layers:
+Codex separates:
 
-### Managed ChatGPT auth
+- ChatGPT auth acquisition
+- token persistence
+- token refresh
+- externally managed token refresh callbacks
 
-References:
+Those concepts port cleanly to iOS. The desktop transport does not.
 
-- `codex-rs/login/src/server.rs`
-- `codex-rs/core/src/auth.rs`
+The important upstream ideas we keep are:
 
-Flow:
+- a durable ChatGPT session model
+- refresh-on-demand behavior
+- host-provided refresh seams
+- account metadata extraction from auth tokens
 
-- start browser login
-- receive callback on localhost
-- exchange code for tokens
-- persist auth payload
-- refresh tokens later from `AuthManager`
+## Recommended iOS Design
 
-### Externally managed ChatGPT auth
+The iOS host app owns:
 
-References:
+- when sign-in starts
+- what sign-in UI is shown
+- Keychain policy selection if it wants to customize storage
+- approval and prompt presentation
 
-- `codex-rs/core/src/auth.rs`
-- `codex-rs/app-server/src/message_processor.rs`
-- `codex-rs/app-server-protocol/src/protocol/v2.rs`
+The runtime owns:
 
-Flow:
-
-- host app injects `chatgptAuthTokens`
-- runtime treats tokens as externally managed
-- on unauthorized, runtime asks host for a refreshed token
-
-For iOS, the same upstream auth primitives are reusable, but the browser transport must be replaced.
-
-## Recommended iOS Adaptation
-
-## Design Principle
-
-The iOS host app should own the auth UX entry point and secure-storage policy.
-
-The runtime should own:
-
-- session state
-- secure persistence
+- session lifecycle
 - refresh coordination
-- account metadata exposure
+- account/session restoration
+- normalization into `ChatGPTSession`
 
-The host app should own:
+## Default Live Path
 
-- app-specific sign-in entry UI
-- redirect URI registration
-- any app-specific account/session policy
+The recommended live iOS path in this repo is now:
 
-## Proposed Flow
+1. host app creates `ChatGPTDeviceCodeAuthProvider`
+2. host app provides `DeviceCodePromptCoordinator` from `CodexKitUI`
+3. runtime starts sign-in through `AgentRuntime.signIn()`
+4. device-code prompt state is surfaced to SwiftUI
+5. user completes ChatGPT sign-in in the verification flow
+6. runtime exchanges the authorization code for tokens
+7. runtime persists the resulting `ChatGPTSession` with `KeychainSessionSecureStore`
+8. `ChatGPTSessionManager` refreshes later when needed
 
-1. host app creates a `ChatGPTOAuthProvider` with its redirect URI
-2. runtime starts sign-in using `ASWebAuthenticationSession`
-3. callback returns to the app via custom URL scheme or universal link
-4. runtime exchanges code for tokens against `https://auth.openai.com/oauth/token`
-5. runtime persists the resulting `ChatGPTSession` in Keychain
-6. runtime uses the session for backend calls
-7. if the session is near expiry, `ChatGPTSessionManager` refreshes before use
+This matches Codex’s auth lifecycle while avoiding desktop-only redirect assumptions.
 
-This keeps the Codex PKCE/token flow while replacing the desktop localhost callback transport.
+## Why Device Code Is Recommended
 
-## Replaced Desktop Assumptions
+The redirect-based browser OAuth path from Codex is useful, but on iOS it depends on upstream redirect acceptance and presentation details that are more fragile than the device-code flow.
 
-### Replace localhost callback server
+For that reason:
 
-Desktop Codex:
+- `ChatGPTDeviceCodeAuthProvider` is the default documented iOS sign-in path
+- `ChatGPTOAuthProvider` remains available for advanced integrations
 
-- binds `http://localhost:<port>/auth/callback`
+## Advanced Browser OAuth Path
 
-iOS replacement:
+When an app specifically wants a browser callback flow, it can still use:
 
-- `ASWebAuthenticationSession`
-- callback URL scheme or universal link
+- `ChatGPTOAuthProvider`
+- `SystemChatGPTWebAuthenticationProvider`
+- a custom redirect URI
 
-### Replace terminal device-code UX
-
-Desktop Codex:
-
-- prints verification URL and one-time code
-
-iOS replacement:
-
-- native sign-in sheet or Safari-auth session
-- optional device-code fallback only if product requirements demand it
-
-### Replace file/keyring storage policy
-
-Desktop Codex:
-
-- file, keyring, auto, or ephemeral
-
-iOS replacement:
-
-- Keychain for durable session state
-- optional in-memory mode for ephemeral sessions
+That path preserves Codex’s PKCE and token exchange model, but it is not the default recommendation for first-time integration.
 
 ## Secure Storage
 
-## Recommended default
+The default storage is:
 
-- Keychain item containing the serialized `ChatGPTSession`
+- `KeychainSessionSecureStore`
 - `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
 
 Why:
 
-- survives app relaunch
-- stays inside normal iOS sandbox/security rules
+- survives relaunch
+- stays inside iOS sandbox constraints
 - avoids plaintext token files
 
-## Runtime store abstraction
+Apps can still swap storage with `SessionSecureStoring`, but Keychain is the normal production path.
 
-`SessionSecureStoring` exists so hosts can swap storage policy if needed, but the default implementation should remain Keychain-backed.
+## Session Lifecycle
 
-## Session Payload
+At launch:
 
-The persisted session should include only what the runtime needs:
+1. app creates `AgentRuntime` with a configured auth provider and secure store
+2. app calls `restore()`
+3. `ChatGPTSessionManager` loads any stored `ChatGPTSession`
+4. app reads current session state through `AgentRuntime.currentSession()`
 
-- access token
-- optional refresh token or host refresh handle
-- account id
-- email
-- plan type
-- acquisition timestamp
-- optional expiry
-- externally-managed flag
+At request time:
 
-## Refresh Strategy
+1. runtime requires a valid session
+2. runtime refreshes if the session is near expiry
+3. runtime uses the refreshed session for backend calls
 
-Codex’s `AuthManager` already provides the right mental model:
+At logout:
 
-- use cached session if valid
-- refresh when needed
-- invalidate on mismatch or logout
-- route external-token refresh through the host
+1. runtime clears the in-memory session
+2. runtime deletes the Keychain session
+3. UI updates immediately
 
-### iOS runtime rule
+## Error Model
 
-The runtime should support both modes:
-
-- a built-in PKCE code exchange for normal iOS sign-in
-- host-provided refresh behavior when an app wants to fully externalize auth
-
-For externally managed auth, it should call:
-
-```swift
-authProvider.refresh(session:reason:)
-```
-
-This matches the upstream `ExternalAuthRefresher` pattern.
-
-## Lifecycle Restoration
-
-On app launch:
-
-1. `ChatGPTSessionManager.restore()`
-2. load Keychain session
-3. expose signed-in state to UI
-4. lazily refresh on first backend use or when unauthorized
-
-On logout:
-
-1. clear Keychain session
-2. clear runtime thread state if desired by host policy
-3. notify UI immediately
-
-## Error Handling
-
-The iOS auth adapter should surface:
+The auth layer should surface user-meaningful failures such as:
 
 - sign-in cancelled
+- missing session
 - callback mismatch
 - token exchange failed
 - refresh failed
-- session missing/expired
+- auth edge challenge / rate-limit failure
 
-The runtime should normalize these into user-displayable, non-transport-specific errors.
+These are normalized through `AgentRuntimeError` rather than leaking raw transport details into app UI.
 
-## First Prototype in This Repo
+## First-Class Types In This Repo
 
-This implementation now includes:
+The current auth surface is:
 
 - `ChatGPTSession`
 - `ChatGPTAuthProviding`
 - `SessionSecureStoring`
 - `KeychainSessionSecureStore`
 - `ChatGPTSessionManager`
+- `ChatGPTDeviceCodeAuthProvider`
 - `ChatGPTOAuthProvider`
-- `SystemChatGPTWebAuthenticationProvider`
-
-The demo target still includes a mock auth provider for deterministic tests and previews, but the core package now also contains a real Apple-platform OAuth path.
-
-The remaining work is live validation in a real app target:
-
-- confirm the chosen redirect URI is registered correctly
-- confirm the Codex-compatible originator value is accepted for the target app flow
-- confirm refresh behavior against a real ChatGPT account session
+- `DeviceCodePromptCoordinator` in `CodexKitUI`
 
 ## Bottom Line
 
-Port the Codex auth model, not the Codex desktop login transport.
+Port the Codex auth model, not Codex’s desktop login transport.
 
-For iOS, the right mapping is:
+The intended mapping is:
 
 - Codex `AuthManager` -> `ChatGPTSessionManager`
-- Codex `ExternalAuthRefresher` -> host `ChatGPTAuthProviding.refresh`
-- Codex file/keyring auth storage -> Keychain secure store
-- Codex localhost callback flow -> `ASWebAuthenticationSession`
+- Codex external refresher seam -> `ChatGPTAuthProviding.refresh`
+- Codex device-code login model -> `ChatGPTDeviceCodeAuthProvider`
+- Codex file/keyring persistence -> `KeychainSessionSecureStore`
+- app-facing prompt state -> `DeviceCodePromptCoordinator`

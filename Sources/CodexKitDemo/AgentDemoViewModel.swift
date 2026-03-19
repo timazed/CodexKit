@@ -1,19 +1,20 @@
 import CodexKit
+import CodexKitUI
 import Foundation
 import Observation
 
 @MainActor
 @Observable
-public final class AssistantDemoViewModel: @unchecked Sendable {
+public final class AgentDemoViewModel: @unchecked Sendable {
     public private(set) var session: ChatGPTSession?
-    public private(set) var threads: [AssistantThread] = []
-    public private(set) var messages: [AssistantMessage] = []
-    public private(set) var streamingAssistantText = ""
+    public private(set) var threads: [AgentThread] = []
+    public private(set) var messages: [AgentMessage] = []
+    public private(set) var streamingText = ""
     public private(set) var lastError: String?
     public var composerText = ""
 
     public let approvalInbox: ApprovalInbox
-    public let deviceCodeSignIn: DeviceCodeSignInCoordinator
+    public let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
 
     private let runtime: AgentRuntime
     private var activeThreadID: String?
@@ -21,14 +22,14 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
     public init(
         runtime: AgentRuntime,
         approvalInbox: ApprovalInbox,
-        deviceCodeSignIn: DeviceCodeSignInCoordinator = DeviceCodeSignInCoordinator()
+        deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
     ) {
         self.runtime = runtime
         self.approvalInbox = approvalInbox
-        self.deviceCodeSignIn = deviceCodeSignIn
+        self.deviceCodePromptCoordinator = deviceCodePromptCoordinator
     }
 
-    public var activeThread: AssistantThread? {
+    public var activeThread: AgentThread? {
         guard let activeThreadID else {
             return nil
         }
@@ -43,7 +44,7 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
                 activeThreadID = firstThread.id
                 messages = await runtime.messages(for: firstThread.id)
             }
-            session = await runtime.sessionManager.currentSession()
+            session = await runtime.currentSession()
         } catch {
             lastError = error.localizedDescription
         }
@@ -106,7 +107,7 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
     public func activateThread(id: String) async {
         activeThreadID = id
         messages = await runtime.messages(for: id)
-        streamingAssistantText = ""
+        streamingText = ""
     }
 
     public func sendComposerText() async {
@@ -125,7 +126,7 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
 
         let outgoingText = composerText
         composerText = ""
-        streamingAssistantText = ""
+        streamingText = ""
 
         do {
             let stream = try await runtime.sendMessage(
@@ -154,12 +155,12 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
                     break
 
                 case let .assistantMessageDelta(_, _, delta):
-                    streamingAssistantText.append(delta)
+                    streamingText.append(delta)
 
                 case let .messageCommitted(message):
                     messages.append(message)
                     if message.role == .assistant {
-                        streamingAssistantText = ""
+                        streamingText = ""
                     }
 
                 case .approvalRequested:

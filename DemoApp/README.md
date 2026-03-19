@@ -26,10 +26,22 @@ CODEXKIT_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_project.rb
 - streams assistant output into the UI
 - shows approval prompts before running a host-defined demo tool
 
+The demo uses the new configuration-first surface:
+
+- `AgentRuntime.Configuration`
+- `ChatGPTDeviceCodeAuthProvider`
+- `KeychainSessionSecureStore`
+- `CodexResponsesBackend`
+- `FileRuntimeStateStore`
+- `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
+
 ## Files
 
 - `DemoApp/AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.swift`
 - `DemoApp/AssistantRuntimeDemoApp/Info.plist`
-- `Sources/CodexKitDemo/AssistantDemoView.swift`
-- `Sources/CodexKitDemo/AssistantDemoViewModel.swift`
-- `Sources/CodexKitDemo/AssistantDemoRuntimeFactory.swift`
+- `Sources/CodexKitUI/AgentRuntimeStore.swift`
+- `Sources/CodexKitUI/ApprovalInbox.swift`
+- `Sources/CodexKitUI/DeviceCodePromptCoordinator.swift`
+- `Sources/CodexKitDemo/AgentDemoView.swift`
+- `Sources/CodexKitDemo/AgentDemoViewModel.swift`
+- `Sources/CodexKitDemo/AgentDemoRuntimeFactory.swift`

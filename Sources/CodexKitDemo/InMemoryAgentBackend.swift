@@ -1,35 +1,35 @@
 import CodexKit
 import Foundation
 
-public actor InMemoryAssistantBackend: AssistantBackend {
-    private var threads: [String: AssistantThread] = [:]
+public actor InMemoryAgentBackend: AgentBackend {
+    private var threads: [String: AgentThread] = [:]
 
     public init() {}
 
-    public func createThread(session _: ChatGPTSession) async throws -> AssistantThread {
-        let thread = AssistantThread(id: UUID().uuidString)
+    public func createThread(session _: ChatGPTSession) async throws -> AgentThread {
+        let thread = AgentThread(id: UUID().uuidString)
         threads[thread.id] = thread
         return thread
     }
 
-    public func resumeThread(id: String, session _: ChatGPTSession) async throws -> AssistantThread {
+    public func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
         if let existing = threads[id] {
             return existing
         }
 
-        let thread = AssistantThread(id: id)
+        let thread = AgentThread(id: id)
         threads[id] = thread
         return thread
     }
 
     public func beginTurn(
-        thread: AssistantThread,
-        history _: [AssistantMessage],
+        thread: AgentThread,
+        history _: [AgentMessage],
         message: UserMessageRequest,
         tools: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AssistantTurnStreaming {
-        let updatedThread = AssistantThread(
+    ) async throws -> any AgentTurnStreaming {
+        let updatedThread = AgentThread(
             id: thread.id,
             title: thread.title,
             createdAt: thread.createdAt,
@@ -44,7 +44,7 @@ public actor InMemoryAssistantBackend: AssistantBackend {
             nil
         }
 
-        return MockAssistantTurnSession(
+        return MockAgentTurnSession(
             thread: updatedThread,
             message: message,
             selectedTool: selectedTool
@@ -52,25 +52,25 @@ public actor InMemoryAssistantBackend: AssistantBackend {
     }
 }
 
-public final class MockAssistantTurnSession: AssistantTurnStreaming, @unchecked Sendable {
-    public let events: AsyncThrowingStream<BackendTurnEvent, Error>
+public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable {
+    public let events: AsyncThrowingStream<AgentBackendEvent, Error>
     private let pendingResults: PendingToolResults
 
     public init(
-        thread: AssistantThread,
+        thread: AgentThread,
         message: UserMessageRequest,
         selectedTool: ToolDefinition?
     ) {
         let pendingResults = PendingToolResults()
         self.pendingResults = pendingResults
-        let turn = AssistantTurn(id: UUID().uuidString, threadID: thread.id)
+        let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
 
         events = AsyncThrowingStream { continuation in
             Task {
                 continuation.yield(.turnStarted(turn))
 
                 if let selectedTool {
-                    for chunk in MockAssistantTurnSession.chunks(
+                    for chunk in MockAgentTurnSession.chunks(
                         for: "I need one host-defined tool to answer that. "
                     ) {
                         continuation.yield(
@@ -99,7 +99,7 @@ public final class MockAssistantTurnSession: AssistantTurnStreaming, @unchecked 
                     let responseText = result.primaryText
                         ?? "The tool completed without returning display text."
 
-                    let fullMessage = AssistantMessage(
+                    let fullMessage = AgentMessage(
                         threadID: thread.id,
                         role: .assistant,
                         text: "Tool result from \(selectedTool.name): \(responseText)"
@@ -108,7 +108,7 @@ public final class MockAssistantTurnSession: AssistantTurnStreaming, @unchecked 
                     continuation.yield(.assistantMessageCompleted(fullMessage))
                 } else {
                     let response = "Echo: \(message.text)"
-                    for chunk in MockAssistantTurnSession.chunks(for: response) {
+                    for chunk in MockAgentTurnSession.chunks(for: response) {
                         continuation.yield(
                             .assistantMessageDelta(
                                 threadID: thread.id,
@@ -121,7 +121,7 @@ public final class MockAssistantTurnSession: AssistantTurnStreaming, @unchecked 
 
                     continuation.yield(
                         .assistantMessageCompleted(
-                            AssistantMessage(
+                            AgentMessage(
                                 threadID: thread.id,
                                 role: .assistant,
                                 text: response
@@ -132,10 +132,10 @@ public final class MockAssistantTurnSession: AssistantTurnStreaming, @unchecked 
 
                 continuation.yield(
                     .turnCompleted(
-                        AssistantTurnSummary(
+                        AgentTurnSummary(
                             threadID: thread.id,
                             turnID: turn.id,
-                            usage: AssistantUsage(
+                            usage: AgentUsage(
                                 inputTokens: message.text.count,
                                 cachedInputTokens: 0,
                                 outputTokens: 32

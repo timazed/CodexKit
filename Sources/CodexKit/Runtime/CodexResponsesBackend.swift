@@ -27,7 +27,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     }
 }
 
-public actor CodexResponsesBackend: AssistantBackend {
+public actor CodexResponsesBackend: AgentBackend {
     private let configuration: CodexResponsesBackendConfiguration
     private let urlSession: URLSession
     private let encoder = JSONEncoder()
@@ -41,21 +41,21 @@ public actor CodexResponsesBackend: AssistantBackend {
         self.urlSession = urlSession
     }
 
-    public func createThread(session _: ChatGPTSession) async throws -> AssistantThread {
-        AssistantThread(id: UUID().uuidString)
+    public func createThread(session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: UUID().uuidString)
     }
 
-    public func resumeThread(id: String, session _: ChatGPTSession) async throws -> AssistantThread {
-        AssistantThread(id: id)
+    public func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: id)
     }
 
     public func beginTurn(
-        thread: AssistantThread,
-        history: [AssistantMessage],
+        thread: AgentThread,
+        history: [AgentMessage],
         message: UserMessageRequest,
         tools: [ToolDefinition],
         session: ChatGPTSession
-    ) async throws -> any AssistantTurnStreaming {
+    ) async throws -> any AgentTurnStreaming {
         CodexResponsesTurnSession(
             configuration: configuration,
             urlSession: urlSession,
@@ -70,8 +70,8 @@ public actor CodexResponsesBackend: AssistantBackend {
     }
 }
 
-public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked Sendable {
-    public let events: AsyncThrowingStream<BackendTurnEvent, Error>
+final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
+    let events: AsyncThrowingStream<AgentBackendEvent, Error>
 
     private let pendingToolResults: PendingToolResults
 
@@ -80,15 +80,15 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
-        thread: AssistantThread,
-        history: [AssistantMessage],
+        thread: AgentThread,
+        history: [AgentMessage],
         message: UserMessageRequest,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) {
         let pendingToolResults = PendingToolResults()
         self.pendingToolResults = pendingToolResults
-        let turn = AssistantTurn(id: UUID().uuidString, threadID: thread.id)
+        let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
 
         events = AsyncThrowingStream { continuation in
             continuation.yield(.turnStarted(turn))
@@ -112,7 +112,7 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
 
                     continuation.yield(
                         .turnCompleted(
-                            AssistantTurnSummary(
+                            AgentTurnSummary(
                                 threadID: thread.id,
                                 turnID: turn.id,
                                 usage: usage
@@ -127,7 +127,7 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
         }
     }
 
-    public func submitToolResult(
+    func submitToolResult(
         _ result: ToolResultEnvelope,
         for invocationID: String
     ) async throws {
@@ -141,17 +141,17 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
         decoder: JSONDecoder,
         threadID: String,
         turnID: String,
-        history: [AssistantMessage],
+        history: [AgentMessage],
         newMessage: UserMessageRequest,
         tools: [ToolDefinition],
         session: ChatGPTSession,
         pendingToolResults: PendingToolResults,
-        continuation: AsyncThrowingStream<BackendTurnEvent, Error>.Continuation
-    ) async throws -> AssistantUsage {
+        continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
+    ) async throws -> AgentUsage {
         var workingHistory = history.map(WorkingHistoryItem.visibleMessage)
         workingHistory.append(
             .userMessage(
-                AssistantMessage(
+                AgentMessage(
                     threadID: threadID,
                     role: .user,
                     text: newMessage.text
@@ -159,7 +159,7 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
             )
         )
 
-        var aggregateUsage = AssistantUsage()
+        var aggregateUsage = AgentUsage()
         var shouldContinue = true
 
         while shouldContinue {
@@ -195,7 +195,7 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
                     )
 
                 case let .assistantMessage(text):
-                    let message = AssistantMessage(
+                    let message = AgentMessage(
                         threadID: threadID,
                         role: .assistant,
                         text: text
@@ -284,7 +284,7 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "responses_invalid_response",
                 message: "The ChatGPT responses endpoint returned an invalid response."
             )
@@ -294,9 +294,9 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
             let bodyData = try await readAll(bytes)
             let body = String(data: bodyData, encoding: .utf8) ?? "Unknown error"
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                throw AssistantRuntimeError.unauthorized(body)
+                throw AgentRuntimeError.unauthorized(body)
             }
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "responses_request_failed",
                 message: "The ChatGPT responses request failed with status \(httpResponse.statusCode): \(body)"
             )
@@ -403,16 +403,16 @@ public final class CodexResponsesTurnSession: AssistantTurnStreaming, @unchecked
             }
 
         case "response.completed":
-            let usage = envelope.response?.usage?.assistantUsage ?? AssistantUsage()
+            let usage = envelope.response?.usage?.assistantUsage ?? AgentUsage()
             return .completed(usage)
 
         case "response.failed":
             let message = envelope.response?.error?.message ?? "The ChatGPT responses stream failed."
-            throw AssistantRuntimeError(code: "responses_stream_failed", message: message)
+            throw AgentRuntimeError(code: "responses_stream_failed", message: message)
 
         case "response.incomplete":
             let reason = envelope.response?.incompleteDetails?.reason ?? "unknown"
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "responses_stream_incomplete",
                 message: "The ChatGPT responses stream completed early: \(reason)."
             )
@@ -468,9 +468,9 @@ private struct ResponsesRequestBody: Encodable {
 }
 
 private enum WorkingHistoryItem: Sendable {
-    case visibleMessage(AssistantMessage)
-    case userMessage(AssistantMessage)
-    case assistantMessage(AssistantMessage)
+    case visibleMessage(AgentMessage)
+    case userMessage(AgentMessage)
+    case assistantMessage(AgentMessage)
     case functionCall(FunctionCallRecord)
     case functionCallOutput(callID: String, output: String)
 
@@ -498,7 +498,7 @@ private enum WorkingHistoryItem: Sendable {
         }
     }
 
-    private static func messageJSONValue(for message: AssistantMessage) -> JSONValue {
+    private static func messageJSONValue(for message: AgentMessage) -> JSONValue {
         let contentType: JSONValue = switch message.role {
         case .assistant:
             .string("output_text")
@@ -549,7 +549,7 @@ private enum CodexResponsesStreamEvent: Sendable {
     case assistantTextDelta(String)
     case assistantMessage(String)
     case functionCall(FunctionCallRecord)
-    case completed(AssistantUsage)
+    case completed(AgentUsage)
 }
 
 private struct PendingToolResults: Sendable {
@@ -734,8 +734,8 @@ private struct StreamUsage: Decodable {
         case outputTokens = "output_tokens"
     }
 
-    var assistantUsage: AssistantUsage {
-        AssistantUsage(
+    var assistantUsage: AgentUsage {
+        AgentUsage(
             inputTokens: inputTokens,
             cachedInputTokens: inputTokensDetails?.cachedTokens ?? 0,
             outputTokens: outputTokens

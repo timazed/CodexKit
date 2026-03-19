@@ -1,34 +1,34 @@
 import CodexKit
+import CodexKitUI
 import Foundation
 #if canImport(AuthenticationServices)
 import AuthenticationServices
 #endif
 
-public enum AssistantDemoRuntimeFactory {
+public enum AgentDemoRuntimeFactory {
     @MainActor
-    public static func make() -> (runtime: AgentRuntime, viewModel: AssistantDemoViewModel) {
+    public static func make() -> (runtime: AgentRuntime, viewModel: AgentDemoViewModel) {
         makeMock()
     }
 
     @MainActor
-    public static func makeMock() -> (runtime: AgentRuntime, viewModel: AssistantDemoViewModel) {
+    public static func makeMock() -> (runtime: AgentRuntime, viewModel: AgentDemoViewModel) {
         let approvalInbox = ApprovalInbox()
-        let deviceCodeSignIn = DeviceCodeSignInCoordinator()
-        let bridge = HostBridge(
+        let deviceCodePromptCoordinator = DeviceCodePromptCoordinator()
+        let runtime = try! AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
                 service: "CodexKitDemo.ChatGPTSession",
                 account: "demo"
             ),
-            backend: InMemoryAssistantBackend(),
+            backend: InMemoryAgentBackend(),
             approvalPresenter: approvalInbox,
             stateStore: InMemoryRuntimeStateStore()
-        )
-        let runtime = AgentRuntime(hostBridge: bridge)
-        let viewModel = AssistantDemoViewModel(
+        ))
+        let viewModel = AgentDemoViewModel(
             runtime: runtime,
             approvalInbox: approvalInbox,
-            deviceCodeSignIn: deviceCodeSignIn
+            deviceCodePromptCoordinator: deviceCodePromptCoordinator
         )
         return (runtime, viewModel)
     }
@@ -41,13 +41,13 @@ public enum AssistantDemoRuntimeFactory {
         model: String = "gpt-5",
         stateURL: URL? = nil,
         keychainAccount: String = "live"
-    ) -> (runtime: AgentRuntime, viewModel: AssistantDemoViewModel) {
+    ) -> (runtime: AgentRuntime, viewModel: AgentDemoViewModel) {
         let approvalInbox = ApprovalInbox()
-        let deviceCodeSignIn = DeviceCodeSignInCoordinator()
-        let bridge = HostBridge(
+        let deviceCodePromptCoordinator = DeviceCodePromptCoordinator()
+        let runtime = try! AgentRuntime(configuration: .init(
             authProvider: ChatGPTDeviceCodeAuthProvider(
                 configuration: ChatGPTOAuthConfiguration(redirectURI: redirectURI),
-                presenter: deviceCodeSignIn
+                presenter: deviceCodePromptCoordinator
             ),
             secureStore: KeychainSessionSecureStore(
                 service: "CodexKitDemo.ChatGPTSession",
@@ -58,12 +58,11 @@ public enum AssistantDemoRuntimeFactory {
             ),
             approvalPresenter: approvalInbox,
             stateStore: FileRuntimeStateStore(url: stateURL ?? defaultStateURL())
-        )
-        let runtime = AgentRuntime(hostBridge: bridge)
-        let viewModel = AssistantDemoViewModel(
+        ))
+        let viewModel = AgentDemoViewModel(
             runtime: runtime,
             approvalInbox: approvalInbox,
-            deviceCodeSignIn: deviceCodeSignIn
+            deviceCodePromptCoordinator: deviceCodePromptCoordinator
         )
         return (runtime, viewModel)
     }

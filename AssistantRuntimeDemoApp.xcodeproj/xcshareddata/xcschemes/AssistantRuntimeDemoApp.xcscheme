@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "D884A861EC4D5135C5485DD0"
+               BlueprintIdentifier = "B2A1235F4A8EF23FADDC18B7"
                BuildableName = "AssistantRuntimeDemoApp.app"
                BlueprintName = "AssistantRuntimeDemoApp"
                ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
@@ -30,7 +30,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "D884A861EC4D5135C5485DD0"
+            BlueprintIdentifier = "B2A1235F4A8EF23FADDC18B7"
             BuildableName = "AssistantRuntimeDemoApp.app"
             BlueprintName = "AssistantRuntimeDemoApp"
             ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
@@ -53,7 +53,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "D884A861EC4D5135C5485DD0"
+            BlueprintIdentifier = "B2A1235F4A8EF23FADDC18B7"
             BuildableName = "AssistantRuntimeDemoApp.app"
             BlueprintName = "AssistantRuntimeDemoApp"
             ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
@@ -70,7 +70,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "D884A861EC4D5135C5485DD0"
+            BlueprintIdentifier = "B2A1235F4A8EF23FADDC18B7"
             BuildableName = "AssistantRuntimeDemoApp.app"
             BlueprintName = "AssistantRuntimeDemoApp"
             ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">

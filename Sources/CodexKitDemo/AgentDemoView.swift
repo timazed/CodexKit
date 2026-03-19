@@ -1,13 +1,14 @@
 import CodexKit
+import CodexKitUI
 import Foundation
 import Observation
 import SwiftUI
 
 @available(iOS 17.0, macOS 14.0, *)
-public struct AssistantDemoView: View {
-    @State private var viewModel: AssistantDemoViewModel
+public struct AgentDemoView: View {
+    @State private var viewModel: AgentDemoViewModel
 
-    public init(viewModel: AssistantDemoViewModel) {
+    public init(viewModel: AgentDemoViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
 
@@ -41,7 +42,7 @@ public struct AssistantDemoView: View {
     private var header: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Assistant Runtime Demo")
+                Text("Agent Runtime Demo")
                     .font(.title2.weight(.semibold))
 
                 if let session = viewModel.session {
@@ -125,12 +126,12 @@ public struct AssistantDemoView: View {
                     )
                 }
 
-                if !viewModel.streamingAssistantText.isEmpty {
+                if !viewModel.streamingText.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Assistant")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        Text(viewModel.streamingAssistantText)
+                        Text(viewModel.streamingText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(12)
@@ -146,7 +147,7 @@ public struct AssistantDemoView: View {
 
     private var composer: some View {
         HStack(spacing: 12) {
-            TextField("Message the assistant", text: $viewModel.composerText, axis: .vertical)
+            TextField("Message the agent", text: $viewModel.composerText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1 ... 4)
 
@@ -180,7 +181,7 @@ public struct AssistantDemoView: View {
 
     private var deviceCodePromptBinding: Binding<ChatGPTDeviceCodePrompt?> {
         Binding(
-            get: { viewModel.deviceCodeSignIn.currentPrompt },
+            get: { viewModel.deviceCodePromptCoordinator.currentPrompt },
             set: { _ in }
         )
     }

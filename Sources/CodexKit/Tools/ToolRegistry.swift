@@ -14,7 +14,7 @@ public enum ToolRegistryError: Error, LocalizedError, Sendable {
     }
 }
 
-public actor ToolRegistry {
+actor ToolRegistry {
     private struct Entry: Sendable {
         let definition: ToolDefinition
         let executor: AnyToolExecutor
@@ -22,9 +22,24 @@ public actor ToolRegistry {
 
     private var entries: [String: Entry] = [:]
 
-    public init() {}
+    init(initialTools: [AgentRuntime.ToolRegistration] = []) throws {
+        for tool in initialTools {
+            guard ToolDefinition.isValidName(tool.definition.name) else {
+                throw ToolRegistryError.invalidToolName(tool.definition.name)
+            }
 
-    public func register(
+            guard entries[tool.definition.name] == nil else {
+                throw ToolRegistryError.duplicateTool(tool.definition.name)
+            }
+
+            entries[tool.definition.name] = Entry(
+                definition: tool.definition,
+                executor: tool.executor
+            )
+        }
+    }
+
+    func register(
         _ definition: ToolDefinition,
         executor: AnyToolExecutor
     ) throws {
@@ -39,7 +54,7 @@ public actor ToolRegistry {
         entries[definition.name] = Entry(definition: definition, executor: executor)
     }
 
-    public func replace(
+    func replace(
         _ definition: ToolDefinition,
         executor: AnyToolExecutor
     ) throws {
@@ -50,17 +65,17 @@ public actor ToolRegistry {
         entries[definition.name] = Entry(definition: definition, executor: executor)
     }
 
-    public func definition(named name: String) -> ToolDefinition? {
+    func definition(named name: String) -> ToolDefinition? {
         entries[name]?.definition
     }
 
-    public func allDefinitions() -> [ToolDefinition] {
+    func allDefinitions() -> [ToolDefinition] {
         entries.values
             .map(\.definition)
             .sorted { $0.name < $1.name }
     }
 
-    public func execute(
+    func execute(
         _ invocation: ToolInvocation,
         session: ChatGPTSession?
     ) async -> ToolResultEnvelope {

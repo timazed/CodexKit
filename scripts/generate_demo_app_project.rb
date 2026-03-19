@@ -25,6 +25,7 @@ deployment_target = "17.0"
 
 app_target = project.new_target(:application, "AssistantRuntimeDemoApp", :ios, deployment_target)
 kit_target = project.new_target(:framework, "CodexKit", :ios, deployment_target)
+ui_target = project.new_target(:framework, "CodexKitUI", :ios, deployment_target)
 demo_target = project.new_target(:framework, "CodexKitDemo", :ios, deployment_target)
 
 sources_group = project.main_group.find_subpath("Sources", true)
@@ -34,6 +35,7 @@ project.main_group.set_source_tree("<group>")
 
 [
   [kit_target, "Sources/CodexKit", sources_group.find_subpath("CodexKit", true)],
+  [ui_target, "Sources/CodexKitUI", sources_group.find_subpath("CodexKitUI", true)],
   [demo_target, "Sources/CodexKitDemo", sources_group.find_subpath("CodexKitDemo", true)],
   [app_target, "DemoApp/AssistantRuntimeDemoApp", demo_app_group.find_subpath("AssistantRuntimeDemoApp", true)],
 ].each do |target, relative_root, group|
@@ -50,7 +52,7 @@ info_plist_ref = demo_app_group.find_subpath("AssistantRuntimeDemoApp", true).ne
 script_ref = scripts_group.new_file("scripts/generate_demo_app_project.rb")
 script_ref.include_in_index = "0"
 
-[kit_target, demo_target, app_target].each do |target|
+[kit_target, ui_target, demo_target, app_target].each do |target|
   target.build_configurations.each do |config|
     config.build_settings["SWIFT_VERSION"] = "6.0"
     config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = deployment_target
@@ -62,7 +64,7 @@ script_ref.include_in_index = "0"
   end
 end
 
-[kit_target, demo_target].each do |target|
+[kit_target, ui_target, demo_target].each do |target|
   target.build_configurations.each do |config|
     config.build_settings["GENERATE_INFOPLIST_FILE"] = "YES"
     config.build_settings["SKIP_INSTALL"] = "NO"
@@ -81,19 +83,26 @@ app_target.build_configurations.each do |config|
   config.build_settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = ""
 end
 
+ui_target.add_dependency(kit_target)
+ui_target.frameworks_build_phase.add_file_reference(kit_target.product_reference)
+
 demo_target.add_dependency(kit_target)
+demo_target.add_dependency(ui_target)
 demo_target.frameworks_build_phase.add_file_reference(kit_target.product_reference)
+demo_target.frameworks_build_phase.add_file_reference(ui_target.product_reference)
 
 app_target.add_dependency(demo_target)
 app_target.add_dependency(kit_target)
+app_target.add_dependency(ui_target)
 app_target.frameworks_build_phase.add_file_reference(demo_target.product_reference)
 app_target.frameworks_build_phase.add_file_reference(kit_target.product_reference)
+app_target.frameworks_build_phase.add_file_reference(ui_target.product_reference)
 
 embed_phase = app_target.copy_files_build_phases.find { |phase| phase.name == "Embed Frameworks" } ||
   app_target.new_copy_files_build_phase("Embed Frameworks")
 embed_phase.symbol_dst_subfolder_spec = :frameworks
 
-[demo_target, kit_target].each do |target|
+[demo_target, ui_target, kit_target].each do |target|
   build_file = embed_phase.add_file_reference(target.product_reference)
   build_file.settings = { "ATTRIBUTES" => ["CodeSignOnCopy", "RemoveHeadersOnCopy"] }
 end

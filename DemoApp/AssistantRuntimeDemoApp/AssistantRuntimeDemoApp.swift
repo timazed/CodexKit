@@ -3,10 +3,10 @@ import SwiftUI
 
 @main
 struct AssistantRuntimeDemoApp: App {
-    @State private var viewModel: AssistantDemoViewModel
+    @State private var viewModel: AgentDemoViewModel
 
     init() {
-        let runtime = AssistantDemoRuntimeFactory.makeLive(
+        let runtime = AgentDemoRuntimeFactory.makeLive(
             redirectURI: URL(string: "assistantdemoapp://oauth/callback")!,
             keychainAccount: "AssistantRuntimeDemoApp"
         )
@@ -16,7 +16,7 @@ struct AssistantRuntimeDemoApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                AssistantDemoView(viewModel: viewModel)
+                AgentDemoView(viewModel: viewModel)
                     .navigationTitle("ChatGPT Demo")
             }
         }

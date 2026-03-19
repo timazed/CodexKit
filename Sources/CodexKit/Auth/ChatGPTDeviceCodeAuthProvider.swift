@@ -72,7 +72,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
         reason _: ChatGPTAuthRefreshReason
     ) async throws -> ChatGPTSession {
         guard let refreshToken = session.refreshToken, !refreshToken.isEmpty else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "missing_refresh_token",
                 message: "This ChatGPT session cannot be refreshed because no refresh token is available."
             )
@@ -126,7 +126,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
 
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw AssistantRuntimeError(
+                throw AgentRuntimeError(
                     code: "device_code_invalid_response",
                     message: "The ChatGPT device-code login returned an invalid response."
                 )
@@ -142,13 +142,13 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
             }
 
             let body = simplifyAuthErrorBody(data)
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "device_code_poll_failed",
                 message: "ChatGPT device-code login failed with status \(httpResponse.statusCode): \(body)"
             )
         }
 
-        throw AssistantRuntimeError(
+        throw AgentRuntimeError(
             code: "device_code_timed_out",
             message: "ChatGPT device-code login timed out before authorization completed."
         )
@@ -200,7 +200,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
     ) async throws -> T {
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_token_response_invalid",
                 message: "The ChatGPT token exchange returned an invalid response."
             )
@@ -208,7 +208,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = simplifyAuthErrorBody(data)
-            throw AssistantRuntimeError(
+            throw AgentRuntimeError(
                 code: "oauth_token_exchange_failed",
                 message: "ChatGPT request failed with status \(httpResponse.statusCode): \(body)"
             )

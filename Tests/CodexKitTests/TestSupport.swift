@@ -34,7 +34,7 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
 
         func dequeue() throws -> StubResponse {
             guard !queuedResponses.isEmpty else {
-                throw AssistantRuntimeError(
+                throw AgentRuntimeError(
                     code: "missing_test_stub",
                     message: "No queued URLProtocol stub was available."
                 )
@@ -120,7 +120,7 @@ func requestBodyData(for request: URLRequest) throws -> Data? {
     while stream.hasBytesAvailable {
         let count = stream.read(&buffer, maxLength: buffer.count)
         if count < 0 {
-            throw stream.streamError ?? AssistantRuntimeError(
+            throw stream.streamError ?? AgentRuntimeError(
                 code: "request_body_read_failed",
                 message: "Failed to read the stubbed request body."
             )
