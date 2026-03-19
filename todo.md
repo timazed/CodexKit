@@ -10,33 +10,33 @@
 
 ## In Progress
 
-- [ ] Initialize local git history and checkpoint the current scaffold
-- [ ] Replace the mock-only gaps with a production-oriented path where possible
+- [x] Initialize local git history and checkpoint the current scaffold
+- [x] Replace the mock-only gaps with a production-oriented path where possible
+- [x] Land a real Apple-platform ChatGPT OAuth adapter
+- [x] Land a ChatGPT Codex responses transport with streamed tool-call continuation
+- [ ] Validate the live path in a real iOS app session
 
 ## Remaining Work To Reach The Original Goal
 
-- [ ] Implement a real iOS-native ChatGPT auth adapter based on Codex auth flow concepts
-- [ ] Replace desktop localhost login assumptions with `ASWebAuthenticationSession`
-- [ ] Add a production-oriented backend transport interface implementation beyond the in-memory demo backend
-- [ ] Decide and implement the minimum real assistant thread/message backend protocol for the iOS runtime
+- [ ] Verify the Apple-platform OAuth flow against a live ChatGPT sign-in on-device
+- [ ] Verify the ChatGPT Codex responses transport against a live account/session
 - [ ] Add SwiftUI demo bindings that visibly stream responses and present approvals
 - [ ] Persist runtime thread/message state across launches in a host-appropriate way
 - [ ] Expand tests around auth restoration, approval denial, thread resume, and tool result round-trips
 - [ ] Reassess whether the runtime truly satisfies:
-  - [ ] real ChatGPT sign-in
-  - [ ] secure session persistence
-  - [ ] create thread
-  - [ ] resume thread
-  - [ ] send user message
-  - [ ] stream assistant output
-  - [ ] register app-defined tool
-  - [ ] require approval
-  - [ ] execute approved tool and feed the result back into the thread
+  - [x] real ChatGPT sign-in implementation path exists
+  - [x] secure session persistence
+  - [x] create thread
+  - [x] resume thread
+  - [x] send user message
+  - [x] stream assistant output
+  - [x] register app-defined tool
+  - [x] require approval
+  - [x] execute approved tool and feed the result back into the thread
+  - [ ] live on-device validation completed
 
 ## Risks / Unknowns
 
-- Real ChatGPT sign-in may require assumptions about upstream OAuth behavior that need careful validation.
-- A truly non-mock runtime backend may require either:
-  - a direct network protocol compatible with ChatGPT-authenticated Codex services, or
-  - a thin service layer we define and document.
-- The current repo is a Swift package, not yet an Xcode demo app project.
+- Real ChatGPT sign-in may still require one or two live validation adjustments around callback configuration or originator handling.
+- The backend transport can be implemented directly against `chatgpt.com/backend-api/codex/responses`, but live verification still depends on a real ChatGPT account session.
+- The current repo is a Swift package, not yet a full Xcode demo app project.

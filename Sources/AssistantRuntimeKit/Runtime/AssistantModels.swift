@@ -23,6 +23,10 @@ public struct AssistantRuntimeError: Error, LocalizedError, Equatable, Sendable 
             message: "The assistant thread \(threadID) could not be found."
         )
     }
+
+    public static func unauthorized(_ message: String = "The ChatGPT session is no longer authorized.") -> AssistantRuntimeError {
+        AssistantRuntimeError(code: "unauthorized", message: message)
+    }
 }
 
 public enum AssistantRole: String, Codable, Hashable, Sendable {

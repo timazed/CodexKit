@@ -22,6 +22,13 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
         self.approvalInbox = approvalInbox
     }
 
+    public var activeThread: AssistantThread? {
+        guard let activeThreadID else {
+            return nil
+        }
+        return threads.first { $0.id == activeThreadID }
+    }
+
     public func restore() async {
         do {
             _ = try await runtime.restore()
@@ -39,6 +46,7 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
     public func signIn() async {
         do {
             session = try await runtime.signIn()
+            threads = await runtime.threads()
         } catch {
             lastError = error.localizedDescription
         }
@@ -83,6 +91,12 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    public func activateThread(id: String) async {
+        activeThreadID = id
+        messages = await runtime.messages(for: id)
+        streamingAssistantText = ""
     }
 
     public func sendComposerText() async {
@@ -169,5 +183,9 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
 
     public func denyPendingRequest() {
         approvalInbox.denyCurrent()
+    }
+
+    public func dismissError() {
+        lastError = nil
     }
 }

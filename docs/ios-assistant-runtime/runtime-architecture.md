@@ -92,9 +92,12 @@ Aggregates the host-owned dependencies required by the runtime:
 Provides demo-only pieces:
 
 - mock ChatGPT auth provider
+- real ChatGPT auth factory for Apple platforms
 - in-memory assistant backend
+- live `CodexResponsesBackend` factory wiring
 - SwiftUI approval inbox
 - SwiftUI-friendly runtime view model
+- SwiftUI demo screen
 
 ## Public API Surface
 
@@ -132,6 +135,9 @@ public actor ToolRegistry
 public actor ApprovalCoordinator
 public actor AgentRuntime
 public struct HostBridge
+public actor CodexResponsesBackend
+public struct ChatGPTOAuthConfiguration
+public final class ChatGPTOAuthProvider
 ```
 
 ## Event Model
@@ -200,6 +206,14 @@ Each tool registers:
 5. runtime returns a normalized result envelope to the backend
 6. backend continues the assistant turn
 
+In the current implementation, `CodexResponsesBackend` performs this continuation by:
+
+1. streaming `chatgpt.com/backend-api/codex/responses`
+2. surfacing `function_call` items to the runtime
+3. waiting for approved host tool execution
+4. appending `function_call_output`
+5. issuing the follow-up responses request within the same turn
+
 ### Result Envelope
 
 Normalized result shape:
@@ -258,6 +272,15 @@ This is separate from auth persistence.
 ### Auth persistence
 
 - secure store only
+
+## Current Implementation Status
+
+The repo now includes both:
+
+- a deterministic mock path for tests and previews
+- a production-oriented path for real ChatGPT OAuth plus direct Codex responses streaming
+
+What remains outside the repo is live, on-device validation against a real ChatGPT account session.
 - Keychain by default
 
 ### Runtime persistence

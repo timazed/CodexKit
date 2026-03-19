@@ -24,6 +24,7 @@ public actor InMemoryAssistantBackend: AssistantBackend {
 
     public func beginTurn(
         thread: AssistantThread,
+        history _: [AssistantMessage],
         message: UserMessageRequest,
         tools: [ToolDefinition],
         session _: ChatGPTSession

@@ -33,13 +33,13 @@ Flow:
 - runtime treats tokens as externally managed
 - on unauthorized, runtime asks host for a refreshed token
 
-For iOS, the second model is the correct foundation.
+For iOS, the same upstream auth primitives are reusable, but the browser transport must be replaced.
 
 ## Recommended iOS Adaptation
 
 ## Design Principle
 
-The iOS host app should own the auth UX.
+The iOS host app should own the auth UX entry point and secure-storage policy.
 
 The runtime should own:
 
@@ -50,21 +50,21 @@ The runtime should own:
 
 The host app should own:
 
-- browser/session presentation
-- callback handling
-- any app-specific sign-in UI
+- app-specific sign-in entry UI
+- redirect URI registration
+- any app-specific account/session policy
 
 ## Proposed Flow
 
-1. host app starts ChatGPT sign-in using `ASWebAuthenticationSession`
-2. auth callback returns to the app via custom URL scheme or universal link
-3. host exchanges auth code for tokens
-4. host hands the resulting `ChatGPTSession` to `ChatGPTSessionManager`
-5. runtime persists the session in Keychain
+1. host app creates a `ChatGPTOAuthProvider` with its redirect URI
+2. runtime starts sign-in using `ASWebAuthenticationSession`
+3. callback returns to the app via custom URL scheme or universal link
+4. runtime exchanges code for tokens against `https://auth.openai.com/oauth/token`
+5. runtime persists the resulting `ChatGPTSession` in Keychain
 6. runtime uses the session for backend calls
-7. if backend returns unauthorized, runtime asks the host auth provider to refresh
+7. if the session is near expiry, `ChatGPTSessionManager` refreshes before use
 
-This mirrors Codex’s external-auth bridge while replacing the desktop login transport.
+This keeps the Codex PKCE/token flow while replacing the desktop localhost callback transport.
 
 ## Replaced Desktop Assumptions
 
@@ -142,7 +142,12 @@ Codex’s `AuthManager` already provides the right mental model:
 
 ### iOS runtime rule
 
-If the runtime is using host-managed ChatGPT auth, it should never perform desktop-style token exchange internally. It should call:
+The runtime should support both modes:
+
+- a built-in PKCE code exchange for normal iOS sign-in
+- host-provided refresh behavior when an app wants to fully externalize auth
+
+For externally managed auth, it should call:
 
 ```swift
 authProvider.refresh(session:reason:)
@@ -179,21 +184,23 @@ The runtime should normalize these into user-displayable, non-transport-specific
 
 ## First Prototype in This Repo
 
-This scaffold includes:
+This implementation now includes:
 
 - `ChatGPTSession`
 - `ChatGPTAuthProviding`
 - `SessionSecureStoring`
 - `KeychainSessionSecureStore`
 - `ChatGPTSessionManager`
+- `ChatGPTOAuthProvider`
+- `SystemChatGPTWebAuthenticationProvider`
 
-The demo target uses a mock auth provider so the runtime can be exercised end-to-end today.
+The demo target still includes a mock auth provider for deterministic tests and previews, but the core package now also contains a real Apple-platform OAuth path.
 
-The production iOS adapter still needs to be implemented around:
+The remaining work is live validation in a real app target:
 
-- `ASWebAuthenticationSession`
-- the actual ChatGPT auth exchange endpoints
-- callback parsing and token handoff
+- confirm the chosen redirect URI is registered correctly
+- confirm the Codex-compatible originator value is accepted for the target app flow
+- confirm refresh behavior against a real ChatGPT account session
 
 ## Bottom Line
 

@@ -18,6 +18,7 @@ public protocol AssistantBackend: Sendable {
     func resumeThread(id: String, session: ChatGPTSession) async throws -> AssistantThread
     func beginTurn(
         thread: AssistantThread,
+        history: [AssistantMessage],
         message: UserMessageRequest,
         tools: [ToolDefinition],
         session: ChatGPTSession

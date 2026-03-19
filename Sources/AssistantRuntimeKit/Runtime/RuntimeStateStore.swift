@@ -55,9 +55,8 @@ public actor FileRuntimeStateStore: RuntimeStateStoring {
     }
 
     public func saveState(_ state: StoredRuntimeState) async throws {
-        if let directory = url.deletingLastPathComponent().path(percentEncoded: false).isEmpty
-            ? nil
-            : url.deletingLastPathComponent() {
+        let directory = url.deletingLastPathComponent()
+        if !directory.path.isEmpty {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true

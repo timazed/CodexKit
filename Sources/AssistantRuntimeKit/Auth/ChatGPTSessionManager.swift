@@ -34,7 +34,7 @@ public actor ChatGPTSessionManager {
 
     @discardableResult
     public func refresh(reason: ChatGPTAuthRefreshReason) async throws -> ChatGPTSession {
-        let current = try requireSession()
+        let current = try requireStoredSession()
         let refreshed = try await authProvider.refresh(session: current, reason: reason)
         try secureStore.saveSession(refreshed)
         session = refreshed
@@ -48,7 +48,17 @@ public actor ChatGPTSessionManager {
         await authProvider.signOut(session: current)
     }
 
-    public func requireSession() throws -> ChatGPTSession {
+    public func requireSession() async throws -> ChatGPTSession {
+        guard let session else {
+            throw AssistantRuntimeError.signedOut()
+        }
+        if session.requiresRefresh() {
+            return try await refresh(reason: .unauthorized)
+        }
+        return session
+    }
+
+    private func requireStoredSession() throws -> ChatGPTSession {
         guard let session else {
             throw AssistantRuntimeError.signedOut()
         }

@@ -26,6 +26,7 @@ public struct ChatGPTAccount: Codable, Hashable, Sendable {
 public struct ChatGPTSession: Codable, Hashable, Sendable {
     public var accessToken: String
     public var refreshToken: String?
+    public var idToken: String?
     public var account: ChatGPTAccount
     public var acquiredAt: Date
     public var expiresAt: Date?
@@ -34,6 +35,7 @@ public struct ChatGPTSession: Codable, Hashable, Sendable {
     public init(
         accessToken: String,
         refreshToken: String? = nil,
+        idToken: String? = nil,
         account: ChatGPTAccount,
         acquiredAt: Date = Date(),
         expiresAt: Date? = nil,
@@ -41,10 +43,21 @@ public struct ChatGPTSession: Codable, Hashable, Sendable {
     ) {
         self.accessToken = accessToken
         self.refreshToken = refreshToken
+        self.idToken = idToken
         self.account = account
         self.acquiredAt = acquiredAt
         self.expiresAt = expiresAt
         self.isExternallyManaged = isExternallyManaged
+    }
+
+    public func requiresRefresh(
+        referenceDate: Date = Date(),
+        skew: TimeInterval = 120
+    ) -> Bool {
+        guard let expiresAt else {
+            return false
+        }
+        return expiresAt.timeIntervalSince(referenceDate) <= skew
     }
 }
 

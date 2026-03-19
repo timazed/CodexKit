@@ -97,6 +97,7 @@ public actor AgentRuntime {
             role: .user,
             text: request.text
         )
+        let priorMessages = state.messagesByThread[threadID] ?? []
 
         try await appendMessage(userMessage)
         try await setThreadStatus(.streaming, for: threadID)
@@ -104,6 +105,7 @@ public actor AgentRuntime {
         let tools = await toolRegistry.allDefinitions()
         let turnStream = try await backend.beginTurn(
             thread: thread,
+            history: priorMessages,
             message: request,
             tools: tools,
             session: session
