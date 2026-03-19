@@ -11,6 +11,12 @@ ruby scripts/generate_demo_app_project.rb
 open AssistantRuntimeDemoApp.xcodeproj
 ```
 
+If you want a custom bundle identifier for device installs, generate the project with:
+
+```sh
+ASSISTANT_RUNTIME_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_project.rb
+```
+
 ## What the app does
 
 - launches a SwiftUI chat screen

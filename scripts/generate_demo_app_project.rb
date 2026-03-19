@@ -5,6 +5,9 @@ require "xcodeproj"
 
 ROOT = File.expand_path("..", __dir__)
 PROJECT_PATH = File.join(ROOT, "AssistantRuntimeDemoApp.xcodeproj")
+DEFAULT_BUNDLE_ID = "ai.assistantruntime.demoapp"
+bundle_id = ENV.fetch("ASSISTANT_RUNTIME_DEMO_BUNDLE_ID", DEFAULT_BUNDLE_ID)
+bundle_id = bundle_id.gsub(/[^A-Za-z0-9.]/, "").downcase
 
 FileUtils.rm_rf(PROJECT_PATH)
 
@@ -58,7 +61,7 @@ end
     config.build_settings["GENERATE_INFOPLIST_FILE"] = "YES"
     config.build_settings["SKIP_INSTALL"] = "NO"
     config.build_settings["DEFINES_MODULE"] = "YES"
-    config.build_settings["PRODUCT_BUNDLE_IDENTIFIER"] = "com.example.#{target.name}"
+    config.build_settings["PRODUCT_BUNDLE_IDENTIFIER"] = "#{bundle_id}.#{target.name.downcase}"
     config.build_settings["PRODUCT_NAME"] = "$(TARGET_NAME)"
     config.build_settings["MACH_O_TYPE"] = "mh_dylib"
   end
@@ -66,7 +69,7 @@ end
 
 app_target.build_configurations.each do |config|
   config.build_settings["INFOPLIST_FILE"] = "DemoApp/AssistantRuntimeDemoApp/Info.plist"
-  config.build_settings["PRODUCT_BUNDLE_IDENTIFIER"] = "com.example.AssistantRuntimeDemoApp"
+  config.build_settings["PRODUCT_BUNDLE_IDENTIFIER"] = bundle_id
   config.build_settings["PRODUCT_NAME"] = "$(TARGET_NAME)"
   config.build_settings["LD_RUNPATH_SEARCH_PATHS"] = ["$(inherited)", "@executable_path/Frameworks"]
   config.build_settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = ""
