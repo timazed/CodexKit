@@ -40,42 +40,92 @@ struct AgentDemoView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Agent Runtime Demo")
-                    .font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Agent Runtime Demo")
+                        .font(.title2.weight(.semibold))
 
-                if let session = viewModel.session {
-                    Text("Signed in as \(session.account.email)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Sign in with ChatGPT to start a live thread.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            Button("Register Tool") {
-                Task {
-                    await viewModel.registerDemoTool()
-                }
-            }
-            .buttonStyle(.bordered)
-
-            Button(viewModel.session == nil ? "Sign In" : "New Thread") {
-                Task {
-                    if viewModel.session == nil {
-                        await viewModel.signIn()
+                    if let session = viewModel.session {
+                        Text("Signed in as \(session.account.email)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     } else {
-                        await viewModel.createThread()
+                        Text("Choose a ChatGPT auth flow to start a live thread.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
+
+                Spacer()
             }
-            .buttonStyle(.borderedProminent)
+
+            ViewThatFits(in: .horizontal) {
+                headerActions
+                VStack(alignment: .leading, spacing: 8) {
+                    headerActions
+                }
+            }
         }
+    }
+
+    private var headerActions: some View {
+        Group {
+            if viewModel.session == nil {
+                HStack(spacing: 12) {
+                    registerToolButton
+                    signInButton(for: .deviceCode)
+                    signInButton(for: .browserOAuth)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    registerToolButton
+                    Button("New Thread") {
+                        Task {
+                            await viewModel.createThread()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Log Out") {
+                        Task {
+                            await viewModel.signOut()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    private var registerToolButton: some View {
+        Button("Register Tool") {
+            Task {
+                await viewModel.registerDemoTool()
+            }
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func signInButton(for authenticationMethod: DemoAuthenticationMethod) -> some View {
+        Group {
+            if authenticationMethod == .deviceCode {
+                Button(viewModel.isAuthenticating ? "Signing In..." : authenticationMethod.buttonTitle) {
+                    Task {
+                        await viewModel.signIn(using: authenticationMethod)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button(viewModel.isAuthenticating ? "Signing In..." : authenticationMethod.buttonTitle) {
+                    Task {
+                        await viewModel.signIn(using: authenticationMethod)
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .disabled(viewModel.isAuthenticating)
     }
 
     private var threadStrip: some View {
@@ -157,7 +207,10 @@ struct AgentDemoView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(viewModel.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(
+                viewModel.session == nil ||
+                    viewModel.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
         }
     }
 

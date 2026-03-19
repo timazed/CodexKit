@@ -11,20 +11,34 @@ final class AgentDemoViewModel: @unchecked Sendable {
     private(set) var messages: [AgentMessage] = []
     private(set) var streamingText = ""
     private(set) var lastError: String?
+    private(set) var isAuthenticating = false
     var composerText = ""
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
 
-    private let runtime: AgentRuntime
+    private let redirectURI: URL
+    private let model: String
+    private let stateURL: URL?
+    private let keychainAccount: String
+
+    private var runtime: AgentRuntime
     private var activeThreadID: String?
 
     init(
         runtime: AgentRuntime,
+        redirectURI: URL,
+        model: String,
+        stateURL: URL?,
+        keychainAccount: String,
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
     ) {
         self.runtime = runtime
+        self.redirectURI = redirectURI
+        self.model = model
+        self.stateURL = stateURL
+        self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
         self.deviceCodePromptCoordinator = deviceCodePromptCoordinator
     }
@@ -39,21 +53,39 @@ final class AgentDemoViewModel: @unchecked Sendable {
     func restore() async {
         do {
             _ = try await runtime.restore()
-            threads = await runtime.threads()
-            if let firstThread = threads.first {
-                activeThreadID = firstThread.id
-                messages = await runtime.messages(for: firstThread.id)
-            }
-            session = await runtime.currentSession()
+            await registerDemoTool()
+            await refreshSnapshot()
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    func signIn() async {
+    func signIn(using authenticationMethod: DemoAuthenticationMethod) async {
+        guard !isAuthenticating else {
+            return
+        }
+
+        isAuthenticating = true
+        lastError = nil
+        runtime = AgentDemoRuntimeFactory.makeRuntime(
+            authenticationMethod: authenticationMethod,
+            redirectURI: redirectURI,
+            model: model,
+            stateURL: stateURL,
+            keychainAccount: keychainAccount,
+            approvalInbox: approvalInbox,
+            deviceCodePromptCoordinator: deviceCodePromptCoordinator
+        )
+
+        defer {
+            isAuthenticating = false
+        }
+
         do {
+            _ = try await runtime.restore()
+            await registerDemoTool()
             session = try await runtime.signIn()
-            threads = await runtime.threads()
+            await refreshSnapshot()
         } catch {
             lastError = error.localizedDescription
         }
@@ -198,5 +230,40 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     func dismissError() {
         lastError = nil
+    }
+
+    func signOut() async {
+        do {
+            try await runtime.signOut()
+            await deviceCodePromptCoordinator.clear()
+            session = nil
+            threads = []
+            messages = []
+            streamingText = ""
+            composerText = ""
+            activeThreadID = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func refreshSnapshot() async {
+        session = await runtime.currentSession()
+        threads = await runtime.threads()
+
+        let selectedThreadID = activeThreadID
+        if let selectedThreadID,
+           threads.contains(where: { $0.id == selectedThreadID }) {
+            messages = await runtime.messages(for: selectedThreadID)
+            return
+        }
+
+        if let firstThread = threads.first {
+            activeThreadID = firstThread.id
+            messages = await runtime.messages(for: firstThread.id)
+        } else {
+            activeThreadID = nil
+            messages = []
+        }
     }
 }

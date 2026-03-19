@@ -17,13 +17,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AgentDemoViewModel.swift; path = AssistantRuntimeDemoApp/Shared/AgentDemoViewModel.swift; sourceTree = "<group>"; };
-		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AgentDemoView.swift; path = AssistantRuntimeDemoApp/Shared/AgentDemoView.swift; sourceTree = "<group>"; };
-		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AssistantRuntimeDemoApp.swift; path = AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
-		86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AgentDemoRuntimeFactory.swift; path = AssistantRuntimeDemoApp/Shared/AgentDemoRuntimeFactory.swift; sourceTree = "<group>"; };
+		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
+		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
+		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
+		86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoRuntimeFactory.swift; sourceTree = "<group>"; };
 		906A95007C8ECB92CFC2CE15 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F6DF501207E96F91C331A2EF /* AssistantRuntimeDemoApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AssistantRuntimeDemoApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		FE27E9F3273C1EAF47AE5198 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = AssistantRuntimeDemoApp/Info.plist; sourceTree = "<group>"; };
+		FE27E9F3273C1EAF47AE5198 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +48,7 @@
 				FE27E9F3273C1EAF47AE5198 /* Info.plist */,
 			);
 			name = AssistantRuntimeDemoApp;
+			path = AssistantRuntimeDemoApp;
 			sourceTree = "<group>";
 		};
 		98F0737120D75C832890227E /* Frameworks */ = {
@@ -91,6 +92,7 @@
 				2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */,
 			);
 			name = Shared;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

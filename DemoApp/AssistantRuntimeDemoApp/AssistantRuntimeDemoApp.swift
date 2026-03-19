@@ -5,11 +5,11 @@ struct AssistantRuntimeDemoApp: App {
     @State private var viewModel: AgentDemoViewModel
 
     init() {
-        let runtime = AgentDemoRuntimeFactory.makeLive(
+        let viewModel = AgentDemoRuntimeFactory.makeLive(
             redirectURI: URL(string: "assistantdemoapp://oauth/callback")!,
             keychainAccount: "AssistantRuntimeDemoApp"
         )
-        _viewModel = State(initialValue: runtime.viewModel)
+        _viewModel = State(initialValue: viewModel)
     }
 
     var body: some Scene {
