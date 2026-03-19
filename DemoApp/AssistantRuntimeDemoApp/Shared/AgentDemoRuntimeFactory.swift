@@ -5,38 +5,11 @@ import Foundation
 import AuthenticationServices
 #endif
 
-public enum AgentDemoRuntimeFactory {
-    @MainActor
-    public static func make() -> (runtime: AgentRuntime, viewModel: AgentDemoViewModel) {
-        makeMock()
-    }
-
-    @MainActor
-    public static func makeMock() -> (runtime: AgentRuntime, viewModel: AgentDemoViewModel) {
-        let approvalInbox = ApprovalInbox()
-        let deviceCodePromptCoordinator = DeviceCodePromptCoordinator()
-        let runtime = try! AgentRuntime(configuration: .init(
-            authProvider: DemoChatGPTAuthProvider(),
-            secureStore: KeychainSessionSecureStore(
-                service: "CodexKitDemo.ChatGPTSession",
-                account: "demo"
-            ),
-            backend: InMemoryAgentBackend(),
-            approvalPresenter: approvalInbox,
-            stateStore: InMemoryRuntimeStateStore()
-        ))
-        let viewModel = AgentDemoViewModel(
-            runtime: runtime,
-            approvalInbox: approvalInbox,
-            deviceCodePromptCoordinator: deviceCodePromptCoordinator
-        )
-        return (runtime, viewModel)
-    }
-
+enum AgentDemoRuntimeFactory {
     #if canImport(AuthenticationServices)
     @MainActor
     @available(iOS 13.0, macOS 10.15, *)
-    public static func makeLive(
+    static func makeLive(
         redirectURI: URL,
         model: String = "gpt-5",
         stateURL: URL? = nil,
@@ -50,7 +23,7 @@ public enum AgentDemoRuntimeFactory {
                 presenter: deviceCodePromptCoordinator
             ),
             secureStore: KeychainSessionSecureStore(
-                service: "CodexKitDemo.ChatGPTSession",
+                service: "AssistantRuntimeDemoApp.ChatGPTSession",
                 account: keychainAccount
             ),
             backend: CodexResponsesBackend(
@@ -75,7 +48,7 @@ public enum AgentDemoRuntimeFactory {
         ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
 
         return baseDirectory
-            .appendingPathComponent("CodexKitDemo", isDirectory: true)
+            .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
             .appendingPathComponent("runtime-state.json")
     }
 }

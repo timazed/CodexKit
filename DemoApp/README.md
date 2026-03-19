@@ -1,21 +1,16 @@
 # CodexKit Demo App
 
-This folder contains the iOS app entrypoint for exercising the `CodexKit` embedded assistant runtime.
+This folder contains the checked-in iOS example app for exercising the `CodexKit` embedded agent runtime.
 
 ## Open the app in Xcode
 
 Run:
 
 ```sh
-ruby scripts/generate_demo_app_project.rb
-open AssistantRuntimeDemoApp.xcodeproj
+open DemoApp/AssistantRuntimeDemoApp.xcodeproj
 ```
 
-If you want a custom bundle identifier for device installs, generate the project with:
-
-```sh
-CODEXKIT_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_project.rb
-```
+The Xcode project is the source of truth for the demo app. Edit it directly in Xcode and commit project changes normally.
 
 ## What the app does
 
@@ -35,13 +30,16 @@ The demo uses the new configuration-first surface:
 - `FileRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
+The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use.
+
 ## Files
 
 - `DemoApp/AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.swift`
 - `DemoApp/AssistantRuntimeDemoApp/Info.plist`
+- `DemoApp/AssistantRuntimeDemoApp.xcodeproj`
+- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoView.swift`
+- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoViewModel.swift`
+- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoRuntimeFactory.swift`
 - `Sources/CodexKitUI/AgentRuntimeStore.swift`
 - `Sources/CodexKitUI/ApprovalInbox.swift`
 - `Sources/CodexKitUI/DeviceCodePromptCoordinator.swift`
-- `Sources/CodexKitDemo/AgentDemoView.swift`
-- `Sources/CodexKitDemo/AgentDemoViewModel.swift`
-- `Sources/CodexKitDemo/AgentDemoRuntimeFactory.swift`

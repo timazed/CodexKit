@@ -26,6 +26,9 @@
 - [x] Add an optional UI-facing helper target for SwiftUI integration
 - [x] Hide low-level runtime plumbing from the public surface where possible
 - [x] Migrate docs, examples, tests, and demo app usage to the simplified API
+- [x] Make the checked-in Xcode project the single source of truth for the demo app
+- [x] Move the demo app under `DemoApp/` and consume `CodexKit` via local SPM products
+- [x] Remove the `CodexKitDemo` package product and move demo/test fixtures to app-local and test-support code
 
 ## Remaining Work To Reach The Original Goal
 

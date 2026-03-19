@@ -1,4 +1,3 @@
-import CodexKitDemo
 import SwiftUI
 
 @main

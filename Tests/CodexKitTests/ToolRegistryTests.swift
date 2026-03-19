@@ -1,5 +1,4 @@
 import CodexKit
-import CodexKitDemo
 import XCTest
 
 final class ToolRegistryTests: XCTestCase {

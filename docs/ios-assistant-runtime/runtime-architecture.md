@@ -37,14 +37,15 @@ Owns optional SwiftUI-friendly helpers:
 
 This target is optional and does not add any concrete tools.
 
-### `CodexKitDemo`
+### `DemoApp`
 
-Owns demo-only pieces:
+Owns example-app-only pieces outside the package:
 
-- mock auth provider
-- in-memory backend
+- checked-in Xcode app project
 - demo runtime factory
 - demo view model and SwiftUI screen
+
+Test-only mock auth and backend fixtures live under `Tests/` support code rather than in a package product.
 
 ## Runtime Boundary
 

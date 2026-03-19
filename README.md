@@ -17,7 +17,6 @@ The core SDK stays tool-agnostic. Your app defines the actual tools.
 
 - `CodexKit`: core runtime, auth, backend, tools, approvals
 - `CodexKitUI`: optional SwiftUI-facing helpers
-- `CodexKitDemo`: demo-only integration and mock/live demo pieces
 
 ## Recommended Live Setup
 
@@ -83,17 +82,12 @@ let runtime = try AgentRuntime(configuration: .init(
 
 ## Demo App
 
+The checked-in demo app lives under `DemoApp/` and consumes the local Swift package products through SPM.
+
 To open the demo app:
 
 ```sh
-ruby scripts/generate_demo_app_project.rb
-open AssistantRuntimeDemoApp.xcodeproj
-```
-
-If you need a device-installable bundle ID:
-
-```sh
-CODEXKIT_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_project.rb
+open DemoApp/AssistantRuntimeDemoApp.xcodeproj
 ```
 
 The demo app exercises live ChatGPT sign-in, streaming, approvals, and a host-defined tool.

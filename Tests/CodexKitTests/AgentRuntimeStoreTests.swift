@@ -1,5 +1,4 @@
 import CodexKit
-import CodexKitDemo
 import CodexKitUI
 import XCTest
 

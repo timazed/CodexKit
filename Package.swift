@@ -16,10 +16,6 @@ let package = Package(
             name: "CodexKitUI",
             targets: ["CodexKitUI"]
         ),
-        .library(
-            name: "CodexKitDemo",
-            targets: ["CodexKitDemo"]
-        ),
     ],
     targets: [
         .target(
@@ -29,13 +25,9 @@ let package = Package(
             name: "CodexKitUI",
             dependencies: ["CodexKit"]
         ),
-        .target(
-            name: "CodexKitDemo",
-            dependencies: ["CodexKit", "CodexKitUI"]
-        ),
         .testTarget(
             name: "CodexKitTests",
-            dependencies: ["CodexKit", "CodexKitUI", "CodexKitDemo"]
+            dependencies: ["CodexKit", "CodexKitUI"]
         ),
     ]
 )

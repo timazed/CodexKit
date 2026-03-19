@@ -5,14 +5,14 @@ import Observation
 import SwiftUI
 
 @available(iOS 17.0, macOS 14.0, *)
-public struct AgentDemoView: View {
+struct AgentDemoView: View {
     @State private var viewModel: AgentDemoViewModel
 
-    public init(viewModel: AgentDemoViewModel) {
+    init(viewModel: AgentDemoViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(spacing: 16) {
             header
             threadStrip

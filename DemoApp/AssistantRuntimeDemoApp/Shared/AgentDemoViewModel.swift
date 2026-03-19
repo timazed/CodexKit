@@ -5,21 +5,21 @@ import Observation
 
 @MainActor
 @Observable
-public final class AgentDemoViewModel: @unchecked Sendable {
-    public private(set) var session: ChatGPTSession?
-    public private(set) var threads: [AgentThread] = []
-    public private(set) var messages: [AgentMessage] = []
-    public private(set) var streamingText = ""
-    public private(set) var lastError: String?
-    public var composerText = ""
+final class AgentDemoViewModel: @unchecked Sendable {
+    private(set) var session: ChatGPTSession?
+    private(set) var threads: [AgentThread] = []
+    private(set) var messages: [AgentMessage] = []
+    private(set) var streamingText = ""
+    private(set) var lastError: String?
+    var composerText = ""
 
-    public let approvalInbox: ApprovalInbox
-    public let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
+    let approvalInbox: ApprovalInbox
+    let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
 
     private let runtime: AgentRuntime
     private var activeThreadID: String?
 
-    public init(
+    init(
         runtime: AgentRuntime,
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
@@ -29,14 +29,14 @@ public final class AgentDemoViewModel: @unchecked Sendable {
         self.deviceCodePromptCoordinator = deviceCodePromptCoordinator
     }
 
-    public var activeThread: AgentThread? {
+    var activeThread: AgentThread? {
         guard let activeThreadID else {
             return nil
         }
         return threads.first { $0.id == activeThreadID }
     }
 
-    public func restore() async {
+    func restore() async {
         do {
             _ = try await runtime.restore()
             threads = await runtime.threads()
@@ -50,7 +50,7 @@ public final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    public func signIn() async {
+    func signIn() async {
         do {
             session = try await runtime.signIn()
             threads = await runtime.threads()
@@ -59,7 +59,7 @@ public final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    public func registerDemoTool() async {
+    func registerDemoTool() async {
         let definition = ToolDefinition(
             name: "demo_lookup_profile",
             description: "Return a deterministic demo profile payload.",
@@ -93,7 +93,7 @@ public final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    public func createThread() async {
+    func createThread() async {
         do {
             let thread = try await runtime.createThread()
             threads = await runtime.threads()
@@ -104,13 +104,13 @@ public final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    public func activateThread(id: String) async {
+    func activateThread(id: String) async {
         activeThreadID = id
         messages = await runtime.messages(for: id)
         streamingText = ""
     }
 
-    public func sendComposerText() async {
+    func sendComposerText() async {
         guard !composerText.isEmpty else {
             return
         }
@@ -188,15 +188,15 @@ public final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    public func approvePendingRequest() {
+    func approvePendingRequest() {
         approvalInbox.approveCurrent()
     }
 
-    public func denyPendingRequest() {
+    func denyPendingRequest() {
         approvalInbox.denyCurrent()
     }
 
-    public func dismissError() {
+    func dismissError() {
         lastError = nil
     }
 }
