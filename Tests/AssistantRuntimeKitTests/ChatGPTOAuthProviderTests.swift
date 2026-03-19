@@ -66,12 +66,18 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
                 inspect: { request in
                     XCTAssertEqual(request.url?.absoluteString, "https://auth.openai.com/oauth/token")
                     XCTAssertEqual(request.httpMethod, "POST")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "originator"), "codex_cli_rs")
+                    XCTAssertNotNil(request.value(forHTTPHeaderField: "User-Agent"))
+                    XCTAssertEqual(
+                        request.value(forHTTPHeaderField: "Content-Type"),
+                        "application/x-www-form-urlencoded"
+                    )
                     let body = try XCTUnwrap(requestBodyData(for: request))
-                    let json = try JSONSerialization.jsonObject(with: body) as? [String: String]
-                    XCTAssertEqual(json?["grant_type"], "authorization_code")
-                    XCTAssertEqual(json?["code"], "test-auth-code")
-                    XCTAssertEqual(json?["redirect_uri"], redirectURI.absoluteString)
-                    XCTAssertNotNil(json?["code_verifier"])
+                    let form = parseFormURLEncodedBody(body)
+                    XCTAssertEqual(form["grant_type"], "authorization_code")
+                    XCTAssertEqual(form["code"], "test-auth-code")
+                    XCTAssertEqual(form["redirect_uri"], redirectURI.absoluteString)
+                    XCTAssertNotNil(form["code_verifier"])
                 }
             )
         )
@@ -129,9 +135,13 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
                 ]),
                 inspect: { request in
                     let body = try XCTUnwrap(requestBodyData(for: request))
-                    let json = try JSONSerialization.jsonObject(with: body) as? [String: String]
-                    XCTAssertEqual(json?["grant_type"], "refresh_token")
-                    XCTAssertEqual(json?["refresh_token"], "refresh-123")
+                    XCTAssertEqual(
+                        request.value(forHTTPHeaderField: "Content-Type"),
+                        "application/x-www-form-urlencoded"
+                    )
+                    let form = parseFormURLEncodedBody(body)
+                    XCTAssertEqual(form["grant_type"], "refresh_token")
+                    XCTAssertEqual(form["refresh_token"], "refresh-123")
                 }
             )
         )

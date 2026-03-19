@@ -134,6 +134,29 @@ func requestBodyData(for request: URLRequest) throws -> Data? {
     return data
 }
 
+func parseFormURLEncodedBody(_ data: Data) -> [String: String] {
+    guard let body = String(data: data, encoding: .utf8), !body.isEmpty else {
+        return [:]
+    }
+
+    return body
+        .split(separator: "&")
+        .reduce(into: [String: String]()) { partial, pair in
+            let components = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard let key = components.first else {
+                return
+            }
+            let value = components.count > 1 ? components[1] : ""
+            partial[decodeFormComponent(key)] = decodeFormComponent(value)
+        }
+}
+
+private func decodeFormComponent(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "+", with: " ")
+        .removingPercentEncoding ?? value
+}
+
 private extension Data {
     func base64URLEncodedString() -> String {
         base64EncodedString()

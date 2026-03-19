@@ -18,6 +18,7 @@
 - [x] Add a device-code ChatGPT sign-in path for iOS when redirect-based auth is rejected upstream
 - [x] Fix iOS demo app compatibility-mode letterboxing by declaring a launch screen
 - [x] Enforce live-backend-safe tool names and update the demo tool identifier
+- [x] Align direct auth requests more closely with Codex headers and token wire format
 - [ ] Validate the live path in a real iOS app session
 
 ## Remaining Work To Reach The Original Goal

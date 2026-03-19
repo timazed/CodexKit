@@ -95,6 +95,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
                 .appendingPathComponent("usercode")
         )
         request.httpMethod = "POST"
+        applyDefaultAuthHeaders(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(DeviceUserCodeRequest(clientID: configuration.clientID))
         return try await sendRequest(request, decode: DeviceUserCodeResponse.self)
@@ -117,6 +118,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
 
             var request = URLRequest(url: pollURL)
             request.httpMethod = "POST"
+            applyDefaultAuthHeaders(to: &request)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(
                 DeviceTokenPollRequest(deviceAuthID: deviceAuthID, userCode: userCode)
@@ -139,7 +141,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
                 continue
             }
 
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            let body = simplifyAuthErrorBody(data)
             throw AssistantRuntimeError(
                 code: "device_code_poll_failed",
                 message: "ChatGPT device-code login failed with status \(httpResponse.statusCode): \(body)"
@@ -159,15 +161,16 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
     ) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(
-            AuthorizationCodeExchangeRequest(
-                clientID: configuration.clientID,
-                grantType: "authorization_code",
-                code: code,
-                redirectURI: redirectURI,
-                codeVerifier: codeVerifier
-            )
+        applyDefaultAuthHeaders(to: &request)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = urlEncodedFormBody(
+            [
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", redirectURI),
+                ("client_id", configuration.clientID),
+                ("code_verifier", codeVerifier),
+            ]
         )
         return try await sendTokenRequest(request)
     }
@@ -175,13 +178,14 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
     private func refreshAccessToken(_ refreshToken: String) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(
-            RefreshTokenRequest(
-                clientID: configuration.clientID,
-                grantType: "refresh_token",
-                refreshToken: refreshToken
-            )
+        applyDefaultAuthHeaders(to: &request)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = urlEncodedFormBody(
+            [
+                ("grant_type", "refresh_token"),
+                ("client_id", configuration.clientID),
+                ("refresh_token", refreshToken),
+            ]
         )
         return try await sendTokenRequest(request)
     }
@@ -203,7 +207,7 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
         }
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            let body = simplifyAuthErrorBody(data)
             throw AssistantRuntimeError(
                 code: "oauth_token_exchange_failed",
                 message: "ChatGPT request failed with status \(httpResponse.statusCode): \(body)"
@@ -237,6 +241,18 @@ public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @uncheck
             expiresAt: accessClaims.expiresAt,
             isExternallyManaged: false
         )
+    }
+
+    private func applyDefaultAuthHeaders(to request: inout URLRequest) {
+        request.setValue(configuration.originator, forHTTPHeaderField: "originator")
+        request.setValue(
+            buildCodexLikeUserAgent(
+                originator: configuration.originator,
+                product: configuration.userAgentProduct
+            ),
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
     }
 }
 

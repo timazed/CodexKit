@@ -18,6 +18,7 @@ public struct ChatGPTOAuthConfiguration: Sendable {
     public let scopes: [String]
     public let originator: String
     public let forcedWorkspaceID: String?
+    public let userAgentProduct: String
 
     public init(
         issuerURL: URL = URL(string: "https://auth.openai.com")!,
@@ -32,7 +33,8 @@ public struct ChatGPTOAuthConfiguration: Sendable {
             "api.connectors.invoke",
         ],
         originator: String = "codex_cli_rs",
-        forcedWorkspaceID: String? = nil
+        forcedWorkspaceID: String? = nil,
+        userAgentProduct: String = "AssistantRuntimeKit"
     ) {
         self.issuerURL = issuerURL
         self.clientID = clientID
@@ -40,6 +42,7 @@ public struct ChatGPTOAuthConfiguration: Sendable {
         self.scopes = scopes
         self.originator = originator
         self.forcedWorkspaceID = forcedWorkspaceID
+        self.userAgentProduct = userAgentProduct
     }
 
     public var callbackScheme: String {
@@ -268,15 +271,16 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
     ) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(
-            AuthorizationCodeExchangeRequest(
-                clientID: configuration.clientID,
-                grantType: "authorization_code",
-                code: code,
-                redirectURI: configuration.redirectURI.absoluteString,
-                codeVerifier: codeVerifier
-            )
+        applyDefaultAuthHeaders(to: &request)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = urlEncodedFormBody(
+            [
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", configuration.redirectURI.absoluteString),
+                ("client_id", configuration.clientID),
+                ("code_verifier", codeVerifier),
+            ]
         )
         return try await sendTokenRequest(request)
     }
@@ -284,13 +288,14 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
     private func refreshAccessToken(_ refreshToken: String) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(
-            RefreshTokenRequest(
-                clientID: configuration.clientID,
-                grantType: "refresh_token",
-                refreshToken: refreshToken
-            )
+        applyDefaultAuthHeaders(to: &request)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = urlEncodedFormBody(
+            [
+                ("grant_type", "refresh_token"),
+                ("client_id", configuration.clientID),
+                ("refresh_token", refreshToken),
+            ]
         )
         return try await sendTokenRequest(request)
     }
@@ -305,7 +310,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
         }
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            let body = simplifyAuthErrorBody(data)
             throw AssistantRuntimeError(
                 code: "oauth_token_exchange_failed",
                 message: "ChatGPT token exchange failed with status \(httpResponse.statusCode): \(body)"
@@ -338,6 +343,19 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
             acquiredAt: accessClaims.issuedAt ?? Date(),
             expiresAt: accessClaims.expiresAt,
             isExternallyManaged: false
+        )
+    }
+
+    private func applyDefaultAuthHeaders(to request: inout URLRequest) {
+        request.setValue(configuration.originator, forHTTPHeaderField: "originator")
+        request.setValue(codexLikeUserAgent(), forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+    }
+
+    private func codexLikeUserAgent() -> String {
+        buildCodexLikeUserAgent(
+            originator: configuration.originator,
+            product: configuration.userAgentProduct
         )
     }
 }
@@ -475,6 +493,80 @@ struct JWTClaims: Decodable {
         let payload = try Data(base64URLString: String(parts[1]))
         return try JSONDecoder().decode(JWTClaims.self, from: payload)
     }
+}
+
+func buildCodexLikeUserAgent(
+    originator: String,
+    product: String
+) -> String {
+    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        ?? Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        ?? "0.1"
+    let platform = currentPlatformDescription()
+    return "\(originator)/\(version) (\(platform)) \(product)"
+}
+
+private func currentPlatformDescription() -> String {
+    let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+    let version = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
+    #if os(iOS)
+    let system = "iOS"
+    #elseif os(macOS)
+    let system = "macOS"
+    #elseif os(tvOS)
+    let system = "tvOS"
+    #elseif os(watchOS)
+    let system = "watchOS"
+    #elseif os(visionOS)
+    let system = "visionOS"
+    #else
+    let system = "Apple"
+    #endif
+    return "\(system) \(version); \(currentArchitecture())"
+}
+
+private func currentArchitecture() -> String {
+    var systemInfo = utsname()
+    uname(&systemInfo)
+    let mirror = Mirror(reflecting: systemInfo.machine)
+    let identifier = mirror.children.reduce(into: "") { partial, element in
+        guard let value = element.value as? Int8, value != 0 else {
+            return
+        }
+        partial.append(Character(UnicodeScalar(UInt8(value))))
+    }
+    return identifier.isEmpty ? "unknown" : identifier
+}
+
+func urlEncodedFormBody(_ items: [(String, String)]) -> Data {
+    let body = items
+        .map { key, value in
+            "\(percentEncodeFormComponent(key))=\(percentEncodeFormComponent(value))"
+        }
+        .joined(separator: "&")
+    return Data(body.utf8)
+}
+
+private func percentEncodeFormComponent(_ value: String) -> String {
+    let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+}
+
+func simplifyAuthErrorBody(_ data: Data) -> String {
+    let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let body, !body.isEmpty else {
+        return "Unknown error"
+    }
+
+    if body.localizedCaseInsensitiveContains("<!doctype html") ||
+        body.localizedCaseInsensitiveContains("<html") {
+        if body.localizedCaseInsensitiveContains("just a moment") {
+            return "The authentication service returned a browser challenge page (for example a Cloudflare anti-bot check) instead of JSON."
+        }
+        return "The authentication service returned an HTML page instead of JSON."
+    }
+
+    return body
 }
 
 private extension Data {

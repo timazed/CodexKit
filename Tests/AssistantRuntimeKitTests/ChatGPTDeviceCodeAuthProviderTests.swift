@@ -65,6 +65,9 @@ final class ChatGPTDeviceCodeAuthProviderTests: XCTestCase {
                 body: #"{"device_auth_id":"device-123","user_code":"ABCD-EFGH","interval":"1"}"#.data(using: .utf8)!,
                 inspect: { request in
                     XCTAssertEqual(request.url?.absoluteString, "https://auth.openai.com/api/accounts/deviceauth/usercode")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "originator"), "codex_cli_rs")
+                    XCTAssertNotNil(request.value(forHTTPHeaderField: "User-Agent"))
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
                 }
             )
         )
@@ -73,6 +76,8 @@ final class ChatGPTDeviceCodeAuthProviderTests: XCTestCase {
                 body: #"{"authorization_code":"auth-code-123","code_challenge":"challenge-1","code_verifier":"verifier-1"}"#.data(using: .utf8)!,
                 inspect: { request in
                     XCTAssertEqual(request.url?.absoluteString, "https://auth.openai.com/api/accounts/deviceauth/token")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "originator"), "codex_cli_rs")
+                    XCTAssertNotNil(request.value(forHTTPHeaderField: "User-Agent"))
                 }
             )
         )
@@ -85,12 +90,18 @@ final class ChatGPTDeviceCodeAuthProviderTests: XCTestCase {
                 ]),
                 inspect: { request in
                     XCTAssertEqual(request.url?.absoluteString, "https://auth.openai.com/oauth/token")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "originator"), "codex_cli_rs")
+                    XCTAssertNotNil(request.value(forHTTPHeaderField: "User-Agent"))
+                    XCTAssertEqual(
+                        request.value(forHTTPHeaderField: "Content-Type"),
+                        "application/x-www-form-urlencoded"
+                    )
                     let body = try XCTUnwrap(requestBodyData(for: request))
-                    let json = try JSONSerialization.jsonObject(with: body) as? [String: String]
-                    XCTAssertEqual(json?["grant_type"], "authorization_code")
-                    XCTAssertEqual(json?["code"], "auth-code-123")
-                    XCTAssertEqual(json?["redirect_uri"], "https://auth.openai.com/deviceauth/callback")
-                    XCTAssertEqual(json?["code_verifier"], "verifier-1")
+                    let form = parseFormURLEncodedBody(body)
+                    XCTAssertEqual(form["grant_type"], "authorization_code")
+                    XCTAssertEqual(form["code"], "auth-code-123")
+                    XCTAssertEqual(form["redirect_uri"], "https://auth.openai.com/deviceauth/callback")
+                    XCTAssertEqual(form["code_verifier"], "verifier-1")
                 }
             )
         )
