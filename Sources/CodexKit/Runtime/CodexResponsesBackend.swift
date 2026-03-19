@@ -7,6 +7,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let originator: String
     public let streamIdleTimeout: TimeInterval
     public let extraHeaders: [String: String]
+    public let enableWebSearch: Bool
 
     public init(
         baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
@@ -16,7 +17,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         """,
         originator: String = "codex_cli_rs",
         streamIdleTimeout: TimeInterval = 60,
-        extraHeaders: [String: String] = [:]
+        extraHeaders: [String: String] = [:],
+        enableWebSearch: Bool = false
     ) {
         self.baseURL = baseURL
         self.model = model
@@ -24,6 +26,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.originator = originator
         self.streamIdleTimeout = streamIdleTimeout
         self.extraHeaders = extraHeaders
+        self.enableWebSearch = enableWebSearch
     }
 }
 
@@ -249,7 +252,10 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
             model: configuration.model,
             instructions: configuration.instructions,
             input: items.map(\.jsonValue),
-            tools: tools.map { $0.responsesJSONValue },
+            tools: responsesTools(
+                from: tools,
+                enableWebSearch: configuration.enableWebSearch
+            ),
             toolChoice: "auto",
             parallelToolCalls: false,
             store: false,
@@ -274,6 +280,19 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         }
 
         return request
+    }
+
+    private static func responsesTools(
+        from tools: [ToolDefinition],
+        enableWebSearch: Bool
+    ) -> [JSONValue] {
+        var responsesTools = tools.map(\.responsesJSONValue)
+
+        if enableWebSearch {
+            responsesTools.append(.object(["type": .string("web_search")]))
+        }
+
+        return responsesTools
     }
 
     private static func streamEvents(

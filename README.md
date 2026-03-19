@@ -78,6 +78,17 @@ let runtime = try AgentRuntime(configuration: .init(
 ))
 ```
 
+To give the model built-in web search, enable it on the backend configuration:
+
+```swift
+let backend = CodexResponsesBackend(
+    configuration: CodexResponsesBackendConfiguration(
+        model: "gpt-5.4",
+        enableWebSearch: true
+    )
+)
+```
+
 For browser-based ChatGPT OAuth, use the same type with `.oauth(redirectURI: ...)`. If you pass a localhost redirect URI, `CodexKit` will use the internal loopback callback flow automatically on Apple platforms.
 
 ## Agent Personality

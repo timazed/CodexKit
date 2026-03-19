@@ -20,6 +20,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - lets you type and send a user request
 - streams assistant output into the UI
 - shows approval prompts before running a host-defined demo tool
+- enables Responses web search in the checked-in demo configuration
 
 The demo uses the new configuration-first surface:
 

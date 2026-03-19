@@ -180,4 +180,50 @@ final class CodexResponsesBackendTests: XCTestCase {
         XCTAssertTrue(sawToolCall)
         XCTAssertEqual(finalAssistantMessage?.text, "Profile ready")
     }
+
+    func testBackendIncludesWebSearchToolWhenEnabled() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(enableWebSearch: true),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Search ready"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_search","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let toolsJSON = try XCTUnwrap(json?["tools"] as? [[String: Any]])
+                    XCTAssertTrue(
+                        toolsJSON.contains(where: { $0["type"] as? String == "web_search" })
+                    )
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-search"),
+            history: [],
+            message: UserMessageRequest(text: "Search the web"),
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
 }
