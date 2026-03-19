@@ -2,32 +2,32 @@
 import PackageDescription
 
 let package = Package(
-    name: "ios-agentsdk",
+    name: "CodexKit",
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
     ],
     products: [
         .library(
-            name: "AssistantRuntimeKit",
-            targets: ["AssistantRuntimeKit"]
+            name: "CodexKit",
+            targets: ["CodexKit"]
         ),
         .library(
-            name: "AssistantRuntimeDemo",
-            targets: ["AssistantRuntimeDemo"]
+            name: "CodexKitDemo",
+            targets: ["CodexKitDemo"]
         ),
     ],
     targets: [
         .target(
-            name: "AssistantRuntimeKit"
+            name: "CodexKit"
         ),
         .target(
-            name: "AssistantRuntimeDemo",
-            dependencies: ["AssistantRuntimeKit"]
+            name: "CodexKitDemo",
+            dependencies: ["CodexKit"]
         ),
         .testTarget(
-            name: "AssistantRuntimeKitTests",
-            dependencies: ["AssistantRuntimeKit", "AssistantRuntimeDemo"]
+            name: "CodexKitTests",
+            dependencies: ["CodexKit", "CodexKitDemo"]
         ),
     ]
 )

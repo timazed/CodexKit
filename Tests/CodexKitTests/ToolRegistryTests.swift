@@ -1,4 +1,4 @@
-import AssistantRuntimeKit
+import CodexKit
 import XCTest
 
 final class ToolRegistryTests: XCTestCase {

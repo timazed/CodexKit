@@ -5,8 +5,14 @@ require "xcodeproj"
 
 ROOT = File.expand_path("..", __dir__)
 PROJECT_PATH = File.join(ROOT, "AssistantRuntimeDemoApp.xcodeproj")
+PROJECT_FILE_PATH = File.join(PROJECT_PATH, "project.pbxproj")
 DEFAULT_BUNDLE_ID = "ai.assistantruntime.demoapp"
-bundle_id = ENV.fetch("ASSISTANT_RUNTIME_DEMO_BUNDLE_ID", DEFAULT_BUNDLE_ID)
+existing_project = File.exist?(PROJECT_FILE_PATH) ? File.read(PROJECT_FILE_PATH) : ""
+existing_team = existing_project[/DEVELOPMENT_TEAM = ([A-Z0-9]+);/, 1]
+bundle_id = ENV.fetch(
+  "CODEXKIT_DEMO_BUNDLE_ID",
+  ENV.fetch("ASSISTANT_RUNTIME_DEMO_BUNDLE_ID", DEFAULT_BUNDLE_ID)
+)
 bundle_id = bundle_id.gsub(/[^A-Za-z0-9.]/, "").downcase
 
 FileUtils.rm_rf(PROJECT_PATH)
@@ -18,8 +24,8 @@ project.root_object.attributes["LastUpgradeCheck"] = "2600"
 deployment_target = "17.0"
 
 app_target = project.new_target(:application, "AssistantRuntimeDemoApp", :ios, deployment_target)
-kit_target = project.new_target(:framework, "AssistantRuntimeKit", :ios, deployment_target)
-demo_target = project.new_target(:framework, "AssistantRuntimeDemo", :ios, deployment_target)
+kit_target = project.new_target(:framework, "CodexKit", :ios, deployment_target)
+demo_target = project.new_target(:framework, "CodexKitDemo", :ios, deployment_target)
 
 sources_group = project.main_group.find_subpath("Sources", true)
 demo_app_group = project.main_group.find_subpath("DemoApp", true)
@@ -27,8 +33,8 @@ scripts_group = project.main_group.find_subpath("scripts", true)
 project.main_group.set_source_tree("<group>")
 
 [
-  [kit_target, "Sources/AssistantRuntimeKit", sources_group.find_subpath("AssistantRuntimeKit", true)],
-  [demo_target, "Sources/AssistantRuntimeDemo", sources_group.find_subpath("AssistantRuntimeDemo", true)],
+  [kit_target, "Sources/CodexKit", sources_group.find_subpath("CodexKit", true)],
+  [demo_target, "Sources/CodexKitDemo", sources_group.find_subpath("CodexKitDemo", true)],
   [app_target, "DemoApp/AssistantRuntimeDemoApp", demo_app_group.find_subpath("AssistantRuntimeDemoApp", true)],
 ].each do |target, relative_root, group|
   Dir.glob(File.join(ROOT, relative_root, "**/*.swift")).sort.each do |path|
@@ -52,7 +58,7 @@ script_ref.include_in_index = "0"
     config.build_settings["TARGETED_DEVICE_FAMILY"] = "1,2"
     config.build_settings["CLANG_ENABLE_MODULES"] = "YES"
     config.build_settings["CODE_SIGN_STYLE"] = "Automatic"
-    config.build_settings["DEVELOPMENT_TEAM"] = ""
+    config.build_settings["DEVELOPMENT_TEAM"] = existing_team || ""
   end
 end
 

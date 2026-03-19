@@ -1,6 +1,6 @@
-# Assistant Runtime Demo App
+# CodexKit Demo App
 
-This folder contains the iOS app entrypoint for exercising the embedded assistant runtime.
+This folder contains the iOS app entrypoint for exercising the `CodexKit` embedded assistant runtime.
 
 ## Open the app in Xcode
 
@@ -14,13 +14,13 @@ open AssistantRuntimeDemoApp.xcodeproj
 If you want a custom bundle identifier for device installs, generate the project with:
 
 ```sh
-ASSISTANT_RUNTIME_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_project.rb
+CODEXKIT_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_project.rb
 ```
 
 ## What the app does
 
 - launches a SwiftUI chat screen
-- signs in with ChatGPT using `ASWebAuthenticationSession`
+- signs in with ChatGPT using the current iOS-compatible auth flow
 - creates or resumes a thread
 - lets you type and send a user request
 - streams assistant output into the UI
@@ -30,6 +30,6 @@ ASSISTANT_RUNTIME_DEMO_BUNDLE_ID=your.bundle.id ruby scripts/generate_demo_app_p
 
 - `DemoApp/AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.swift`
 - `DemoApp/AssistantRuntimeDemoApp/Info.plist`
-- `Sources/AssistantRuntimeDemo/AssistantDemoView.swift`
-- `Sources/AssistantRuntimeDemo/AssistantDemoViewModel.swift`
-- `Sources/AssistantRuntimeDemo/AssistantDemoRuntimeFactory.swift`
+- `Sources/CodexKitDemo/AssistantDemoView.swift`
+- `Sources/CodexKitDemo/AssistantDemoViewModel.swift`
+- `Sources/CodexKitDemo/AssistantDemoRuntimeFactory.swift`

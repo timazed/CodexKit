@@ -1,4 +1,4 @@
-import AssistantRuntimeKit
+import CodexKit
 import Foundation
 
 public struct DemoChatGPTAuthProvider: ChatGPTAuthProviding {

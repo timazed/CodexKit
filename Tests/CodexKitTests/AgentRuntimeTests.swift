@@ -1,5 +1,5 @@
-import AssistantRuntimeDemo
-import AssistantRuntimeKit
+import CodexKitDemo
+import CodexKit
 import XCTest
 
 private struct AutoApprovalPresenter: ApprovalPresenting {
@@ -14,7 +14,7 @@ final class AgentRuntimeTests: XCTestCase {
         let bridge = HostBridge(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
-                service: "AssistantRuntimeKitTests.ChatGPTSession",
+                service: "CodexKitTests.ChatGPTSession",
                 account: UUID().uuidString
             ),
             backend: InMemoryAssistantBackend(),

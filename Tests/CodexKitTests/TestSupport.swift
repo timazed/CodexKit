@@ -1,4 +1,4 @@
-import AssistantRuntimeKit
+import CodexKit
 import Foundation
 
 final class TestURLProtocol: URLProtocol, @unchecked Sendable {

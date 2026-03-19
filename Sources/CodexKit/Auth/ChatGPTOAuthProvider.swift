@@ -34,7 +34,7 @@ public struct ChatGPTOAuthConfiguration: Sendable {
         ],
         originator: String = "codex_cli_rs",
         forcedWorkspaceID: String? = nil,
-        userAgentProduct: String = "AssistantRuntimeKit"
+        userAgentProduct: String = "CodexKit"
     ) {
         self.issuerURL = issuerURL
         self.clientID = clientID

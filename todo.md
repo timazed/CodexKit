@@ -4,7 +4,7 @@
 
 - [x] Audit `openai/codex` for reusable auth, session, event, approval, and host-boundary primitives
 - [x] Write extraction/design docs under `docs/ios-assistant-runtime/`
-- [x] Scaffold `AssistantRuntimeKit` package modules
+- [x] Scaffold `CodexKit` package modules
 - [x] Build a mock end-to-end tool approval and execution flow
 - [x] Add package tests and verify the scaffold builds
 
@@ -19,6 +19,7 @@
 - [x] Fix iOS demo app compatibility-mode letterboxing by declaring a launch screen
 - [x] Enforce live-backend-safe tool names and update the demo tool identifier
 - [x] Align direct auth requests more closely with Codex headers and token wire format
+- [x] Rename the Swift package and primary module surface to `CodexKit`
 - [ ] Validate the live path in a real iOS app session
 
 ## Remaining Work To Reach The Original Goal

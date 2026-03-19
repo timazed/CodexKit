@@ -1,4 +1,4 @@
-import AssistantRuntimeKit
+import CodexKit
 import XCTest
 
 @MainActor

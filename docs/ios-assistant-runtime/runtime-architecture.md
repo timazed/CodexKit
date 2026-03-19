@@ -87,7 +87,7 @@ Aggregates the host-owned dependencies required by the runtime:
 - approval presenter
 - runtime state store
 
-### `AssistantRuntimeDemo`
+### `CodexKitDemo`
 
 Provides demo-only pieces:
 

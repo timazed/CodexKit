@@ -1,4 +1,4 @@
-import AssistantRuntimeKit
+import CodexKit
 import Foundation
 
 public actor InMemoryAssistantBackend: AssistantBackend {

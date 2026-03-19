@@ -1,4 +1,4 @@
-import AssistantRuntimeDemo
+import CodexKitDemo
 import SwiftUI
 
 @main

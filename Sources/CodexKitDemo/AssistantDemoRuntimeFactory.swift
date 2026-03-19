@@ -1,4 +1,4 @@
-import AssistantRuntimeKit
+import CodexKit
 import Foundation
 #if canImport(AuthenticationServices)
 import AuthenticationServices
@@ -17,7 +17,7 @@ public enum AssistantDemoRuntimeFactory {
         let bridge = HostBridge(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
-                service: "AssistantRuntimeDemo.ChatGPTSession",
+                service: "CodexKitDemo.ChatGPTSession",
                 account: "demo"
             ),
             backend: InMemoryAssistantBackend(),
@@ -50,7 +50,7 @@ public enum AssistantDemoRuntimeFactory {
                 presenter: deviceCodeSignIn
             ),
             secureStore: KeychainSessionSecureStore(
-                service: "AssistantRuntimeDemo.ChatGPTSession",
+                service: "CodexKitDemo.ChatGPTSession",
                 account: keychainAccount
             ),
             backend: CodexResponsesBackend(
@@ -76,7 +76,7 @@ public enum AssistantDemoRuntimeFactory {
         ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
 
         return baseDirectory
-            .appendingPathComponent("AssistantRuntimeDemo", isDirectory: true)
+            .appendingPathComponent("CodexKitDemo", isDirectory: true)
             .appendingPathComponent("runtime-state.json")
     }
 }

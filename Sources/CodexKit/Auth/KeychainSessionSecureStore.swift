@@ -8,7 +8,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
     private let decoder = JSONDecoder()
 
     public init(
-        service: String = "AssistantRuntimeKit.ChatGPTSession",
+        service: String = "CodexKit.ChatGPTSession",
         account: String = "default"
     ) {
         self.service = service
