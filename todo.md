@@ -14,14 +14,15 @@
 - [x] Replace the mock-only gaps with a production-oriented path where possible
 - [x] Land a real Apple-platform ChatGPT OAuth adapter
 - [x] Land a ChatGPT Codex responses transport with streamed tool-call continuation
+- [x] Add a runnable iOS demo app target for live validation
 - [ ] Validate the live path in a real iOS app session
 
 ## Remaining Work To Reach The Original Goal
 
 - [ ] Verify the Apple-platform OAuth flow against a live ChatGPT sign-in on-device
 - [ ] Verify the ChatGPT Codex responses transport against a live account/session
-- [ ] Add SwiftUI demo bindings that visibly stream responses and present approvals
-- [ ] Persist runtime thread/message state across launches in a host-appropriate way
+- [x] Add SwiftUI demo bindings that visibly stream responses and present approvals
+- [x] Persist runtime thread/message state across launches in a host-appropriate way
 - [ ] Expand tests around auth restoration, approval denial, thread resume, and tool result round-trips
 - [ ] Reassess whether the runtime truly satisfies:
   - [x] real ChatGPT sign-in implementation path exists
@@ -39,4 +40,4 @@
 
 - Real ChatGPT sign-in may still require one or two live validation adjustments around callback configuration or originator handling.
 - The backend transport can be implemented directly against `chatgpt.com/backend-api/codex/responses`, but live verification still depends on a real ChatGPT account session.
-- The current repo is a Swift package, not yet a full Xcode demo app project.
+- The demo app project is generated and buildable, but still needs one real sign-in/send run to prove the live path end-to-end.
