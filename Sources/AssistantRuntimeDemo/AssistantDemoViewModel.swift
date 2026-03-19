@@ -13,13 +13,19 @@ public final class AssistantDemoViewModel: @unchecked Sendable {
     public var composerText = ""
 
     public let approvalInbox: ApprovalInbox
+    public let deviceCodeSignIn: DeviceCodeSignInCoordinator
 
     private let runtime: AgentRuntime
     private var activeThreadID: String?
 
-    public init(runtime: AgentRuntime, approvalInbox: ApprovalInbox) {
+    public init(
+        runtime: AgentRuntime,
+        approvalInbox: ApprovalInbox,
+        deviceCodeSignIn: DeviceCodeSignInCoordinator = DeviceCodeSignInCoordinator()
+    ) {
         self.runtime = runtime
         self.approvalInbox = approvalInbox
+        self.deviceCodeSignIn = deviceCodeSignIn
     }
 
     public var activeThread: AssistantThread? {

@@ -13,6 +13,7 @@ public enum AssistantDemoRuntimeFactory {
     @MainActor
     public static func makeMock() -> (runtime: AgentRuntime, viewModel: AssistantDemoViewModel) {
         let approvalInbox = ApprovalInbox()
+        let deviceCodeSignIn = DeviceCodeSignInCoordinator()
         let bridge = HostBridge(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
@@ -24,7 +25,11 @@ public enum AssistantDemoRuntimeFactory {
             stateStore: InMemoryRuntimeStateStore()
         )
         let runtime = AgentRuntime(hostBridge: bridge)
-        let viewModel = AssistantDemoViewModel(runtime: runtime, approvalInbox: approvalInbox)
+        let viewModel = AssistantDemoViewModel(
+            runtime: runtime,
+            approvalInbox: approvalInbox,
+            deviceCodeSignIn: deviceCodeSignIn
+        )
         return (runtime, viewModel)
     }
 
@@ -38,10 +43,11 @@ public enum AssistantDemoRuntimeFactory {
         keychainAccount: String = "live"
     ) -> (runtime: AgentRuntime, viewModel: AssistantDemoViewModel) {
         let approvalInbox = ApprovalInbox()
+        let deviceCodeSignIn = DeviceCodeSignInCoordinator()
         let bridge = HostBridge(
-            authProvider: ChatGPTOAuthProvider(
+            authProvider: ChatGPTDeviceCodeAuthProvider(
                 configuration: ChatGPTOAuthConfiguration(redirectURI: redirectURI),
-                webAuthenticationProvider: SystemChatGPTWebAuthenticationProvider()
+                presenter: deviceCodeSignIn
             ),
             secureStore: KeychainSessionSecureStore(
                 service: "AssistantRuntimeDemo.ChatGPTSession",
@@ -54,7 +60,11 @@ public enum AssistantDemoRuntimeFactory {
             stateStore: FileRuntimeStateStore(url: stateURL ?? defaultStateURL())
         )
         let runtime = AgentRuntime(hostBridge: bridge)
-        let viewModel = AssistantDemoViewModel(runtime: runtime, approvalInbox: approvalInbox)
+        let viewModel = AssistantDemoViewModel(
+            runtime: runtime,
+            approvalInbox: approvalInbox,
+            deviceCodeSignIn: deviceCodeSignIn
+        )
         return (runtime, viewModel)
     }
     #endif

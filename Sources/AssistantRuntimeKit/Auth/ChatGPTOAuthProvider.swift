@@ -342,7 +342,7 @@ public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendab
     }
 }
 
-private struct AuthorizationCodeExchangeRequest: Encodable {
+struct AuthorizationCodeExchangeRequest: Encodable {
     let clientID: String
     let grantType: String
     let code: String
@@ -358,7 +358,7 @@ private struct AuthorizationCodeExchangeRequest: Encodable {
     }
 }
 
-private struct RefreshTokenRequest: Encodable {
+struct RefreshTokenRequest: Encodable {
     let clientID: String
     let grantType: String
     let refreshToken: String
@@ -370,7 +370,7 @@ private struct RefreshTokenRequest: Encodable {
     }
 }
 
-private struct TokenResponse: Decodable {
+struct TokenResponse: Decodable {
     let idToken: String
     let accessToken: String
     let refreshToken: String?
@@ -440,7 +440,7 @@ private struct PKCECodes {
     }
 }
 
-private struct JWTClaims: Decodable {
+struct JWTClaims: Decodable {
     let email: String?
     let chatGPTAccountID: String?
     let planType: String?

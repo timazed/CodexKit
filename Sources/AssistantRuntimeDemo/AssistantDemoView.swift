@@ -26,6 +26,9 @@ public struct AssistantDemoView: View {
         .sheet(item: approvalRequestBinding) { request in
             approvalSheet(for: request)
         }
+        .sheet(item: deviceCodePromptBinding) { prompt in
+            deviceCodeSheet(for: prompt)
+        }
         .alert("Runtime Error", isPresented: errorBinding) {
             Button("Dismiss") {
                 viewModel.dismissError()
@@ -175,6 +178,13 @@ public struct AssistantDemoView: View {
         )
     }
 
+    private var deviceCodePromptBinding: Binding<ChatGPTDeviceCodePrompt?> {
+        Binding(
+            get: { viewModel.deviceCodeSignIn.currentPrompt },
+            set: { _ in }
+        )
+    }
+
     @ViewBuilder
     private func approvalSheet(for request: ApprovalRequest) -> some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -209,5 +219,57 @@ public struct AssistantDemoView: View {
         }
         .padding(24)
         .presentationDetents([.medium])
+    }
+
+    @ViewBuilder
+    private func deviceCodeSheet(for prompt: ChatGPTDeviceCodePrompt) -> some View {
+        DeviceCodePromptView(prompt: prompt)
+            .presentationDetents([.medium, .large])
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct DeviceCodePromptView: View {
+    let prompt: ChatGPTDeviceCodePrompt
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Finish Sign-In")
+                .font(.title3.weight(.semibold))
+
+            Text("Open the verification page, sign in with ChatGPT, and enter this one-time code.")
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Code")
+                    .font(.headline)
+                Text(prompt.userCode)
+                    .font(.system(.title2, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.secondary.opacity(0.10))
+                    )
+            }
+
+            HStack(spacing: 12) {
+                Button("Open Verification Page") {
+                    openURL(prompt.verificationURL)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            Text(prompt.verificationURL.absoluteString)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+            Spacer()
+        }
+        .padding(24)
     }
 }
