@@ -261,7 +261,7 @@ let stream = try await runtime.sendMessage(
 
 The checked-in demo app lives under `DemoApp/` and consumes the local Swift package products through SPM.
 
-![CodexKit demo](preview-200326.png)
+![CodexKit demo](preview-200326-1.png)
 
 To open the demo app:
 
