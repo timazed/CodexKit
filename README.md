@@ -105,6 +105,7 @@ let backend = CodexResponsesBackend(
 - user message text plus image attachments
 - image-only messages
 - persisted image attachments in runtime state
+- assistant image attachments when the backend returns image content
 
 This first pass does not yet add video or audio attachment support.
 
@@ -125,6 +126,8 @@ let stream = try await runtime.sendMessage(
 Image attachments are sent to the backend as image inputs, so the host app can bridge picked photos into the assistant without introducing a separate upload API first.
 
 Custom tools can also return image URLs via `ToolResultContent.image(URL)`. `CodexKit` forwards those URLs back to the model in the function output and attempts to hydrate them into assistant image attachments so they can render in chat.
+
+Hydration supports `data:` URLs, `file:` URLs, and network image URLs (`http`/`https`). If a URL cannot be read as an image, the turn still succeeds and the tool text output is preserved.
 
 ```swift
 let generateDiagramTool = AgentRuntime.ToolRegistration(

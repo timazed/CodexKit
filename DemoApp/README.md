@@ -27,6 +27,8 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 
 The checked-in demo tool is a deterministic shipping quote tool, and the Xcode console logs when the tool is requested, executed, and completed so you can verify tool usage during a run.
 
+The demo currently focuses on text plus photo input flows. Built-in image generation is not enabled in the checked-in app configuration.
+
 The demo uses the new configuration-first surface:
 
 - `AgentRuntime.Configuration`
