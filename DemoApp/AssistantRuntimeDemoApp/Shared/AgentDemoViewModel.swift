@@ -1,17 +1,21 @@
 import CodexKit
 import CodexKitUI
 import Foundation
-import Observation
 import OSLog
+import Observation
+#if os(iOS)
+import HealthKit
+import UserNotifications
+#endif
 
 @MainActor
 @Observable
 final class AgentDemoViewModel: @unchecked Sendable {
-    nonisolated private static let logger = Logger(
+    nonisolated static let logger = Logger(
         subsystem: "ai.assistantruntime.demoapp",
         category: "DemoTool"
     )
-    nonisolated private static let supportPersona = AgentPersonaStack(layers: [
+    nonisolated static let supportPersona = AgentPersonaStack(layers: [
         .init(
             name: "domain",
             instructions: "You are an expert customer support agent for a shipping app."
@@ -21,38 +25,58 @@ final class AgentDemoViewModel: @unchecked Sendable {
             instructions: "Be concise, calm, and action-oriented."
         ),
     ])
-    nonisolated private static let plannerPersona = AgentPersonaStack(layers: [
+    nonisolated static let plannerPersona = AgentPersonaStack(layers: [
         .init(
             name: "planner",
             instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
         ),
     ])
-    nonisolated private static let reviewerOverridePersona = AgentPersonaStack(layers: [
+    nonisolated static let reviewerOverridePersona = AgentPersonaStack(layers: [
         .init(
             name: "reviewer",
             instructions: "For this reply only, act as a strict reviewer and call out risks first."
         ),
     ])
 
-    private(set) var session: ChatGPTSession?
-    private(set) var threads: [AgentThread] = []
-    private(set) var messages: [AgentMessage] = []
-    private(set) var streamingText = ""
-    private(set) var lastError: String?
-    private(set) var isAuthenticating = false
-    private(set) var pendingComposerImages: [AgentImageAttachment] = []
+    var session: ChatGPTSession?
+    var threads: [AgentThread] = []
+    var messages: [AgentMessage] = []
+    var streamingText = ""
+    var lastError: String?
+    var isAuthenticating = false
+    var pendingComposerImages: [AgentImageAttachment] = []
     var composerText = ""
+    var healthKitAuthorized = false
+    var notificationAuthorized = false
+    var isRefreshingHealthCoach = false
+    var isAskingHealthCoach = false
+    var healthCoachInitialized = false
+    var todayStepCount = 0
+    var dailyStepGoal = 10_000
+    var healthCoachToneMode: HealthCoachToneMode = .hardcorePersonal
+    var healthCoachFeedback = "Set a step goal, then start moving."
+    var healthLastUpdatedAt: Date?
+    var cachedAICoachFeedbackKey: String?
+    var cachedAICoachFeedbackGeneratedAt: Date?
+    var cachedAIReminderBody: String?
+    var cachedAIReminderKey: String?
+    var cachedAIReminderGeneratedAt: Date?
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
+    let model: String
+    let enableWebSearch: Bool
+    let stateURL: URL?
+    let keychainAccount: String
 
-    private let model: String
-    private let enableWebSearch: Bool
-    private let stateURL: URL?
-    private let keychainAccount: String
+    var runtime: AgentRuntime
+    var activeThreadID: String?
+    var healthCoachThreadID: String?
 
-    private var runtime: AgentRuntime
-    private var activeThreadID: String?
+#if os(iOS)
+    let healthStore = HKHealthStore()
+    let notificationCenter = UNUserNotificationCenter.current()
+#endif
 
     init(
         runtime: AgentRuntime,
@@ -81,6 +105,21 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     var activeThreadPersonaSummary: String? {
         personaSummary(for: activeThread)
+    }
+
+    var healthProgressFraction: Double {
+        guard dailyStepGoal > 0 else {
+            return 0
+        }
+        return min(Double(todayStepCount) / Double(dailyStepGoal), 1)
+    }
+
+    var remainingStepCount: Int {
+        max(dailyStepGoal - todayStepCount, 0)
+    }
+
+    var hasMetDailyGoal: Bool {
+        dailyStepGoal > 0 && todayStepCount >= dailyStepGoal
     }
 
     func restore() async {
@@ -119,6 +158,9 @@ final class AgentDemoViewModel: @unchecked Sendable {
             await registerDemoTool()
             session = try await runtime.signIn()
             await refreshSnapshot()
+            if healthCoachInitialized {
+                await refreshHealthCoachProgress()
+            }
         } catch {
             await deviceCodePromptCoordinator.clear()
             await refreshSnapshot()
@@ -126,60 +168,15 @@ final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    func registerDemoTool() async {
-        let definition = ToolDefinition(
-            name: "demo_calculate_shipping_quote",
-            description: "Calculate a deterministic demo shipping quote, including price and estimated delivery days.",
-            inputSchema: .object([
-                "type": .string("object"),
-                "properties": .object([
-                    "destination_zone": .object([
-                        "type": .string("string"),
-                        "description": .string("Destination zone: A, B, C, or D."),
-                    ]),
-                    "weight_kg": .object([
-                        "type": .string("number"),
-                        "description": .string("Package weight in kilograms."),
-                    ]),
-                    "speed": .object([
-                        "type": .string("string"),
-                        "description": .string("Shipping speed: standard, express, or priority."),
-                    ]),
-                    "signature_required": .object([
-                        "type": .string("boolean"),
-                        "description": .string("Whether signature on delivery is required."),
-                    ]),
-                ]),
-            ]),
-            approvalPolicy: .requiresApproval,
-            approvalMessage: "Allow the demo app to calculate a shipping quote?"
-        )
-
-        do {
-            try await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, _ in
-                Self.logger.info(
-                    "Executing tool \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
-                )
-                let result = Self.makeShippingQuote(invocation: invocation)
-                Self.logger.info(
-                    "Tool \(invocation.toolName, privacy: .public) returned: \(result.primaryText ?? "<no text result>", privacy: .public)"
-                )
-                return result
-            })
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
     func createThread() async {
-        await createThread(
+        await createThreadInternal(
             title: nil,
             personaStack: nil
         )
     }
 
     func createSupportPersonaThread() async {
-        await createThread(
+        await createThreadInternal(
             title: "Support Persona Demo",
             personaStack: Self.supportPersona
         )
@@ -207,7 +204,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
             await createSupportPersonaThread()
         }
 
-        await sendMessage(
+        await sendMessageInternal(
             "Review this conversation setup and tell me the biggest risks first.",
             personaOverride: Self.reviewerOverridePersona
         )
@@ -220,23 +217,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
         }
 
         return layers.map(\.name).joined(separator: ", ")
-    }
-
-    private func createThread(
-        title: String?,
-        personaStack: AgentPersonaStack?
-    ) async {
-        do {
-            let thread = try await runtime.createThread(
-                title: title,
-                personaStack: personaStack
-            )
-            threads = await runtime.threads()
-            activeThreadID = thread.id
-            messages = await runtime.messages(for: thread.id)
-        } catch {
-            lastError = error.localizedDescription
-        }
     }
 
     func activateThread(id: String) async {
@@ -255,7 +235,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
         composerText = ""
         pendingComposerImages = []
-        await sendMessage(
+        await sendMessageInternal(
             outgoingText,
             images: outgoingImages
         )
@@ -281,96 +261,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
         lastError = message
     }
 
-    private func sendMessage(
-        _ text: String,
-        images: [AgentImageAttachment] = [],
-        personaOverride: AgentPersonaStack? = nil
-    ) async {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !trimmedText.isEmpty || !images.isEmpty else {
-            return
-        }
-
-        if activeThreadID == nil {
-            await createThread()
-        }
-
-        guard let activeThreadID else {
-            lastError = "No active thread is available."
-            return
-        }
-
-        streamingText = ""
-
-        do {
-            let stream = try await runtime.sendMessage(
-                UserMessageRequest(
-                    text: trimmedText,
-                    images: images,
-                    personaOverride: personaOverride
-                ),
-                in: activeThreadID
-            )
-            messages = await runtime.messages(for: activeThreadID)
-
-            for try await event in stream {
-                switch event {
-                case let .threadStarted(thread):
-                    threads = [thread] + threads.filter { $0.id != thread.id }
-
-                case let .threadStatusChanged(threadID, status):
-                    threads = threads.map { thread in
-                        guard thread.id == threadID else {
-                            return thread
-                        }
-                        var updated = thread
-                        updated.status = status
-                        updated.updatedAt = Date()
-                        return updated
-                    }
-
-                case .turnStarted:
-                    break
-
-                case let .assistantMessageDelta(_, _, delta):
-                    streamingText.append(delta)
-
-                case let .messageCommitted(message):
-                    messages.append(message)
-                    if message.role == .assistant {
-                        streamingText = ""
-                    }
-
-                case .approvalRequested:
-                    break
-
-                case .approvalResolved:
-                    break
-
-                case let .toolCallStarted(invocation):
-                    Self.logger.info(
-                        "Tool call requested: \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
-                    )
-
-                case let .toolCallFinished(result):
-                    Self.logger.info(
-                        "Tool call finished: \(result.toolName, privacy: .public) success=\(result.success, privacy: .public) output=\(result.primaryText ?? "<no text result>", privacy: .public)"
-                    )
-
-                case .turnCompleted:
-                    messages = await runtime.messages(for: activeThreadID)
-                    threads = await runtime.threads()
-
-                case let .turnFailed(error):
-                    lastError = error.message
-                }
-            }
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
     func approvePendingRequest() {
         approvalInbox.approveCurrent()
     }
@@ -394,12 +284,24 @@ final class AgentDemoViewModel: @unchecked Sendable {
             composerText = ""
             pendingComposerImages = []
             activeThreadID = nil
+            healthCoachThreadID = nil
+            healthCoachFeedback = "Set a step goal, then start moving."
+            healthLastUpdatedAt = nil
+            healthKitAuthorized = false
+            notificationAuthorized = false
+            healthCoachInitialized = false
+            cachedAICoachFeedbackKey = nil
+            cachedAICoachFeedbackGeneratedAt = nil
+            cachedAIReminderBody = nil
+            cachedAIReminderKey = nil
+            cachedAIReminderGeneratedAt = nil
+            lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    private func refreshSnapshot() async {
+    func refreshSnapshot() async {
         session = await runtime.currentSession()
         guard session != nil else {
             clearConversationSnapshot()
@@ -424,99 +326,11 @@ final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    private func clearConversationSnapshot() {
+    func clearConversationSnapshot() {
         threads = []
         messages = []
         streamingText = ""
         pendingComposerImages = []
         activeThreadID = nil
-    }
-
-    nonisolated private static func makeShippingQuote(invocation: ToolInvocation) -> ToolResultEnvelope {
-        guard case let .object(arguments) = invocation.arguments else {
-            return .failure(
-                invocation: invocation,
-                message: "The shipping quote tool expected object arguments."
-            )
-        }
-
-        let destinationZone = arguments["destination_zone"]?.stringValue?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .uppercased() ?? ""
-        let speed = arguments["speed"]?.stringValue?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? "standard"
-        let weightKilograms = arguments["weight_kg"]?.numberValue ?? 0
-        let signatureRequired = arguments["signature_required"]?.boolValue ?? false
-
-        let basePriceByZone: [String: Double] = [
-            "A": 4.0,
-            "B": 6.5,
-            "C": 9.0,
-            "D": 12.5,
-        ]
-        let speedMultipliers: [String: Double] = [
-            "standard": 1.0,
-            "express": 1.6,
-            "priority": 2.1,
-        ]
-        let deliveryDaysBySpeedAndZone: [String: [String: Int]] = [
-            "standard": ["A": 2, "B": 4, "C": 6, "D": 8],
-            "express": ["A": 1, "B": 2, "C": 3, "D": 4],
-            "priority": ["A": 1, "B": 1, "C": 2, "D": 3],
-        ]
-
-        guard let zoneBasePrice = basePriceByZone[destinationZone] else {
-            return .failure(
-                invocation: invocation,
-                message: "Unknown destination zone. Use A, B, C, or D."
-            )
-        }
-
-        guard let speedMultiplier = speedMultipliers[speed] else {
-            return .failure(
-                invocation: invocation,
-                message: "Unknown shipping speed. Use standard, express, or priority."
-            )
-        }
-
-        guard weightKilograms > 0 else {
-            return .failure(
-                invocation: invocation,
-                message: "Weight must be greater than zero kilograms."
-            )
-        }
-
-        let signatureSurcharge = signatureRequired ? 2.5 : 0
-        let subtotal = (zoneBasePrice + (weightKilograms * 1.75)) * speedMultiplier
-        let total = round((subtotal + signatureSurcharge) * 100) / 100
-        let deliveryDays = deliveryDaysBySpeedAndZone[speed]?[destinationZone] ?? 0
-
-        return .success(
-            invocation: invocation,
-            text: """
-            quote[zone=\(destinationZone), weightKg=\(Self.formattedDecimal(weightKilograms)), speed=\(speed), signatureRequired=\(signatureRequired ? "yes" : "no"), totalUSD=\(Self.formattedDecimal(total)), estimatedDeliveryDays=\(deliveryDays), reference=DEMO-\(destinationZone)-\(speed.uppercased())]
-            """
-        )
-    }
-
-    nonisolated private static func formattedDecimal(_ value: Double) -> String {
-        String(format: "%.2f", value)
-    }
-}
-
-private extension JSONValue {
-    var numberValue: Double? {
-        guard case let .number(value) = self else {
-            return nil
-        }
-        return value
-    }
-
-    var boolValue: Bool? {
-        guard case let .bool(value) = self else {
-            return nil
-        }
-        return value
     }
 }

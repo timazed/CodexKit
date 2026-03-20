@@ -14,9 +14,22 @@ struct AssistantRuntimeDemoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                AgentDemoView(viewModel: viewModel)
-                    .navigationTitle("ChatGPT Demo")
+            TabView {
+                NavigationStack {
+                    AgentDemoView(viewModel: viewModel)
+                        .navigationTitle("ChatGPT Demo")
+                }
+                .tabItem {
+                    Label("Assistant", systemImage: "bubble.left.and.bubble.right")
+                }
+
+                NavigationStack {
+                    HealthCoachView(viewModel: viewModel)
+                        .navigationTitle("Health Coach")
+                }
+                .tabItem {
+                    Label("Health Coach", systemImage: "figure.walk")
+                }
             }
         }
     }

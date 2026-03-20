@@ -15,6 +15,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 ## What the app does
 
 - launches a SwiftUI chat screen
+- includes a `Health Coach` tab for step-goal tracking
 - signs in with ChatGPT using either device code or browser OAuth
 - creates or resumes a thread
 - lets you type and send a user request
@@ -24,6 +25,9 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - shows approval prompts before running a host-defined demo tool
 - demonstrates thread-pinned personas and one-turn persona overrides
 - enables Responses web search in the checked-in demo configuration
+- reads HealthKit step totals (with permission), tracks a daily goal, and schedules local reminder notifications
+- supports switchable coaching tone (`Hardcore Personal` or `Firm Coach`)
+- proactively generates AI coach feedback in a dedicated persona-pinned thread as steps, goal, or tone change
 
 The checked-in demo tool is a deterministic shipping quote tool, and the Xcode console logs when the tool is requested, executed, and completed so you can verify tool usage during a run.
 

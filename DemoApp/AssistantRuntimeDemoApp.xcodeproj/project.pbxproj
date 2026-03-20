@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */; };
+		1A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift */; };
+		1A2B3C4D5E6F700000000003 /* HealthCoachView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000003 /* HealthCoachView.swift */; };
+		1A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift */; };
+		1A2B3C4D5E6F700000000005 /* Image+PlatformInit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000005 /* Image+PlatformInit.swift */; };
+		1A2B3C4D5E6F700000000006 /* AgentDemoViewModel+Messaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000006 /* AgentDemoViewModel+Messaging.swift */; };
+		1A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */; };
+		1A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */; };
+		1A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */; };
 		7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */; };
 		84726927B752451499D9257F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 906A95007C8ECB92CFC2CE15 /* Foundation.framework */; };
 		B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA22585116A120BA97F76B8 /* AgentDemoView.swift */; };
@@ -17,9 +26,19 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+ChatSections.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+ComposerAndSheets.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000003 /* HealthCoachView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HealthCoachView.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceCodePromptView.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000005 /* Image+PlatformInit.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Image+PlatformInit.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000006 /* AgentDemoViewModel+Messaging.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+Messaging.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+Tools.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+HealthCoach.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+HealthCoachPlatform.swift"; sourceTree = "<group>"; };
 		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
 		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
 		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
+		690A3E5A03E545F88FAF9A44 /* AssistantRuntimeDemoApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AssistantRuntimeDemoApp.entitlements; sourceTree = "<group>"; };
 		86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoRuntimeFactory.swift; sourceTree = "<group>"; };
 		906A95007C8ECB92CFC2CE15 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F6DF501207E96F91C331A2EF /* AssistantRuntimeDemoApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AssistantRuntimeDemoApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -45,6 +64,7 @@
 			children = (
 				F13A26169023E4737C83DBD3 /* Shared */,
 				5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */,
+				690A3E5A03E545F88FAF9A44 /* AssistantRuntimeDemoApp.entitlements */,
 				FE27E9F3273C1EAF47AE5198 /* Info.plist */,
 			);
 			name = AssistantRuntimeDemoApp;
@@ -89,7 +109,16 @@
 			children = (
 				86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */,
 				3CA22585116A120BA97F76B8 /* AgentDemoView.swift */,
+				2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */,
+				2A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift */,
+				2A2B3C4D5E6F700000000003 /* HealthCoachView.swift */,
+				2A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift */,
+				2A2B3C4D5E6F700000000005 /* Image+PlatformInit.swift */,
 				2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */,
+				2A2B3C4D5E6F700000000006 /* AgentDemoViewModel+Messaging.swift */,
+				2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */,
+				2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */,
+				2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */,
 			);
 			name = Shared;
 			path = Shared;
@@ -166,6 +195,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift in Sources */,
+				1A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift in Sources */,
+				1A2B3C4D5E6F700000000003 /* HealthCoachView.swift in Sources */,
+				1A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift in Sources */,
+				1A2B3C4D5E6F700000000005 /* Image+PlatformInit.swift in Sources */,
+				1A2B3C4D5E6F700000000006 /* AgentDemoViewModel+Messaging.swift in Sources */,
+				1A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift in Sources */,
+				1A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift in Sources */,
+				1A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift in Sources */,
 				7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */,
 				BB4F38E64D1EBBB3821AC4E3 /* AgentDemoRuntimeFactory.swift in Sources */,
 				B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */,
@@ -244,6 +282,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = T9G4574SJG;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -266,6 +305,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = T9G4574SJG;
 				GENERATE_INFOPLIST_FILE = NO;

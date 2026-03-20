@@ -261,7 +261,7 @@ let stream = try await runtime.sendMessage(
 
 The checked-in demo app lives under `DemoApp/` and consumes the local Swift package products through SPM.
 
-![CodexKit demo](preview.png)
+![CodexKit demo](preview-200326.png)
 
 To open the demo app:
 
@@ -277,3 +277,4 @@ The demo app exercises:
 - image messages from the photo library through the composer
 - Responses web search in the checked-in configuration
 - thread-pinned personas plus one-turn persona overrides
+- a dedicated Health Coach tab with HealthKit step tracking, AI-generated coach feedback, local reminders, and switchable coaching tone (Hardcore Personal or Firm Coach)
