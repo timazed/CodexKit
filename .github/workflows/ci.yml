@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Swift package tests
+        run: swift test
+
+      - name: Build demo app (iOS Simulator)
+        run: |
+          xcodebuild \
+            -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
+            -scheme AssistantRuntimeDemoApp \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
