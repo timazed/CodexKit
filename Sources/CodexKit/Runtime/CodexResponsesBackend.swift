@@ -165,13 +165,16 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 AgentMessage(
                     threadID: threadID,
                     role: .user,
-                    text: newMessage.text
+                    text: newMessage.text,
+                    images: newMessage.images
                 )
             )
         )
 
         var aggregateUsage = AgentUsage()
         var shouldContinue = true
+        var pendingToolImages: [AgentImageAttachment] = []
+        var pendingToolFallbackTexts: [String] = []
 
         while shouldContinue {
             shouldContinue = false
@@ -206,14 +209,26 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                         )
                     )
 
-                case let .assistantMessage(text):
+                case let .assistantMessage(messageTemplate):
+                    let assistantText: String
+                    if messageTemplate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       !pendingToolFallbackTexts.isEmpty {
+                        assistantText = pendingToolFallbackTexts.joined(separator: "\n\n")
+                    } else {
+                        assistantText = messageTemplate.text
+                    }
+
+                    let mergedImages = (messageTemplate.images + pendingToolImages).uniqued()
                     let message = AgentMessage(
                         threadID: threadID,
                         role: .assistant,
-                        text: text
+                        text: assistantText,
+                        images: mergedImages
                     )
                     workingHistory.append(.assistantMessage(message))
                     continuation.yield(.assistantMessageCompleted(message))
+                    pendingToolImages.removeAll(keepingCapacity: true)
+                    pendingToolFallbackTexts.removeAll(keepingCapacity: true)
 
                 case let .functionCall(functionCall):
                     sawToolCall = true
@@ -229,6 +244,16 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
                     continuation.yield(.toolCallRequested(invocation))
                     let toolResult = try await pendingToolResults.wait(for: invocation.id)
+                    let toolImages = await toolOutputImages(from: toolResult, urlSession: urlSession)
+                    pendingToolImages.append(contentsOf: toolImages)
+                    pendingToolImages = pendingToolImages.uniqued()
+
+                    if let primaryText = toolResult.primaryText?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                       !primaryText.isEmpty {
+                        pendingToolFallbackTexts.append(primaryText)
+                    }
+
                     workingHistory.append(
                         .functionCallOutput(
                             callID: invocation.id,
@@ -244,6 +269,18 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
             }
 
             shouldContinue = sawToolCall
+            if !shouldContinue, (!pendingToolImages.isEmpty || !pendingToolFallbackTexts.isEmpty) {
+                let message = AgentMessage(
+                    threadID: threadID,
+                    role: .assistant,
+                    text: pendingToolFallbackTexts.joined(separator: "\n\n"),
+                    images: pendingToolImages
+                )
+                workingHistory.append(.assistantMessage(message))
+                continuation.yield(.assistantMessageCompleted(message))
+                pendingToolImages.removeAll(keepingCapacity: true)
+                pendingToolFallbackTexts.removeAll(keepingCapacity: true)
+            }
         }
 
         return aggregateUsage
@@ -416,7 +453,18 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                     .compactMap(\.text)
                     .joined()
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                return text.isEmpty ? nil : .assistantMessage(text)
+                let images = message.content.compactMap(\.imageAttachment)
+                guard !text.isEmpty || !images.isEmpty else {
+                    return nil
+                }
+                return .assistantMessage(
+                    AgentMessage(
+                        threadID: "",
+                        role: .assistant,
+                        text: text,
+                        images: images
+                    )
+                )
 
             case let .functionCall(functionCall):
                 return .functionCall(
@@ -460,13 +508,102 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     }
 
     private static func toolOutputText(from result: ToolResultEnvelope) -> String {
+        var segments: [String] = []
+
         if let primaryText = result.primaryText, !primaryText.isEmpty {
-            return primaryText
+            segments.append(primaryText)
+        }
+
+        let imageURLs = result.content.compactMap { content -> URL? in
+            guard case let .image(url) = content else {
+                return nil
+            }
+            return url
+        }
+        if !imageURLs.isEmpty {
+            segments.append(
+                "Image URLs:\n" + imageURLs.map(\.absoluteString).joined(separator: "\n")
+            )
+        }
+
+        if !segments.isEmpty {
+            return segments.joined(separator: "\n\n")
         }
         if let errorMessage = result.errorMessage, !errorMessage.isEmpty {
             return errorMessage
         }
         return result.success ? "Tool execution completed." : "Tool execution failed."
+    }
+
+    private static func toolOutputImages(
+        from result: ToolResultEnvelope,
+        urlSession: URLSession
+    ) async -> [AgentImageAttachment] {
+        var attachments: [AgentImageAttachment] = []
+        for content in result.content {
+            guard case let .image(url) = content else {
+                continue
+            }
+            if let attachment = await imageAttachment(from: url, urlSession: urlSession) {
+                attachments.append(attachment)
+            }
+        }
+        return attachments.uniqued()
+    }
+
+    private static func imageAttachment(
+        from url: URL,
+        urlSession: URLSession
+    ) async -> AgentImageAttachment? {
+        if url.scheme?.lowercased() == "data" {
+            let decoded = url.absoluteString.removingPercentEncoding ?? url.absoluteString
+            return AgentImageAttachment(dataURLString: decoded)
+        }
+
+        if url.isFileURL {
+            guard let mimeType = inferredImageMimeType(from: url.pathExtension),
+                  let data = try? Data(contentsOf: url),
+                  !data.isEmpty
+            else {
+                return nil
+            }
+            return AgentImageAttachment(mimeType: mimeType, data: data)
+        }
+
+        do {
+            let (data, response) = try await urlSession.data(from: url)
+            guard !data.isEmpty else {
+                return nil
+            }
+
+            let mimeType = response.mimeType?.lowercased() ?? inferredImageMimeType(from: url.pathExtension)
+            let normalized = mimeType ?? "image/png"
+            guard normalized.hasPrefix("image/") else {
+                return nil
+            }
+            return AgentImageAttachment(mimeType: normalized, data: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func inferredImageMimeType(from pathExtension: String) -> String? {
+        switch pathExtension.lowercased() {
+        case "png":
+            "image/png"
+        case "jpg", "jpeg":
+            "image/jpeg"
+        case "gif":
+            "image/gif"
+        case "webp":
+            "image/webp"
+        case "heic":
+            "image/heic"
+        case "heif":
+            "image/heif"
+        default:
+            nil
+        }
     }
 }
 
@@ -528,13 +665,6 @@ private enum WorkingHistoryItem: Sendable {
     }
 
     private static func messageJSONValue(for message: AgentMessage) -> JSONValue {
-        let contentType: JSONValue = switch message.role {
-        case .assistant:
-            .string("output_text")
-        default:
-            .string("input_text")
-        }
-
         let roleValue: String = switch message.role {
         case .assistant:
             "assistant"
@@ -546,15 +676,45 @@ private enum WorkingHistoryItem: Sendable {
             "user"
         }
 
+        var content: [JSONValue] = []
+
+        switch message.role {
+        case .assistant:
+            if !message.text.isEmpty {
+                content.append(.object([
+                    "type": .string("output_text"),
+                    "text": .string(message.text),
+                ]))
+            }
+            content.append(contentsOf: message.images.map { image in
+                .object([
+                    "type": .string("output_image"),
+                    "image_url": .string(image.dataURLString),
+                ])
+            })
+
+        default:
+            if !message.text.isEmpty {
+                content.append(.object([
+                    "type": .string("input_text"),
+                    "text": .string(message.text),
+                ]))
+            }
+
+            if message.role == .user {
+                content.append(contentsOf: message.images.map { image in
+                    .object([
+                        "type": .string("input_image"),
+                        "image_url": .string(image.dataURLString),
+                    ])
+                })
+            }
+        }
+
         return .object([
             "type": .string("message"),
             "role": .string(roleValue),
-            "content": .array([
-                .object([
-                    "type": contentType,
-                    "text": .string(message.text),
-                ]),
-            ]),
+            "content": .array(content),
         ])
     }
 }
@@ -576,7 +736,7 @@ private struct FunctionCallRecord: Sendable {
 
 private enum CodexResponsesStreamEvent: Sendable {
     case assistantTextDelta(String)
-    case assistantMessage(String)
+    case assistantMessage(AgentMessage)
     case functionCall(FunctionCallRecord)
     case completed(AgentUsage)
 }
@@ -724,6 +884,34 @@ private struct StreamMessageItem: Decodable {
 private struct StreamMessageContent: Decodable {
     let type: String
     let text: String?
+    let imageAttachment: AgentImageAttachment?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let object = try container.decode([String: JSONValue].self)
+        type = object["type"]?.stringValue ?? ""
+        text = object["text"]?.stringValue
+        imageAttachment = Self.parseImageAttachment(from: object)
+    }
+
+    private static func parseImageAttachment(from object: [String: JSONValue]) -> AgentImageAttachment? {
+        if let dataURL = object["image_url"]?.stringValue,
+           let attachment = AgentImageAttachment(dataURLString: dataURL) {
+            return attachment
+        }
+
+        if let imageObject = object["image"]?.objectValue,
+           let dataURL = imageObject["image_url"]?.stringValue,
+           let attachment = AgentImageAttachment(dataURLString: dataURL) {
+            return attachment
+        }
+
+        if let b64 = object["b64_json"]?.stringValue {
+            return AgentImageAttachment(base64String: b64)
+        }
+
+        return nil
+    }
 }
 
 private struct StreamFunctionCallItem: Decodable {
@@ -786,4 +974,11 @@ private struct StreamErrorPayload: Decodable {
 
 private struct StreamIncompleteDetails: Decodable {
     let reason: String?
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
 }

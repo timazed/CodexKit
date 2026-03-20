@@ -40,6 +40,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
     private(set) var streamingText = ""
     private(set) var lastError: String?
     private(set) var isAuthenticating = false
+    private(set) var pendingComposerImages: [AgentImageAttachment] = []
     var composerText = ""
 
     let approvalInbox: ApprovalInbox
@@ -245,20 +246,49 @@ final class AgentDemoViewModel: @unchecked Sendable {
     }
 
     func sendComposerText() async {
-        guard !composerText.isEmpty else {
+        let outgoingText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outgoingImages = pendingComposerImages
+
+        guard !outgoingText.isEmpty || !outgoingImages.isEmpty else {
             return
         }
 
-        let outgoingText = composerText
         composerText = ""
-        await sendMessage(outgoingText)
+        pendingComposerImages = []
+        await sendMessage(
+            outgoingText,
+            images: outgoingImages
+        )
+    }
+
+    func queueComposerImage(
+        data: Data,
+        mimeType: String
+    ) {
+        pendingComposerImages.append(
+            AgentImageAttachment(
+                mimeType: mimeType,
+                data: data
+            )
+        )
+    }
+
+    func removePendingComposerImage(id: String) {
+        pendingComposerImages.removeAll { $0.id == id }
+    }
+
+    func reportError(_ message: String) {
+        lastError = message
     }
 
     private func sendMessage(
         _ text: String,
+        images: [AgentImageAttachment] = [],
         personaOverride: AgentPersonaStack? = nil
     ) async {
-        guard !text.isEmpty else {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedText.isEmpty || !images.isEmpty else {
             return
         }
 
@@ -276,7 +306,8 @@ final class AgentDemoViewModel: @unchecked Sendable {
         do {
             let stream = try await runtime.sendMessage(
                 UserMessageRequest(
-                    text: text,
+                    text: trimmedText,
+                    images: images,
                     personaOverride: personaOverride
                 ),
                 in: activeThreadID
@@ -361,6 +392,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
             messages = []
             streamingText = ""
             composerText = ""
+            pendingComposerImages = []
             activeThreadID = nil
         } catch {
             lastError = error.localizedDescription
@@ -396,6 +428,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         threads = []
         messages = []
         streamingText = ""
+        pendingComposerImages = []
         activeThreadID = nil
     }
 

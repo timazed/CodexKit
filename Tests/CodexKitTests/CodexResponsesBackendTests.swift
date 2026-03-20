@@ -230,4 +230,172 @@ final class CodexResponsesBackendTests: XCTestCase {
 
         for try await _ in turnStream.events {}
     }
+
+    func testBackendEncodesUserImageAttachmentsAsInputImages() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Image received"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_image","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+                    let message = try XCTUnwrap(
+                        input.first(where: { $0["type"] as? String == "message" })
+                    )
+                    let content = try XCTUnwrap(message["content"] as? [[String: Any]])
+                    XCTAssertTrue(
+                        content.contains(where: {
+                            ($0["type"] as? String) == "input_text" &&
+                                ($0["text"] as? String) == "Describe this image"
+                        })
+                    )
+                    XCTAssertTrue(
+                        content.contains(where: {
+                            ($0["type"] as? String) == "input_image" &&
+                                ($0["image_url"] as? String)?.hasPrefix("data:image/png;base64,") == true
+                        })
+                    )
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-image"),
+            history: [],
+            message: UserMessageRequest(
+                text: "Describe this image",
+                images: [image]
+            ),
+            instructions: "Resolved instructions",
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
+    func testBackendCarriesToolImageOutputsIntoAssistantMessages() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let tool = ToolDefinition(
+            name: "generate_image",
+            description: "Generates an image and returns a URL",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "prompt": .object(["type": .string("string")]),
+                ]),
+            ]),
+            approvalPolicy: .automatic
+        )
+        let pngBytes = Data([0x89, 0x50, 0x4E, 0x47])
+        let imageURL = try XCTUnwrap(
+            URL(string: "data:image/png;base64,\(pngBytes.base64EncodedString())")
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"function_call","name":"generate_image","arguments":"{\\"prompt\\":\\"sunset\\"}","call_id":"call_img_1"}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_tool_1","usage":{"input_tokens":8,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+                    """.utf8
+                )
+            )
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Here you go"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_tool_2","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+                    let functionOutput = try XCTUnwrap(
+                        input.first(where: { $0["type"] as? String == "function_call_output" })
+                    )
+                    let output = try XCTUnwrap(functionOutput["output"] as? String)
+                    XCTAssertTrue(output.contains("Generated image ready"))
+                    XCTAssertTrue(output.contains("Image URLs:"))
+                    XCTAssertTrue(output.contains(imageURL.absoluteString))
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-tool-image"),
+            history: [],
+            message: UserMessageRequest(text: "Make me an image"),
+            instructions: "Resolved instructions",
+            tools: [tool],
+            session: session
+        )
+
+        var assistantMessage: AgentMessage?
+
+        for try await event in turnStream.events {
+            switch event {
+            case let .toolCallRequested(invocation):
+                let result = ToolResultEnvelope(
+                    invocationID: invocation.id,
+                    toolName: invocation.toolName,
+                    success: true,
+                    content: [
+                        .text("Generated image ready"),
+                        .image(imageURL),
+                    ]
+                )
+                try await turnStream.submitToolResult(result, for: invocation.id)
+
+            case let .assistantMessageCompleted(message):
+                assistantMessage = message
+
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(assistantMessage?.text, "Here you go")
+        XCTAssertEqual(assistantMessage?.images.count, 1)
+        XCTAssertEqual(assistantMessage?.images.first?.mimeType, "image/png")
+        XCTAssertEqual(assistantMessage?.images.first?.data, pngBytes)
+    }
+
 }

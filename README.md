@@ -96,6 +96,64 @@ let backend = CodexResponsesBackend(
 )
 ```
 
+`CodexKit` currently supports text and image input flows in this runtime. Built-in image generation is not part of the SDK surface.
+
+## Image Attachments
+
+`CodexKit` now supports:
+
+- user message text plus image attachments
+- image-only messages
+- persisted image attachments in runtime state
+
+This first pass does not yet add video or audio attachment support.
+
+```swift
+let imageData: Data = ...
+
+let stream = try await runtime.sendMessage(
+    UserMessageRequest(
+        text: "Describe this image",
+        images: [
+            .jpeg(imageData)
+        ]
+    ),
+    in: thread.id
+)
+```
+
+Image attachments are sent to the backend as image inputs, so the host app can bridge picked photos into the assistant without introducing a separate upload API first.
+
+Custom tools can also return image URLs via `ToolResultContent.image(URL)`. `CodexKit` forwards those URLs back to the model in the function output and attempts to hydrate them into assistant image attachments so they can render in chat.
+
+```swift
+let generateDiagramTool = AgentRuntime.ToolRegistration(
+    definition: ToolDefinition(
+        name: "generate_diagram_image",
+        description: "Generate a diagram image and return a URL.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "prompt": .object(["type": .string("string")]),
+            ]),
+        ]),
+        approvalPolicy: .requiresApproval
+    ),
+    executor: AnyToolExecutor { invocation, _ in
+        let imageURL = URL(string: "https://example.com/generated-diagram.png")!
+        return ToolResultEnvelope(
+            invocationID: invocation.id,
+            toolName: invocation.toolName,
+            success: true,
+            content: [
+                .text("Generated diagram image."),
+                .image(imageURL),
+            ]
+        )
+    }
+)
+```
+
 ## Pinned And Dynamic Personas
 
 `CodexKit` supports layered personas with this precedence order:
@@ -213,5 +271,6 @@ The demo app exercises:
 - device-code and browser-based ChatGPT sign-in
 - streamed assistant output and resumable threads
 - approval-gated host tools with a shipping quote example
+- image messages from the photo library through the composer
 - Responses web search in the checked-in configuration
 - thread-pinned personas plus one-turn persona overrides

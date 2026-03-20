@@ -18,6 +18,8 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - signs in with ChatGPT using either device code or browser OAuth
 - creates or resumes a thread
 - lets you type and send a user request
+- lets you attach a photo from the library and send it with or without text
+- renders attached user images in the transcript
 - streams assistant output into the UI
 - shows approval prompts before running a host-defined demo tool
 - demonstrates thread-pinned personas and one-turn persona overrides

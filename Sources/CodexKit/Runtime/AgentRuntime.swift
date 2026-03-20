@@ -134,6 +134,10 @@ public actor AgentRuntime {
         _ request: UserMessageRequest,
         in threadID: String
     ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
+        guard request.hasContent else {
+            throw AgentRuntimeError.invalidMessageContent()
+        }
+
         guard let thread = thread(for: threadID) else {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
@@ -142,7 +146,8 @@ public actor AgentRuntime {
         let userMessage = AgentMessage(
             threadID: threadID,
             role: .user,
-            text: request.text
+            text: request.text,
+            images: request.images
         )
         let priorMessages = state.messagesByThread[threadID] ?? []
         let resolvedInstructions = resolveInstructions(
@@ -351,7 +356,13 @@ public actor AgentRuntime {
         if let index = state.threads.firstIndex(where: { $0.id == message.threadID }) {
             state.threads[index].updatedAt = message.createdAt
             if state.threads[index].title == nil, message.role == .user {
-                state.threads[index].title = String(message.text.prefix(48))
+                if !message.text.isEmpty {
+                    state.threads[index].title = String(message.text.prefix(48))
+                } else if !message.images.isEmpty {
+                    state.threads[index].title = message.images.count == 1
+                        ? "Image message"
+                        : "Image message (\(message.images.count))"
+                }
             }
         }
 

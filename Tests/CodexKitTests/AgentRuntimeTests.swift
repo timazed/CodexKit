@@ -234,6 +234,108 @@ final class AgentRuntimeTests: XCTestCase {
         }
     }
 
+    func testImageOnlyMessageIsAcceptedAndPersisted() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread()
+        let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
+
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(
+                text: "",
+                images: [image]
+            ),
+            in: thread.id
+        )
+        for try await _ in stream {}
+
+        let messages = await runtime.messages(for: thread.id)
+        let userMessage = try XCTUnwrap(messages.first(where: { $0.role == .user }))
+        XCTAssertEqual(userMessage.images, [image])
+        XCTAssertEqual(userMessage.text, "")
+        XCTAssertEqual(userMessage.displayText, "Attached 1 image")
+
+        let threads = await runtime.threads()
+        let updatedThread = try XCTUnwrap(threads.first(where: { $0.id == thread.id }))
+        XCTAssertEqual(updatedThread.title, "Image message")
+    }
+
+    func testAssistantImagesAreCommittedToThreadHistory() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: ImageReplyAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread()
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "Generate an image"),
+            in: thread.id
+        )
+        for try await _ in stream {}
+
+        let messages = await runtime.messages(for: thread.id)
+        let assistantMessage = try XCTUnwrap(messages.first(where: { $0.role == .assistant }))
+        XCTAssertEqual(assistantMessage.images.count, 1)
+        XCTAssertEqual(assistantMessage.images.first?.mimeType, "image/png")
+    }
+
+    func testRestoreDecodesLegacyStateWithoutPersonaOrImages() async throws {
+        let legacyStateJSON = """
+        {
+          "threads": [
+            {
+              "id": "thread-1",
+              "title": "Legacy Thread",
+              "createdAt": "2026-03-20T00:00:00Z",
+              "updatedAt": "2026-03-20T00:00:00Z",
+              "status": "idle"
+            }
+          ],
+          "messagesByThread": {
+            "thread-1": [
+              {
+                "id": "message-1",
+                "threadID": "thread-1",
+                "role": "assistant",
+                "text": "Hello from legacy state",
+                "createdAt": "2026-03-20T00:00:00Z"
+              }
+            ]
+          }
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let state = try decoder.decode(StoredRuntimeState.self, from: Data(legacyStateJSON.utf8))
+
+        XCTAssertEqual(state.threads.count, 1)
+        XCTAssertEqual(state.threads.first?.personaStack, nil)
+        XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.images, [])
+        XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.text, "Hello from legacy state")
+    }
+
     func testRuntimeStreamsToolApprovalAndCompletion() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
@@ -338,4 +440,63 @@ final class AgentRuntimeTests: XCTestCase {
 
         XCTAssertTrue(sawToolResult)
     }
+}
+
+private actor ImageReplyAgentBackend: AgentBackend {
+    func createThread(session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: UUID().uuidString)
+    }
+
+    func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: id)
+    }
+
+    func beginTurn(
+        thread: AgentThread,
+        history _: [AgentMessage],
+        message _: UserMessageRequest,
+        instructions _: String,
+        tools _: [ToolDefinition],
+        session _: ChatGPTSession
+    ) async throws -> any AgentTurnStreaming {
+        ImageReplyTurn(threadID: thread.id)
+    }
+}
+
+private final class ImageReplyTurn: AgentTurnStreaming, @unchecked Sendable {
+    let events: AsyncThrowingStream<AgentBackendEvent, Error>
+
+    init(threadID: String) {
+        let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
+        let turn = AgentTurn(id: UUID().uuidString, threadID: threadID)
+
+        events = AsyncThrowingStream { continuation in
+            continuation.yield(.turnStarted(turn))
+            continuation.yield(
+                .assistantMessageCompleted(
+                    AgentMessage(
+                        threadID: threadID,
+                        role: .assistant,
+                        text: "",
+                        images: [image]
+                    )
+                )
+            )
+            continuation.yield(
+                .turnCompleted(
+                    AgentTurnSummary(
+                        threadID: threadID,
+                        turnID: turn.id,
+                        usage: AgentUsage(inputTokens: 1, outputTokens: 1)
+                    )
+                )
+            )
+            continuation.finish()
+        }
+    }
+
+    func submitToolResult(
+        _: ToolResultEnvelope,
+        for _: String
+    ) async throws {}
 }

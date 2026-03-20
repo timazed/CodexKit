@@ -27,6 +27,13 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     public static func unauthorized(_ message: String = "The ChatGPT session is no longer authorized.") -> AgentRuntimeError {
         AgentRuntimeError(code: "unauthorized", message: message)
     }
+
+    public static func invalidMessageContent() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_message_content",
+            message: "A user message must include text or at least one image attachment."
+        )
+    }
 }
 
 public enum AgentRole: String, Codable, Hashable, Sendable {
@@ -62,16 +69,104 @@ public struct AgentUsage: Codable, Hashable, Sendable {
     }
 }
 
+public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
+    public let id: String
+    public let mimeType: String
+    public let data: Data
+
+    public init(
+        id: String = UUID().uuidString,
+        mimeType: String,
+        data: Data
+    ) {
+        self.id = id
+        self.mimeType = mimeType
+        self.data = data
+    }
+
+    public static func png(
+        _ data: Data,
+        id: String = UUID().uuidString
+    ) -> AgentImageAttachment {
+        AgentImageAttachment(id: id, mimeType: "image/png", data: data)
+    }
+
+    public static func jpeg(
+        _ data: Data,
+        id: String = UUID().uuidString
+    ) -> AgentImageAttachment {
+        AgentImageAttachment(id: id, mimeType: "image/jpeg", data: data)
+    }
+
+    public var dataURLString: String {
+        "data:\(mimeType);base64,\(data.base64EncodedString())"
+    }
+
+    public init?(
+        dataURLString: String,
+        id: String = UUID().uuidString
+    ) {
+        let prefix = "data:"
+        guard dataURLString.hasPrefix(prefix),
+              let separatorIndex = dataURLString.range(of: ";base64,")
+        else {
+            return nil
+        }
+
+        let mimeTypeStart = dataURLString.index(dataURLString.startIndex, offsetBy: prefix.count)
+        let mimeType = String(dataURLString[mimeTypeStart ..< separatorIndex.lowerBound])
+        let base64Start = separatorIndex.upperBound
+        let base64 = String(dataURLString[base64Start...])
+
+        self.init(id: id, mimeType: mimeType, data: Data(base64Encoded: base64) ?? Data())
+        if data.isEmpty {
+            return nil
+        }
+    }
+
+    public init?(
+        base64String: String,
+        mimeType: String = "image/png",
+        id: String = UUID().uuidString
+    ) {
+        guard let data = Data(base64Encoded: base64String), !data.isEmpty else {
+            return nil
+        }
+
+        self.init(id: id, mimeType: mimeType, data: data)
+    }
+}
+
 public struct UserMessageRequest: Codable, Hashable, Sendable {
     public var text: String
+    public var images: [AgentImageAttachment]
     public var personaOverride: AgentPersonaStack?
 
     public init(
         text: String,
+        images: [AgentImageAttachment] = [],
         personaOverride: AgentPersonaStack? = nil
     ) {
         self.text = text
+        self.images = images
         self.personaOverride = personaOverride
+    }
+
+    public var hasContent: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case images
+        case personaOverride
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
     }
 }
 
@@ -97,6 +192,25 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.status = status
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case personaStack
+        case createdAt
+        case updatedAt
+        case status
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        personaStack = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaStack)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        status = try container.decodeIfPresent(AgentThreadStatus.self, forKey: .status) ?? .idle
     }
 }
 
@@ -124,6 +238,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
     public var threadID: String
     public var role: AgentRole
     public var text: String
+    public var images: [AgentImageAttachment]
     public var createdAt: Date
 
     public init(
@@ -131,13 +246,50 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         threadID: String,
         role: AgentRole,
         text: String,
+        images: [AgentImageAttachment] = [],
         createdAt: Date = Date()
     ) {
         self.id = id
         self.threadID = threadID
         self.role = role
         self.text = text
+        self.images = images
         self.createdAt = createdAt
+    }
+
+    public var displayText: String {
+        if !text.isEmpty {
+            return text
+        }
+
+        if images.count == 1 {
+            return "Attached 1 image"
+        }
+
+        if !images.isEmpty {
+            return "Attached \(images.count) images"
+        }
+
+        return ""
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case threadID
+        case role
+        case text
+        case images
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        threadID = try container.decode(String.self, forKey: .threadID)
+        role = try container.decode(AgentRole.self, forKey: .role)
+        text = try container.decode(String.self, forKey: .text)
+        images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     }
 }
 
