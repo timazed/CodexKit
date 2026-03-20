@@ -20,6 +20,7 @@ public actor AgentRuntime {
         public let backend: any AgentBackend
         public let approvalPresenter: any ApprovalPresenting
         public let stateStore: any RuntimeStateStoring
+        public let baseInstructions: String?
         public let tools: [ToolRegistration]
 
         public init(
@@ -28,6 +29,7 @@ public actor AgentRuntime {
             backend: any AgentBackend,
             approvalPresenter: any ApprovalPresenting,
             stateStore: any RuntimeStateStoring,
+            baseInstructions: String? = nil,
             tools: [ToolRegistration] = []
         ) {
             self.authProvider = authProvider
@@ -35,6 +37,7 @@ public actor AgentRuntime {
             self.backend = backend
             self.approvalPresenter = approvalPresenter
             self.stateStore = stateStore
+            self.baseInstructions = baseInstructions
             self.tools = tools
         }
     }
@@ -44,6 +47,7 @@ public actor AgentRuntime {
     private let sessionManager: ChatGPTSessionManager
     private let toolRegistry: ToolRegistry
     private let approvalCoordinator: ApprovalCoordinator
+    private let baseInstructions: String?
 
     private var state: StoredRuntimeState = .empty
 
@@ -58,6 +62,7 @@ public actor AgentRuntime {
         self.approvalCoordinator = ApprovalCoordinator(
             presenter: configuration.approvalPresenter
         )
+        self.baseInstructions = configuration.baseInstructions ?? configuration.backend.baseInstructions
     }
 
     @discardableResult
@@ -103,12 +108,16 @@ public actor AgentRuntime {
     }
 
     @discardableResult
-    public func createThread(title: String? = nil) async throws -> AgentThread {
+    public func createThread(
+        title: String? = nil,
+        personaStack: AgentPersonaStack? = nil
+    ) async throws -> AgentThread {
         let session = try await sessionManager.requireSession()
         var thread = try await backend.createThread(session: session)
         if let title {
             thread.title = title
         }
+        thread.personaStack = personaStack
         try await upsertThread(thread)
         return thread
     }
@@ -136,6 +145,10 @@ public actor AgentRuntime {
             text: request.text
         )
         let priorMessages = state.messagesByThread[threadID] ?? []
+        let resolvedInstructions = resolveInstructions(
+            thread: thread,
+            message: request
+        )
 
         try await appendMessage(userMessage)
         try await setThreadStatus(.streaming, for: threadID)
@@ -145,6 +158,7 @@ public actor AgentRuntime {
             thread: thread,
             history: priorMessages,
             message: request,
+            instructions: resolvedInstructions,
             tools: tools,
             session: session
         )
@@ -281,9 +295,37 @@ public actor AgentRuntime {
         state.threads.first { $0.id == threadID }
     }
 
+    public func personaStack(for threadID: String) throws -> AgentPersonaStack? {
+        guard let thread = thread(for: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        return thread.personaStack
+    }
+
+    public func setPersonaStack(
+        _ personaStack: AgentPersonaStack?,
+        for threadID: String
+    ) async throws {
+        guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        state.threads[index].personaStack = personaStack
+        state.threads[index].updatedAt = Date()
+        try await persistState()
+    }
+
     private func upsertThread(_ thread: AgentThread) async throws {
         if let index = state.threads.firstIndex(where: { $0.id == thread.id }) {
-            state.threads[index] = thread
+            var mergedThread = thread
+            if mergedThread.title == nil {
+                mergedThread.title = state.threads[index].title
+            }
+            if mergedThread.personaStack == nil {
+                mergedThread.personaStack = state.threads[index].personaStack
+            }
+            state.threads[index] = mergedThread
         } else {
             state.threads.append(thread)
         }
@@ -318,5 +360,16 @@ public actor AgentRuntime {
 
     private func persistState() async throws {
         try await stateStore.saveState(state)
+    }
+
+    private func resolveInstructions(
+        thread: AgentThread,
+        message: UserMessageRequest
+    ) -> String {
+        AgentInstructionCompiler.compile(
+            baseInstructions: baseInstructions,
+            threadPersonaStack: thread.personaStack,
+            turnPersonaOverride: message.personaOverride
+        )
     }
 }

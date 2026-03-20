@@ -9,6 +9,231 @@ private struct AutoApprovalPresenter: ApprovalPresenting {
 }
 
 final class AgentRuntimeTests: XCTestCase {
+    func testThreadPersonaUsesBackendBaseInstructionsWhenRuntimeBaseIsUnset() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let supportPersona = AgentPersonaStack(layers: [
+            .init(
+                name: "domain",
+                instructions: "You are an expert customer support agent for a shipping app."
+            ),
+            .init(
+                name: "style",
+                instructions: "Be concise, calm, and action-oriented."
+            ),
+        ])
+
+        let thread = try await runtime.createThread(
+            title: "Support Chat",
+            personaStack: supportPersona
+        )
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "How do I track my order?"),
+            in: thread.id
+        )
+
+        for try await _ in stream {}
+
+        let receivedInstructions = await backend.receivedInstructions()
+        let resolvedInstructions = try XCTUnwrap(receivedInstructions.last)
+        XCTAssertTrue(resolvedInstructions.contains("Base host instructions."))
+        XCTAssertTrue(resolvedInstructions.contains("Thread Persona Layers:"))
+        XCTAssertTrue(resolvedInstructions.contains("[domain]"))
+        XCTAssertTrue(resolvedInstructions.contains("[style]"))
+        XCTAssertLessThan(
+            try XCTUnwrap(resolvedInstructions.range(of: "Base host instructions.")?.lowerBound),
+            try XCTUnwrap(resolvedInstructions.range(of: "Thread Persona Layers:")?.lowerBound)
+        )
+    }
+
+    func testTurnPersonaOverrideAppliesOnlyToCurrentTurn() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let supportPersona = AgentPersonaStack(layers: [
+            .init(
+                name: "support",
+                instructions: "Act as a calm support specialist."
+            ),
+        ])
+        let reviewerOverride = AgentPersonaStack(layers: [
+            .init(
+                name: "reviewer",
+                instructions: "For this reply only, act as a strict reviewer and call out risks first."
+            ),
+        ])
+
+        let thread = try await runtime.createThread(personaStack: supportPersona)
+
+        let firstStream = try await runtime.sendMessage(
+            UserMessageRequest(
+                text: "Review this architecture.",
+                personaOverride: reviewerOverride
+            ),
+            in: thread.id
+        )
+        for try await _ in firstStream {}
+
+        let secondStream = try await runtime.sendMessage(
+            UserMessageRequest(text: "Now just answer normally."),
+            in: thread.id
+        )
+        for try await _ in secondStream {}
+
+        let instructions = await backend.receivedInstructions()
+        XCTAssertEqual(instructions.count, 2)
+        XCTAssertTrue(instructions[0].contains("Turn Persona Override:"))
+        XCTAssertTrue(instructions[0].contains("[reviewer]"))
+        XCTAssertFalse(instructions[1].contains("Turn Persona Override:"))
+        XCTAssertFalse(instructions[1].contains("[reviewer]"))
+        XCTAssertTrue(instructions[1].contains("[support]"))
+    }
+
+    func testSetPersonaStackAffectsFutureTurnsOnly() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let supportPersona = AgentPersonaStack(layers: [
+            .init(name: "support", instructions: "Act as a support agent.")
+        ])
+        let plannerPersona = AgentPersonaStack(layers: [
+            .init(name: "planner", instructions: "Act as a careful technical planner.")
+        ])
+
+        let thread = try await runtime.createThread(personaStack: supportPersona)
+
+        let firstStream = try await runtime.sendMessage(
+            UserMessageRequest(text: "Help me with support."),
+            in: thread.id
+        )
+        for try await _ in firstStream {}
+
+        try await runtime.setPersonaStack(plannerPersona, for: thread.id)
+
+        let secondStream = try await runtime.sendMessage(
+            UserMessageRequest(text: "Plan the migration."),
+            in: thread.id
+        )
+        for try await _ in secondStream {}
+
+        let instructions = await backend.receivedInstructions()
+        XCTAssertEqual(instructions.count, 2)
+        XCTAssertTrue(instructions[0].contains("[support]"))
+        XCTAssertFalse(instructions[0].contains("[planner]"))
+        XCTAssertTrue(instructions[1].contains("[planner]"))
+        XCTAssertFalse(instructions[1].contains("[support]"))
+    }
+
+    func testThreadPersonaStackPersistsAcrossRestore() async throws {
+        let stateStore = InMemoryRuntimeStateStore()
+        let secureStore = KeychainSessionSecureStore(
+            service: "CodexKitTests.ChatGPTSession",
+            account: UUID().uuidString
+        )
+        let personaStack = AgentPersonaStack(layers: [
+            .init(name: "planner", instructions: "Act as a careful technical planner.")
+        ])
+
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: secureStore,
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+        let thread = try await runtime.createThread(
+            title: "Planning",
+            personaStack: personaStack
+        )
+
+        let restoredRuntime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: secureStore,
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+
+        _ = try await restoredRuntime.restore()
+
+        let restoredStack = try await restoredRuntime.personaStack(for: thread.id)
+        let restoredThreads = await restoredRuntime.threads()
+        XCTAssertEqual(restoredStack, personaStack)
+        XCTAssertEqual(restoredThreads.first?.personaStack, personaStack)
+    }
+
+    func testSetPersonaStackThrowsForMissingThread() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+
+        await XCTAssertThrowsErrorAsync(
+            try await runtime.setPersonaStack(
+                AgentPersonaStack(layers: [
+                    .init(name: "planner", instructions: "Act as a planner.")
+                ]),
+                for: "missing-thread"
+            )
+        ) { error in
+            XCTAssertEqual(error as? AgentRuntimeError, .threadNotFound("missing-thread"))
+        }
+    }
+
     func testRuntimeStreamsToolApprovalAndCompletion() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),

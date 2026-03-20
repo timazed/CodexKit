@@ -11,6 +11,28 @@ final class AgentDemoViewModel: @unchecked Sendable {
         subsystem: "ai.assistantruntime.demoapp",
         category: "DemoTool"
     )
+    nonisolated private static let supportPersona = AgentPersonaStack(layers: [
+        .init(
+            name: "domain",
+            instructions: "You are an expert customer support agent for a shipping app."
+        ),
+        .init(
+            name: "style",
+            instructions: "Be concise, calm, and action-oriented."
+        ),
+    ])
+    nonisolated private static let plannerPersona = AgentPersonaStack(layers: [
+        .init(
+            name: "planner",
+            instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
+        ),
+    ])
+    nonisolated private static let reviewerOverridePersona = AgentPersonaStack(layers: [
+        .init(
+            name: "reviewer",
+            instructions: "For this reply only, act as a strict reviewer and call out risks first."
+        ),
+    ])
 
     private(set) var session: ChatGPTSession?
     private(set) var threads: [AgentThread] = []
@@ -54,6 +76,10 @@ final class AgentDemoViewModel: @unchecked Sendable {
             return nil
         }
         return threads.first { $0.id == activeThreadID }
+    }
+
+    var activeThreadPersonaSummary: String? {
+        personaSummary(for: activeThread)
     }
 
     func restore() async {
@@ -145,8 +171,65 @@ final class AgentDemoViewModel: @unchecked Sendable {
     }
 
     func createThread() async {
+        await createThread(
+            title: nil,
+            personaStack: nil
+        )
+    }
+
+    func createSupportPersonaThread() async {
+        await createThread(
+            title: "Support Persona Demo",
+            personaStack: Self.supportPersona
+        )
+    }
+
+    func setPlannerPersonaOnActiveThread() async {
+        guard let activeThreadID else {
+            lastError = "Create or select a thread before swapping personas."
+            return
+        }
+
         do {
-            let thread = try await runtime.createThread()
+            try await runtime.setPersonaStack(
+                Self.plannerPersona,
+                for: activeThreadID
+            )
+            threads = await runtime.threads()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func sendReviewerOverrideExample() async {
+        if activeThreadID == nil {
+            await createSupportPersonaThread()
+        }
+
+        await sendMessage(
+            "Review this conversation setup and tell me the biggest risks first.",
+            personaOverride: Self.reviewerOverridePersona
+        )
+    }
+
+    func personaSummary(for thread: AgentThread?) -> String? {
+        guard let layers = thread?.personaStack?.layers,
+              !layers.isEmpty else {
+            return nil
+        }
+
+        return layers.map(\.name).joined(separator: ", ")
+    }
+
+    private func createThread(
+        title: String?,
+        personaStack: AgentPersonaStack?
+    ) async {
+        do {
+            let thread = try await runtime.createThread(
+                title: title,
+                personaStack: personaStack
+            )
             threads = await runtime.threads()
             activeThreadID = thread.id
             messages = await runtime.messages(for: thread.id)
@@ -166,6 +249,19 @@ final class AgentDemoViewModel: @unchecked Sendable {
             return
         }
 
+        let outgoingText = composerText
+        composerText = ""
+        await sendMessage(outgoingText)
+    }
+
+    private func sendMessage(
+        _ text: String,
+        personaOverride: AgentPersonaStack? = nil
+    ) async {
+        guard !text.isEmpty else {
+            return
+        }
+
         if activeThreadID == nil {
             await createThread()
         }
@@ -175,13 +271,14 @@ final class AgentDemoViewModel: @unchecked Sendable {
             return
         }
 
-        let outgoingText = composerText
-        composerText = ""
         streamingText = ""
 
         do {
             let stream = try await runtime.sendMessage(
-                UserMessageRequest(text: outgoingText),
+                UserMessageRequest(
+                    text: text,
+                    personaOverride: personaOverride
+                ),
                 in: activeThreadID
             )
             messages = await runtime.messages(for: activeThreadID)

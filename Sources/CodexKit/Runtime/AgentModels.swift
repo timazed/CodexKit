@@ -64,15 +64,21 @@ public struct AgentUsage: Codable, Hashable, Sendable {
 
 public struct UserMessageRequest: Codable, Hashable, Sendable {
     public var text: String
+    public var personaOverride: AgentPersonaStack?
 
-    public init(text: String) {
+    public init(
+        text: String,
+        personaOverride: AgentPersonaStack? = nil
+    ) {
         self.text = text
+        self.personaOverride = personaOverride
     }
 }
 
 public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String?
+    public var personaStack: AgentPersonaStack?
     public var createdAt: Date
     public var updatedAt: Date
     public var status: AgentThreadStatus
@@ -80,12 +86,14 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public init(
         id: String,
         title: String? = nil,
+        personaStack: AgentPersonaStack? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         status: AgentThreadStatus = .idle
     ) {
         self.id = id
         self.title = title
+        self.personaStack = personaStack
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.status = status

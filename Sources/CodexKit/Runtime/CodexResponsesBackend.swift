@@ -31,6 +31,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
 }
 
 public actor CodexResponsesBackend: AgentBackend {
+    public nonisolated let baseInstructions: String?
+
     private let configuration: CodexResponsesBackendConfiguration
     private let urlSession: URLSession
     private let encoder = JSONEncoder()
@@ -42,6 +44,7 @@ public actor CodexResponsesBackend: AgentBackend {
     ) {
         self.configuration = configuration
         self.urlSession = urlSession
+        self.baseInstructions = configuration.instructions
     }
 
     public func createThread(session _: ChatGPTSession) async throws -> AgentThread {
@@ -56,11 +59,13 @@ public actor CodexResponsesBackend: AgentBackend {
         thread: AgentThread,
         history: [AgentMessage],
         message: UserMessageRequest,
+        instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
         CodexResponsesTurnSession(
             configuration: configuration,
+            instructions: instructions,
             urlSession: urlSession,
             encoder: encoder,
             decoder: decoder,
@@ -80,6 +85,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
     init(
         configuration: CodexResponsesBackendConfiguration,
+        instructions: String,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -100,6 +106,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 do {
                     let usage = try await Self.runTurnLoop(
                         configuration: configuration,
+                        instructions: instructions,
                         urlSession: urlSession,
                         encoder: encoder,
                         decoder: decoder,
@@ -139,6 +146,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
     private static func runTurnLoop(
         configuration: CodexResponsesBackendConfiguration,
+        instructions: String,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -170,6 +178,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
             let request = try buildURLRequest(
                 configuration: configuration,
+                instructions: instructions,
                 threadID: threadID,
                 items: workingHistory,
                 tools: tools,
@@ -242,6 +251,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
     private static func buildURLRequest(
         configuration: CodexResponsesBackendConfiguration,
+        instructions: String,
         threadID: String,
         items: [WorkingHistoryItem],
         tools: [ToolDefinition],
@@ -250,7 +260,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
             model: configuration.model,
-            instructions: configuration.instructions,
+            instructions: instructions,
             input: items.map(\.jsonValue),
             tools: responsesTools(
                 from: tools,

@@ -1,5 +1,6 @@
 import CodexKit
 import Foundation
+import XCTest
 
 final class TestURLProtocol: URLProtocol, @unchecked Sendable {
     struct StubResponse {
@@ -149,6 +150,20 @@ func parseFormURLEncodedBody(_ data: Data) -> [String: String] {
             let value = components.count > 1 ? components[1] : ""
             partial[decodeFormComponent(key)] = decodeFormComponent(value)
         }
+}
+
+func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure @escaping () async throws -> T,
+    _ errorHandler: (Error) -> Void = { _ in },
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("Expected expression to throw an error.", file: file, line: line)
+    } catch {
+        errorHandler(error)
+    }
 }
 
 private func decodeFormComponent(_ value: String) -> String {

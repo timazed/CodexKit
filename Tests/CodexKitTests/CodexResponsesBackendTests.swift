@@ -51,6 +51,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             thread: AgentThread(id: "thread-1"),
             history: [],
             message: UserMessageRequest(text: "Hi there"),
+            instructions: "Resolved instructions",
             tools: [],
             session: session
         )
@@ -115,6 +116,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                 inspect: { request in
                     let body = try XCTUnwrap(requestBodyData(for: request))
                     let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    XCTAssertEqual(json?["instructions"] as? String, "Resolved instructions")
                     let toolsJSON = json?["tools"] as? [[String: Any]]
                     XCTAssertEqual(toolsJSON?.first?["name"] as? String, "demo_lookup_profile")
                 }
@@ -154,6 +156,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             thread: AgentThread(id: "thread-1"),
             history: [],
             message: UserMessageRequest(text: "Find the profile"),
+            instructions: "Resolved instructions",
             tools: [tool],
             session: session
         )
@@ -220,6 +223,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             thread: AgentThread(id: "thread-search"),
             history: [],
             message: UserMessageRequest(text: "Search the web"),
+            instructions: "Resolved instructions",
             tools: [],
             session: session
         )

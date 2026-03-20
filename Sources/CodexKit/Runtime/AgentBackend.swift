@@ -14,13 +14,19 @@ public protocol AgentTurnStreaming: Sendable {
 }
 
 public protocol AgentBackend: Sendable {
+    var baseInstructions: String? { get }
     func createThread(session: ChatGPTSession) async throws -> AgentThread
     func resumeThread(id: String, session: ChatGPTSession) async throws -> AgentThread
     func beginTurn(
         thread: AgentThread,
         history: [AgentMessage],
         message: UserMessageRequest,
+        instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming
+}
+
+public extension AgentBackend {
+    var baseInstructions: String? { nil }
 }

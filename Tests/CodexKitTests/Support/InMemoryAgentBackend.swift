@@ -2,9 +2,14 @@ import CodexKit
 import Foundation
 
 public actor InMemoryAgentBackend: AgentBackend {
-    private var threads: [String: AgentThread] = [:]
+    public nonisolated let baseInstructions: String?
 
-    public init() {}
+    private var threads: [String: AgentThread] = [:]
+    private var beginTurnInstructions: [String] = []
+
+    public init(baseInstructions: String? = nil) {
+        self.baseInstructions = baseInstructions
+    }
 
     public func createThread(session _: ChatGPTSession) async throws -> AgentThread {
         let thread = AgentThread(id: UUID().uuidString)
@@ -26,12 +31,15 @@ public actor InMemoryAgentBackend: AgentBackend {
         thread: AgentThread,
         history _: [AgentMessage],
         message: UserMessageRequest,
+        instructions: String,
         tools: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
+        beginTurnInstructions.append(instructions)
         let updatedThread = AgentThread(
             id: thread.id,
             title: thread.title,
+            personaStack: thread.personaStack,
             createdAt: thread.createdAt,
             updatedAt: Date(),
             status: .streaming
@@ -49,6 +57,10 @@ public actor InMemoryAgentBackend: AgentBackend {
             message: message,
             selectedTool: selectedTool
         )
+    }
+
+    public func receivedInstructions() -> [String] {
+        beginTurnInstructions
     }
 }
 

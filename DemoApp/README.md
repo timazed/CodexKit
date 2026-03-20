@@ -15,12 +15,15 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 ## What the app does
 
 - launches a SwiftUI chat screen
-- signs in with ChatGPT using the current iOS-compatible auth flow
+- signs in with ChatGPT using either device code or browser OAuth
 - creates or resumes a thread
 - lets you type and send a user request
 - streams assistant output into the UI
 - shows approval prompts before running a host-defined demo tool
+- demonstrates thread-pinned personas and one-turn persona overrides
 - enables Responses web search in the checked-in demo configuration
+
+The checked-in demo tool is a deterministic shipping quote tool, and the Xcode console logs when the tool is requested, executed, and completed so you can verify tool usage during a run.
 
 The demo uses the new configuration-first surface:
 

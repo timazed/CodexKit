@@ -28,6 +28,13 @@ The recommended production path for iOS is:
 - `FileRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
+`ChatGPTAuthProvider` supports the two iOS-facing auth modes:
+
+- `.deviceCode` for the most reliable sign-in path
+- `.oauth` for browser-based ChatGPT OAuth
+
+For browser-based ChatGPT OAuth, use `.oauth`. `CodexKit` uses the Codex-compatible localhost redirect `http://localhost:1455/auth/callback` internally and only starts the loopback listener while interactive auth is in progress.
+
 ## Inline Example
 
 ```swift
@@ -89,32 +96,105 @@ let backend = CodexResponsesBackend(
 )
 ```
 
-For browser-based ChatGPT OAuth, use `.oauth`. `CodexKit` uses the Codex-compatible localhost redirect `http://localhost:1455/auth/callback` internally and only starts the loopback listener while interactive auth is in progress.
+## Pinned And Dynamic Personas
 
-## Agent Personality
+`CodexKit` supports layered personas with this precedence order:
 
-You can load an app-specific personality by passing custom `instructions` to `CodexResponsesBackendConfiguration`.
+- base runtime instructions
+- thread-pinned persona
+- turn override
+
+Persona swaps are runtime metadata, not transcript messages, so they do not stack up in the conversation history or materially grow the context window.
+
+Start with shared base instructions on the backend:
 
 ```swift
-let baseInstructions = """
-You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
-"""
-
-let personality = """
-You are Atlas, a concise but warm product expert.
-Explain tradeoffs clearly, avoid filler, and prefer short actionable answers.
-When unsure, say so plainly.
-"""
-
 let backend = CodexResponsesBackend(
     configuration: CodexResponsesBackendConfiguration(
         model: "gpt-5.4",
-        instructions: "\(baseInstructions)\n\n\(personality)"
+        instructions: """
+        You are a helpful assistant embedded in an iOS app.
+        Do not assume shell, terminal, repository, or desktop capabilities unless the host exposes them.
+        """
     )
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore
+))
+```
+
+If you want the runtime to override or supply base instructions independently of the backend, set `baseInstructions` on `AgentRuntime.Configuration`:
+
+```swift
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore,
+    baseInstructions: """
+    You are a warm in-app assistant.
+    Keep answers concise and avoid assuming tools the host has not registered.
+    """
+))
+```
+
+Pin a persona stack to a thread:
+
+```swift
+let supportPersona = AgentPersonaStack(layers: [
+    .init(
+        name: "domain",
+        instructions: "You are an expert customer support agent for a shipping app."
+    ),
+    .init(
+        name: "style",
+        instructions: "Be concise, calm, and action-oriented."
+    )
+])
+
+let thread = try await runtime.createThread(
+    title: "Support Chat",
+    personaStack: supportPersona
 )
 ```
 
-This is the main way to shape tone, style, and behavioral guidance for the embedded agent. If you want user-selectable personalities, keep the shared base instructions and swap the appended personality text when you build the runtime.
+Hot-swap the pinned persona for future turns in that thread:
+
+```swift
+let plannerPersona = AgentPersonaStack(layers: [
+    .init(
+        name: "planner",
+        instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
+    )
+])
+
+try await runtime.setPersonaStack(plannerPersona, for: thread.id)
+```
+
+Use a one-off override for a single turn:
+
+```swift
+let reviewerOverride = AgentPersonaStack(layers: [
+    .init(
+        name: "reviewer",
+        instructions: "For this reply only, act as a strict reviewer and call out risks first."
+    )
+])
+
+let stream = try await runtime.sendMessage(
+    UserMessageRequest(
+        text: "Review this architecture and point out the risks.",
+        personaOverride: reviewerOverride
+    ),
+    in: thread.id
+)
+```
 
 ## Demo App
 
@@ -128,4 +208,10 @@ To open the demo app:
 open DemoApp/AssistantRuntimeDemoApp.xcodeproj
 ```
 
-The demo app exercises live ChatGPT sign-in, streaming, approvals, and a host-defined tool.
+The demo app exercises:
+
+- device-code and browser-based ChatGPT sign-in
+- streamed assistant output and resumable threads
+- approval-gated host tools with a shipping quote example
+- Responses web search in the checked-in configuration
+- thread-pinned personas plus one-turn persona overrides

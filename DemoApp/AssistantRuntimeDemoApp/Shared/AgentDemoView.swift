@@ -7,19 +7,41 @@ import SwiftUI
 @available(iOS 17.0, macOS 14.0, *)
 struct AgentDemoView: View {
     @State private var viewModel: AgentDemoViewModel
+    @FocusState private var isComposerFocused: Bool
 
     init(viewModel: AgentDemoViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            header
-            threadStrip
-            messageTranscript
-            composer
+        ScrollView {
+            VStack(spacing: 16) {
+                header
+                personaExamples
+                threadStrip
+                messageTranscript
+            }
+            .padding(20)
+            .contentShape(Rectangle())
         }
-        .padding(20)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                isComposerFocused = false
+            }
+        )
+#if os(iOS)
+        .scrollDismissesKeyboard(.interactively)
+#endif
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                composer
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+            }
+            .background(.regularMaterial)
+        }
         .task {
             await viewModel.restore()
             await viewModel.registerDemoTool()
@@ -60,11 +82,8 @@ struct AgentDemoView: View {
                 Spacer()
             }
 
-            ViewThatFits(in: .horizontal) {
+            ScrollView(.horizontal, showsIndicators: false) {
                 headerActions
-                VStack(alignment: .leading, spacing: 8) {
-                    headerActions
-                }
             }
         }
     }
@@ -143,6 +162,11 @@ struct AgentDemoView: View {
                             Text(thread.status.rawValue)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let personaSummary = viewModel.personaSummary(for: thread) {
+                                Text(personaSummary)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -158,41 +182,83 @@ struct AgentDemoView: View {
         }
     }
 
-    private var messageTranscript: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(viewModel.messages) { message in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(message.role.rawValue.capitalized)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(message.text)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(message.role == .user ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08))
-                    )
-                }
+    @ViewBuilder
+    private var personaExamples: some View {
+        if viewModel.session != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Persona Demo")
+                    .font(.headline)
 
-                if !viewModel.streamingText.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Assistant")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(viewModel.streamingText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                Text(
+                    viewModel.activeThreadPersonaSummary.map { "Active persona: \($0)" }
+                        ?? "Create a support-persona thread, swap it to planner, or send a one-turn reviewer override."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        Button("Create Support Thread") {
+                            Task {
+                                await viewModel.createSupportPersonaThread()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Pin Planner Persona") {
+                            Task {
+                                await viewModel.setPlannerPersonaOnActiveThread()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(viewModel.activeThread == nil)
+
+                        Button("Send Reviewer Example") {
+                            Task {
+                                await viewModel.sendReviewerOverrideExample()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.secondary.opacity(0.08))
-                    )
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var messageTranscript: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            ForEach(viewModel.messages) { message in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(message.role.rawValue.capitalized)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(message.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(message.role == .user ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08))
+                )
+            }
+
+            if !viewModel.streamingText.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Assistant")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(viewModel.streamingText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.secondary.opacity(0.08))
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var composer: some View {
@@ -200,8 +266,16 @@ struct AgentDemoView: View {
             TextField("Message the agent", text: $viewModel.composerText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1 ... 4)
+                .focused($isComposerFocused)
+                .onSubmit {
+                    isComposerFocused = false
+                    Task {
+                        await viewModel.sendComposerText()
+                    }
+                }
 
             Button("Send") {
+                isComposerFocused = false
                 Task {
                     await viewModel.sendComposerText()
                 }
