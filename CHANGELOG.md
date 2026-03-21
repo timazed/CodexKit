@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-21
+
+### Added
+
+- Runtime skill support with thread-pinned skills, per-turn skill overrides, and execution-policy enforcement for allowed tools, required tools, tool sequence, and max tool calls.
+- Dynamic persona and skill loading from local files and remote URLs through `AgentDefinitionSource`.
+- Resolved-instructions preview support so host apps can inspect the final compiled instructions for a turn.
+- Transient request retry/backoff policy support in the Codex responses backend.
+- Configurable reasoning effort (`low`, `medium`, `high`, `xhigh`) for `gpt-5.4` style thinking control.
+- Demo app UI for switching thinking level on future requests.
+
+### Changed
+
+- Added CLI-style unauthorized-session recovery so runtime operations can refresh and retry once after auth expiry or invalidation.
+- Improved the demo app’s skill and Health Coach flows to better show persona, skill, and tool orchestration together.
+- Expanded README coverage for retries, skills, dynamic definition sources, and reasoning effort configuration.
+
 ## [1.0.0] - 2026-03-20
 
 ### Added
@@ -27,5 +44,6 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/timazed/CodexKit/releases/tag/v1.1.0
 [1.0.0]: https://github.com/timazed/CodexKit/releases/tag/v1.0.0
