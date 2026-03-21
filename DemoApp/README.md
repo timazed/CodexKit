@@ -22,14 +22,19 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - lets you attach a photo from the library and send it with or without text
 - renders attached user images in the transcript
 - streams assistant output into the UI
-- shows approval prompts before running a host-defined demo tool
+- supports approval prompts for host-defined tools that opt into `requiresApproval`
 - demonstrates thread-pinned personas and one-turn persona overrides
+- includes first-class framework skill examples for `health_coach` and `travel_planner`
+- demonstrates skill execution policy with skill-specific tool constraints
+- includes a one-tap `Run Skill Policy Probe` action that runs the same tool-focused prompt in normal vs skill threads
+- showcases runtime APIs that can load persona/skill definitions from local or remote files
+- includes a `Show Resolved Instructions` debug toggle so you can inspect per-turn compiled instructions
 - enables Responses web search in the checked-in demo configuration
 - reads HealthKit step totals (with permission), tracks a daily goal, and schedules local reminder notifications
 - supports switchable coaching tone (`Hardcore Personal` or `Firm Coach`)
 - proactively generates AI coach feedback in a dedicated persona-pinned thread as steps, goal, or tone change
 
-The checked-in demo tool is a deterministic shipping quote tool, and the Xcode console logs when the tool is requested, executed, and completed so you can verify tool usage during a run.
+The checked-in demo registers deterministic skill-specific tools (`health_coach_fetch_progress` and `travel_planner_build_day_plan`), and the Xcode console logs when each tool is requested, executed, and completed so you can verify tool usage during a run.
 
 The demo currently focuses on text plus photo input flows. Built-in image generation is not enabled in the checked-in app configuration.
 

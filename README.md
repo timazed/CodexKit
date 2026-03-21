@@ -186,11 +186,113 @@ The demo app exercises:
 
 - device-code and browser-based ChatGPT sign-in
 - streamed assistant output and resumable threads
-- approval-gated host tools with a shipping quote example
+- host tools with skill-specific examples for health coaching and travel planning
 - image messages from the photo library through the composer
 - Responses web search in checked-in configuration
 - thread-pinned personas and one-turn overrides
+- a one-tap skill policy probe that compares tool behavior in normal vs skill-constrained threads
 - a Health Coach tab with HealthKit steps, AI-generated coaching, local reminders, and tone switching
+
+## Skill Examples
+
+`CodexKit` skills are behavior modules, not just tone layers. They can carry both instructions and execution policy (tool allow/require/sequence/call limits).
+
+```swift
+let healthCoachSkill = AgentSkill(
+    id: "health_coach",
+    name: "Health Coach",
+    instructions: "You are a health coach focused on daily step goals and execution. For every user turn, call the health_coach_fetch_progress tool exactly once before your final reply.",
+    executionPolicy: .init(
+        allowedToolNames: ["health_coach_fetch_progress"],
+        requiredToolNames: ["health_coach_fetch_progress"],
+        maxToolCalls: 1
+    )
+)
+
+let travelPlannerSkill = AgentSkill(
+    id: "travel_planner",
+    name: "Travel Planner",
+    instructions: "You are a travel planning assistant for mobile users. Provide concise day-by-day itineraries, practical logistics, and a compact packing checklist.",
+    executionPolicy: .init(
+        allowedToolNames: ["lookup_flights", "lookup_hotels"],
+        requiredToolNames: ["lookup_flights"],
+        toolSequence: ["lookup_flights", "lookup_hotels"],
+        maxToolCalls: 3
+    )
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore,
+    skills: [healthCoachSkill, travelPlannerSkill]
+))
+
+let healthThread = try await runtime.createThread(
+    title: "Skill Demo: Health Coach",
+    skillIDs: ["health_coach"]
+)
+
+let tripThread = try await runtime.createThread(
+    title: "Skill Demo: Travel Planner",
+    skillIDs: ["travel_planner"]
+)
+
+let stream = try await runtime.sendMessage(
+    UserMessageRequest(
+        text: "Review this plan with extra travel rigor.",
+        skillOverrideIDs: ["travel_planner"]
+    ),
+    in: healthThread.id
+)
+```
+
+## Dynamic Persona And Skill Sources
+
+You can load persona/skill instructions from local files or remote URLs at runtime.
+
+```swift
+let localPersonaURL = URL(fileURLWithPath: "/path/to/persona.txt")
+let thread = try await runtime.createThread(
+    title: "Dynamic Persona Thread",
+    personaSource: .file(localPersonaURL)
+)
+```
+
+```swift
+let remoteSkillURL = URL(string: "https://example.com/skills/shipping_support.json")!
+let skill = try await runtime.registerSkill(
+    from: .remote(remoteSkillURL)
+)
+
+try await runtime.setSkillIDs([skill.id], for: thread.id)
+```
+
+For persona sources:
+
+- plain text creates a single-layer persona stack
+- JSON can be a full `AgentPersonaStack`
+
+For skill sources:
+
+- JSON supports `{ "id": "...", "name": "...", "instructions": "...", "executionPolicy": { ... } }`
+- plain text is supported when you pass `id` and `name` in `registerSkill(from:id:name:)`
+
+## Debugging Instruction Resolution
+
+You can preview the exact compiled instructions for a specific send before starting a turn.
+
+```swift
+let preview = try await runtime.resolvedInstructionsPreview(
+    for: thread.id,
+    request: UserMessageRequest(
+        text: "Give me a strict step plan."
+    )
+)
+print(preview)
+```
 
 ## Production Checklist
 

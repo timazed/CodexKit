@@ -34,6 +34,76 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             message: "A user message must include text or at least one image attachment."
         )
     }
+
+    public static func invalidSkillID(_ skillID: String) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_skill_id",
+            message: "The skill ID \(skillID) is invalid. Skill IDs must match ^[a-zA-Z0-9_-]+$."
+        )
+    }
+
+    public static func duplicateSkill(_ skillID: String) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "duplicate_skill",
+            message: "A skill with ID \(skillID) is already registered."
+        )
+    }
+
+    public static func skillsNotFound(_ skillIDs: [String]) -> AgentRuntimeError {
+        let joined = skillIDs.sorted().joined(separator: ", ")
+        return AgentRuntimeError(
+            code: "skills_not_found",
+            message: "The following skills are not registered: \(joined)."
+        )
+    }
+
+    public static func invalidSkillToolName(
+        skillID: String,
+        toolName: String
+    ) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_skill_tool_name",
+            message: "Skill \(skillID) references invalid tool name \(toolName). Tool names must match ^[a-zA-Z0-9_-]+$."
+        )
+    }
+
+    public static func invalidSkillMaxToolCalls(skillID: String) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_skill_max_tool_calls",
+            message: "Skill \(skillID) has invalid maxToolCalls. It must be 0 or greater."
+        )
+    }
+
+    public static func skillToolNotAllowed(_ toolName: String) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "skill_tool_not_allowed",
+            message: "Tool \(toolName) is not allowed by the active skill policy."
+        )
+    }
+
+    public static func skillToolSequenceViolation(
+        expected: String,
+        actual: String
+    ) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "skill_tool_sequence_violation",
+            message: "Tool \(actual) was requested out of sequence. Expected \(expected)."
+        )
+    }
+
+    public static func skillToolCallLimitExceeded(_ maxCalls: Int) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "skill_tool_call_limit_exceeded",
+            message: "The active skill policy allows at most \(maxCalls) tool call(s) per turn."
+        )
+    }
+
+    public static func skillRequiredToolsMissing(_ toolNames: [String]) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "skill_required_tools_missing",
+            message: "The active skill policy requires tool calls that did not occur: \(toolNames.sorted().joined(separator: ", "))."
+        )
+    }
 }
 
 public enum AgentRole: String, Codable, Hashable, Sendable {
@@ -141,15 +211,18 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
     public var personaOverride: AgentPersonaStack?
+    public var skillOverrideIDs: [String]?
 
     public init(
         text: String,
         images: [AgentImageAttachment] = [],
-        personaOverride: AgentPersonaStack? = nil
+        personaOverride: AgentPersonaStack? = nil,
+        skillOverrideIDs: [String]? = nil
     ) {
         self.text = text
         self.images = images
         self.personaOverride = personaOverride
+        self.skillOverrideIDs = skillOverrideIDs
     }
 
     public var hasContent: Bool {
@@ -160,6 +233,7 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         case text
         case images
         case personaOverride
+        case skillOverrideIDs
     }
 
     public init(from decoder: Decoder) throws {
@@ -167,6 +241,7 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
+        skillOverrideIDs = try container.decodeIfPresent([String].self, forKey: .skillOverrideIDs)
     }
 }
 
@@ -174,6 +249,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String?
     public var personaStack: AgentPersonaStack?
+    public var skillIDs: [String]
     public var createdAt: Date
     public var updatedAt: Date
     public var status: AgentThreadStatus
@@ -182,6 +258,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         id: String,
         title: String? = nil,
         personaStack: AgentPersonaStack? = nil,
+        skillIDs: [String] = [],
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         status: AgentThreadStatus = .idle
@@ -189,6 +266,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.title = title
         self.personaStack = personaStack
+        self.skillIDs = skillIDs
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.status = status
@@ -198,6 +276,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         case id
         case title
         case personaStack
+        case skillIDs
         case createdAt
         case updatedAt
         case status
@@ -208,6 +287,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         personaStack = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaStack)
+        skillIDs = try container.decodeIfPresent([String].self, forKey: .skillIDs) ?? []
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         status = try container.decodeIfPresent(AgentThreadStatus.self, forKey: .status) ?? .idle

@@ -21,6 +21,7 @@ struct AgentDemoView: View {
             VStack(spacing: 16) {
                 header
                 personaExamples
+                instructionsDebugPanel
                 threadStrip
                 messageTranscript
             }

@@ -136,15 +136,88 @@ extension AgentDemoView {
     var personaExamples: some View {
         if viewModel.session != nil {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Persona Demo")
+                Text("Personas And Skills")
                     .font(.headline)
 
                 Text(
                     viewModel.activeThreadPersonaSummary.map { "Active persona: \($0)" }
-                        ?? "Create a support-persona thread, swap it to planner, or send a one-turn reviewer override."
+                        ?? "Run the quick test to compare normal behavior vs a skill-restricted thread."
                 )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+                Button(
+                    viewModel.isRunningSkillPolicyProbe
+                        ? "Running Quick Skill Test..."
+                        : "Run Quick Skill Test"
+                ) {
+                    Task {
+                        await viewModel.runSkillPolicyProbe()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isRunningSkillPolicyProbe)
+
+                if let skillPolicyProbeResult = viewModel.skillPolicyProbeResult {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(
+                            skillPolicyProbeResult.passed
+                                ? "Quick Skill Test Passed"
+                                : "Quick Skill Test Inconclusive"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(skillPolicyProbeResult.passed ? .green : .orange)
+
+                        Text("Prompt: \(skillPolicyProbeResult.prompt)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text("\(skillPolicyProbeResult.normalThreadTitle): \(skillPolicyProbeResult.normalSummary)")
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if let normalAssistantReply = skillPolicyProbeResult.normalAssistantReply,
+                           !normalAssistantReply.isEmpty {
+                            Text("Normal reply: \(normalAssistantReply)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Text("\(skillPolicyProbeResult.skillThreadTitle): \(skillPolicyProbeResult.skillSummary)")
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if let skillAssistantReply = skillPolicyProbeResult.skillAssistantReply,
+                           !skillAssistantReply.isEmpty {
+                            Text("Skill reply: \(skillAssistantReply)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        HStack(spacing: 8) {
+                            Button("Open Normal Thread") {
+                                Task {
+                                    await viewModel.activateThread(id: skillPolicyProbeResult.normalThreadID)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Open Skill Thread") {
+                                Task {
+                                    await viewModel.activateThread(id: skillPolicyProbeResult.skillThreadID)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.secondary.opacity(0.10))
+                    )
+                }
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -168,7 +241,72 @@ extension AgentDemoView {
                                 await viewModel.sendReviewerOverrideExample()
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.bordered)
+
+                        Button("Create Health Coach Skill") {
+                            Task {
+                                await viewModel.createHealthCoachSkillThread()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Create Travel Planner Skill") {
+                            Task {
+                                await viewModel.createTravelPlannerSkillThread()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    var instructionsDebugPanel: some View {
+        if viewModel.session != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(
+                    "Show Resolved Instructions",
+                    isOn: Binding(
+                        get: { viewModel.showResolvedInstructionsDebug },
+                        set: { isEnabled in
+                            viewModel.showResolvedInstructionsDebug = isEnabled
+                            if !isEnabled {
+                                viewModel.lastResolvedInstructions = nil
+                                viewModel.lastResolvedInstructionsThreadTitle = nil
+                            }
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+
+                if viewModel.showResolvedInstructionsDebug {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(
+                            viewModel.lastResolvedInstructionsThreadTitle.map {
+                                "Latest for thread: \($0)"
+                            } ?? "Send a message to capture resolved instructions."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        ScrollView {
+                            Text(
+                                viewModel.lastResolvedInstructions
+                                    ?? "No captured instructions yet."
+                            )
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 240)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.secondary.opacity(0.10))
+                        )
                     }
                 }
             }
