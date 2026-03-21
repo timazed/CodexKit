@@ -22,6 +22,8 @@ public actor AgentRuntime {
         public let stateStore: any RuntimeStateStoring
         public let baseInstructions: String?
         public let tools: [ToolRegistration]
+        public let skills: [AgentSkill]
+        public let definitionSourceLoader: AgentDefinitionSourceLoader
 
         public init(
             authProvider: any ChatGPTAuthProviding,
@@ -30,7 +32,9 @@ public actor AgentRuntime {
             approvalPresenter: any ApprovalPresenting,
             stateStore: any RuntimeStateStoring,
             baseInstructions: String? = nil,
-            tools: [ToolRegistration] = []
+            tools: [ToolRegistration] = [],
+            skills: [AgentSkill] = [],
+            definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader()
         ) {
             self.authProvider = authProvider
             self.secureStore = secureStore
@@ -39,6 +43,8 @@ public actor AgentRuntime {
             self.stateStore = stateStore
             self.baseInstructions = baseInstructions
             self.tools = tools
+            self.skills = skills
+            self.definitionSourceLoader = definitionSourceLoader
         }
     }
 
@@ -48,8 +54,93 @@ public actor AgentRuntime {
     private let toolRegistry: ToolRegistry
     private let approvalCoordinator: ApprovalCoordinator
     private let baseInstructions: String?
+    private let definitionSourceLoader: AgentDefinitionSourceLoader
+    private var skillsByID: [String: AgentSkill]
 
     private var state: StoredRuntimeState = .empty
+
+    private struct ResolvedTurnSkills {
+        let threadSkills: [AgentSkill]
+        let turnSkills: [AgentSkill]
+        let compiledToolPolicy: CompiledSkillToolPolicy
+    }
+
+    private struct CompiledSkillToolPolicy {
+        let allowedToolNames: Set<String>?
+        let requiredToolNames: Set<String>
+        let toolSequence: [String]?
+        let maxToolCalls: Int?
+
+        var hasConstraints: Bool {
+            allowedToolNames != nil ||
+                !requiredToolNames.isEmpty ||
+                (toolSequence?.isEmpty == false) ||
+                maxToolCalls != nil
+        }
+    }
+
+    private final class TurnSkillPolicyTracker: @unchecked Sendable {
+        private let policy: CompiledSkillToolPolicy
+        private var toolCallsCount = 0
+        private var usedToolNames: Set<String> = []
+        private var nextSequenceIndex = 0
+
+        init(policy: CompiledSkillToolPolicy) {
+            self.policy = policy
+        }
+
+        func validate(toolName: String) -> AgentRuntimeError? {
+            if let maxToolCalls = policy.maxToolCalls,
+               toolCallsCount >= maxToolCalls {
+                return AgentRuntimeError.skillToolCallLimitExceeded(maxToolCalls)
+            }
+
+            if let allowedToolNames = policy.allowedToolNames,
+               !allowedToolNames.contains(toolName) {
+                return AgentRuntimeError.skillToolNotAllowed(toolName)
+            }
+
+            if let toolSequence = policy.toolSequence,
+               nextSequenceIndex < toolSequence.count {
+                let expectedToolName = toolSequence[nextSequenceIndex]
+                if toolName != expectedToolName {
+                    return AgentRuntimeError.skillToolSequenceViolation(
+                        expected: expectedToolName,
+                        actual: toolName
+                    )
+                }
+            }
+
+            return nil
+        }
+
+        func recordAccepted(toolName: String) {
+            toolCallsCount += 1
+            usedToolNames.insert(toolName)
+
+            if let toolSequence = policy.toolSequence,
+               nextSequenceIndex < toolSequence.count,
+               toolSequence[nextSequenceIndex] == toolName {
+                nextSequenceIndex += 1
+            }
+        }
+
+        func completionError() -> AgentRuntimeError? {
+            var missingTools = policy.requiredToolNames.subtracting(usedToolNames)
+
+            if let toolSequence = policy.toolSequence,
+               nextSequenceIndex < toolSequence.count {
+                let remainingSequenceTools = toolSequence[nextSequenceIndex...]
+                missingTools.formUnion(remainingSequenceTools)
+            }
+
+            guard !missingTools.isEmpty else {
+                return nil
+            }
+
+            return AgentRuntimeError.skillRequiredToolsMissing(Array(missingTools).sorted())
+        }
+    }
 
     public init(configuration: Configuration) throws {
         self.backend = configuration.backend
@@ -63,6 +154,8 @@ public actor AgentRuntime {
             presenter: configuration.approvalPresenter
         )
         self.baseInstructions = configuration.baseInstructions ?? configuration.backend.baseInstructions
+        self.definitionSourceLoader = configuration.definitionSourceLoader
+        self.skillsByID = try Self.validatedSkills(from: configuration.skills)
     }
 
     @discardableResult
@@ -107,11 +200,82 @@ public actor AgentRuntime {
         try await toolRegistry.replace(definition, executor: executor)
     }
 
+    public func skills() -> [AgentSkill] {
+        skillsByID.values.sorted { $0.id < $1.id }
+    }
+
+    public func skill(for skillID: String) -> AgentSkill? {
+        skillsByID[skillID]
+    }
+
+    public func registerSkill(_ skill: AgentSkill) throws {
+        guard AgentSkill.isValidID(skill.id) else {
+            throw AgentRuntimeError.invalidSkillID(skill.id)
+        }
+        try Self.validateSkillExecutionPolicy(skill)
+        guard skillsByID[skill.id] == nil else {
+            throw AgentRuntimeError.duplicateSkill(skill.id)
+        }
+
+        skillsByID[skill.id] = skill
+    }
+
+    public func replaceSkill(_ skill: AgentSkill) throws {
+        guard AgentSkill.isValidID(skill.id) else {
+            throw AgentRuntimeError.invalidSkillID(skill.id)
+        }
+        try Self.validateSkillExecutionPolicy(skill)
+
+        skillsByID[skill.id] = skill
+    }
+
+    @discardableResult
+    public func registerSkill(
+        from source: AgentDefinitionSource,
+        id: String? = nil,
+        name: String? = nil
+    ) async throws -> AgentSkill {
+        let skill = try await definitionSourceLoader.loadSkill(
+            from: source,
+            id: id,
+            name: name
+        )
+        try registerSkill(skill)
+        return skill
+    }
+
+    @discardableResult
+    public func replaceSkill(
+        from source: AgentDefinitionSource,
+        id: String? = nil,
+        name: String? = nil
+    ) async throws -> AgentSkill {
+        let skill = try await definitionSourceLoader.loadSkill(
+            from: source,
+            id: id,
+            name: name
+        )
+        try replaceSkill(skill)
+        return skill
+    }
+
     @discardableResult
     public func createThread(
         title: String? = nil,
-        personaStack: AgentPersonaStack? = nil
+        personaStack: AgentPersonaStack? = nil,
+        personaSource: AgentDefinitionSource? = nil,
+        skillIDs: [String] = []
     ) async throws -> AgentThread {
+        try assertSkillsExist(skillIDs)
+        let resolvedPersonaStack: AgentPersonaStack?
+        if let personaStack {
+            resolvedPersonaStack = personaStack
+        } else if let personaSource {
+            resolvedPersonaStack = try await definitionSourceLoader.loadPersonaStack(from: personaSource)
+        } else {
+            resolvedPersonaStack = nil
+        }
+
         let session = try await sessionManager.requireSession()
         let creation = try await withUnauthorizedRecovery(
             initialSession: session
@@ -122,7 +286,8 @@ public actor AgentRuntime {
         if let title {
             thread.title = title
         }
-        thread.personaStack = personaStack
+        thread.personaStack = resolvedPersonaStack
+        thread.skillIDs = skillIDs
         try await upsertThread(thread)
         return thread
     }
@@ -160,9 +325,14 @@ public actor AgentRuntime {
             images: request.images
         )
         let priorMessages = state.messagesByThread[threadID] ?? []
-        let resolvedInstructions = resolveInstructions(
+        let resolvedTurnSkills = try resolveTurnSkills(
             thread: thread,
             message: request
+        )
+        let resolvedInstructions = resolveInstructions(
+            thread: thread,
+            message: request,
+            resolvedTurnSkills: resolvedTurnSkills
         )
 
         try await appendMessage(userMessage)
@@ -189,6 +359,7 @@ public actor AgentRuntime {
                     turnStream,
                     for: threadID,
                     session: turnSession,
+                    resolvedTurnSkills: resolvedTurnSkills,
                     continuation: continuation
                 )
             }
@@ -221,12 +392,39 @@ public actor AgentRuntime {
         return (beginTurn.result, beginTurn.session)
     }
 
+    public func resolvedInstructionsPreview(
+        for threadID: String,
+        request: UserMessageRequest
+    ) throws -> String {
+        guard let thread = thread(for: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        let resolvedTurnSkills = try resolveTurnSkills(
+            thread: thread,
+            message: request
+        )
+
+        return resolveInstructions(
+            thread: thread,
+            message: request,
+            resolvedTurnSkills: resolvedTurnSkills
+        )
+    }
+
     private func consumeTurnStream(
         _ turnStream: any AgentTurnStreaming,
         for threadID: String,
         session: ChatGPTSession,
+        resolvedTurnSkills: ResolvedTurnSkills,
         continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     ) async {
+        let policyTracker: TurnSkillPolicyTracker? = if resolvedTurnSkills.compiledToolPolicy.hasConstraints {
+            TurnSkillPolicyTracker(policy: resolvedTurnSkills.compiledToolPolicy)
+        } else {
+            nil
+        }
+
         do {
             for try await backendEvent in turnStream.events {
                 switch backendEvent {
@@ -249,11 +447,22 @@ public actor AgentRuntime {
                 case let .toolCallRequested(invocation):
                     continuation.yield(.toolCallStarted(invocation))
 
-                    let result = try await resolveToolInvocation(
-                        invocation,
-                        session: session,
-                        continuation: continuation
-                    )
+                    let result: ToolResultEnvelope
+                    if let policyTracker,
+                       let validationError = policyTracker.validate(toolName: invocation.toolName) {
+                        result = .failure(
+                            invocation: invocation,
+                            message: validationError.message
+                        )
+                    } else {
+                        let resolvedResult = try await resolveToolInvocation(
+                            invocation,
+                            session: session,
+                            continuation: continuation
+                        )
+                        result = resolvedResult
+                        policyTracker?.recordAccepted(toolName: invocation.toolName)
+                    }
 
                     try await turnStream.submitToolResult(result, for: invocation.id)
                     continuation.yield(.toolCallFinished(result))
@@ -261,6 +470,14 @@ public actor AgentRuntime {
                     continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
 
                 case let .turnCompleted(summary):
+                    if let completionError = policyTracker?.completionError() {
+                        try await setThreadStatus(.failed, for: threadID)
+                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        continuation.yield(.turnFailed(completionError))
+                        continuation.finish(throwing: completionError)
+                        return
+                    }
+
                     try await setThreadStatus(.idle, for: threadID)
                     continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     continuation.yield(.turnCompleted(summary))
@@ -359,6 +576,42 @@ public actor AgentRuntime {
         try await persistState()
     }
 
+    @discardableResult
+    public func setPersonaStack(
+        from source: AgentDefinitionSource,
+        for threadID: String,
+        defaultLayerName: String = "dynamic_persona"
+    ) async throws -> AgentPersonaStack {
+        let personaStack = try await definitionSourceLoader.loadPersonaStack(
+            from: source,
+            defaultLayerName: defaultLayerName
+        )
+        try await setPersonaStack(personaStack, for: threadID)
+        return personaStack
+    }
+
+    public func skillIDs(for threadID: String) throws -> [String] {
+        guard let thread = thread(for: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        return thread.skillIDs
+    }
+
+    public func setSkillIDs(
+        _ skillIDs: [String],
+        for threadID: String
+    ) async throws {
+        guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+        try assertSkillsExist(skillIDs)
+
+        state.threads[index].skillIDs = skillIDs
+        state.threads[index].updatedAt = Date()
+        try await persistState()
+    }
+
     private func upsertThread(_ thread: AgentThread) async throws {
         if let index = state.threads.firstIndex(where: { $0.id == thread.id }) {
             var mergedThread = thread
@@ -367,6 +620,9 @@ public actor AgentRuntime {
             }
             if mergedThread.personaStack == nil {
                 mergedThread.personaStack = state.threads[index].personaStack
+            }
+            if mergedThread.skillIDs.isEmpty {
+                mergedThread.skillIDs = state.threads[index].skillIDs
             }
             state.threads[index] = mergedThread
         } else {
@@ -413,12 +669,15 @@ public actor AgentRuntime {
 
     private func resolveInstructions(
         thread: AgentThread,
-        message: UserMessageRequest
+        message: UserMessageRequest,
+        resolvedTurnSkills: ResolvedTurnSkills
     ) -> String {
         AgentInstructionCompiler.compile(
             baseInstructions: baseInstructions,
             threadPersonaStack: thread.personaStack,
-            turnPersonaOverride: message.personaOverride
+            threadSkills: resolvedTurnSkills.threadSkills,
+            turnPersonaOverride: message.personaOverride,
+            turnSkills: resolvedTurnSkills.turnSkills
         )
     }
 
@@ -444,6 +703,123 @@ public actor AgentRuntime {
                 previousAccessToken: initialSession.accessToken
             )
             return (try await operation(recoveredSession), recoveredSession)
+        }
+    }
+
+    private func resolveTurnSkills(
+        thread: AgentThread,
+        message: UserMessageRequest
+    ) throws -> ResolvedTurnSkills {
+        if let skillOverrideIDs = message.skillOverrideIDs {
+            try assertSkillsExist(skillOverrideIDs)
+        }
+
+        let threadSkills = resolveSkills(for: thread.skillIDs)
+        let turnSkills = resolveSkills(for: message.skillOverrideIDs ?? [])
+        let allSkills = threadSkills + turnSkills
+
+        return ResolvedTurnSkills(
+            threadSkills: threadSkills,
+            turnSkills: turnSkills,
+            compiledToolPolicy: compileToolPolicy(from: allSkills)
+        )
+    }
+
+    private func compileToolPolicy(from skills: [AgentSkill]) -> CompiledSkillToolPolicy {
+        var allowedToolNames: Set<String>?
+        var requiredToolNames: Set<String> = []
+        var toolSequence: [String]?
+        var maxToolCalls: Int?
+
+        for skill in skills {
+            guard let executionPolicy = skill.executionPolicy else {
+                continue
+            }
+
+            if let allowed = executionPolicy.allowedToolNames,
+               !allowed.isEmpty {
+                let allowedSet = Set(allowed)
+                if let existingAllowed = allowedToolNames {
+                    allowedToolNames = existingAllowed.intersection(allowedSet)
+                } else {
+                    allowedToolNames = allowedSet
+                }
+            }
+
+            if !executionPolicy.requiredToolNames.isEmpty {
+                requiredToolNames.formUnion(executionPolicy.requiredToolNames)
+            }
+
+            if let sequence = executionPolicy.toolSequence,
+               !sequence.isEmpty {
+                toolSequence = sequence
+            }
+
+            if let maxCalls = executionPolicy.maxToolCalls {
+                if let existingMaxCalls = maxToolCalls {
+                    maxToolCalls = min(existingMaxCalls, maxCalls)
+                } else {
+                    maxToolCalls = maxCalls
+                }
+            }
+        }
+
+        return CompiledSkillToolPolicy(
+            allowedToolNames: allowedToolNames,
+            requiredToolNames: requiredToolNames,
+            toolSequence: toolSequence,
+            maxToolCalls: maxToolCalls
+        )
+    }
+
+    private func resolveSkills(for skillIDs: [String]) -> [AgentSkill] {
+        skillIDs.compactMap { skillsByID[$0] }
+    }
+
+    private func assertSkillsExist(_ skillIDs: [String]) throws {
+        let missing = Array(Set(skillIDs.filter { skillsByID[$0] == nil })).sorted()
+        guard missing.isEmpty else {
+            throw AgentRuntimeError.skillsNotFound(missing)
+        }
+    }
+
+    private static func validatedSkills(from skills: [AgentSkill]) throws -> [String: AgentSkill] {
+        var dictionary: [String: AgentSkill] = [:]
+        for skill in skills {
+            guard AgentSkill.isValidID(skill.id) else {
+                throw AgentRuntimeError.invalidSkillID(skill.id)
+            }
+            try validateSkillExecutionPolicy(skill)
+            guard dictionary[skill.id] == nil else {
+                throw AgentRuntimeError.duplicateSkill(skill.id)
+            }
+            dictionary[skill.id] = skill
+        }
+        return dictionary
+    }
+
+    private static func validateSkillExecutionPolicy(_ skill: AgentSkill) throws {
+        guard let executionPolicy = skill.executionPolicy else {
+            return
+        }
+
+        if let maxToolCalls = executionPolicy.maxToolCalls,
+           maxToolCalls < 0 {
+            throw AgentRuntimeError.invalidSkillMaxToolCalls(skillID: skill.id)
+        }
+
+        let policyToolNames: [String] =
+            (executionPolicy.allowedToolNames ?? []) +
+            executionPolicy.requiredToolNames +
+            (executionPolicy.toolSequence ?? [])
+
+        for toolName in policyToolNames {
+            guard ToolDefinition.isValidName(toolName) else {
+                throw AgentRuntimeError.invalidSkillToolName(
+                    skillID: skill.id,
+                    toolName: toolName
+                )
+            }
         }
     }
 }

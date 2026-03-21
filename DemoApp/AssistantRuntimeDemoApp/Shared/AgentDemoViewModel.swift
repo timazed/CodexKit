@@ -8,6 +8,23 @@ import HealthKit
 import UserNotifications
 #endif
 
+struct SkillPolicyProbeResult: Sendable {
+    let prompt: String
+    let normalThreadID: String
+    let normalThreadTitle: String
+    let skillThreadID: String
+    let skillThreadTitle: String
+    let normalSummary: String
+    let skillSummary: String
+    let normalAssistantReply: String?
+    let skillAssistantReply: String?
+    let skillToolSucceeded: Bool
+
+    var passed: Bool {
+        skillToolSucceeded
+    }
+}
+
 @MainActor
 @Observable
 final class AgentDemoViewModel: @unchecked Sendable {
@@ -37,12 +54,38 @@ final class AgentDemoViewModel: @unchecked Sendable {
             instructions: "For this reply only, act as a strict reviewer and call out risks first."
         ),
     ])
+    nonisolated static let healthCoachToolName = "health_coach_fetch_progress"
+    nonisolated static let travelPlannerToolName = "travel_planner_build_day_plan"
+    nonisolated static let healthCoachSkill = AgentSkill(
+        id: "health_coach",
+        name: "Health Coach",
+        instructions: "You are a health coach focused on daily step goals and execution. For every user turn, call the \(healthCoachToolName) tool exactly once before your final reply, then provide one practical walking plan and one accountability line.",
+        executionPolicy: .init(
+            allowedToolNames: [healthCoachToolName],
+            requiredToolNames: [healthCoachToolName],
+            maxToolCalls: 1
+        )
+    )
+    nonisolated static let travelPlannerSkill = AgentSkill(
+        id: "travel_planner",
+        name: "Travel Planner",
+        instructions: "You are a travel planning assistant for mobile users. Provide concise day-by-day itineraries, practical logistics, and a compact packing checklist.",
+        executionPolicy: .init(
+            allowedToolNames: [travelPlannerToolName],
+            maxToolCalls: 1
+        )
+    )
 
     var session: ChatGPTSession?
     var threads: [AgentThread] = []
     var messages: [AgentMessage] = []
     var streamingText = ""
     var lastError: String?
+    var showResolvedInstructionsDebug = false
+    var lastResolvedInstructions: String?
+    var lastResolvedInstructionsThreadTitle: String?
+    var isRunningSkillPolicyProbe = false
+    var skillPolicyProbeResult: SkillPolicyProbeResult?
     var isAuthenticating = false
     var pendingComposerImages: [AgentImageAttachment] = []
     var composerText = ""
@@ -141,6 +184,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         do {
             _ = try await runtime.restore()
             await registerDemoTool()
+            await registerDemoSkills()
             await refreshSnapshot()
         } catch {
             lastError = error.localizedDescription
@@ -173,6 +217,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         do {
             _ = try await runtime.restore()
             await registerDemoTool()
+            await registerDemoSkills()
             session = try await runtime.signIn()
             await refreshSnapshot()
             if healthCoachInitialized {
@@ -272,18 +317,40 @@ final class AgentDemoViewModel: @unchecked Sendable {
         )
     }
 
+    func createHealthCoachSkillThread() async {
+        await createThreadInternal(
+            title: "Skill Demo: Health Coach",
+            personaStack: nil,
+            skillIDs: [Self.healthCoachSkill.id]
+        )
+    }
+
+    func createTravelPlannerSkillThread() async {
+        await createThreadInternal(
+            title: "Skill Demo: Travel Planner",
+            personaStack: nil,
+            skillIDs: [Self.travelPlannerSkill.id]
+        )
+    }
+
     func personaSummary(for thread: AgentThread?) -> String? {
-        guard let layers = thread?.personaStack?.layers,
-              !layers.isEmpty else {
+        guard let thread else {
             return nil
         }
-
-        return layers.map(\.name).joined(separator: ", ")
+        var sections: [String] = []
+        if let layers = thread.personaStack?.layers, !layers.isEmpty {
+            sections.append("persona: \(layers.map(\.name).joined(separator: ", "))")
+        }
+        if !thread.skillIDs.isEmpty {
+            sections.append("skills: \(thread.skillIDs.joined(separator: ", "))")
+        }
+        guard !sections.isEmpty else { return nil }
+        return sections.joined(separator: " | ")
     }
 
     func activateThread(id: String) async {
         activeThreadID = id
-        messages = await runtime.messages(for: id)
+        setMessages(await runtime.messages(for: id))
         streamingText = ""
     }
 
@@ -345,6 +412,10 @@ final class AgentDemoViewModel: @unchecked Sendable {
             streamingText = ""
             composerText = ""
             pendingComposerImages = []
+            lastResolvedInstructions = nil
+            lastResolvedInstructionsThreadTitle = nil
+            isRunningSkillPolicyProbe = false
+            skillPolicyProbeResult = nil
             activeThreadID = nil
             healthCoachThreadID = nil
             healthCoachFeedback = "Set a step goal, then start moving."
@@ -375,13 +446,13 @@ final class AgentDemoViewModel: @unchecked Sendable {
         let selectedThreadID = activeThreadID
         if let selectedThreadID,
            threads.contains(where: { $0.id == selectedThreadID }) {
-            messages = await runtime.messages(for: selectedThreadID)
+            setMessages(await runtime.messages(for: selectedThreadID))
             return
         }
 
         if let firstThread = threads.first {
             activeThreadID = firstThread.id
-            messages = await runtime.messages(for: firstThread.id)
+            setMessages(await runtime.messages(for: firstThread.id))
         } else {
             activeThreadID = nil
             messages = []
@@ -393,6 +464,37 @@ final class AgentDemoViewModel: @unchecked Sendable {
         messages = []
         streamingText = ""
         pendingComposerImages = []
+        lastResolvedInstructions = nil
+        lastResolvedInstructionsThreadTitle = nil
+        isRunningSkillPolicyProbe = false
+        skillPolicyProbeResult = nil
         activeThreadID = nil
+    }
+
+    func setMessages(_ incoming: [AgentMessage]) {
+        messages = deduplicatedMessages(incoming)
+    }
+
+    func upsertMessage(_ message: AgentMessage) {
+        if let existingIndex = messages.firstIndex(where: { $0.id == message.id }) {
+            messages[existingIndex] = message
+            return
+        }
+        messages.append(message)
+    }
+
+    private func deduplicatedMessages(_ incoming: [AgentMessage]) -> [AgentMessage] {
+        var seen = Set<String>()
+        var reversedUnique: [AgentMessage] = []
+        reversedUnique.reserveCapacity(incoming.count)
+
+        for message in incoming.reversed() {
+            guard seen.insert(message.id).inserted else {
+                continue
+            }
+            reversedUnique.append(message)
+        }
+
+        return reversedUnique.reversed()
     }
 }
