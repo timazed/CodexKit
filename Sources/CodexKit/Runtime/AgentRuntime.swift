@@ -685,7 +685,7 @@ public actor AgentRuntime {
         (error as? AgentRuntimeError)?.code == AgentRuntimeError.unauthorized().code
     }
 
-    private func withUnauthorizedRecovery<Result>(
+    private func withUnauthorizedRecovery<Result: Sendable>(
         initialSession: ChatGPTSession,
         operation: (ChatGPTSession) async throws -> Result
     ) async throws -> (
