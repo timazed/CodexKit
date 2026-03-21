@@ -58,6 +58,21 @@ public actor ChatGPTSessionManager {
         return session
     }
 
+    public func recoverUnauthorizedSession(
+        previousAccessToken: String?
+    ) async throws -> ChatGPTSession {
+        if let restored = try secureStore.loadSession() {
+            session = restored
+            if let previousAccessToken,
+               restored.accessToken != previousAccessToken,
+               !restored.requiresRefresh() {
+                return restored
+            }
+        }
+
+        return try await refresh(reason: .unauthorized)
+    }
+
     private func requireStoredSession() throws -> ChatGPTSession {
         guard let session else {
             throw AgentRuntimeError.signedOut()

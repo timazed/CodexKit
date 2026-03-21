@@ -28,6 +28,7 @@ enum AgentDemoRuntimeFactory {
     static func makeLive(
         model: String = "gpt-5.4",
         enableWebSearch: Bool = false,
+        reasoningEffort: ReasoningEffort = .medium,
         stateURL: URL? = nil,
         keychainAccount: String = "live"
     ) -> AgentDemoViewModel {
@@ -37,6 +38,7 @@ enum AgentDemoRuntimeFactory {
             authenticationMethod: .deviceCode,
             model: model,
             enableWebSearch: enableWebSearch,
+            reasoningEffort: reasoningEffort,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
@@ -46,6 +48,7 @@ enum AgentDemoRuntimeFactory {
             runtime: runtime,
             model: model,
             enableWebSearch: enableWebSearch,
+            reasoningEffort: reasoningEffort,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
@@ -61,6 +64,7 @@ enum AgentDemoRuntimeFactory {
         authenticationMethod: DemoAuthenticationMethod,
         model: String = "gpt-5.4",
         enableWebSearch: Bool = false,
+        reasoningEffort: ReasoningEffort = .medium,
         stateURL: URL? = nil,
         keychainAccount: String = "live",
         approvalInbox: ApprovalInbox,
@@ -90,6 +94,7 @@ enum AgentDemoRuntimeFactory {
             backend: CodexResponsesBackend(
                 configuration: CodexResponsesBackendConfiguration(
                     model: model,
+                    reasoningEffort: reasoningEffort,
                     enableWebSearch: enableWebSearch
                 )
             ),
