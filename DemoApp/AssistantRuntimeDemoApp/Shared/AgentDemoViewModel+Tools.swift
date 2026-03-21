@@ -1,123 +1,169 @@
 import CodexKit
 import Foundation
 
+private struct HealthCoachToolSnapshot: Sendable {
+    let stepsToday: Int
+    let dailyGoal: Int
+    let remainingSteps: Int
+    let hoursLeftToday: Int
+    let healthKitAuthorized: Bool
+}
+
 @MainActor
 extension AgentDemoViewModel {
-    func registerDemoTool() async {
-        let definition = ToolDefinition(
-            name: "demo_calculate_shipping_quote",
-            description: "Calculate a deterministic demo shipping quote, including price and estimated delivery days.",
-            inputSchema: .object([
-                "type": .string("object"),
-                "properties": .object([
-                    "destination_zone": .object([
-                        "type": .string("string"),
-                        "description": .string("Destination zone: A, B, C, or D."),
-                    ]),
-                    "weight_kg": .object([
-                        "type": .string("number"),
-                        "description": .string("Package weight in kilograms."),
-                    ]),
-                    "speed": .object([
-                        "type": .string("string"),
-                        "description": .string("Shipping speed: standard, express, or priority."),
-                    ]),
-                    "signature_required": .object([
-                        "type": .string("boolean"),
-                        "description": .string("Whether signature on delivery is required."),
-                    ]),
-                ]),
-            ]),
-            approvalPolicy: .requiresApproval,
-            approvalMessage: "Allow the demo app to calculate a shipping quote?"
-        )
-
+    func registerDemoSkills() async {
         do {
-            try await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, _ in
-                Self.logger.info(
-                    "Executing tool \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
-                )
-                let result = Self.makeShippingQuote(invocation: invocation)
-                Self.logger.info(
-                    "Tool \(invocation.toolName, privacy: .public) returned: \(result.primaryText ?? "<no text result>", privacy: .public)"
-                )
-                return result
-            })
+            try await runtime.replaceSkill(Self.healthCoachSkill)
+            try await runtime.replaceSkill(Self.travelPlannerSkill)
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    nonisolated static func makeShippingQuote(invocation: ToolInvocation) -> ToolResultEnvelope {
-        guard case let .object(arguments) = invocation.arguments else {
-            return .failure(
-                invocation: invocation,
-                message: "The shipping quote tool expected object arguments."
+    func registerDemoTool() async {
+        do {
+            let healthCoachDefinition = ToolDefinition(
+                name: Self.healthCoachToolName,
+                description: "Fetch a live health-coach progress snapshot from HealthKit-aware app state.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([:]),
+                ])
             )
-        }
 
-        let destinationZone = arguments["destination_zone"]?.stringValue?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .uppercased() ?? ""
-        let speed = arguments["speed"]?.stringValue?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? "standard"
-        let weightKilograms = arguments["weight_kg"]?.numberValue ?? 0
-        let signatureRequired = arguments["signature_required"]?.boolValue ?? false
-
-        let basePriceByZone: [String: Double] = [
-            "A": 4.0,
-            "B": 6.5,
-            "C": 9.0,
-            "D": 12.5,
-        ]
-        let speedMultipliers: [String: Double] = [
-            "standard": 1.0,
-            "express": 1.6,
-            "priority": 2.1,
-        ]
-        let deliveryDaysBySpeedAndZone: [String: [String: Int]] = [
-            "standard": ["A": 2, "B": 4, "C": 6, "D": 8],
-            "express": ["A": 1, "B": 2, "C": 3, "D": 4],
-            "priority": ["A": 1, "B": 1, "C": 2, "D": 3],
-        ]
-
-        guard let zoneBasePrice = basePriceByZone[destinationZone] else {
-            return .failure(
-                invocation: invocation,
-                message: "Unknown destination zone. Use A, B, C, or D."
+            let travelPlannerDefinition = ToolDefinition(
+                name: Self.travelPlannerToolName,
+                description: "Build a compact deterministic day-by-day travel plan.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "destination": .object([
+                            "type": .string("string"),
+                            "description": .string("Trip destination."),
+                        ]),
+                        "trip_days": .object([
+                            "type": .string("number"),
+                            "description": .string("Number of trip days."),
+                        ]),
+                        "budget_level": .object([
+                            "type": .string("string"),
+                            "description": .string("Budget level: low, medium, or high."),
+                        ]),
+                        "companions": .object([
+                            "type": .string("string"),
+                            "description": .string("Who is traveling, for example solo, couple, or family."),
+                        ]),
+                    ]),
+                    "required": .array([
+                        .string("destination"),
+                    ]),
+                ])
             )
-        }
 
-        guard let speedMultiplier = speedMultipliers[speed] else {
-            return .failure(
-                invocation: invocation,
-                message: "Unknown shipping speed. Use standard, express, or priority."
+            try await registerTool(healthCoachDefinition) { [weak self] invocation, _ in
+                guard let self else {
+                    return .failure(invocation: invocation, message: "Health coach context is unavailable.")
+                }
+                let snapshot = await self.captureHealthCoachToolSnapshot()
+                return Self.makeHealthCoachProgress(
+                    invocation: invocation,
+                    snapshot: snapshot
+                )
+            }
+            try await registerTool(travelPlannerDefinition) { invocation, _ in
+                Self.makeTravelDayPlan(invocation: invocation)
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func registerTool(
+        _ definition: ToolDefinition,
+        execute: @escaping @Sendable (ToolInvocation, ToolExecutionContext) async throws -> ToolResultEnvelope
+    ) async throws {
+        try await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, context in
+            Self.logger.info(
+                "Executing tool \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
             )
-        }
-
-        guard weightKilograms > 0 else {
-            return .failure(
-                invocation: invocation,
-                message: "Weight must be greater than zero kilograms."
+            let result = try await execute(invocation, context)
+            Self.logger.info(
+                "Tool \(invocation.toolName, privacy: .public) returned: \(result.primaryText ?? "<no text result>", privacy: .public)"
             )
-        }
+            return result
+        })
+    }
 
-        let signatureSurcharge = signatureRequired ? 2.5 : 0
-        let subtotal = (zoneBasePrice + (weightKilograms * 1.75)) * speedMultiplier
-        let total = round((subtotal + signatureSurcharge) * 100) / 100
-        let deliveryDays = deliveryDaysBySpeedAndZone[speed]?[destinationZone] ?? 0
+    private func captureHealthCoachToolSnapshot() async -> HealthCoachToolSnapshot {
+        var stepsToday = todayStepCount
+#if os(iOS)
+        if healthKitAuthorized,
+           let refreshedStepCount = try? await fetchTodayStepCount() {
+            stepsToday = refreshedStepCount
+            todayStepCount = refreshedStepCount
+            healthLastUpdatedAt = Date()
+        }
+#endif
+        let safeGoal = max(dailyStepGoal, 1_000)
+        let remainingSteps = max(safeGoal - stepsToday, 0)
+        let endOfDay = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86_400)
+        let hoursLeftToday = max(Int(ceil(endOfDay.timeIntervalSinceNow / 3600)), 1)
+
+        return HealthCoachToolSnapshot(
+            stepsToday: stepsToday,
+            dailyGoal: safeGoal,
+            remainingSteps: remainingSteps,
+            hoursLeftToday: hoursLeftToday,
+            healthKitAuthorized: healthKitAuthorized
+        )
+    }
+
+    private nonisolated static func makeHealthCoachProgress(
+        invocation: ToolInvocation,
+        snapshot: HealthCoachToolSnapshot
+    ) -> ToolResultEnvelope {
+        let freshness = snapshot.healthKitAuthorized ? "live_or_cached_healthkit" : "app_cached_only"
 
         return .success(
             invocation: invocation,
             text: """
-            quote[zone=\(destinationZone), weightKg=\(Self.formattedDecimal(weightKilograms)), speed=\(speed), signatureRequired=\(signatureRequired ? "yes" : "no"), totalUSD=\(Self.formattedDecimal(total)), estimatedDeliveryDays=\(deliveryDays), reference=DEMO-\(destinationZone)-\(speed.uppercased())]
+            health_progress[stepsToday=\(snapshot.stepsToday), dailyGoal=\(snapshot.dailyGoal), remainingSteps=\(snapshot.remainingSteps), hoursLeftToday=\(snapshot.hoursLeftToday), healthKitAuthorized=\(snapshot.healthKitAuthorized), freshness=\(freshness)]
             """
         )
     }
 
-    nonisolated static func formattedDecimal(_ value: Double) -> String {
-        String(format: "%.2f", value)
+    nonisolated static func makeTravelDayPlan(invocation: ToolInvocation) -> ToolResultEnvelope {
+        guard case let .object(arguments) = invocation.arguments else {
+            return .failure(
+                invocation: invocation,
+                message: "The travel planner tool expected object arguments."
+            )
+        }
+
+        let destination = arguments["destination"]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let tripDays = max(Int(arguments["trip_days"]?.numberValue ?? 3), 1)
+        let budget = arguments["budget_level"]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "medium"
+        let companions = arguments["companions"]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "solo"
+
+        guard let destination, !destination.isEmpty else {
+            return .failure(invocation: invocation, message: "destination is required.")
+        }
+
+        let planLines = (1 ... min(tripDays, 10)).map { day in
+            "day\(day):arrival_walk=\(budget == "high" ? "taxi+priority-pass" : "public-transit"),focus=\(companions == "family" ? "kid-friendly highlight + early dinner" : "local highlight + flexible dinner")"
+        }
+
+        return .success(
+            invocation: invocation,
+            text: """
+            travel_day_plan[destination=\(destination), tripDays=\(tripDays), budget=\(budget), companions=\(companions), plan=\(planLines.joined(separator: " | "))]
+            """
+        )
     }
 }
 
@@ -129,10 +175,4 @@ private extension JSONValue {
         return value
     }
 
-    var boolValue: Bool? {
-        guard case let .bool(value) = self else {
-            return nil
-        }
-        return value
-    }
 }
