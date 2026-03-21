@@ -395,6 +395,71 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(messages.filter { $0.role == .assistant }.count, 1)
     }
 
+    func testSendMessageRetriesUnauthorizedByRefreshingSession() async throws {
+        let authProvider = RotatingDemoAuthProvider()
+        let backend = UnauthorizedThenSuccessBackend()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: authProvider,
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+        let thread = try await runtime.createThread()
+
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "Hello"),
+            in: thread.id
+        )
+        for try await _ in stream {}
+
+        let refreshCount = await authProvider.refreshCount()
+        XCTAssertEqual(refreshCount, 1)
+
+        let attemptedTokens = await backend.attemptedAccessTokens()
+        XCTAssertEqual(attemptedTokens.count, 2)
+        XCTAssertEqual(attemptedTokens[0], "demo-access-token-initial")
+        XCTAssertEqual(attemptedTokens[1], "demo-access-token-refreshed-1")
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.filter { $0.role == .assistant }.count, 1)
+    }
+
+    func testCreateThreadRetriesUnauthorizedByRefreshingSession() async throws {
+        let authProvider = RotatingDemoAuthProvider()
+        let backend = UnauthorizedOnCreateThenSuccessBackend()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: authProvider,
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Recovered Thread")
+        XCTAssertEqual(thread.title, "Recovered Thread")
+
+        let refreshCount = await authProvider.refreshCount()
+        XCTAssertEqual(refreshCount, 1)
+
+        let attemptedTokens = await backend.attemptedAccessTokens()
+        XCTAssertEqual(attemptedTokens.count, 2)
+        XCTAssertEqual(attemptedTokens[0], "demo-access-token-initial")
+        XCTAssertEqual(attemptedTokens[1], "demo-access-token-refreshed-1")
+    }
+
     func testConfigurationRegistersInitialTools() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
@@ -439,6 +504,119 @@ final class AgentRuntimeTests: XCTestCase {
         }
 
         XCTAssertTrue(sawToolResult)
+    }
+}
+
+private actor RotatingDemoAuthProvider: ChatGPTAuthProviding {
+    private var refreshInvocationCount = 0
+
+    func signInInteractively() async throws -> ChatGPTSession {
+        ChatGPTSession(
+            accessToken: "demo-access-token-initial",
+            refreshToken: "demo-refresh-token",
+            account: ChatGPTAccount(
+                id: "demo-account",
+                email: "demo@example.com",
+                plan: .plus
+            ),
+            acquiredAt: Date(),
+            expiresAt: Date().addingTimeInterval(3600),
+            isExternallyManaged: true
+        )
+    }
+
+    func refresh(
+        session: ChatGPTSession,
+        reason _: ChatGPTAuthRefreshReason
+    ) async throws -> ChatGPTSession {
+        refreshInvocationCount += 1
+        var refreshed = session
+        refreshed.accessToken = "demo-access-token-refreshed-\(refreshInvocationCount)"
+        refreshed.acquiredAt = Date()
+        refreshed.expiresAt = Date().addingTimeInterval(3600)
+        return refreshed
+    }
+
+    func signOut(session _: ChatGPTSession?) async {}
+
+    func refreshCount() -> Int {
+        refreshInvocationCount
+    }
+}
+
+private actor UnauthorizedThenSuccessBackend: AgentBackend {
+    private var didThrowUnauthorized = false
+    private var accessTokensByAttempt: [String] = []
+
+    func createThread(session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: UUID().uuidString)
+    }
+
+    func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: id)
+    }
+
+    func beginTurn(
+        thread: AgentThread,
+        history _: [AgentMessage],
+        message: UserMessageRequest,
+        instructions _: String,
+        tools _: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> any AgentTurnStreaming {
+        accessTokensByAttempt.append(session.accessToken)
+        if !didThrowUnauthorized {
+            didThrowUnauthorized = true
+            throw AgentRuntimeError.unauthorized("Simulated unauthorized")
+        }
+
+        return MockAgentTurnSession(
+            thread: thread,
+            message: message,
+            selectedTool: nil
+        )
+    }
+
+    func attemptedAccessTokens() -> [String] {
+        accessTokensByAttempt
+    }
+}
+
+private actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
+    private var didThrowUnauthorized = false
+    private var accessTokensByAttempt: [String] = []
+
+    func createThread(session: ChatGPTSession) async throws -> AgentThread {
+        accessTokensByAttempt.append(session.accessToken)
+        if !didThrowUnauthorized {
+            didThrowUnauthorized = true
+            throw AgentRuntimeError.unauthorized("Simulated unauthorized during createThread")
+        }
+
+        return AgentThread(id: UUID().uuidString)
+    }
+
+    func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: id)
+    }
+
+    func beginTurn(
+        thread: AgentThread,
+        history _: [AgentMessage],
+        message _: UserMessageRequest,
+        instructions _: String,
+        tools _: [ToolDefinition],
+        session _: ChatGPTSession
+    ) async throws -> any AgentTurnStreaming {
+        MockAgentTurnSession(
+            thread: thread,
+            message: .init(text: ""),
+            selectedTool: nil
+        )
+    }
+
+    func attemptedAccessTokens() -> [String] {
+        accessTokensByAttempt
     }
 }
 

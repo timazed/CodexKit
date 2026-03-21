@@ -61,6 +61,8 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var cachedAIReminderBody: String?
     var cachedAIReminderKey: String?
     var cachedAIReminderGeneratedAt: Date?
+    var reasoningEffort: ReasoningEffort
+    var currentAuthenticationMethod: DemoAuthenticationMethod = .deviceCode
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
@@ -82,6 +84,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         runtime: AgentRuntime,
         model: String,
         enableWebSearch: Bool,
+        reasoningEffort: ReasoningEffort,
         stateURL: URL?,
         keychainAccount: String,
         approvalInbox: ApprovalInbox,
@@ -90,6 +93,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         self.runtime = runtime
         self.model = model
         self.enableWebSearch = enableWebSearch
+        self.reasoningEffort = reasoningEffort
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
@@ -122,6 +126,17 @@ final class AgentDemoViewModel: @unchecked Sendable {
         dailyStepGoal > 0 && todayStepCount >= dailyStepGoal
     }
 
+    var canReconfigureRuntime: Bool {
+        !isAuthenticating && threads.allSatisfy { thread in
+            switch thread.status {
+            case .idle, .failed:
+                true
+            case .streaming, .waitingForApproval, .waitingForToolResult:
+                false
+            }
+        }
+    }
+
     func restore() async {
         do {
             _ = try await runtime.restore()
@@ -139,10 +154,12 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
         isAuthenticating = true
         lastError = nil
+        currentAuthenticationMethod = authenticationMethod
         runtime = AgentDemoRuntimeFactory.makeRuntime(
             authenticationMethod: authenticationMethod,
             model: model,
             enableWebSearch: enableWebSearch,
+            reasoningEffort: reasoningEffort,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
@@ -164,6 +181,51 @@ final class AgentDemoViewModel: @unchecked Sendable {
         } catch {
             await deviceCodePromptCoordinator.clear()
             await refreshSnapshot()
+            lastError = error.localizedDescription
+        }
+    }
+
+    func updateReasoningEffort(_ reasoningEffort: ReasoningEffort) async {
+        guard self.reasoningEffort != reasoningEffort else {
+            return
+        }
+
+        guard canReconfigureRuntime else {
+            lastError = "Wait for the current turn to finish before switching thinking level."
+            return
+        }
+
+        self.reasoningEffort = reasoningEffort
+        let preservedActiveThreadID = activeThreadID
+        let preservedHealthCoachThreadID = healthCoachThreadID
+
+        runtime = AgentDemoRuntimeFactory.makeRuntime(
+            authenticationMethod: currentAuthenticationMethod,
+            model: model,
+            enableWebSearch: enableWebSearch,
+            reasoningEffort: reasoningEffort,
+            stateURL: stateURL,
+            keychainAccount: keychainAccount,
+            approvalInbox: approvalInbox,
+            deviceCodePromptCoordinator: deviceCodePromptCoordinator
+        )
+
+        do {
+            _ = try await runtime.restore()
+            await registerDemoTool()
+            await refreshSnapshot()
+
+            if let preservedActiveThreadID,
+               threads.contains(where: { $0.id == preservedActiveThreadID }) {
+                activeThreadID = preservedActiveThreadID
+                messages = await runtime.messages(for: preservedActiveThreadID)
+            }
+
+            if let preservedHealthCoachThreadID,
+               threads.contains(where: { $0.id == preservedHealthCoachThreadID }) {
+                healthCoachThreadID = preservedHealthCoachThreadID
+            }
+        } catch {
             lastError = error.localizedDescription
         }
     }

@@ -3,30 +3,36 @@ import Foundation
 public struct CodexResponsesBackendConfiguration: Sendable {
     public let baseURL: URL
     public let model: String
+    public let reasoningEffort: ReasoningEffort
     public let instructions: String
     public let originator: String
     public let streamIdleTimeout: TimeInterval
     public let extraHeaders: [String: String]
     public let enableWebSearch: Bool
+    public let requestRetryPolicy: RequestRetryPolicy
 
     public init(
         baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
         model: String = "gpt-5",
+        reasoningEffort: ReasoningEffort = .medium,
         instructions: String = """
         You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
         """,
         originator: String = "codex_cli_rs",
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
-        enableWebSearch: Bool = false
+        enableWebSearch: Bool = false,
+        requestRetryPolicy: RequestRetryPolicy = .default
     ) {
         self.baseURL = baseURL
         self.model = model
+        self.reasoningEffort = reasoningEffort
         self.instructions = instructions
         self.originator = originator
         self.streamIdleTimeout = streamIdleTimeout
         self.extraHeaders = extraHeaders
         self.enableWebSearch = enableWebSearch
+        self.requestRetryPolicy = requestRetryPolicy
     }
 }
 
@@ -178,93 +184,119 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
         while shouldContinue {
             shouldContinue = false
-
-            let request = try buildURLRequest(
-                configuration: configuration,
-                instructions: instructions,
-                threadID: threadID,
-                items: workingHistory,
-                tools: tools,
-                session: session,
-                encoder: encoder
-            )
-
-            let stream = try await streamEvents(
-                request: request,
-                configuration: configuration,
-                urlSession: urlSession,
-                decoder: decoder
-            )
-
             var sawToolCall = false
+            let retryPolicy = configuration.requestRetryPolicy
+            var attempt = 1
 
-            for try await event in stream {
-                switch event {
-                case let .assistantTextDelta(delta):
-                    continuation.yield(
-                        .assistantMessageDelta(
-                            threadID: threadID,
-                            turnID: turnID,
-                            delta: delta
-                        )
+            retryLoop: while true {
+                var emittedRetryUnsafeOutput = false
+
+                do {
+                    let request = try buildURLRequest(
+                        configuration: configuration,
+                        instructions: instructions,
+                        threadID: threadID,
+                        items: workingHistory,
+                        tools: tools,
+                        session: session,
+                        encoder: encoder
                     )
 
-                case let .assistantMessage(messageTemplate):
-                    let assistantText: String
-                    if messageTemplate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                       !pendingToolFallbackTexts.isEmpty {
-                        assistantText = pendingToolFallbackTexts.joined(separator: "\n\n")
-                    } else {
-                        assistantText = messageTemplate.text
+                    let stream = try await streamEvents(
+                        request: request,
+                        urlSession: urlSession,
+                        decoder: decoder
+                    )
+
+                    for try await event in stream {
+                        switch event {
+                        case let .assistantTextDelta(delta):
+                            emittedRetryUnsafeOutput = true
+                            continuation.yield(
+                                .assistantMessageDelta(
+                                    threadID: threadID,
+                                    turnID: turnID,
+                                    delta: delta
+                                )
+                            )
+
+                        case let .assistantMessage(messageTemplate):
+                            emittedRetryUnsafeOutput = true
+
+                            let assistantText: String
+                            if messageTemplate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                               !pendingToolFallbackTexts.isEmpty {
+                                assistantText = pendingToolFallbackTexts.joined(separator: "\n\n")
+                            } else {
+                                assistantText = messageTemplate.text
+                            }
+
+                            let mergedImages = (messageTemplate.images + pendingToolImages).uniqued()
+                            let message = AgentMessage(
+                                threadID: threadID,
+                                role: .assistant,
+                                text: assistantText,
+                                images: mergedImages
+                            )
+                            workingHistory.append(.assistantMessage(message))
+                            continuation.yield(.assistantMessageCompleted(message))
+                            pendingToolImages.removeAll(keepingCapacity: true)
+                            pendingToolFallbackTexts.removeAll(keepingCapacity: true)
+
+                        case let .functionCall(functionCall):
+                            emittedRetryUnsafeOutput = true
+                            sawToolCall = true
+                            workingHistory.append(.functionCall(functionCall))
+
+                            let invocation = ToolInvocation(
+                                id: functionCall.callID,
+                                threadID: threadID,
+                                turnID: turnID,
+                                toolName: functionCall.name,
+                                arguments: functionCall.arguments
+                            )
+
+                            continuation.yield(.toolCallRequested(invocation))
+                            let toolResult = try await pendingToolResults.wait(for: invocation.id)
+                            let toolImages = await toolOutputImages(from: toolResult, urlSession: urlSession)
+                            pendingToolImages.append(contentsOf: toolImages)
+                            pendingToolImages = pendingToolImages.uniqued()
+
+                            if let primaryText = toolResult.primaryText?
+                                .trimmingCharacters(in: .whitespacesAndNewlines),
+                               !primaryText.isEmpty {
+                                pendingToolFallbackTexts.append(primaryText)
+                            }
+
+                            workingHistory.append(
+                                .functionCallOutput(
+                                    callID: invocation.id,
+                                    output: toolOutputText(from: toolResult)
+                                )
+                            )
+
+                        case let .completed(usage):
+                            aggregateUsage.inputTokens += usage.inputTokens
+                            aggregateUsage.cachedInputTokens += usage.cachedInputTokens
+                            aggregateUsage.outputTokens += usage.outputTokens
+                        }
                     }
 
-                    let mergedImages = (messageTemplate.images + pendingToolImages).uniqued()
-                    let message = AgentMessage(
-                        threadID: threadID,
-                        role: .assistant,
-                        text: assistantText,
-                        images: mergedImages
-                    )
-                    workingHistory.append(.assistantMessage(message))
-                    continuation.yield(.assistantMessageCompleted(message))
-                    pendingToolImages.removeAll(keepingCapacity: true)
-                    pendingToolFallbackTexts.removeAll(keepingCapacity: true)
-
-                case let .functionCall(functionCall):
-                    sawToolCall = true
-                    workingHistory.append(.functionCall(functionCall))
-
-                    let invocation = ToolInvocation(
-                        id: functionCall.callID,
-                        threadID: threadID,
-                        turnID: turnID,
-                        toolName: functionCall.name,
-                        arguments: functionCall.arguments
-                    )
-
-                    continuation.yield(.toolCallRequested(invocation))
-                    let toolResult = try await pendingToolResults.wait(for: invocation.id)
-                    let toolImages = await toolOutputImages(from: toolResult, urlSession: urlSession)
-                    pendingToolImages.append(contentsOf: toolImages)
-                    pendingToolImages = pendingToolImages.uniqued()
-
-                    if let primaryText = toolResult.primaryText?
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                       !primaryText.isEmpty {
-                        pendingToolFallbackTexts.append(primaryText)
+                    break retryLoop
+                } catch {
+                    guard !emittedRetryUnsafeOutput,
+                          attempt < retryPolicy.maxAttempts,
+                          shouldRetry(error, policy: retryPolicy)
+                    else {
+                        throw error
                     }
 
-                    workingHistory.append(
-                        .functionCallOutput(
-                            callID: invocation.id,
-                            output: toolOutputText(from: toolResult)
-                        )
-                    )
-
-                case let .completed(usage):
-                    aggregateUsage.inputTokens += usage.inputTokens
-                    aggregateUsage.cachedInputTokens += usage.cachedInputTokens
-                    aggregateUsage.outputTokens += usage.outputTokens
+                    let delay = retryPolicy.delayBeforeRetry(attempt: attempt)
+                    if delay > 0 {
+                        let nanoseconds = UInt64((delay * 1_000_000_000).rounded())
+                        try await Task.sleep(nanoseconds: nanoseconds)
+                    }
+                    attempt += 1
                 }
             }
 
@@ -297,6 +329,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
             model: configuration.model,
+            reasoning: .init(effort: configuration.reasoningEffort),
             instructions: instructions,
             input: items.map(\.jsonValue),
             tools: responsesTools(
@@ -344,7 +377,6 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
     private static func streamEvents(
         request: URLRequest,
-        configuration: CodexResponsesBackendConfiguration,
         urlSession: URLSession,
         decoder: JSONDecoder
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
@@ -363,7 +395,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 throw AgentRuntimeError.unauthorized(body)
             }
             throw AgentRuntimeError(
-                code: "responses_request_failed",
+                code: "responses_http_status_\(httpResponse.statusCode)",
                 message: "The ChatGPT responses request failed with status \(httpResponse.statusCode): \(body)"
             )
         }
@@ -423,6 +455,40 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 }
             }
         }
+    }
+
+    private static func shouldRetry(
+        _ error: Error,
+        policy: RequestRetryPolicy
+    ) -> Bool {
+        if let runtimeError = error as? AgentRuntimeError {
+            if runtimeError.code == AgentRuntimeError.unauthorized().code {
+                return false
+            }
+            if let statusCode = httpStatusCode(from: runtimeError.code) {
+                return policy.retryableHTTPStatusCodes.contains(statusCode)
+            }
+            return false
+        }
+
+        if let urlError = error as? URLError {
+            return policy.retryableURLErrorCodes.contains(urlError.errorCode)
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return policy.retryableURLErrorCodes.contains(nsError.code)
+        }
+
+        return false
+    }
+
+    private static func httpStatusCode(from errorCode: String) -> Int? {
+        let prefix = "responses_http_status_"
+        guard errorCode.hasPrefix(prefix) else {
+            return nil
+        }
+        return Int(errorCode.dropFirst(prefix.count))
     }
 
     private static func parseStreamEvent(
@@ -609,6 +675,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
 
 private struct ResponsesRequestBody: Encodable {
     let model: String
+    let reasoning: ResponsesReasoningConfiguration
     let instructions: String
     let input: [JSONValue]
     let tools: [JSONValue]
@@ -621,6 +688,7 @@ private struct ResponsesRequestBody: Encodable {
 
     enum CodingKeys: String, CodingKey {
         case model
+        case reasoning
         case instructions
         case input
         case tools
@@ -630,6 +698,14 @@ private struct ResponsesRequestBody: Encodable {
         case stream
         case include
         case promptCacheKey = "prompt_cache_key"
+    }
+}
+
+private struct ResponsesReasoningConfiguration: Encodable {
+    let effort: String
+
+    init(effort: ReasoningEffort) {
+        self.effort = effort.apiValue
     }
 }
 

@@ -28,6 +28,30 @@ extension AgentDemoView {
             ScrollView(.horizontal, showsIndicators: false) {
                 headerActions
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Model")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(viewModel.model)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(ReasoningEffort.allCases, id: \.self) { effort in
+                            reasoningEffortButton(for: effort)
+                        }
+                    }
+                }
+
+                Text("Thinking level for future requests.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -129,6 +153,27 @@ extension AgentDemoView {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    func reasoningEffortButton(for effort: ReasoningEffort) -> some View {
+        if effort == viewModel.reasoningEffort {
+            Button(effort.demoTitle) {
+                Task {
+                    await viewModel.updateReasoningEffort(effort)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!viewModel.canReconfigureRuntime)
+        } else {
+            Button(effort.demoTitle) {
+                Task {
+                    await viewModel.updateReasoningEffort(effort)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(!viewModel.canReconfigureRuntime)
         }
     }
 
@@ -236,6 +281,21 @@ extension AgentDemoView {
                 }
             }
             .padding(.top, 4)
+        }
+    }
+}
+
+private extension ReasoningEffort {
+    var demoTitle: String {
+        switch self {
+        case .low:
+            "Think Low"
+        case .medium:
+            "Think Medium"
+        case .high:
+            "Think High"
+        case .extraHigh:
+            "Think Extra High"
         }
     }
 }

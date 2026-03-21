@@ -113,7 +113,12 @@ public actor AgentRuntime {
         personaStack: AgentPersonaStack? = nil
     ) async throws -> AgentThread {
         let session = try await sessionManager.requireSession()
-        var thread = try await backend.createThread(session: session)
+        let creation = try await withUnauthorizedRecovery(
+            initialSession: session
+        ) { session in
+            try await backend.createThread(session: session)
+        }
+        var thread = creation.result
         if let title {
             thread.title = title
         }
@@ -125,7 +130,12 @@ public actor AgentRuntime {
     @discardableResult
     public func resumeThread(id: String) async throws -> AgentThread {
         let session = try await sessionManager.requireSession()
-        let thread = try await backend.resumeThread(id: id, session: session)
+        let resume = try await withUnauthorizedRecovery(
+            initialSession: session
+        ) { session in
+            try await backend.resumeThread(id: id, session: session)
+        }
+        let thread = resume.result
         try await upsertThread(thread)
         return thread
     }
@@ -159,7 +169,7 @@ public actor AgentRuntime {
         try await setThreadStatus(.streaming, for: threadID)
 
         let tools = await toolRegistry.allDefinitions()
-        let turnStream = try await backend.beginTurn(
+        let turnStart = try await beginTurnWithUnauthorizedRecovery(
             thread: thread,
             history: priorMessages,
             message: request,
@@ -167,6 +177,8 @@ public actor AgentRuntime {
             tools: tools,
             session: session
         )
+        let turnStream = turnStart.turnStream
+        let turnSession = turnStart.session
 
         return AsyncThrowingStream { continuation in
             continuation.yield(.messageCommitted(userMessage))
@@ -176,11 +188,37 @@ public actor AgentRuntime {
                 await self.consumeTurnStream(
                     turnStream,
                     for: threadID,
-                    session: session,
+                    session: turnSession,
                     continuation: continuation
                 )
             }
         }
+    }
+
+    private func beginTurnWithUnauthorizedRecovery(
+        thread: AgentThread,
+        history: [AgentMessage],
+        message: UserMessageRequest,
+        instructions: String,
+        tools: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> (
+        turnStream: any AgentTurnStreaming,
+        session: ChatGPTSession
+    ) {
+        let beginTurn = try await withUnauthorizedRecovery(
+            initialSession: session
+        ) { session in
+            try await backend.beginTurn(
+                thread: thread,
+                history: history,
+                message: message,
+                instructions: instructions,
+                tools: tools,
+                session: session
+            )
+        }
+        return (beginTurn.result, beginTurn.session)
     }
 
     private func consumeTurnStream(
@@ -382,5 +420,30 @@ public actor AgentRuntime {
             threadPersonaStack: thread.personaStack,
             turnPersonaOverride: message.personaOverride
         )
+    }
+
+    private static func isUnauthorizedError(_ error: Error) -> Bool {
+        (error as? AgentRuntimeError)?.code == AgentRuntimeError.unauthorized().code
+    }
+
+    private func withUnauthorizedRecovery<Result>(
+        initialSession: ChatGPTSession,
+        operation: (ChatGPTSession) async throws -> Result
+    ) async throws -> (
+        result: Result,
+        session: ChatGPTSession
+    ) {
+        do {
+            return (try await operation(initialSession), initialSession)
+        } catch {
+            guard Self.isUnauthorizedError(error) else {
+                throw error
+            }
+
+            let recoveredSession = try await sessionManager.recoverUnauthorizedSession(
+                previousAccessToken: initialSession.accessToken
+            )
+            return (try await operation(recoveredSession), recoveredSession)
+        }
     }
 }

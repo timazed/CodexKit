@@ -7,17 +7,20 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
         let statusCode: Int
         let headers: [String: String]
         let body: Data
+        let error: Error?
         let inspect: @Sendable (URLRequest) throws -> Void
 
         init(
             statusCode: Int = 200,
             headers: [String: String] = [:],
             body: Data,
+            error: Error? = nil,
             inspect: @escaping @Sendable (URLRequest) throws -> Void = { _ in }
         ) {
             self.statusCode = statusCode
             self.headers = headers
             self.body = body
+            self.error = error
             self.inspect = inspect
         }
     }
@@ -67,6 +70,11 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
             do {
                 let stub = try await Self.store.dequeue()
                 try stub.inspect(request)
+
+                if let error = stub.error {
+                    client?.urlProtocol(self, didFailWithError: error)
+                    return
+                }
 
                 let response = HTTPURLResponse(
                     url: request.url ?? URL(string: "https://example.com")!,

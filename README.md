@@ -43,6 +43,7 @@ let runtime = try AgentRuntime(configuration: .init(
     backend: CodexResponsesBackend(
         configuration: .init(
             model: "gpt-5.4",
+            reasoningEffort: .medium,
             enableWebSearch: true
         )
     ),
@@ -73,7 +74,9 @@ let stream = try await runtime.sendMessage(
 | Threaded runtime state + restore | Yes |
 | Streamed assistant output | Yes |
 | Host-defined tools + approval flow | Yes |
+| Configurable thinking level | Yes |
 | Web search toggle (`enableWebSearch`) | Yes |
+| Built-in request retry/backoff | Yes (configurable) |
 | Text + image input | Yes |
 | Assistant image attachment rendering | Yes |
 | Video/audio input attachments | Not yet |
@@ -114,6 +117,42 @@ The recommended production path for iOS is:
 - `.oauth` for browser-based ChatGPT OAuth
 
 For browser OAuth, `CodexKit` uses the Codex-compatible redirect `http://localhost:1455/auth/callback` internally and only runs the loopback listener during active auth.
+
+`CodexResponsesBackend` also includes built-in retry/backoff for transient failures (`429`, `5xx`, and network-transient URL errors like `networkConnectionLost`). You can tune or disable it:
+
+```swift
+let backend = CodexResponsesBackend(
+    configuration: .init(
+        model: "gpt-5.4",
+        requestRetryPolicy: .init(
+            maxAttempts: 3,
+            initialBackoff: 0.5,
+            maxBackoff: 4,
+            jitterFactor: 0.2
+        )
+        // or disable:
+        // requestRetryPolicy: .disabled
+    )
+)
+```
+
+`CodexResponsesBackendConfiguration` also lets you control the model thinking level:
+
+```swift
+let backend = CodexResponsesBackend(
+    configuration: .init(
+        model: "gpt-5.4",
+        reasoningEffort: .high
+    )
+)
+```
+
+Available values:
+
+- `.low`
+- `.medium`
+- `.high`
+- `.extraHigh`
 
 ## Image Attachments
 
@@ -198,7 +237,7 @@ The demo app exercises:
 - Use persistent runtime state (`FileRuntimeStateStore`)
 - Gate impactful tools with approvals
 - Handle auth cancellation and sign-out resets cleanly
-- Add retry/backoff around network-dependent UX
+- Tune retry/backoff policy for your app’s UX and latency targets
 - Log tool invocations and failures for supportability
 - Validate HealthKit/notification permission fallback states if using health features
 
