@@ -309,6 +309,69 @@ public actor AgentRuntime {
         _ request: UserMessageRequest,
         in threadID: String
     ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
+        try await sendMessage(
+            request,
+            in: threadID,
+            responseFormat: nil
+        )
+    }
+
+    public func completeText(
+        _ request: UserMessageRequest,
+        in threadID: String
+    ) async throws -> String {
+        let stream = try await sendMessage(
+            request,
+            in: threadID,
+            responseFormat: nil
+        )
+        let message = try await collectFinalAssistantMessage(from: stream)
+        return message.displayText
+    }
+
+    public func completeStructured<Output: AgentStructuredOutput>(
+        _ request: UserMessageRequest,
+        in threadID: String,
+        as outputType: Output.Type = Output.self
+    ) async throws -> Output {
+        try await completeStructured(
+            request,
+            in: threadID,
+            as: outputType,
+            responseFormat: outputType.responseFormat
+        )
+    }
+
+    public func completeStructured<Output: Decodable & Sendable>(
+        _ request: UserMessageRequest,
+        in threadID: String,
+        as outputType: Output.Type = Output.self,
+        responseFormat: AgentStructuredOutputFormat,
+        decoder: JSONDecoder = JSONDecoder()
+    ) async throws -> Output {
+        let stream = try await sendMessage(
+            request,
+            in: threadID,
+            responseFormat: responseFormat
+        )
+        let message = try await collectFinalAssistantMessage(from: stream)
+        let payload = Data(message.text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+
+        do {
+            return try decoder.decode(Output.self, from: payload)
+        } catch {
+            throw AgentRuntimeError.structuredOutputDecodingFailed(
+                typeName: String(describing: outputType),
+                underlyingMessage: error.localizedDescription
+            )
+        }
+    }
+
+    private func sendMessage(
+        _ request: UserMessageRequest,
+        in threadID: String,
+        responseFormat: AgentStructuredOutputFormat?
+    ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
         guard request.hasContent else {
             throw AgentRuntimeError.invalidMessageContent()
         }
@@ -344,6 +407,7 @@ public actor AgentRuntime {
             history: priorMessages,
             message: request,
             instructions: resolvedInstructions,
+            responseFormat: responseFormat,
             tools: tools,
             session: session
         )
@@ -371,6 +435,7 @@ public actor AgentRuntime {
         history: [AgentMessage],
         message: UserMessageRequest,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> (
@@ -385,6 +450,7 @@ public actor AgentRuntime {
                 history: history,
                 message: message,
                 instructions: instructions,
+                responseFormat: responseFormat,
                 tools: tools,
                 session: session
             )
@@ -661,6 +727,28 @@ public actor AgentRuntime {
         }
 
         try await persistState()
+    }
+
+    private func collectFinalAssistantMessage(
+        from stream: AsyncThrowingStream<AgentEvent, Error>
+    ) async throws -> AgentMessage {
+        var latestAssistantMessage: AgentMessage?
+
+        for try await event in stream {
+            guard case let .messageCommitted(message) = event,
+                  message.role == .assistant
+            else {
+                continue
+            }
+
+            latestAssistantMessage = message
+        }
+
+        guard let latestAssistantMessage else {
+            throw AgentRuntimeError.assistantResponseMissing()
+        }
+
+        return latestAssistantMessage
     }
 
     private func persistState() async throws {

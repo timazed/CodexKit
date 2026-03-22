@@ -13,8 +13,10 @@ Use `CodexKit` if you are building a SwiftUI/iOS app and want:
 - secure session persistence
 - resumable threaded conversations
 - streamed assistant output
+- typed one-shot text and structured completions
 - host-defined tools with approval gates
-- persona-aware agent behavior
+- persona- and skill-aware agent behavior
+- share/import-friendly message construction
 
 The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
 
@@ -78,6 +80,9 @@ let stream = try await runtime.sendMessage(
 | Web search toggle (`enableWebSearch`) | Yes |
 | Built-in request retry/backoff | Yes (configurable) |
 | Text + image input | Yes |
+| Typed structured output (`Decodable`) | Yes |
+| Share/import helper (`AgentImportedContent`) | Yes |
+| App Intents / Shortcuts example | Yes |
 | Assistant image attachment rendering | Yes |
 | Video/audio input attachments | Not yet |
 | Built-in image generation API surface | Not yet (tool-based approach supported) |
@@ -154,6 +159,51 @@ Available values:
 - `.high`
 - `.extraHigh`
 
+## Typed Completions
+
+For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` now exposes simple one-shot completion helpers:
+
+```swift
+let summary = try await runtime.completeText(
+    UserMessageRequest(text: "Summarize the latest thread activity."),
+    in: thread.id
+)
+```
+
+Structured output is schema-driven and decoded into your `Decodable` type:
+
+```swift
+struct ShippingReplyDraft: AgentStructuredOutput {
+    let subject: String
+    let reply: String
+    let urgency: String
+
+    static let responseFormat = AgentStructuredOutputFormat(
+        name: "shipping_reply_draft",
+        description: "A concise shipping support reply draft.",
+        schema: .object(
+            properties: [
+                "subject": .string(),
+                "reply": .string(),
+                "urgency": .string(enum: ["low", "medium", "high"]),
+            ],
+            required: ["subject", "reply", "urgency"],
+            additionalProperties: false
+        )
+    )
+}
+
+let draft = try await runtime.completeStructured(
+    UserMessageRequest(text: "Draft a response for the delayed package."),
+    in: thread.id,
+    as: ShippingReplyDraft.self
+)
+```
+
+`CodexKit` sends that through the OpenAI Responses structured-output path and stores the assistant's final JSON reply in thread history like any other assistant turn.
+
+If you need something more specialized, `AgentStructuredOutputFormat` still supports a raw-schema escape hatch via `rawSchema: JSONValue`.
+
 ## Image Attachments
 
 `CodexKit` supports:
@@ -211,6 +261,75 @@ let stream = try await runtime.sendMessage(
 )
 ```
 
+## Share Extensions And Imported Content
+
+Share extensions stay app-owned, but `CodexKit` now includes `AgentImportedContent` to normalize the content you extract from a share sheet before sending it into the runtime.
+
+```swift
+let imported = AgentImportedContent(
+    textSnippets: [sharedExcerpt],
+    urls: [sharedURL],
+    images: sharedImages
+)
+
+let request = UserMessageRequest(
+    prompt: "Summarize this shared content and call out the next action.",
+    importedContent: imported
+)
+
+let summary = try await runtime.completeText(request, in: thread.id)
+```
+
+That keeps the SDK focused on runtime capability while letting your app own the actual `Share Extension`, `NSItemProvider`, and presentation flow.
+
+## App Intents And Shortcuts
+
+App Intents also stay app-owned, but the demo app now includes working source examples for:
+
+- summarizing imported text/links through `AgentImportedContent`
+- generating a typed shipping support draft through `completeStructured`
+
+The source lives in:
+
+- [`DemoAppShortcuts.swift`](/Users/tima/Projects/AssistantAI/CodexKit/DemoApp/AssistantRuntimeDemoApp/Shared/DemoAppShortcuts.swift)
+
+A minimal App Intent shape looks like this:
+
+```swift
+struct SummarizeImportedContentIntent: AppIntent {
+    static let title: LocalizedStringResource = "Summarize Imported Content"
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Text")
+    var text: String
+
+    @Parameter(title: "Link")
+    var link: URL?
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let runtime = AgentDemoRuntimeFactory.makeRestorableRuntimeForSystemIntegration()
+        _ = try await runtime.restore()
+
+        guard await runtime.currentSession() != nil else {
+            return .result(dialog: "Sign in to the app first.")
+        }
+
+        let thread = try await runtime.createThread(title: "Shortcut Summary")
+        let request = UserMessageRequest(
+            prompt: "Summarize this imported content in three short bullet points.",
+            importedContent: .init(
+                textSnippets: [text],
+                urls: link.map { [$0] } ?? []
+            )
+        )
+
+        let summary = try await runtime.completeText(request, in: thread.id)
+        return .result(dialog: IntentDialog(stringLiteral: summary))
+    }
+}
+```
+
 ## Demo App
 
 The checked-in demo app under `DemoApp/` consumes local package products through SPM.
@@ -224,7 +343,9 @@ open DemoApp/AssistantRuntimeDemoApp.xcodeproj
 The demo app exercises:
 
 - device-code and browser-based ChatGPT sign-in
+- on-screen structured output demos for typed shipping drafts and imported-content summaries
 - streamed assistant output and resumable threads
+- App Intents / Shortcuts examples in source
 - host tools with skill-specific examples for health coaching and travel planning
 - image messages from the photo library through the composer
 - Responses web search in checked-in configuration

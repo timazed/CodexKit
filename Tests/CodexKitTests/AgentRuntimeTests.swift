@@ -8,7 +8,138 @@ private struct AutoApprovalPresenter: ApprovalPresenting {
     }
 }
 
+private struct ShippingReplyDraft: AgentStructuredOutput, Equatable {
+    let reply: String
+    let priority: String
+
+    static let responseFormat = AgentStructuredOutputFormat(
+        name: "shipping_reply_draft",
+        description: "A concise shipping support reply draft.",
+        schema: .object(
+            properties: [
+                "reply": .string(),
+                "priority": .string(),
+            ],
+            required: ["reply", "priority"],
+            additionalProperties: false
+        )
+    )
+}
+
 final class AgentRuntimeTests: XCTestCase {
+    func testCompleteTextReturnsFinalAssistantMessageText() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Complete")
+        let reply = try await runtime.completeText(
+            UserMessageRequest(text: "Hello there"),
+            in: thread.id
+        )
+
+        XCTAssertEqual(reply, "Echo: Hello there")
+    }
+
+    func testCompleteStructuredDecodesTypedResponse() async throws {
+        let backend = InMemoryAgentBackend(
+            structuredResponseText: #"{"reply":"Your order is already in transit.","priority":"high"}"#
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Structured")
+        let reply = try await runtime.completeStructured(
+            UserMessageRequest(text: "Draft a shipping reply."),
+            in: thread.id,
+            as: ShippingReplyDraft.self
+        )
+
+        XCTAssertEqual(
+            reply,
+            ShippingReplyDraft(
+                reply: "Your order is already in transit.",
+                priority: "high"
+            )
+        )
+
+        let formats = await backend.receivedResponseFormats()
+        XCTAssertEqual(formats.last??.name, "shipping_reply_draft")
+    }
+
+    func testStructuredDecodeFailureThrowsRuntimeError() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: InMemoryAgentBackend(
+                structuredResponseText: #"{"unexpected":"value"}"#
+            ),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Structured Failure")
+
+        await XCTAssertThrowsErrorAsync(
+            try await runtime.completeStructured(
+                UserMessageRequest(text: "Draft a shipping reply."),
+                in: thread.id,
+                as: ShippingReplyDraft.self
+            )
+        ) { error in
+            let runtimeError = error as? AgentRuntimeError
+            XCTAssertEqual(runtimeError?.code, "structured_output_decoding_failed")
+            XCTAssertTrue(runtimeError?.message.contains("ShippingReplyDraft") == true)
+        }
+    }
+
+    func testImportedContentInitializerBuildsMessageWithSharedURLs() async throws {
+        let content = AgentImportedContent(
+            textSnippets: ["Summarize this article."],
+            urls: [try XCTUnwrap(URL(string: "https://example.com/story"))],
+            images: [.png(Data([0x89, 0x50, 0x4E, 0x47]))]
+        )
+
+        let request = UserMessageRequest(
+            prompt: "Give me a concise summary.",
+            importedContent: content
+        )
+
+        XCTAssertTrue(request.hasContent)
+        XCTAssertEqual(request.images.count, 1)
+        XCTAssertTrue(request.text.contains("Give me a concise summary."))
+        XCTAssertTrue(request.text.contains("Summarize this article."))
+        XCTAssertTrue(request.text.contains("Shared URLs:"))
+        XCTAssertTrue(request.text.contains("https://example.com/story"))
+    }
+
     func testThreadSkillsAreResolvedIntoInstructions() async throws {
         let backend = InMemoryAgentBackend(
             baseInstructions: "Base host instructions."
@@ -1045,6 +1176,7 @@ private actor UnauthorizedThenSuccessBackend: AgentBackend {
         history _: [AgentMessage],
         message: UserMessageRequest,
         instructions _: String,
+        responseFormat _: AgentStructuredOutputFormat?,
         tools _: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
@@ -1057,7 +1189,8 @@ private actor UnauthorizedThenSuccessBackend: AgentBackend {
         return MockAgentTurnSession(
             thread: thread,
             message: message,
-            selectedTool: nil
+            selectedTool: nil,
+            structuredResponseText: nil
         )
     }
 
@@ -1089,13 +1222,15 @@ private actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
         history _: [AgentMessage],
         message _: UserMessageRequest,
         instructions _: String,
+        responseFormat _: AgentStructuredOutputFormat?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
         MockAgentTurnSession(
             thread: thread,
             message: .init(text: ""),
-            selectedTool: nil
+            selectedTool: nil,
+            structuredResponseText: nil
         )
     }
 
@@ -1118,6 +1253,7 @@ private actor ImageReplyAgentBackend: AgentBackend {
         history _: [AgentMessage],
         message _: UserMessageRequest,
         instructions _: String,
+        responseFormat _: AgentStructuredOutputFormat?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {

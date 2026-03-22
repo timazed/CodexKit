@@ -22,6 +22,7 @@ public protocol AgentBackend: Sendable {
         history: [AgentMessage],
         message: UserMessageRequest,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming

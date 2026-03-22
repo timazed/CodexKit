@@ -6,9 +6,15 @@ public actor InMemoryAgentBackend: AgentBackend {
 
     private var threads: [String: AgentThread] = [:]
     private var beginTurnInstructions: [String] = []
+    private var beginTurnResponseFormats: [AgentStructuredOutputFormat?] = []
+    private let structuredResponseText: String
 
-    public init(baseInstructions: String? = nil) {
+    public init(
+        baseInstructions: String? = nil,
+        structuredResponseText: String = #"{"reply":"Structured echo","priority":"normal"}"#
+    ) {
         self.baseInstructions = baseInstructions
+        self.structuredResponseText = structuredResponseText
     }
 
     public func createThread(session _: ChatGPTSession) async throws -> AgentThread {
@@ -32,14 +38,17 @@ public actor InMemoryAgentBackend: AgentBackend {
         history _: [AgentMessage],
         message: UserMessageRequest,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         tools: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
         beginTurnInstructions.append(instructions)
+        beginTurnResponseFormats.append(responseFormat)
         let updatedThread = AgentThread(
             id: thread.id,
             title: thread.title,
             personaStack: thread.personaStack,
+            skillIDs: thread.skillIDs,
             createdAt: thread.createdAt,
             updatedAt: Date(),
             status: .streaming
@@ -55,12 +64,17 @@ public actor InMemoryAgentBackend: AgentBackend {
         return MockAgentTurnSession(
             thread: updatedThread,
             message: message,
-            selectedTool: selectedTool
+            selectedTool: selectedTool,
+            structuredResponseText: responseFormat == nil ? nil : structuredResponseText
         )
     }
 
     public func receivedInstructions() -> [String] {
         beginTurnInstructions
+    }
+
+    public func receivedResponseFormats() -> [AgentStructuredOutputFormat?] {
+        beginTurnResponseFormats
     }
 }
 
@@ -71,7 +85,8 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
     public init(
         thread: AgentThread,
         message: UserMessageRequest,
-        selectedTool: ToolDefinition?
+        selectedTool: ToolDefinition?,
+        structuredResponseText: String?
     ) {
         let pendingResults = PendingToolResults()
         self.pendingResults = pendingResults
@@ -119,7 +134,7 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
 
                     continuation.yield(.assistantMessageCompleted(fullMessage))
                 } else {
-                    let response = "Echo: \(message.text)"
+                    let response = structuredResponseText ?? "Echo: \(message.text)"
                     for chunk in MockAgentTurnSession.chunks(for: response) {
                         continuation.yield(
                             .assistantMessageDelta(

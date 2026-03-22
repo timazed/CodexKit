@@ -56,6 +56,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Hi there"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -125,6 +126,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Think hard"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -209,6 +211,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Find the profile"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [tool],
             session: session
         )
@@ -276,6 +279,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Search the web"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -337,6 +341,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                 images: [image]
             ),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -416,6 +421,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Make me an image"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [tool],
             session: session
         )
@@ -497,6 +503,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Hi"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -551,6 +558,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Hi"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -612,6 +620,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             history: [],
             message: UserMessageRequest(text: "Retry me"),
             instructions: "Resolved instructions",
+            responseFormat: nil,
             tools: [],
             session: session
         )
@@ -624,6 +633,66 @@ final class CodexResponsesBackendTests: XCTestCase {
         }
 
         XCTAssertEqual(assistantMessage?.text, "Recovered after network loss")
+    }
+
+    func testBackendEncodesStructuredOutputFormat() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let responseFormat = AgentStructuredOutputFormat(
+            name: "shipping_reply_draft",
+            description: "A concise shipping support reply draft.",
+            schema: .object(
+                properties: [
+                    "reply": .string(),
+                ],
+                required: ["reply"],
+                additionalProperties: false
+            )
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\\"reply\\":\\"Done\\"}"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_structured","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let text = try XCTUnwrap(json?["text"] as? [String: Any])
+                    let format = try XCTUnwrap(text["format"] as? [String: Any])
+                    XCTAssertEqual(format["type"] as? String, "json_schema")
+                    XCTAssertEqual(format["name"] as? String, "shipping_reply_draft")
+                    XCTAssertEqual(format["description"] as? String, "A concise shipping support reply draft.")
+                    XCTAssertEqual(format["strict"] as? Bool, true)
+                    let schema = try XCTUnwrap(format["schema"] as? [String: Any])
+                    XCTAssertEqual(schema["type"] as? String, "object")
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-structured"),
+            history: [],
+            message: UserMessageRequest(text: "Draft a reply."),
+            instructions: "Resolved instructions",
+            responseFormat: responseFormat,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
     }
 
 }
