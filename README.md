@@ -1,7 +1,7 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.0--alpha.1-orange)
 
 `CodexKit` is a lightweight iOS-first SDK for embedding OpenAI Codex-style agents in Apple apps.
 
@@ -14,8 +14,10 @@ Use `CodexKit` if you are building a SwiftUI/iOS app and want:
 - resumable threaded conversations
 - structured local memory with optional prompt injection
 - streamed assistant output
+- typed one-shot text and structured completions
 - host-defined tools with approval gates
-- persona-aware agent behavior
+- persona- and skill-aware agent behavior
+- share/import-friendly message construction
 
 The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
 
@@ -60,7 +62,7 @@ let runtime = try AgentRuntime(configuration: .init(
 
 let _ = try await runtime.signIn()
 let thread = try await runtime.createThread(title: "First Chat")
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(text: "Hello from iOS."),
     in: thread.id
 )
@@ -80,6 +82,9 @@ let stream = try await runtime.sendMessage(
 | Built-in request retry/backoff | Yes (configurable) |
 | Structured local memory layer | Yes |
 | Text + image input | Yes |
+| Typed structured output (`Decodable`) | Yes |
+| Share/import helper (`AgentImportedContent`) | Yes |
+| App Intents / Shortcuts example | Yes |
 | Assistant image attachment rendering | Yes |
 | Video/audio input attachments | Not yet |
 | Built-in image generation API surface | Not yet (tool-based approach supported) |
@@ -156,6 +161,51 @@ Available values:
 - `.high`
 - `.extraHigh`
 
+## Typed Completions
+
+For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `sendMessage`:
+
+```swift
+let summary = try await runtime.sendMessage(
+    UserMessageRequest(text: "Summarize the latest thread activity."),
+    in: thread.id
+)
+```
+
+Structured output is schema-driven and decoded into your `Decodable` type:
+
+```swift
+struct ShippingReplyDraft: AgentStructuredOutput {
+    let subject: String
+    let reply: String
+    let urgency: String
+
+    static let responseFormat = AgentStructuredOutputFormat(
+        name: "shipping_reply_draft",
+        description: "A concise shipping support reply draft.",
+        schema: .object(
+            properties: [
+                "subject": .string(),
+                "reply": .string(),
+                "urgency": .string(enum: ["low", "medium", "high"]),
+            ],
+            required: ["subject", "reply", "urgency"],
+            additionalProperties: false
+        )
+    )
+}
+
+let draft = try await runtime.sendMessage(
+    UserMessageRequest(text: "Draft a response for the delayed package."),
+    in: thread.id,
+    expecting: ShippingReplyDraft.self
+)
+```
+
+`CodexKit` sends that through the OpenAI Responses structured-output path and stores the assistant's final JSON reply in thread history like any other assistant turn.
+
+If you need something more specialized, `AgentStructuredOutputFormat` still supports a raw-schema escape hatch via `rawSchema: JSONValue`.
+
 ## Image Attachments
 
 `CodexKit` supports:
@@ -168,7 +218,7 @@ Available values:
 ```swift
 let imageData: Data = ...
 
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(
         text: "Describe this image",
         images: [.jpeg(imageData)]
@@ -292,13 +342,88 @@ let reviewerOverride = AgentPersonaStack(layers: [
     .init(name: "reviewer", instructions: "For this reply only, act as a strict reviewer and call out risks first.")
 ])
 
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(
         text: "Review this architecture and point out the risks.",
         personaOverride: reviewerOverride
     ),
     in: thread.id
 )
+```
+
+## Share Extensions And Imported Content
+
+Share extensions stay app-owned, but `CodexKit` now includes `AgentImportedContent` to normalize the content you extract from a share sheet before sending it into the runtime.
+
+```swift
+let imported = AgentImportedContent(
+    textSnippets: [sharedExcerpt],
+    urls: [sharedURL],
+    images: sharedImages
+)
+
+let request = UserMessageRequest(
+    prompt: "Summarize this shared content and call out the next action.",
+    importedContent: imported
+)
+
+let summary = try await runtime.sendMessage(
+    request,
+    in: thread.id
+)
+```
+
+That keeps the SDK focused on runtime capability while letting your app own the actual `Share Extension`, `NSItemProvider`, and presentation flow.
+
+## App Intents And Shortcuts
+
+App Intents also stay app-owned, but the demo app now includes working source examples for:
+
+- summarizing imported text/links through `AgentImportedContent`
+- generating a typed shipping support draft through `sendMessage(..., expecting:)`
+
+The source lives in:
+
+- [`DemoAppShortcuts.swift`](/Users/tima/Projects/AssistantAI/CodexKit/DemoApp/AssistantRuntimeDemoApp/Shared/DemoAppShortcuts.swift)
+
+A minimal App Intent shape looks like this:
+
+```swift
+struct SummarizeImportedContentIntent: AppIntent {
+    static let title: LocalizedStringResource = "Summarize Imported Content"
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Text")
+    var text: String
+
+    @Parameter(title: "Link")
+    var link: URL?
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let runtime = AgentDemoRuntimeFactory.makeRestorableRuntimeForSystemIntegration()
+        _ = try await runtime.restore()
+
+        guard await runtime.currentSession() != nil else {
+            return .result(dialog: "Sign in to the app first.")
+        }
+
+        let thread = try await runtime.createThread(title: "Shortcut Summary")
+        let request = UserMessageRequest(
+            prompt: "Summarize this imported content in three short bullet points.",
+            importedContent: .init(
+                textSnippets: [text],
+                urls: link.map { [$0] } ?? []
+            )
+        )
+
+        let summary = try await runtime.sendMessage(
+            request,
+            in: thread.id
+        )
+        return .result(dialog: IntentDialog(stringLiteral: summary))
+    }
+}
 ```
 
 ## Demo App
@@ -314,7 +439,9 @@ open DemoApp/AssistantRuntimeDemoApp.xcodeproj
 The demo app exercises:
 
 - device-code and browser-based ChatGPT sign-in
+- on-screen structured output demos for typed shipping drafts and imported-content summaries
 - streamed assistant output and resumable threads
+- App Intents / Shortcuts examples in source
 - host tools with skill-specific examples for health coaching and travel planning
 - image messages from the photo library through the composer
 - Responses web search in checked-in configuration
@@ -369,7 +496,7 @@ let tripThread = try await runtime.createThread(
     skillIDs: ["travel_planner"]
 )
 
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(
         text: "Review this plan with extra travel rigor.",
         skillOverrideIDs: ["travel_planner"]
@@ -447,10 +574,13 @@ print(preview)
 
 ## Versioning And Releases
 
-`CodexKit` uses Semantic Versioning. The latest stable release is `v1.1.0`.
+`CodexKit` uses Semantic Versioning. The latest stable release is `v1.1.0`, and the current prerelease target is `v2.0.0-alpha.1`.
 
 - Release notes live in [CHANGELOG.md](CHANGELOG.md)
 - CI runs on pushes/PRs via [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+- Pushing a `v*` tag creates a GitHub Release automatically via [`.github/workflows/release.yml`](.github/workflows/release.yml)
+- Tags containing a hyphen, such as `v2.0.0-alpha.1`, are published as GitHub prereleases automatically
+- The release workflow also supports manual dispatch for an existing tag if you need to publish a release page after the tag already exists
 - Stable releases are cut with annotated tags (`vMAJOR.MINOR.PATCH`)
 
 ## Contributing And Security

@@ -16,6 +16,12 @@
 		1A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */; };
 		1A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */; };
 		1A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */; };
+		1A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift */; };
+		1A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift */; };
+		1A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift */; };
+		1A2B3C4D5E6F70000000000D /* DemoUIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000000D /* DemoUIComponents.swift */; };
+		1A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift */; };
+		1A2B3C4D5E6F70000000000F /* ThreadDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000000F /* ThreadDetailView.swift */; };
 		7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */; };
 		84726927B752451499D9257F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 906A95007C8ECB92CFC2CE15 /* Foundation.framework */; };
 		B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA22585116A120BA97F76B8 /* AgentDemoView.swift */; };
@@ -35,6 +41,12 @@
 		2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+Tools.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+HealthCoach.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+HealthCoachPlatform.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoAppShortcuts.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoStructuredOutputExamples.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+StructuredOutput.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000000D /* DemoUIComponents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoUIComponents.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StructuredOutputDemoView.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000000F /* ThreadDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThreadDetailView.swift; sourceTree = "<group>"; };
 		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
 		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
 		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
@@ -119,6 +131,12 @@
 				2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */,
 				2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */,
 				2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */,
+				2A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift */,
+				2A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift */,
+				2A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift */,
+				2A2B3C4D5E6F70000000000D /* DemoUIComponents.swift */,
+				2A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift */,
+				2A2B3C4D5E6F70000000000F /* ThreadDetailView.swift */,
 			);
 			name = Shared;
 			path = Shared;
@@ -204,6 +222,12 @@
 				1A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift in Sources */,
 				1A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift in Sources */,
 				1A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift in Sources */,
+				1A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift in Sources */,
+				1A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift in Sources */,
+				1A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift in Sources */,
+				1A2B3C4D5E6F70000000000D /* DemoUIComponents.swift in Sources */,
+				1A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift in Sources */,
+				1A2B3C4D5E6F70000000000F /* ThreadDetailView.swift in Sources */,
 				7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */,
 				BB4F38E64D1EBBB3821AC4E3 /* AgentDemoRuntimeFactory.swift in Sources */,
 				B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */,

@@ -22,15 +22,18 @@ enum DemoAuthenticationMethod: String, CaseIterable, Identifiable {
 }
 
 enum AgentDemoRuntimeFactory {
+    static let defaultModel = "gpt-5.4"
+    static let defaultKeychainAccount = "AssistantRuntimeDemoApp"
+
     #if canImport(AuthenticationServices)
     @MainActor
     @available(iOS 13.0, macOS 10.15, *)
     static func makeLive(
-        model: String = "gpt-5.4",
+        model: String = defaultModel,
         enableWebSearch: Bool = false,
         reasoningEffort: ReasoningEffort = .medium,
         stateURL: URL? = nil,
-        keychainAccount: String = "live"
+        keychainAccount: String = defaultKeychainAccount
     ) -> AgentDemoViewModel {
         let approvalInbox = ApprovalInbox()
         let deviceCodePromptCoordinator = DeviceCodePromptCoordinator()
@@ -62,11 +65,11 @@ enum AgentDemoRuntimeFactory {
     @available(iOS 13.0, macOS 10.15, *)
     static func makeRuntime(
         authenticationMethod: DemoAuthenticationMethod,
-        model: String = "gpt-5.4",
+        model: String = defaultModel,
         enableWebSearch: Bool = false,
         reasoningEffort: ReasoningEffort = .medium,
         stateURL: URL? = nil,
-        keychainAccount: String = "live",
+        keychainAccount: String = defaultKeychainAccount,
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator
     ) -> AgentRuntime {
@@ -104,7 +107,33 @@ enum AgentDemoRuntimeFactory {
     }
     #endif
 
-    private static func defaultStateURL() -> URL {
+    static func makeRestorableRuntimeForSystemIntegration(
+        model: String = defaultModel,
+        enableWebSearch: Bool = true,
+        reasoningEffort: ReasoningEffort = .medium,
+        keychainAccount: String = defaultKeychainAccount
+    ) -> AgentRuntime {
+        let authProvider = try! ChatGPTAuthProvider(method: .oauth)
+
+        return try! AgentRuntime(configuration: .init(
+            authProvider: authProvider,
+            secureStore: KeychainSessionSecureStore(
+                service: "AssistantRuntimeDemoApp.ChatGPTSession",
+                account: keychainAccount
+            ),
+            backend: CodexResponsesBackend(
+                configuration: CodexResponsesBackendConfiguration(
+                    model: model,
+                    reasoningEffort: reasoningEffort,
+                    enableWebSearch: enableWebSearch
+                )
+            ),
+            approvalPresenter: NonInteractiveApprovalPresenter(),
+            stateStore: FileRuntimeStateStore(url: defaultStateURL())
+        ))
+    }
+
+    static func defaultStateURL() -> URL {
         let baseDirectory = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -113,5 +142,11 @@ enum AgentDemoRuntimeFactory {
         return baseDirectory
             .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
             .appendingPathComponent("runtime-state.json")
+    }
+}
+
+private struct NonInteractiveApprovalPresenter: ApprovalPresenting {
+    func requestApproval(_ request: ApprovalRequest) async throws -> ApprovalDecision {
+        .denied
     }
 }
