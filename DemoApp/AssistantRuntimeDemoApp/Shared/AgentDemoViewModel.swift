@@ -39,6 +39,37 @@ struct StructuredOutputDemoImportResult: Sendable {
     let summary: StructuredImportedContentSummary
 }
 
+struct GuidedMemoryDemoResult: Sendable {
+    let record: MemoryRecord
+    let diagnostics: MemoryStoreDiagnostics
+}
+
+struct RawMemoryDemoResult: Sendable {
+    let record: MemoryRecord
+    let diagnostics: MemoryStoreDiagnostics
+}
+
+struct MemoryPreviewDemoResult: Sendable {
+    let threadID: String?
+    let threadTitle: String?
+    let requestText: String
+    let result: MemoryQueryResult
+    let renderedPrompt: String
+}
+
+struct AutomaticMemoryDemoResult: Sendable {
+    let threadID: String
+    let threadTitle: String
+    let capture: MemoryCaptureResult
+}
+
+struct AutomaticPolicyMemoryDemoResult: Sendable {
+    let threadID: String
+    let threadTitle: String
+    let prompt: String
+    let records: [MemoryRecord]
+}
+
 @MainActor
 @Observable
 final class AgentDemoViewModel: @unchecked Sendable {
@@ -106,6 +137,12 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var isRunningStructuredOutputDemo = false
     var structuredShippingReplyResult: StructuredOutputDemoDraftResult?
     var structuredImportedSummaryResult: StructuredOutputDemoImportResult?
+    var isRunningMemoryDemo = false
+    var automaticMemoryResult: AutomaticMemoryDemoResult?
+    var automaticPolicyMemoryResult: AutomaticPolicyMemoryDemoResult?
+    var guidedMemoryResult: GuidedMemoryDemoResult?
+    var rawMemoryResult: RawMemoryDemoResult?
+    var memoryPreviewResult: MemoryPreviewDemoResult?
     var healthKitAuthorized = false
     var notificationAuthorized = false
     var isRefreshingHealthCoach = false
@@ -433,6 +470,15 @@ final class AgentDemoViewModel: @unchecked Sendable {
             lastResolvedInstructionsThreadTitle = nil
             isRunningSkillPolicyProbe = false
             skillPolicyProbeResult = nil
+            isRunningStructuredOutputDemo = false
+            structuredShippingReplyResult = nil
+            structuredImportedSummaryResult = nil
+            isRunningMemoryDemo = false
+            automaticMemoryResult = nil
+            automaticPolicyMemoryResult = nil
+            guidedMemoryResult = nil
+            rawMemoryResult = nil
+            memoryPreviewResult = nil
             activeThreadID = nil
             healthCoachThreadID = nil
             healthCoachFeedback = "Set a step goal, then start moving."

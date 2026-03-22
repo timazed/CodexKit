@@ -28,6 +28,13 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
         AgentRuntimeError(code: "unauthorized", message: message)
     }
 
+    public static func memoryNotConfigured() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "memory_not_configured",
+            message: "This runtime was created without a memory store configuration."
+        )
+    }
+
     public static func invalidMessageContent() -> AgentRuntimeError {
         AgentRuntimeError(
             code: "invalid_message_content",

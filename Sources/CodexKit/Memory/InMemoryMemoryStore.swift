@@ -70,10 +70,11 @@ public actor InMemoryMemoryStore: MemoryStoring {
         let candidates = namespaceRecords.values.map { record in
             MemoryQueryEngine.Candidate(
                 record: record,
-                rawTextScore: MemoryQueryEngine.defaultTextScore(
+                textScore: MemoryQueryEngine.defaultTextScore(
                     for: record,
                     queryText: query.text
-                )
+                ),
+                textScoreOrdering: .higherIsBetter
             )
         }
 

@@ -66,7 +66,8 @@ public actor SQLiteMemoryStore: MemoryStoring {
         let candidates = records.map { record in
             MemoryQueryEngine.Candidate(
                 record: record,
-                rawTextScore: rawScores[record.id]
+                textScore: rawScores[record.id],
+                textScoreOrdering: .lowerIsBetter
             )
         }
 

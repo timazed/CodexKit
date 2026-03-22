@@ -400,10 +400,34 @@ public enum MemoryObservationEvent: Sendable {
     case queryStarted(MemoryQuery)
     case querySucceeded(query: MemoryQuery, result: MemoryQueryResult)
     case queryFailed(query: MemoryQuery, message: String)
+    case captureStarted(threadID: String, sourceDescription: String)
+    case captureSucceeded(threadID: String, result: MemoryCaptureResult)
+    case captureFailed(threadID: String, message: String)
 }
 
 public protocol MemoryObserving: Sendable {
     func handle(event: MemoryObservationEvent) async
+}
+
+public enum MemoryAutomaticCaptureSource: Hashable, Sendable {
+    case lastTurn
+    case threadHistory(maxMessages: Int = 8)
+}
+
+public struct MemoryAutomaticCapturePolicy: Sendable {
+    public var source: MemoryAutomaticCaptureSource
+    public var options: MemoryCaptureOptions
+    public var requiresThreadMemoryContext: Bool
+
+    public init(
+        source: MemoryAutomaticCaptureSource = .lastTurn,
+        options: MemoryCaptureOptions = .init(),
+        requiresThreadMemoryContext: Bool = true
+    ) {
+        self.source = source
+        self.options = options
+        self.requiresThreadMemoryContext = requiresThreadMemoryContext
+    }
 }
 
 public struct DefaultMemoryPromptRenderer: MemoryPromptRendering, Sendable {
@@ -426,18 +450,21 @@ public struct AgentMemoryConfiguration: Sendable {
     public let defaultReadBudget: MemoryReadBudget
     public let promptRenderer: any MemoryPromptRendering
     public let observer: (any MemoryObserving)?
+    public let automaticCapturePolicy: MemoryAutomaticCapturePolicy?
 
     public init(
         store: any MemoryStoring,
         defaultRanking: MemoryRankingWeights = .default,
         defaultReadBudget: MemoryReadBudget = .runtimeDefault,
         promptRenderer: any MemoryPromptRendering = DefaultMemoryPromptRenderer(),
-        observer: (any MemoryObserving)? = nil
+        observer: (any MemoryObserving)? = nil,
+        automaticCapturePolicy: MemoryAutomaticCapturePolicy? = nil
     ) {
         self.store = store
         self.defaultRanking = defaultRanking
         self.defaultReadBudget = defaultReadBudget
         self.promptRenderer = promptRenderer
         self.observer = observer
+        self.automaticCapturePolicy = automaticCapturePolicy
     }
 }

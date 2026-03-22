@@ -1,9 +1,15 @@
 import Foundation
 
 internal enum MemoryQueryEngine {
+    internal enum TextScoreOrdering {
+        case higherIsBetter
+        case lowerIsBetter
+    }
+
     internal struct Candidate {
         let record: MemoryRecord
-        let rawTextScore: Double?
+        let textScore: Double?
+        let textScoreOrdering: TextScoreOrdering
     }
 
     private struct ScoredCandidate {
@@ -82,15 +88,10 @@ internal enum MemoryQueryEngine {
                 break
             }
 
-            let nextCount = characterCount + candidate.characterCost
-            if !selected.isEmpty, nextCount > query.maxCharacters {
+            let nextCount = characterCount + candidate.characterCost + (selected.isEmpty ? 0 : 1)
+            if nextCount > query.maxCharacters {
                 truncated = true
-                break
-            }
-
-            if selected.isEmpty, candidate.characterCost > query.maxCharacters {
-                truncated = true
-                break
+                continue
             }
 
             selected.append(candidate.match)
@@ -226,7 +227,7 @@ internal enum MemoryQueryEngine {
     private static func normalizedTextScores(
         from candidates: [Candidate]
     ) -> [String: Double] {
-        let rawScores = candidates.compactMap(\.rawTextScore)
+        let rawScores = candidates.compactMap(\.textScore)
         guard let maxScore = rawScores.max(),
               let minScore = rawScores.min()
         else {
@@ -234,15 +235,25 @@ internal enum MemoryQueryEngine {
         }
 
         return candidates.reduce(into: [String: Double]()) { partial, candidate in
-            guard let rawScore = candidate.rawTextScore else {
+            guard let rawScore = candidate.textScore else {
                 partial[candidate.record.id] = 0
                 return
             }
 
             if maxScore == minScore {
-                partial[candidate.record.id] = 1
+                switch candidate.textScoreOrdering {
+                case .higherIsBetter:
+                    partial[candidate.record.id] = rawScore > 0 ? 1 : 0
+                case .lowerIsBetter:
+                    partial[candidate.record.id] = 1
+                }
             } else {
-                partial[candidate.record.id] = clamp((maxScore - rawScore) / (maxScore - minScore))
+                switch candidate.textScoreOrdering {
+                case .higherIsBetter:
+                    partial[candidate.record.id] = clamp((rawScore - minScore) / (maxScore - minScore))
+                case .lowerIsBetter:
+                    partial[candidate.record.id] = clamp((maxScore - rawScore) / (maxScore - minScore))
+                }
             }
         }
     }

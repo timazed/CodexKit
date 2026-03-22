@@ -102,7 +102,21 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: approvalInbox,
-            stateStore: FileRuntimeStateStore(url: stateURL ?? defaultStateURL())
+            stateStore: FileRuntimeStateStore(url: stateURL ?? defaultStateURL()),
+            memory: .init(
+                store: try! SQLiteMemoryStore(url: defaultMemoryURL()),
+                automaticCapturePolicy: .init(
+                    source: .lastTurn,
+                    options: .init(
+                        defaults: .init(
+                            namespace: DemoMemoryExamples.namespace,
+                            kind: "preference",
+                            tags: ["demo", "auto-capture"]
+                        ),
+                        maxMemories: 2
+                    )
+                )
+            )
         ))
     }
     #endif
@@ -129,7 +143,21 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: NonInteractiveApprovalPresenter(),
-            stateStore: FileRuntimeStateStore(url: defaultStateURL())
+            stateStore: FileRuntimeStateStore(url: defaultStateURL()),
+            memory: .init(
+                store: try! SQLiteMemoryStore(url: defaultMemoryURL()),
+                automaticCapturePolicy: .init(
+                    source: .lastTurn,
+                    options: .init(
+                        defaults: .init(
+                            namespace: DemoMemoryExamples.namespace,
+                            kind: "preference",
+                            tags: ["demo", "auto-capture"]
+                        ),
+                        maxMemories: 2
+                    )
+                )
+            )
         ))
     }
 
@@ -142,6 +170,17 @@ enum AgentDemoRuntimeFactory {
         return baseDirectory
             .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
             .appendingPathComponent("runtime-state.json")
+    }
+
+    static func defaultMemoryURL() -> URL {
+        let baseDirectory = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+
+        return baseDirectory
+            .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
+            .appendingPathComponent("memory.sqlite")
     }
 }
 
