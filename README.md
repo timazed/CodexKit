@@ -5,6 +5,8 @@
 
 `CodexKit` is a lightweight iOS-first SDK for embedding OpenAI Codex-style agents in Apple apps.
 
+`main` documents the upcoming `2.0` development line. If you are integrating the latest stable release, use the [`v1.1.0` docs](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md) instead.
+
 ## Who This Is For
 
 Use `CodexKit` if you are building a SwiftUI/iOS app and want:
@@ -56,6 +58,8 @@ The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
   Opt into automatic memory capture, guided writing, or raw record management.
 
 ## Quickstart (5 Minutes)
+
+This quickstart targets the current `main` branch API surface (`2.0` development line).
 
 1. Add this package to your Xcode project.
 2. Build an `AgentRuntime` with auth, secure storage, backend, approvals, and state store.
