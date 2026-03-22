@@ -2,6 +2,7 @@ import Foundation
 import SQLite3
 
 public actor SQLiteMemoryStore: MemoryStoring {
+    private static let currentSchemaVersion = 1
     private let url: URL
     private nonisolated(unsafe) var database: OpaquePointer?
     private let encoder = JSONEncoder()
@@ -10,7 +11,7 @@ public actor SQLiteMemoryStore: MemoryStoring {
     public init(url: URL) throws {
         self.url = url
         self.database = try Self.openDatabase(at: url)
-        try Self.createSchemaIfNeeded(in: database)
+        try Self.migrateIfNeeded(in: database)
     }
 
     deinit {
@@ -72,6 +73,54 @@ public actor SQLiteMemoryStore: MemoryStoring {
         return try MemoryQueryEngine.evaluate(
             candidates: candidates,
             query: query
+        )
+    }
+
+    public func record(
+        id: String,
+        namespace: String
+    ) async throws -> MemoryRecord? {
+        try MemoryQueryEngine.validateNamespace(namespace)
+        return try loadRecords(namespace: namespace).first { $0.id == id }
+    }
+
+    public func list(_ query: MemoryRecordListQuery) async throws -> [MemoryRecord] {
+        try MemoryQueryEngine.validateNamespace(query.namespace)
+        return try loadRecords(namespace: query.namespace)
+            .filter { record in
+                if !query.includeArchived, record.status == .archived {
+                    return false
+                }
+                if !query.scopes.isEmpty, !query.scopes.contains(record.scope) {
+                    return false
+                }
+                if !query.kinds.isEmpty, !query.kinds.contains(record.kind) {
+                    return false
+                }
+                return true
+            }
+            .sorted {
+                if $0.effectiveDate == $1.effectiveDate {
+                    return $0.id < $1.id
+                }
+                return $0.effectiveDate > $1.effectiveDate
+            }
+            .prefix(query.limit ?? .max)
+            .map { $0 }
+    }
+
+    public func diagnostics(namespace: String) async throws -> MemoryStoreDiagnostics {
+        try MemoryQueryEngine.validateNamespace(namespace)
+        let records = try loadRecords(namespace: namespace)
+        return MemoryStoreDiagnostics(
+            namespace: namespace,
+            implementation: "sqlite",
+            schemaVersion: try Self.schemaVersion(in: database),
+            totalRecords: records.count,
+            activeRecords: records.filter { $0.status == .active }.count,
+            archivedRecords: records.filter { $0.status == .archived }.count,
+            countsByScope: Dictionary(grouping: records, by: \.scope).mapValues(\.count),
+            countsByKind: Dictionary(grouping: records, by: \.kind).mapValues(\.count)
         )
     }
 
@@ -156,6 +205,18 @@ public actor SQLiteMemoryStore: MemoryStoring {
         return database
     }
 
+    private static func migrateIfNeeded(in database: OpaquePointer?) throws {
+        let existingVersion = try schemaVersion(in: database)
+        if existingVersion > currentSchemaVersion {
+            throw MemoryStoreError.unsupportedSchemaVersion(existingVersion)
+        }
+
+        try createSchemaIfNeeded(in: database)
+        if existingVersion < currentSchemaVersion {
+            try setSchemaVersion(currentSchemaVersion, in: database)
+        }
+    }
+
     private static func createSchemaIfNeeded(in database: OpaquePointer?) throws {
         let schema = """
         CREATE TABLE IF NOT EXISTS memory_records (
@@ -210,6 +271,22 @@ public actor SQLiteMemoryStore: MemoryStoring {
             USING fts5(namespace UNINDEXED, record_id UNINDEXED, content);
         """
         try execSQL(database, schema)
+    }
+
+    private static func schemaVersion(in database: OpaquePointer?) throws -> Int {
+        let statement = try prepareSQL(database, "PRAGMA user_version;")
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw sqliteError(database, message: "Failed to read SQLite schema version.")
+        }
+        return Int(sqlite3_column_int(statement, 0))
+    }
+
+    private static func setSchemaVersion(
+        _ version: Int,
+        in database: OpaquePointer?
+    ) throws {
+        try execSQL(database, "PRAGMA user_version = \(version);")
     }
 
     private func ensureRecordIDAvailable(
@@ -490,15 +567,7 @@ public actor SQLiteMemoryStore: MemoryStoring {
     }
 
     private func prepare(_ sql: String) throws -> OpaquePointer? {
-        guard let database else {
-            throw sqliteError(message: "SQLite database is unavailable.")
-        }
-        var statement: OpaquePointer?
-        let result = sqlite3_prepare_v2(database, sql, -1, &statement, nil)
-        guard result == SQLITE_OK else {
-            throw sqliteError(message: "Failed to prepare SQLite statement.")
-        }
-        return statement
+        try prepareSQL(database, sql)
     }
 
     private func exec(
@@ -623,4 +692,27 @@ private func execSQL(
             userInfo: [NSLocalizedDescriptionKey: detail]
         )
     }
+}
+
+private func prepareSQL(
+    _ database: OpaquePointer?,
+    _ sql: String
+) throws -> OpaquePointer? {
+    guard let database else {
+        throw NSError(
+            domain: "CodexKit.SQLiteMemoryStore",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: "SQLite database is unavailable."]
+        )
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(database, sql, -1, &statement, nil)
+    guard result == SQLITE_OK else {
+        throw NSError(
+            domain: "CodexKit.SQLiteMemoryStore",
+            code: Int(result),
+            userInfo: [NSLocalizedDescriptionKey: "Failed to prepare SQLite statement."]
+        )
+    }
+    return statement
 }

@@ -12,6 +12,7 @@ Use `CodexKit` if you are building a SwiftUI/iOS app and want:
 - ChatGPT sign-in (device code or OAuth)
 - secure session persistence
 - resumable threaded conversations
+- structured local memory with optional prompt injection
 - streamed assistant output
 - host-defined tools with approval gates
 - persona-aware agent behavior
@@ -77,6 +78,7 @@ let stream = try await runtime.sendMessage(
 | Configurable thinking level | Yes |
 | Web search toggle (`enableWebSearch`) | Yes |
 | Built-in request retry/backoff | Yes (configurable) |
+| Structured local memory layer | Yes |
 | Text + image input | Yes |
 | Assistant image attachment rendering | Yes |
 | Video/audio input attachments | Not yet |
@@ -176,6 +178,94 @@ let stream = try await runtime.sendMessage(
 ```
 
 Custom tools can also return image URLs via `ToolResultContent.image(URL)`, and `CodexKit` attempts to hydrate those into assistant image attachments for chat rendering.
+
+## Memory Layer
+
+`CodexKit` includes a generic memory layer for app-authored records. The SDK owns storage, retrieval, ranking, and optional prompt injection. Your app still decides what to remember and when to write it.
+
+```swift
+let memoryURL = FileManager.default.urls(
+    for: .applicationSupportDirectory,
+    in: .userDomainMask
+).first!
+    .appendingPathComponent("CodexKit/memory.sqlite")
+
+let memoryStore = try SQLiteMemoryStore(url: memoryURL)
+
+try await memoryStore.upsert(
+    MemoryRecord(
+        namespace: "oval-office",
+        scope: "actor:eleanor_price",
+        kind: "grievance",
+        summary: "Eleanor remembers being overruled on the trade bill.",
+        evidence: ["She warned the player twice before being ignored."],
+        importance: 0.9,
+        tags: ["trade", "advisor"]
+    ),
+    dedupeKey: "trade-bill-overruled-eleanor"
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: try ChatGPTAuthProvider(
+        method: .deviceCode,
+        deviceCodePresenter: deviceCodeCoordinator
+    ),
+    secureStore: KeychainSessionSecureStore(
+        service: "CodexKit.ChatGPTSession",
+        account: "main"
+    ),
+    backend: CodexResponsesBackend(),
+    approvalPresenter: approvalInbox,
+    stateStore: FileRuntimeStateStore(
+        url: FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        .appendingPathComponent("CodexKit/runtime-state.json")
+    ),
+    memory: .init(store: memoryStore)
+))
+
+let thread = try await runtime.createThread(
+    title: "Press Chat",
+    memoryContext: AgentMemoryContext(
+        namespace: "oval-office",
+        scopes: ["actor:eleanor_price", "thread:press"]
+    )
+)
+```
+
+Per-turn memory can be narrowed, expanded, replaced, or disabled with `MemorySelection`:
+
+```swift
+let stream = try await runtime.sendMessage(
+    UserMessageRequest(
+        text: "How should Eleanor frame this rebuttal?",
+        memorySelection: MemorySelection(
+            mode: .append,
+            scopes: ["world:public"],
+            tags: ["trade"]
+        )
+    ),
+    in: thread.id
+)
+```
+
+For debugging and tooling, memory stores also support direct inspection:
+
+```swift
+let stored = try await memoryStore.record(
+    id: "some-memory-id",
+    namespace: "oval-office"
+)
+let records = try await memoryStore.list(
+    namespace: "oval-office",
+    scopes: ["actor:eleanor_price"],
+    includeArchived: true,
+    limit: 20
+)
+let diagnostics = try await memoryStore.diagnostics(namespace: "oval-office")
+```
 
 ## Pinned And Dynamic Personas
 

@@ -1,5 +1,6 @@
 import CodexKit
 import Foundation
+import SQLite3
 import XCTest
 
 final class MemoryStoreTests: XCTestCase {
@@ -35,6 +36,35 @@ final class MemoryStoreTests: XCTestCase {
 
         XCTAssertEqual(result.matches.map(\.record.id), [record.id])
         XCTAssertGreaterThan(result.matches[0].explanation.textScore, 0)
+
+        let diagnostics = try await reloaded.diagnostics(namespace: "oval-office")
+        XCTAssertEqual(diagnostics.implementation, "sqlite")
+        XCTAssertEqual(diagnostics.schemaVersion, 1)
+    }
+
+    func testSQLiteStoreRejectsUnsupportedFutureSchemaVersion() async throws {
+        let url = temporarySQLiteURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var database: OpaquePointer?
+        XCTAssertEqual(
+            sqlite3_open_v2(
+                url.path,
+                &database,
+                SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+                nil
+            ),
+            SQLITE_OK
+        )
+        XCTAssertEqual(sqlite3_exec(database, "PRAGMA user_version = 999;", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(database)
+
+        XCTAssertThrowsError(try SQLiteMemoryStore(url: url)) { error in
+            XCTAssertEqual(
+                error as? MemoryStoreError,
+                .unsupportedSchemaVersion(999)
+            )
+        }
     }
 
     func testPutManyIsAtomicWhenDuplicateIDIsPresent() async throws {
@@ -123,6 +153,49 @@ final class MemoryStoreTests: XCTestCase {
         XCTAssertEqual(result.matches.count, 1)
         XCTAssertEqual(result.matches[0].record.id, "memory-2")
         XCTAssertEqual(result.matches[0].record.dedupeKey, "press-quote-17")
+    }
+
+    func testStoreInspectionAPIsReturnRecordsAndDiagnostics() async throws {
+        let store = InMemoryMemoryStore()
+        try await store.putMany([
+            MemoryRecord(
+                id: "active-memory",
+                namespace: "oval-office",
+                scope: "actor:eleanor_price",
+                kind: "grievance",
+                summary: "Active memory."
+            ),
+            MemoryRecord(
+                id: "archived-memory",
+                namespace: "oval-office",
+                scope: "world:press",
+                kind: "summary",
+                summary: "Archived memory.",
+                status: .archived
+            ),
+        ])
+
+        let fetched = try await store.record(
+            id: "active-memory",
+            namespace: "oval-office"
+        )
+        XCTAssertEqual(fetched?.kind, "grievance")
+
+        let listed = try await store.list(
+            namespace: "oval-office",
+            includeArchived: true,
+            limit: 10
+        )
+        XCTAssertEqual(listed.map(\.id).sorted(), ["active-memory", "archived-memory"])
+
+        let diagnostics = try await store.diagnostics(namespace: "oval-office")
+        XCTAssertEqual(diagnostics.implementation, "in_memory")
+        XCTAssertNil(diagnostics.schemaVersion)
+        XCTAssertEqual(diagnostics.totalRecords, 2)
+        XCTAssertEqual(diagnostics.activeRecords, 1)
+        XCTAssertEqual(diagnostics.archivedRecords, 1)
+        XCTAssertEqual(diagnostics.countsByScope["actor:eleanor_price"], 1)
+        XCTAssertEqual(diagnostics.countsByKind["summary"], 1)
     }
 
     func testQueryFiltersRankingAndCharacterBudget() async throws {

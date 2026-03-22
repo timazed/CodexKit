@@ -83,6 +83,51 @@ public actor InMemoryMemoryStore: MemoryStoring {
         )
     }
 
+    public func record(
+        id: String,
+        namespace: String
+    ) async throws -> MemoryRecord? {
+        try MemoryQueryEngine.validateNamespace(namespace)
+        return recordsByNamespace[namespace, default: [:]][id]
+    }
+
+    public func list(_ query: MemoryRecordListQuery) async throws -> [MemoryRecord] {
+        try MemoryQueryEngine.validateNamespace(query.namespace)
+        return recordsByNamespace[query.namespace, default: [:]]
+            .values
+            .filter { record in
+                if !query.includeArchived, record.status == .archived {
+                    return false
+                }
+                if !query.scopes.isEmpty, !query.scopes.contains(record.scope) {
+                    return false
+                }
+                if !query.kinds.isEmpty, !query.kinds.contains(record.kind) {
+                    return false
+                }
+                return true
+            }
+            .sorted {
+                if $0.effectiveDate == $1.effectiveDate {
+                    return $0.id < $1.id
+                }
+                return $0.effectiveDate > $1.effectiveDate
+            }
+            .prefix(query.limit ?? .max)
+            .map { $0 }
+    }
+
+    public func diagnostics(namespace: String) async throws -> MemoryStoreDiagnostics {
+        try MemoryQueryEngine.validateNamespace(namespace)
+        let records = Array(recordsByNamespace[namespace, default: [:]].values)
+        return diagnostics(
+            namespace: namespace,
+            implementation: "in_memory",
+            schemaVersion: nil,
+            records: records
+        )
+    }
+
     public func compact(_ request: MemoryCompactionRequest) async throws {
         try MemoryQueryEngine.validateNamespace(request.replacement.namespace)
         var working = recordsByNamespace
@@ -153,5 +198,34 @@ public actor InMemoryMemoryStore: MemoryStoring {
         }
         recordsByNamespace[namespace] = namespaceRecords
         return expiredIDs.count
+    }
+
+    private func diagnostics(
+        namespace: String,
+        implementation: String,
+        schemaVersion: Int?,
+        records: [MemoryRecord]
+    ) -> MemoryStoreDiagnostics {
+        var countsByScope: [MemoryScope: Int] = [:]
+        var countsByKind: [String: Int] = [:]
+
+        for record in records {
+            countsByScope[record.scope, default: 0] += 1
+            countsByKind[record.kind, default: 0] += 1
+        }
+
+        let activeRecords = records.filter { $0.status == .active }.count
+        let archivedRecords = records.count - activeRecords
+
+        return MemoryStoreDiagnostics(
+            namespace: namespace,
+            implementation: implementation,
+            schemaVersion: schemaVersion,
+            totalRecords: records.count,
+            activeRecords: activeRecords,
+            archivedRecords: archivedRecords,
+            countsByScope: countsByScope,
+            countsByKind: countsByKind
+        )
     }
 }

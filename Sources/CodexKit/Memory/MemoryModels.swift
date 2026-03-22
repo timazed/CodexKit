@@ -4,6 +4,7 @@ public enum MemoryStoreError: Error, LocalizedError, Equatable, Sendable {
     case invalidNamespace
     case duplicateRecordID(String)
     case duplicateDedupeKey(String)
+    case unsupportedSchemaVersion(Int)
 
     public var errorDescription: String? {
         switch self {
@@ -13,6 +14,8 @@ public enum MemoryStoreError: Error, LocalizedError, Equatable, Sendable {
             return "A memory record with id \(id) already exists."
         case let .duplicateDedupeKey(key):
             return "A memory record with dedupe key \(key) already exists."
+        case let .unsupportedSchemaVersion(version):
+            return "The memory store schema version \(version) is newer than this SDK supports."
         }
     }
 }
@@ -255,6 +258,59 @@ public struct MemoryCompactionRequest: Codable, Hashable, Sendable {
     }
 }
 
+public struct MemoryRecordListQuery: Codable, Hashable, Sendable {
+    public var namespace: String
+    public var scopes: [MemoryScope]
+    public var kinds: [String]
+    public var includeArchived: Bool
+    public var limit: Int?
+
+    public init(
+        namespace: String,
+        scopes: [MemoryScope] = [],
+        kinds: [String] = [],
+        includeArchived: Bool = false,
+        limit: Int? = nil
+    ) {
+        self.namespace = namespace
+        self.scopes = scopes
+        self.kinds = kinds
+        self.includeArchived = includeArchived
+        self.limit = limit
+    }
+}
+
+public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
+    public var namespace: String
+    public var implementation: String
+    public var schemaVersion: Int?
+    public var totalRecords: Int
+    public var activeRecords: Int
+    public var archivedRecords: Int
+    public var countsByScope: [MemoryScope: Int]
+    public var countsByKind: [String: Int]
+
+    public init(
+        namespace: String,
+        implementation: String,
+        schemaVersion: Int?,
+        totalRecords: Int,
+        activeRecords: Int,
+        archivedRecords: Int,
+        countsByScope: [MemoryScope: Int],
+        countsByKind: [String: Int]
+    ) {
+        self.namespace = namespace
+        self.implementation = implementation
+        self.schemaVersion = schemaVersion
+        self.totalRecords = totalRecords
+        self.activeRecords = activeRecords
+        self.archivedRecords = archivedRecords
+        self.countsByScope = countsByScope
+        self.countsByKind = countsByKind
+    }
+}
+
 public struct AgentMemoryContext: Codable, Hashable, Sendable {
     public var namespace: String
     public var scopes: [MemoryScope]
@@ -340,6 +396,16 @@ public protocol MemoryPromptRendering: Sendable {
     func render(result: MemoryQueryResult, budget: MemoryReadBudget) -> String
 }
 
+public enum MemoryObservationEvent: Sendable {
+    case queryStarted(MemoryQuery)
+    case querySucceeded(query: MemoryQuery, result: MemoryQueryResult)
+    case queryFailed(query: MemoryQuery, message: String)
+}
+
+public protocol MemoryObserving: Sendable {
+    func handle(event: MemoryObservationEvent) async
+}
+
 public struct DefaultMemoryPromptRenderer: MemoryPromptRendering, Sendable {
     public init() {}
 
@@ -359,16 +425,19 @@ public struct AgentMemoryConfiguration: Sendable {
     public let defaultRanking: MemoryRankingWeights
     public let defaultReadBudget: MemoryReadBudget
     public let promptRenderer: any MemoryPromptRendering
+    public let observer: (any MemoryObserving)?
 
     public init(
         store: any MemoryStoring,
         defaultRanking: MemoryRankingWeights = .default,
         defaultReadBudget: MemoryReadBudget = .runtimeDefault,
-        promptRenderer: any MemoryPromptRendering = DefaultMemoryPromptRenderer()
+        promptRenderer: any MemoryPromptRendering = DefaultMemoryPromptRenderer(),
+        observer: (any MemoryObserving)? = nil
     ) {
         self.store = store
         self.defaultRanking = defaultRanking
         self.defaultReadBudget = defaultReadBudget
         self.promptRenderer = promptRenderer
+        self.observer = observer
     }
 }

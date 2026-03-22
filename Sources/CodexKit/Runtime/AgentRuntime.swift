@@ -819,7 +819,27 @@ public actor AgentRuntime {
             return nil
         }
 
-        return try? await memoryConfiguration.store.query(query)
+        if let observer = memoryConfiguration.observer {
+            await observer.handle(event: .queryStarted(query))
+        }
+
+        do {
+            let result = try await memoryConfiguration.store.query(query)
+            if let observer = memoryConfiguration.observer {
+                await observer.handle(event: .querySucceeded(query: query, result: result))
+            }
+            return result
+        } catch {
+            if let observer = memoryConfiguration.observer {
+                await observer.handle(
+                    event: .queryFailed(
+                        query: query,
+                        message: error.localizedDescription
+                    )
+                )
+            }
+            return nil
+        }
     }
 
     private func resolvedMemoryQuery(

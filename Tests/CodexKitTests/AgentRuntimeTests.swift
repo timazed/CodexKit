@@ -758,6 +758,63 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertFalse(resolved.contains("Relevant Memory:"))
     }
 
+    func testRuntimeReportsMemoryObservationEvents() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let store = InMemoryMemoryStore(initialRecords: [
+            MemoryRecord(
+                namespace: "oval-office",
+                scope: "actor:eleanor_price",
+                kind: "grievance",
+                summary: "Observed memory."
+            ),
+        ])
+        let observer = RecordingMemoryObserver()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            memory: .init(
+                store: store,
+                observer: observer
+            )
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(
+            title: "Observed",
+            memoryContext: AgentMemoryContext(
+                namespace: "oval-office",
+                scopes: ["actor:eleanor_price"]
+            )
+        )
+
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "Use memory."),
+            in: thread.id
+        )
+        for try await _ in stream {}
+
+        let events = await observer.events()
+        XCTAssertEqual(events.count, 2)
+        guard case let .queryStarted(startedQuery) = events[0] else {
+            return XCTFail("Expected queryStarted event.")
+        }
+        XCTAssertEqual(startedQuery.namespace, "oval-office")
+        guard case let .querySucceeded(_, result) = events[1] else {
+            return XCTFail("Expected querySucceeded event.")
+        }
+        XCTAssertEqual(result.matches.count, 1)
+    }
+
     func testResolvedInstructionsPreviewThrowsForMissingThread() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
@@ -1393,6 +1450,27 @@ private actor ThrowingMemoryStore: MemoryStoring {
         )
     }
 
+    func record(id: String, namespace: String) async throws -> MemoryRecord? {
+        nil
+    }
+
+    func list(_ query: MemoryRecordListQuery) async throws -> [MemoryRecord] {
+        []
+    }
+
+    func diagnostics(namespace: String) async throws -> MemoryStoreDiagnostics {
+        .init(
+            namespace: namespace,
+            implementation: "throwing",
+            schemaVersion: nil,
+            totalRecords: 0,
+            activeRecords: 0,
+            archivedRecords: 0,
+            countsByScope: [:],
+            countsByKind: [:]
+        )
+    }
+
     func compact(_ request: MemoryCompactionRequest) async throws {}
 
     func archive(ids: [String], namespace: String) async throws {}
@@ -1401,5 +1479,17 @@ private actor ThrowingMemoryStore: MemoryStoring {
 
     func pruneExpired(now: Date, namespace: String) async throws -> Int {
         0
+    }
+}
+
+private actor RecordingMemoryObserver: MemoryObserving {
+    private var observedEvents: [MemoryObservationEvent] = []
+
+    func handle(event: MemoryObservationEvent) async {
+        observedEvents.append(event)
+    }
+
+    func events() -> [MemoryObservationEvent] {
+        observedEvents
     }
 }
