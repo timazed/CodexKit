@@ -587,6 +587,177 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertTrue(preview.contains("[health_coach: Health Coach]"))
     }
 
+    func testRuntimeInjectsRelevantMemoryIntoInstructionsAndPreviewMatches() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let store = InMemoryMemoryStore(initialRecords: [
+            MemoryRecord(
+                namespace: "oval-office",
+                scope: "actor:eleanor_price",
+                kind: "grievance",
+                summary: "Eleanor remembers being overruled on the trade bill.",
+                evidence: ["She warned the player twice before being ignored."],
+                importance: 0.9,
+                tags: ["trade"]
+            ),
+            MemoryRecord(
+                namespace: "oval-office",
+                scope: "actor:sophia_ramirez",
+                kind: "grievance",
+                summary: "Sophia is focused on education messaging.",
+                importance: 0.8
+            ),
+        ])
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            memory: .init(store: store)
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(
+            title: "Memory",
+            memoryContext: AgentMemoryContext(
+                namespace: "oval-office",
+                scopes: ["actor:eleanor_price"]
+            )
+        )
+
+        let preview = try await runtime.memoryQueryPreview(
+            for: thread.id,
+            request: UserMessageRequest(text: "What does Eleanor still remember about trade?")
+        )
+        XCTAssertEqual(preview?.matches.map(\.record.scope.rawValue), ["actor:eleanor_price"])
+
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "What does Eleanor still remember about trade?"),
+            in: thread.id
+        )
+        for try await _ in stream {}
+
+        let instructions = await backend.receivedInstructions()
+        let resolved = try XCTUnwrap(instructions.last)
+        XCTAssertTrue(resolved.contains("Relevant Memory:"))
+        XCTAssertTrue(resolved.contains("Eleanor remembers being overruled on the trade bill."))
+        XCTAssertFalse(resolved.contains("Sophia is focused on education messaging."))
+    }
+
+    func testRuntimeMemorySelectionCanReplaceOrDisableThreadDefaults() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let store = InMemoryMemoryStore(initialRecords: [
+            MemoryRecord(
+                namespace: "oval-office",
+                scope: "actor:eleanor_price",
+                kind: "grievance",
+                summary: "Eleanor grievance."
+            ),
+            MemoryRecord(
+                namespace: "oval-office",
+                scope: "actor:sophia_ramirez",
+                kind: "grievance",
+                summary: "Sophia grievance."
+            ),
+        ])
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            memory: .init(store: store)
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(
+            title: "Scoped Memory",
+            memoryContext: AgentMemoryContext(
+                namespace: "oval-office",
+                scopes: ["actor:eleanor_price"]
+            )
+        )
+
+        let replaceStream = try await runtime.sendMessage(
+            UserMessageRequest(
+                text: "Use Sophia memory instead.",
+                memorySelection: MemorySelection(
+                    mode: .replace,
+                    scopes: ["actor:sophia_ramirez"]
+                )
+            ),
+            in: thread.id
+        )
+        for try await _ in replaceStream {}
+
+        let disableStream = try await runtime.sendMessage(
+            UserMessageRequest(
+                text: "Now disable memory.",
+                memorySelection: MemorySelection(mode: .disable)
+            ),
+            in: thread.id
+        )
+        for try await _ in disableStream {}
+
+        let instructions = await backend.receivedInstructions()
+        XCTAssertEqual(instructions.count, 2)
+        XCTAssertTrue(instructions[0].contains("Sophia grievance."))
+        XCTAssertFalse(instructions[0].contains("Eleanor grievance."))
+        XCTAssertFalse(instructions[1].contains("Relevant Memory:"))
+    }
+
+    func testRuntimeGracefullyDegradesWhenMemoryStoreFails() async throws {
+        let backend = InMemoryAgentBackend(
+            baseInstructions: "Base host instructions."
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            memory: .init(store: ThrowingMemoryStore())
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(
+            title: "Graceful",
+            memoryContext: AgentMemoryContext(
+                namespace: "oval-office",
+                scopes: ["actor:eleanor_price"]
+            )
+        )
+
+        let stream = try await runtime.sendMessage(
+            UserMessageRequest(text: "This should still work."),
+            in: thread.id
+        )
+        for try await _ in stream {}
+
+        let instructions = await backend.receivedInstructions()
+        let resolved = try XCTUnwrap(instructions.last)
+        XCTAssertFalse(resolved.contains("Relevant Memory:"))
+    }
+
     func testResolvedInstructionsPreviewThrowsForMissingThread() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
@@ -805,8 +976,52 @@ final class AgentRuntimeTests: XCTestCase {
 
         XCTAssertEqual(state.threads.count, 1)
         XCTAssertEqual(state.threads.first?.personaStack, nil)
+        XCTAssertEqual(state.threads.first?.memoryContext, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.images, [])
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.text, "Hello from legacy state")
+    }
+
+    func testThreadMemoryContextPersistsAcrossRestore() async throws {
+        let stateStore = InMemoryRuntimeStateStore()
+        let secureStore = KeychainSessionSecureStore(
+            service: "CodexKitTests.ChatGPTSession",
+            account: UUID().uuidString
+        )
+        let memoryContext = AgentMemoryContext(
+            namespace: "oval-office",
+            scopes: ["actor:eleanor_price", "world:public"],
+            readBudget: .init(maxItems: 4, maxCharacters: 800)
+        )
+
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: secureStore,
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+        let thread = try await runtime.createThread(
+            title: "Memory Restore",
+            memoryContext: memoryContext
+        )
+
+        let restoredRuntime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: secureStore,
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+
+        _ = try await restoredRuntime.restore()
+
+        let restoredContext = try await restoredRuntime.memoryContext(for: thread.id)
+        let restoredThreads = await restoredRuntime.threads()
+        XCTAssertEqual(restoredContext, memoryContext)
+        XCTAssertEqual(restoredThreads.first?.memoryContext, memoryContext)
     }
 
     func testRuntimeStreamsToolApprovalAndCompletion() async throws {
@@ -1161,4 +1376,30 @@ private final class ImageReplyTurn: AgentTurnStreaming, @unchecked Sendable {
         _: ToolResultEnvelope,
         for _: String
     ) async throws {}
+}
+
+private actor ThrowingMemoryStore: MemoryStoring {
+    func put(_ record: MemoryRecord) async throws {}
+
+    func putMany(_ records: [MemoryRecord]) async throws {}
+
+    func upsert(_ record: MemoryRecord, dedupeKey: String) async throws {}
+
+    func query(_ query: MemoryQuery) async throws -> MemoryQueryResult {
+        throw NSError(
+            domain: "CodexKitTests.ThrowingMemoryStore",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Simulated memory failure"]
+        )
+    }
+
+    func compact(_ request: MemoryCompactionRequest) async throws {}
+
+    func archive(ids: [String], namespace: String) async throws {}
+
+    func delete(ids: [String], namespace: String) async throws {}
+
+    func pruneExpired(now: Date, namespace: String) async throws -> Int {
+        0
+    }
 }

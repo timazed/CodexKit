@@ -20,6 +20,7 @@ public actor AgentRuntime {
         public let backend: any AgentBackend
         public let approvalPresenter: any ApprovalPresenting
         public let stateStore: any RuntimeStateStoring
+        public let memory: AgentMemoryConfiguration?
         public let baseInstructions: String?
         public let tools: [ToolRegistration]
         public let skills: [AgentSkill]
@@ -31,6 +32,7 @@ public actor AgentRuntime {
             backend: any AgentBackend,
             approvalPresenter: any ApprovalPresenting,
             stateStore: any RuntimeStateStoring,
+            memory: AgentMemoryConfiguration? = nil,
             baseInstructions: String? = nil,
             tools: [ToolRegistration] = [],
             skills: [AgentSkill] = [],
@@ -41,6 +43,7 @@ public actor AgentRuntime {
             self.backend = backend
             self.approvalPresenter = approvalPresenter
             self.stateStore = stateStore
+            self.memory = memory
             self.baseInstructions = baseInstructions
             self.tools = tools
             self.skills = skills
@@ -53,6 +56,7 @@ public actor AgentRuntime {
     private let sessionManager: ChatGPTSessionManager
     private let toolRegistry: ToolRegistry
     private let approvalCoordinator: ApprovalCoordinator
+    private let memoryConfiguration: AgentMemoryConfiguration?
     private let baseInstructions: String?
     private let definitionSourceLoader: AgentDefinitionSourceLoader
     private var skillsByID: [String: AgentSkill]
@@ -153,6 +157,7 @@ public actor AgentRuntime {
         self.approvalCoordinator = ApprovalCoordinator(
             presenter: configuration.approvalPresenter
         )
+        self.memoryConfiguration = configuration.memory
         self.baseInstructions = configuration.baseInstructions ?? configuration.backend.baseInstructions
         self.definitionSourceLoader = configuration.definitionSourceLoader
         self.skillsByID = try Self.validatedSkills(from: configuration.skills)
@@ -264,7 +269,8 @@ public actor AgentRuntime {
         title: String? = nil,
         personaStack: AgentPersonaStack? = nil,
         personaSource: AgentDefinitionSource? = nil,
-        skillIDs: [String] = []
+        skillIDs: [String] = [],
+        memoryContext: AgentMemoryContext? = nil
     ) async throws -> AgentThread {
         try assertSkillsExist(skillIDs)
         let resolvedPersonaStack: AgentPersonaStack?
@@ -288,6 +294,7 @@ public actor AgentRuntime {
         }
         thread.personaStack = resolvedPersonaStack
         thread.skillIDs = skillIDs
+        thread.memoryContext = memoryContext
         try await upsertThread(thread)
         return thread
     }
@@ -329,7 +336,7 @@ public actor AgentRuntime {
             thread: thread,
             message: request
         )
-        let resolvedInstructions = resolveInstructions(
+        let resolvedInstructions = await resolveInstructions(
             thread: thread,
             message: request,
             resolvedTurnSkills: resolvedTurnSkills
@@ -395,7 +402,7 @@ public actor AgentRuntime {
     public func resolvedInstructionsPreview(
         for threadID: String,
         request: UserMessageRequest
-    ) throws -> String {
+    ) async throws -> String {
         guard let thread = thread(for: threadID) else {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
@@ -405,10 +412,24 @@ public actor AgentRuntime {
             message: request
         )
 
-        return resolveInstructions(
+        return await resolveInstructions(
             thread: thread,
             message: request,
             resolvedTurnSkills: resolvedTurnSkills
+        )
+    }
+
+    public func memoryQueryPreview(
+        for threadID: String,
+        request: UserMessageRequest
+    ) async throws -> MemoryQueryResult? {
+        guard let thread = thread(for: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        return await resolvedMemoryQuery(
+            thread: thread,
+            message: request
         )
     }
 
@@ -598,6 +619,14 @@ public actor AgentRuntime {
         return thread.skillIDs
     }
 
+    public func memoryContext(for threadID: String) throws -> AgentMemoryContext? {
+        guard let thread = thread(for: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        return thread.memoryContext
+    }
+
     public func setSkillIDs(
         _ skillIDs: [String],
         for threadID: String
@@ -608,6 +637,19 @@ public actor AgentRuntime {
         try assertSkillsExist(skillIDs)
 
         state.threads[index].skillIDs = skillIDs
+        state.threads[index].updatedAt = Date()
+        try await persistState()
+    }
+
+    public func setMemoryContext(
+        _ memoryContext: AgentMemoryContext?,
+        for threadID: String
+    ) async throws {
+        guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        state.threads[index].memoryContext = memoryContext
         state.threads[index].updatedAt = Date()
         try await persistState()
     }
@@ -623,6 +665,9 @@ public actor AgentRuntime {
             }
             if mergedThread.skillIDs.isEmpty {
                 mergedThread.skillIDs = state.threads[index].skillIDs
+            }
+            if mergedThread.memoryContext == nil {
+                mergedThread.memoryContext = state.threads[index].memoryContext
             }
             state.threads[index] = mergedThread
         } else {
@@ -671,14 +716,46 @@ public actor AgentRuntime {
         thread: AgentThread,
         message: UserMessageRequest,
         resolvedTurnSkills: ResolvedTurnSkills
-    ) -> String {
-        AgentInstructionCompiler.compile(
+    ) async -> String {
+        let compiled = AgentInstructionCompiler.compile(
             baseInstructions: baseInstructions,
             threadPersonaStack: thread.personaStack,
             threadSkills: resolvedTurnSkills.threadSkills,
             turnPersonaOverride: message.personaOverride,
             turnSkills: resolvedTurnSkills.turnSkills
         )
+
+        guard let queryResult = await resolvedMemoryQuery(
+            thread: thread,
+            message: message
+        ),
+        let memoryConfiguration
+        else {
+            return compiled
+        }
+
+        let budget = resolvedMemoryBudget(
+            thread: thread,
+            message: message,
+            fallback: memoryConfiguration.defaultReadBudget
+        )
+        let renderedMemory = memoryConfiguration.promptRenderer.render(
+            result: queryResult,
+            budget: budget
+        )
+        guard !renderedMemory.isEmpty else {
+            return compiled
+        }
+
+        if compiled.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return renderedMemory
+        }
+
+        return """
+        \(compiled)
+
+        \(renderedMemory)
+        """
     }
 
     private static func isUnauthorizedError(_ error: Error) -> Bool {
@@ -723,6 +800,140 @@ public actor AgentRuntime {
             turnSkills: turnSkills,
             compiledToolPolicy: compileToolPolicy(from: allSkills)
         )
+    }
+
+    private func resolvedMemoryQuery(
+        thread: AgentThread,
+        message: UserMessageRequest
+    ) async -> MemoryQueryResult? {
+        guard let memoryConfiguration else {
+            return nil
+        }
+
+        guard let query = resolvedMemoryQuery(
+            thread: thread,
+            message: message,
+            fallbackRanking: memoryConfiguration.defaultRanking,
+            fallbackBudget: memoryConfiguration.defaultReadBudget
+        ) else {
+            return nil
+        }
+
+        return try? await memoryConfiguration.store.query(query)
+    }
+
+    private func resolvedMemoryQuery(
+        thread: AgentThread,
+        message: UserMessageRequest,
+        fallbackRanking: MemoryRankingWeights,
+        fallbackBudget: MemoryReadBudget
+    ) -> MemoryQuery? {
+        let selection = message.memorySelection
+        if selection?.mode == .disable {
+            return nil
+        }
+
+        let threadContext = thread.memoryContext
+        let namespace = selection?.namespace ??
+            threadContext?.namespace
+
+        guard let namespace else {
+            return nil
+        }
+
+        let scopes: [MemoryScope]
+        switch selection?.mode ?? .inherit {
+        case .append:
+            scopes = uniqueScopes((threadContext?.scopes ?? []) + (selection?.scopes ?? []))
+        case .replace:
+            scopes = selection?.scopes ?? []
+        case .disable:
+            return nil
+        case .inherit:
+            if let selection,
+               !selection.scopes.isEmpty {
+                scopes = selection.scopes
+            } else {
+                scopes = threadContext?.scopes ?? []
+            }
+        }
+
+        let kinds = resolvedValues(
+            mode: selection?.mode ?? .inherit,
+            threadValues: threadContext?.kinds ?? [],
+            selectionValues: selection?.kinds ?? []
+        )
+        let tags = resolvedValues(
+            mode: selection?.mode ?? .inherit,
+            threadValues: threadContext?.tags ?? [],
+            selectionValues: selection?.tags ?? []
+        )
+        let relatedIDs = resolvedValues(
+            mode: selection?.mode ?? .inherit,
+            threadValues: threadContext?.relatedIDs ?? [],
+            selectionValues: selection?.relatedIDs ?? []
+        )
+
+        let recencyWindow = selection?.recencyWindow
+            ?? threadContext?.recencyWindow
+        let minImportance = selection?.minImportance
+            ?? threadContext?.minImportance
+        let ranking = selection?.ranking
+            ?? threadContext?.ranking
+            ?? fallbackRanking
+        let budget = resolvedMemoryBudget(
+            thread: thread,
+            message: message,
+            fallback: fallbackBudget
+        )
+        let text = selection?.text ?? message.text
+
+        return MemoryQuery(
+            namespace: namespace,
+            scopes: scopes,
+            text: text,
+            kinds: kinds,
+            tags: tags,
+            relatedIDs: relatedIDs,
+            recencyWindow: recencyWindow,
+            minImportance: minImportance,
+            ranking: ranking,
+            limit: budget.maxItems,
+            maxCharacters: budget.maxCharacters,
+            includeArchived: false
+        )
+    }
+
+    private func resolvedMemoryBudget(
+        thread: AgentThread,
+        message: UserMessageRequest,
+        fallback: MemoryReadBudget
+    ) -> MemoryReadBudget {
+        message.memorySelection?.readBudget
+            ?? thread.memoryContext?.readBudget
+            ?? fallback
+    }
+
+    private func uniqueScopes(_ scopes: [MemoryScope]) -> [MemoryScope] {
+        var seen: Set<MemoryScope> = []
+        return scopes.filter { seen.insert($0).inserted }
+    }
+
+    private func resolvedValues(
+        mode: MemorySelectionMode,
+        threadValues: [String],
+        selectionValues: [String]
+    ) -> [String] {
+        switch mode {
+        case .append:
+            return Array(Set(threadValues + selectionValues)).sorted()
+        case .replace:
+            return selectionValues
+        case .disable:
+            return []
+        case .inherit:
+            return selectionValues.isEmpty ? threadValues : selectionValues
+        }
     }
 
     private func compileToolPolicy(from skills: [AgentSkill]) -> CompiledSkillToolPolicy {
