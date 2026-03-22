@@ -67,7 +67,7 @@ struct SummarizeImportedContentIntent: AppIntent {
             excerpt: text,
             url: link
         )
-        let summary = try await runtime.completeText(request, in: thread.id)
+        let summary = try await runtime.sendMessage(request, in: thread.id)
         return .result(dialog: IntentDialog(stringLiteral: summary))
     }
 }
@@ -95,7 +95,7 @@ struct DraftShippingSupportReplyIntent: AppIntent {
             title: "Shortcut Support",
             personaStack: AgentDemoViewModel.supportPersona
         )
-        let draft = try await runtime.completeStructured(
+        let draft = try await runtime.sendMessage(
             UserMessageRequest(
                 text: """
                 Draft a shipping support reply for this customer message.
@@ -105,7 +105,7 @@ struct DraftShippingSupportReplyIntent: AppIntent {
                 """
             ),
             in: thread.id,
-            as: ShippingSupportReplyDraft.self
+            expecting: ShippingSupportReplyDraft.self
         )
 
         let renderedDraft = """

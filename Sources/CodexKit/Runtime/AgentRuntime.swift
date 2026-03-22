@@ -305,22 +305,22 @@ public actor AgentRuntime {
         return thread
     }
 
-    public func sendMessage(
+    public func streamMessage(
         _ request: UserMessageRequest,
         in threadID: String
     ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
-        try await sendMessage(
+        try await streamMessage(
             request,
             in: threadID,
             responseFormat: nil
         )
     }
 
-    public func completeText(
+    public func sendMessage(
         _ request: UserMessageRequest,
         in threadID: String
     ) async throws -> String {
-        let stream = try await sendMessage(
+        let stream = try await streamMessage(
             request,
             in: threadID,
             responseFormat: nil
@@ -329,27 +329,29 @@ public actor AgentRuntime {
         return message.displayText
     }
 
-    public func completeStructured<Output: AgentStructuredOutput>(
+    public func sendMessage<Output: AgentStructuredOutput>(
         _ request: UserMessageRequest,
         in threadID: String,
-        as outputType: Output.Type = Output.self
+        expecting outputType: Output.Type = Output.self,
+        decoder: JSONDecoder = JSONDecoder()
     ) async throws -> Output {
-        try await completeStructured(
+        try await sendMessage(
             request,
             in: threadID,
-            as: outputType,
-            responseFormat: outputType.responseFormat
+            expecting: outputType,
+            responseFormat: outputType.responseFormat,
+            decoder: decoder
         )
     }
 
-    public func completeStructured<Output: Decodable & Sendable>(
+    public func sendMessage<Output: Decodable & Sendable>(
         _ request: UserMessageRequest,
         in threadID: String,
-        as outputType: Output.Type = Output.self,
+        expecting outputType: Output.Type,
         responseFormat: AgentStructuredOutputFormat,
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> Output {
-        let stream = try await sendMessage(
+        let stream = try await streamMessage(
             request,
             in: threadID,
             responseFormat: responseFormat
@@ -367,7 +369,7 @@ public actor AgentRuntime {
         }
     }
 
-    private func sendMessage(
+    private func streamMessage(
         _ request: UserMessageRequest,
         in threadID: String,
         responseFormat: AgentStructuredOutputFormat?

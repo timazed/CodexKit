@@ -32,10 +32,10 @@ extension AgentDemoViewModel {
                 lastResolvedInstructionsThreadTitle = thread.title ?? "Structured Output: Shipping Draft"
             }
 
-            let draft = try await runtime.completeStructured(
+            let draft = try await runtime.sendMessage(
                 request,
                 in: thread.id,
-                as: StructuredShippingReplyDraft.self
+                expecting: StructuredShippingReplyDraft.self
             )
 
             structuredShippingReplyResult = StructuredOutputDemoDraftResult(
@@ -80,10 +80,10 @@ extension AgentDemoViewModel {
                 lastResolvedInstructionsThreadTitle = thread.title ?? "Structured Output: Imported Summary"
             }
 
-            let summary = try await runtime.completeStructured(
+            let summary = try await runtime.sendMessage(
                 request,
                 in: thread.id,
-                as: StructuredImportedContentSummary.self
+                expecting: StructuredImportedContentSummary.self
             )
 
             structuredImportedSummaryResult = StructuredOutputDemoImportResult(

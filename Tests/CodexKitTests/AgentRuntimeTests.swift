@@ -27,7 +27,7 @@ private struct ShippingReplyDraft: AgentStructuredOutput, Equatable {
 }
 
 final class AgentRuntimeTests: XCTestCase {
-    func testCompleteTextReturnsFinalAssistantMessageText() async throws {
+    func testSendMessageReturnsFinalAssistantMessageText() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
@@ -43,7 +43,7 @@ final class AgentRuntimeTests: XCTestCase {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Complete")
-        let reply = try await runtime.completeText(
+        let reply = try await runtime.sendMessage(
             UserMessageRequest(text: "Hello there"),
             in: thread.id
         )
@@ -51,7 +51,7 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(reply, "Echo: Hello there")
     }
 
-    func testCompleteStructuredDecodesTypedResponse() async throws {
+    func testSendMessageExpectingStructuredTypeDecodesTypedResponse() async throws {
         let backend = InMemoryAgentBackend(
             structuredResponseText: #"{"reply":"Your order is already in transit.","priority":"high"}"#
         )
@@ -70,10 +70,10 @@ final class AgentRuntimeTests: XCTestCase {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured")
-        let reply = try await runtime.completeStructured(
+        let reply = try await runtime.sendMessage(
             UserMessageRequest(text: "Draft a shipping reply."),
             in: thread.id,
-            as: ShippingReplyDraft.self
+            expecting: ShippingReplyDraft.self
         )
 
         XCTAssertEqual(
@@ -108,10 +108,10 @@ final class AgentRuntimeTests: XCTestCase {
         let thread = try await runtime.createThread(title: "Structured Failure")
 
         await XCTAssertThrowsErrorAsync(
-            try await runtime.completeStructured(
+            try await runtime.sendMessage(
                 UserMessageRequest(text: "Draft a shipping reply."),
                 in: thread.id,
-                as: ShippingReplyDraft.self
+                expecting: ShippingReplyDraft.self
             )
         ) { error in
             let runtimeError = error as? AgentRuntimeError
@@ -169,7 +169,7 @@ final class AgentRuntimeTests: XCTestCase {
             title: "Health",
             skillIDs: ["health_coach"]
         )
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "Give me my plan."),
             in: thread.id
         )
@@ -208,7 +208,7 @@ final class AgentRuntimeTests: XCTestCase {
 
         let thread = try await runtime.createThread()
 
-        let firstStream = try await runtime.sendMessage(
+        let firstStream = try await runtime.streamMessage(
             UserMessageRequest(
                 text: "Plan my trip.",
                 skillOverrideIDs: ["travel_planner"]
@@ -217,7 +217,7 @@ final class AgentRuntimeTests: XCTestCase {
         )
         for try await _ in firstStream {}
 
-        let secondStream = try await runtime.sendMessage(
+        let secondStream = try await runtime.streamMessage(
             UserMessageRequest(text: "Now answer normally."),
             in: thread.id
         )
@@ -266,7 +266,7 @@ final class AgentRuntimeTests: XCTestCase {
             skillIDs: ["health_coach"]
         )
 
-        let firstStream = try await runtime.sendMessage(
+        let firstStream = try await runtime.streamMessage(
             UserMessageRequest(text: "What should I walk today?"),
             in: thread.id
         )
@@ -274,7 +274,7 @@ final class AgentRuntimeTests: XCTestCase {
 
         try await runtime.setSkillIDs(["travel_planner"], for: thread.id)
 
-        let secondStream = try await runtime.sendMessage(
+        let secondStream = try await runtime.streamMessage(
             UserMessageRequest(text: "Plan a weekend trip."),
             in: thread.id
         )
@@ -321,7 +321,7 @@ final class AgentRuntimeTests: XCTestCase {
             title: "Support Chat",
             personaStack: supportPersona
         )
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "How do I track my order?"),
             in: thread.id
         )
@@ -373,7 +373,7 @@ final class AgentRuntimeTests: XCTestCase {
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
-        let firstStream = try await runtime.sendMessage(
+        let firstStream = try await runtime.streamMessage(
             UserMessageRequest(
                 text: "Review this architecture.",
                 personaOverride: reviewerOverride
@@ -382,7 +382,7 @@ final class AgentRuntimeTests: XCTestCase {
         )
         for try await _ in firstStream {}
 
-        let secondStream = try await runtime.sendMessage(
+        let secondStream = try await runtime.streamMessage(
             UserMessageRequest(text: "Now just answer normally."),
             in: thread.id
         )
@@ -424,7 +424,7 @@ final class AgentRuntimeTests: XCTestCase {
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
-        let firstStream = try await runtime.sendMessage(
+        let firstStream = try await runtime.streamMessage(
             UserMessageRequest(text: "Help me with support."),
             in: thread.id
         )
@@ -432,7 +432,7 @@ final class AgentRuntimeTests: XCTestCase {
 
         try await runtime.setPersonaStack(plannerPersona, for: thread.id)
 
-        let secondStream = try await runtime.sendMessage(
+        let secondStream = try await runtime.streamMessage(
             UserMessageRequest(text: "Plan the migration."),
             in: thread.id
         )
@@ -581,7 +581,7 @@ final class AgentRuntimeTests: XCTestCase {
             skillIDs: ["strict_support"]
         )
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "please use the tool"),
             in: thread.id
         )
@@ -625,7 +625,7 @@ final class AgentRuntimeTests: XCTestCase {
             skillIDs: ["requires_tool"]
         )
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "hello without tool"),
             in: thread.id
         )
@@ -775,7 +775,7 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(personaStack.layers.count, 1)
         XCTAssertEqual(personaStack.layers[0].instructions, personaText)
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "Plan this migration."),
             in: thread.id
         )
@@ -826,7 +826,7 @@ final class AgentRuntimeTests: XCTestCase {
             skillIDs: ["hydration_coach"]
         )
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "Give me today's hydration plan."),
             in: thread.id
         )
@@ -856,7 +856,7 @@ final class AgentRuntimeTests: XCTestCase {
         let thread = try await runtime.createThread()
         let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(
                 text: "",
                 images: [image]
@@ -892,7 +892,7 @@ final class AgentRuntimeTests: XCTestCase {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread()
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "Generate an image"),
             in: thread.id
         )
@@ -967,7 +967,7 @@ final class AgentRuntimeTests: XCTestCase {
         )
 
         let thread = try await runtime.createThread()
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "please use the tool"),
             in: thread.id
         )
@@ -1017,7 +1017,7 @@ final class AgentRuntimeTests: XCTestCase {
         _ = try await runtime.signIn()
         let thread = try await runtime.createThread()
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "Hello"),
             in: thread.id
         )
@@ -1093,7 +1093,7 @@ final class AgentRuntimeTests: XCTestCase {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread()
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             UserMessageRequest(text: "please use the tool"),
             in: thread.id
         )

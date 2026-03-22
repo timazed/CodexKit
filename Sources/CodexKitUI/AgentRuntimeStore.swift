@@ -105,7 +105,7 @@ public final class AgentRuntimeStore: @unchecked Sendable {
         streamingText = ""
 
         do {
-            let stream = try await runtime.sendMessage(
+            let stream = try await runtime.streamMessage(
                 UserMessageRequest(text: text),
                 in: activeThreadID
             )

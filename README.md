@@ -61,7 +61,7 @@ let runtime = try AgentRuntime(configuration: .init(
 
 let _ = try await runtime.signIn()
 let thread = try await runtime.createThread(title: "First Chat")
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(text: "Hello from iOS."),
     in: thread.id
 )
@@ -161,10 +161,10 @@ Available values:
 
 ## Typed Completions
 
-For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` now exposes simple one-shot completion helpers:
+For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `sendMessage`:
 
 ```swift
-let summary = try await runtime.completeText(
+let summary = try await runtime.sendMessage(
     UserMessageRequest(text: "Summarize the latest thread activity."),
     in: thread.id
 )
@@ -193,10 +193,10 @@ struct ShippingReplyDraft: AgentStructuredOutput {
     )
 }
 
-let draft = try await runtime.completeStructured(
+let draft = try await runtime.sendMessage(
     UserMessageRequest(text: "Draft a response for the delayed package."),
     in: thread.id,
-    as: ShippingReplyDraft.self
+    expecting: ShippingReplyDraft.self
 )
 ```
 
@@ -216,7 +216,7 @@ If you need something more specialized, `AgentStructuredOutputFormat` still supp
 ```swift
 let imageData: Data = ...
 
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(
         text: "Describe this image",
         images: [.jpeg(imageData)]
@@ -252,7 +252,7 @@ let reviewerOverride = AgentPersonaStack(layers: [
     .init(name: "reviewer", instructions: "For this reply only, act as a strict reviewer and call out risks first.")
 ])
 
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(
         text: "Review this architecture and point out the risks.",
         personaOverride: reviewerOverride
@@ -277,7 +277,10 @@ let request = UserMessageRequest(
     importedContent: imported
 )
 
-let summary = try await runtime.completeText(request, in: thread.id)
+let summary = try await runtime.sendMessage(
+    request,
+    in: thread.id
+)
 ```
 
 That keeps the SDK focused on runtime capability while letting your app own the actual `Share Extension`, `NSItemProvider`, and presentation flow.
@@ -324,7 +327,10 @@ struct SummarizeImportedContentIntent: AppIntent {
             )
         )
 
-        let summary = try await runtime.completeText(request, in: thread.id)
+        let summary = try await runtime.sendMessage(
+            request,
+            in: thread.id
+        )
         return .result(dialog: IntentDialog(stringLiteral: summary))
     }
 }
@@ -400,7 +406,7 @@ let tripThread = try await runtime.createThread(
     skillIDs: ["travel_planner"]
 )
 
-let stream = try await runtime.sendMessage(
+let stream = try await runtime.streamMessage(
     UserMessageRequest(
         text: "Review this plan with extra travel rigor.",
         skillOverrideIDs: ["travel_planner"]

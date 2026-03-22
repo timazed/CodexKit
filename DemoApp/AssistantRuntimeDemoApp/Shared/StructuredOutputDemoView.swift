@@ -67,7 +67,7 @@ private extension StructuredOutputDemoView {
 
             DemoActionTile(
                 title: viewModel.isRunningStructuredOutputDemo ? "Generating Draft..." : "Generate Shipping Draft",
-                subtitle: "Runs `completeStructured(...)` and decodes into `StructuredShippingReplyDraft`.",
+                subtitle: "Runs `sendMessage(..., expecting:)` and decodes into `StructuredShippingReplyDraft`.",
                 systemImage: "shippingbox",
                 isProminent: true,
                 isDisabled: viewModel.session == nil || viewModel.isRunningStructuredOutputDemo
@@ -127,7 +127,7 @@ private extension StructuredOutputDemoView {
 
             DemoActionTile(
                 title: viewModel.isRunningStructuredOutputDemo ? "Summarizing Content..." : "Summarize Imported Content",
-                subtitle: "Packages text and a source URL, then decodes into `StructuredImportedContentSummary`.",
+                subtitle: "Packages text and a source URL, then decodes with `sendMessage(..., expecting:)`.",
                 systemImage: "doc.text.magnifyingglass",
                 isDisabled: viewModel.session == nil || viewModel.isRunningStructuredOutputDemo
             ) {
