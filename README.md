@@ -12,6 +12,7 @@ Use `CodexKit` if you are building a SwiftUI/iOS app and want:
 - ChatGPT sign-in (device code or OAuth)
 - secure session persistence
 - resumable threaded conversations
+- structured local memory with optional prompt injection
 - streamed assistant output
 - typed one-shot text and structured completions
 - host-defined tools with approval gates
@@ -79,6 +80,7 @@ let stream = try await runtime.streamMessage(
 | Configurable thinking level | Yes |
 | Web search toggle (`enableWebSearch`) | Yes |
 | Built-in request retry/backoff | Yes (configurable) |
+| Structured local memory layer | Yes |
 | Text + image input | Yes |
 | Typed structured output (`Decodable`) | Yes |
 | Share/import helper (`AgentImportedContent`) | Yes |
@@ -226,6 +228,205 @@ let stream = try await runtime.streamMessage(
 ```
 
 Custom tools can also return image URLs via `ToolResultContent.image(URL)`, and `CodexKit` attempts to hydrate those into assistant image attachments for chat rendering.
+
+## Memory Layer
+
+`CodexKit` now supports three memory layers:
+
+- high-level automatic capture policies for apps that want the runtime to extract memory after successful turns
+- a guided `MemoryWriter` layer that resolves defaults into concrete records
+- the raw `MemoryRecord` / `MemoryStoring` APIs for apps that want exact control
+
+The SDK owns storage, retrieval, ranking, and optional prompt injection. Your app can choose how automatic or explicit memory authoring should be.
+
+High-level automatic capture looks like this:
+
+```swift
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: try ChatGPTAuthProvider(
+        method: .deviceCode,
+        deviceCodePresenter: deviceCodeCoordinator
+    ),
+    secureStore: KeychainSessionSecureStore(
+        service: "CodexKit.ChatGPTSession",
+        account: "demo"
+    ),
+    backend: CodexResponsesBackend(
+        configuration: .init(model: "gpt-5.4")
+    ),
+    approvalPresenter: approvalPresenter,
+    stateStore: FileRuntimeStateStore(url: stateURL),
+    memory: .init(
+        store: try SQLiteMemoryStore(url: memoryURL),
+        automaticCapturePolicy: .init(
+            source: .lastTurn,
+            options: .init(
+                defaults: .init(
+                    namespace: "demo-assistant",
+                    kind: "preference"
+                ),
+                maxMemories: 2
+            )
+        )
+    )
+))
+
+let thread = try await runtime.createThread(
+    title: "Health Coach",
+    memoryContext: .init(
+        namespace: "demo-assistant",
+        scopes: ["feature:health-coach"]
+    )
+)
+
+_ = try await runtime.sendMessage(
+    UserMessageRequest(text: "Be direct with me when I fall behind on steps."),
+    in: thread.id
+)
+```
+
+Mid-level guided authoring looks like this:
+
+```swift
+let writer = try await runtime.memoryWriter(
+    defaults: .init(
+        namespace: "demo-assistant",
+        scope: "feature:health-coach",
+        kind: "preference",
+        tags: ["steps", "tone"]
+    )
+)
+
+let record = try await writer.upsert(
+    MemoryDraft(
+        summary: "Health Coach should use direct accountability when the user is behind on steps.",
+        evidence: ["The user responds better to blunt reminders than soft encouragement."],
+        importance: 0.9,
+        dedupeKey: "health-coach-direct-accountability"
+    )
+)
+```
+
+If you want the SDK to capture memory for you, `AgentRuntime` can extract durable memory candidates from a thread or transcript and write them automatically:
+
+```swift
+let thread = try await runtime.createThread(
+    title: "Health Coach",
+    memoryContext: .init(
+        namespace: "demo-assistant",
+        scopes: ["feature:health-coach"]
+    )
+)
+
+let result = try await runtime.captureMemories(
+    from: .threadHistory(maxMessages: 6),
+    for: thread.id,
+    options: .init(
+        defaults: .init(
+            namespace: "demo-assistant",
+            scope: "feature:health-coach",
+            kind: "preference"
+        ),
+        maxMemories: 3
+    )
+)
+
+print(result.records.count)
+```
+
+If you want full control, the low-level store API is still there:
+
+```swift
+let memoryURL = FileManager.default.urls(
+    for: .applicationSupportDirectory,
+    in: .userDomainMask
+).first!
+    .appendingPathComponent("CodexKit/memory.sqlite")
+
+let memoryStore = try SQLiteMemoryStore(url: memoryURL)
+
+try await memoryStore.upsert(
+    MemoryRecord(
+        namespace: "demo-assistant",
+        scope: "feature:health-coach",
+        kind: "preference",
+        summary: "Health Coach should use direct accountability when the user is behind on steps.",
+        evidence: ["The user responds better to blunt coaching than soft encouragement."],
+        importance: 0.9,
+        tags: ["steps", "tone"]
+    ),
+    dedupeKey: "health-coach-direct-accountability"
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: try ChatGPTAuthProvider(
+        method: .deviceCode,
+        deviceCodePresenter: deviceCodeCoordinator
+    ),
+    secureStore: KeychainSessionSecureStore(
+        service: "CodexKit.ChatGPTSession",
+        account: "main"
+    ),
+    backend: CodexResponsesBackend(),
+    approvalPresenter: approvalInbox,
+    stateStore: FileRuntimeStateStore(
+        url: FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        .appendingPathComponent("CodexKit/runtime-state.json")
+    ),
+    memory: .init(store: memoryStore)
+))
+
+let thread = try await runtime.createThread(
+    title: "Press Chat",
+    memoryContext: AgentMemoryContext(
+        namespace: "demo-assistant",
+        scopes: ["feature:health-coach", "thread:daily-checkin"]
+    )
+)
+```
+
+Per-turn memory can be narrowed, expanded, replaced, or disabled with `MemorySelection`:
+
+```swift
+let reply = try await runtime.sendMessage(
+    UserMessageRequest(
+        text: "How should the health coach respond when the user is behind on steps?",
+        memorySelection: MemorySelection(
+            mode: .append,
+            scopes: ["feature:travel-planner"],
+            tags: ["steps"]
+        )
+    ),
+    in: thread.id
+)
+```
+
+For debugging and tooling, memory stores also support direct inspection:
+
+```swift
+let stored = try await memoryStore.record(
+    id: "some-memory-id",
+    namespace: "demo-assistant"
+)
+let records = try await memoryStore.list(
+    namespace: "demo-assistant",
+    scopes: ["feature:health-coach"],
+    includeArchived: true,
+    limit: 20
+)
+let diagnostics = try await memoryStore.diagnostics(namespace: "demo-assistant")
+```
+
+The demo app now includes a dedicated `Memory` tab that shows:
+
+- high-level automatic capture after a normal turn
+- mid-level automatic capture from transcript
+- guided authoring with `MemoryWriter`
+- raw record writes against the underlying store
+- preview of the exact prompt block injected into a turn
 
 ## Pinned And Dynamic Personas
 

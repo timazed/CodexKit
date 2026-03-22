@@ -28,6 +28,13 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
         AgentRuntimeError(code: "unauthorized", message: message)
     }
 
+    public static func memoryNotConfigured() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "memory_not_configured",
+            message: "This runtime was created without a memory store configuration."
+        )
+    }
+
     public static func invalidMessageContent() -> AgentRuntimeError {
         AgentRuntimeError(
             code: "invalid_message_content",
@@ -229,17 +236,20 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
     public var images: [AgentImageAttachment]
     public var personaOverride: AgentPersonaStack?
     public var skillOverrideIDs: [String]?
+    public var memorySelection: MemorySelection?
 
     public init(
         text: String,
         images: [AgentImageAttachment] = [],
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil
+        skillOverrideIDs: [String]? = nil,
+        memorySelection: MemorySelection? = nil
     ) {
         self.text = text
         self.images = images
         self.personaOverride = personaOverride
         self.skillOverrideIDs = skillOverrideIDs
+        self.memorySelection = memorySelection
     }
 
     public init(
@@ -265,6 +275,7 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         case images
         case personaOverride
         case skillOverrideIDs
+        case memorySelection
     }
 
     public init(from decoder: Decoder) throws {
@@ -273,6 +284,7 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
         skillOverrideIDs = try container.decodeIfPresent([String].self, forKey: .skillOverrideIDs)
+        memorySelection = try container.decodeIfPresent(MemorySelection.self, forKey: .memorySelection)
     }
 }
 
@@ -281,6 +293,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var title: String?
     public var personaStack: AgentPersonaStack?
     public var skillIDs: [String]
+    public var memoryContext: AgentMemoryContext?
     public var createdAt: Date
     public var updatedAt: Date
     public var status: AgentThreadStatus
@@ -290,6 +303,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         title: String? = nil,
         personaStack: AgentPersonaStack? = nil,
         skillIDs: [String] = [],
+        memoryContext: AgentMemoryContext? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         status: AgentThreadStatus = .idle
@@ -298,6 +312,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         self.title = title
         self.personaStack = personaStack
         self.skillIDs = skillIDs
+        self.memoryContext = memoryContext
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.status = status
@@ -308,6 +323,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         case title
         case personaStack
         case skillIDs
+        case memoryContext
         case createdAt
         case updatedAt
         case status
@@ -319,6 +335,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         title = try container.decodeIfPresent(String.self, forKey: .title)
         personaStack = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaStack)
         skillIDs = try container.decodeIfPresent([String].self, forKey: .skillIDs) ?? []
+        memoryContext = try container.decodeIfPresent(AgentMemoryContext.self, forKey: .memoryContext)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         status = try container.decodeIfPresent(AgentThreadStatus.self, forKey: .status) ?? .idle

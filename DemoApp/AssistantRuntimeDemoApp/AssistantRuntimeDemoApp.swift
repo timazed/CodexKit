@@ -3,6 +3,7 @@ import SwiftUI
 enum DemoTab: Hashable {
     case assistant
     case structuredOutput
+    case memory
     case healthCoach
 }
 
@@ -43,6 +44,19 @@ struct AssistantRuntimeDemoApp: App {
                 .tag(DemoTab.structuredOutput)
                 .tabItem {
                     Label("Structured", systemImage: "square.stack.3d.up")
+                }
+
+                NavigationStack {
+                    MemoryDemoView(
+                        viewModel: viewModel,
+                        selectedTab: $selectedTab
+                    )
+                    .navigationTitle("Memory")
+                    .navigationBarTitleDisplayMode(.inline)
+                }
+                .tag(DemoTab.memory)
+                .tabItem {
+                    Label("Memory", systemImage: "brain")
                 }
 
                 NavigationStack {
