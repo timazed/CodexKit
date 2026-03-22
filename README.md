@@ -1,7 +1,7 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.0--alpha.1-orange)
 
 `CodexKit` is a lightweight iOS-first SDK for embedding OpenAI Codex-style agents in Apple apps.
 
@@ -290,7 +290,7 @@ That keeps the SDK focused on runtime capability while letting your app own the 
 App Intents also stay app-owned, but the demo app now includes working source examples for:
 
 - summarizing imported text/links through `AgentImportedContent`
-- generating a typed shipping support draft through `completeStructured`
+- generating a typed shipping support draft through `sendMessage(..., expecting:)`
 
 The source lives in:
 
@@ -484,7 +484,7 @@ print(preview)
 
 ## Versioning And Releases
 
-`CodexKit` uses Semantic Versioning. The latest stable release is `v1.1.0`.
+`CodexKit` uses Semantic Versioning. The latest stable release is `v1.1.0`, and the current prerelease target is `v2.0.0-alpha.1`.
 
 - Release notes live in [CHANGELOG.md](CHANGELOG.md)
 - CI runs on pushes/PRs via [`.github/workflows/ci.yml`](.github/workflows/ci.yml)

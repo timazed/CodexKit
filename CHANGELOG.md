@@ -6,6 +6,21 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.1] - 2026-03-22
+
+### Added
+
+- Schema-driven structured output support through `AgentStructuredOutput`, `AgentStructuredOutputFormat`, and the Swift-friendly `JSONSchema` DSL.
+- Imported/share-friendly message construction through `AgentImportedContent`.
+- Dedicated structured output demo tab plus App Intents / Shortcuts examples in the demo app.
+- Thread detail navigation in the demo app so conversation views are separated from the main dashboard.
+
+### Changed
+
+- Simplified the runtime messaging API so plain text uses `sendMessage`, typed replies use `sendMessage(..., expecting:)`, and streaming uses `streamMessage`.
+- Updated the demo app to better separate assistant controls, structured output demos, and thread views.
+- Expanded README coverage for structured output, imported content, and App Intents integration.
+
 ## [1.1.0] - 2026-03-21
 
 ### Added
@@ -44,6 +59,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.1...HEAD
+[2.0.0-alpha.1]: https://github.com/timazed/CodexKit/compare/v1.1.0...v2.0.0-alpha.1
 [1.1.0]: https://github.com/timazed/CodexKit/releases/tag/v1.1.0
 [1.0.0]: https://github.com/timazed/CodexKit/releases/tag/v1.0.0
