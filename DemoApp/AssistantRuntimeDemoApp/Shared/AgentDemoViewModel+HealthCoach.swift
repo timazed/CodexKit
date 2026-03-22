@@ -185,7 +185,7 @@ extension AgentDemoViewModel {
 
         do {
             let threadID = try await ensureHealthCoachThreadID()
-            let stream = try await runtime.sendMessage(
+            let stream = try await runtime.streamMessage(
                 UserMessageRequest(
                     text: """
                     Daily step check-in:

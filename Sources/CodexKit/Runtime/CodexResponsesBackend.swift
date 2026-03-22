@@ -66,12 +66,14 @@ public actor CodexResponsesBackend: AgentBackend {
         history: [AgentMessage],
         message: UserMessageRequest,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
         CodexResponsesTurnSession(
             configuration: configuration,
             instructions: instructions,
+            responseFormat: responseFormat,
             urlSession: urlSession,
             encoder: encoder,
             decoder: decoder,
@@ -92,6 +94,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     init(
         configuration: CodexResponsesBackendConfiguration,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -113,6 +116,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                     let usage = try await Self.runTurnLoop(
                         configuration: configuration,
                         instructions: instructions,
+                        responseFormat: responseFormat,
                         urlSession: urlSession,
                         encoder: encoder,
                         decoder: decoder,
@@ -153,6 +157,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     private static func runTurnLoop(
         configuration: CodexResponsesBackendConfiguration,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -195,6 +200,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                     let request = try buildURLRequest(
                         configuration: configuration,
                         instructions: instructions,
+                        responseFormat: responseFormat,
                         threadID: threadID,
                         items: workingHistory,
                         tools: tools,
@@ -321,6 +327,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     private static func buildURLRequest(
         configuration: CodexResponsesBackendConfiguration,
         instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
         threadID: String,
         items: [WorkingHistoryItem],
         tools: [ToolDefinition],
@@ -331,6 +338,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
             model: configuration.model,
             reasoning: .init(effort: configuration.reasoningEffort),
             instructions: instructions,
+            text: .init(format: .init(responseFormat: responseFormat)),
             input: items.map(\.jsonValue),
             tools: responsesTools(
                 from: tools,
@@ -516,7 +524,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
             switch item {
             case let .message(message):
                 let text = message.content
-                    .compactMap(\.text)
+                    .compactMap(\.displayText)
                     .joined()
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let images = message.content.compactMap(\.imageAttachment)
@@ -677,6 +685,7 @@ private struct ResponsesRequestBody: Encodable {
     let model: String
     let reasoning: ResponsesReasoningConfiguration
     let instructions: String
+    let text: ResponsesTextConfiguration
     let input: [JSONValue]
     let tools: [JSONValue]
     let toolChoice: String
@@ -690,6 +699,7 @@ private struct ResponsesRequestBody: Encodable {
         case model
         case reasoning
         case instructions
+        case text
         case input
         case tools
         case toolChoice = "tool_choice"
@@ -706,6 +716,34 @@ private struct ResponsesReasoningConfiguration: Encodable {
 
     init(effort: ReasoningEffort) {
         self.effort = effort.apiValue
+    }
+}
+
+private struct ResponsesTextConfiguration: Encodable {
+    let format: ResponsesTextFormat
+}
+
+private struct ResponsesTextFormat: Encodable {
+    let type: String
+    let name: String?
+    let description: String?
+    let schema: JSONValue?
+    let strict: Bool?
+
+    init(responseFormat: AgentStructuredOutputFormat?) {
+        if let responseFormat {
+            type = "json_schema"
+            name = responseFormat.name
+            description = responseFormat.description
+            schema = responseFormat.schema.jsonValue
+            strict = responseFormat.strict
+        } else {
+            type = "text"
+            name = nil
+            description = nil
+            schema = nil
+            strict = nil
+        }
     }
 }
 
@@ -959,14 +997,14 @@ private struct StreamMessageItem: Decodable {
 
 private struct StreamMessageContent: Decodable {
     let type: String
-    let text: String?
+    let displayText: String?
     let imageAttachment: AgentImageAttachment?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let object = try container.decode([String: JSONValue].self)
         type = object["type"]?.stringValue ?? ""
-        text = object["text"]?.stringValue
+        displayText = object["text"]?.stringValue ?? object["refusal"]?.stringValue
         imageAttachment = Self.parseImageAttachment(from: object)
     }
 

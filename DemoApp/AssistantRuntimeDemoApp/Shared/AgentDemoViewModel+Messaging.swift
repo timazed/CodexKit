@@ -198,7 +198,7 @@ extension AgentDemoViewModel {
             streamingText = ""
         }
 
-        let stream = try await runtime.sendMessage(
+        let stream = try await runtime.streamMessage(
             request,
             in: threadID
         )

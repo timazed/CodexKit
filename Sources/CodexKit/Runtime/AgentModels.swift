@@ -35,6 +35,23 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
         )
     }
 
+    public static func assistantResponseMissing() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "assistant_response_missing",
+            message: "The assistant turn completed without returning a final assistant message."
+        )
+    }
+
+    public static func structuredOutputDecodingFailed(
+        typeName: String,
+        underlyingMessage: String
+    ) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "structured_output_decoding_failed",
+            message: "The assistant response could not be decoded as \(typeName): \(underlyingMessage)"
+        )
+    }
+
     public static func invalidSkillID(_ skillID: String) -> AgentRuntimeError {
         AgentRuntimeError(
             code: "invalid_skill_id",
@@ -223,6 +240,20 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         self.images = images
         self.personaOverride = personaOverride
         self.skillOverrideIDs = skillOverrideIDs
+    }
+
+    public init(
+        prompt: String? = nil,
+        importedContent: AgentImportedContent,
+        personaOverride: AgentPersonaStack? = nil,
+        skillOverrideIDs: [String]? = nil
+    ) {
+        self.init(
+            text: importedContent.composedText(prompt: prompt),
+            images: importedContent.images,
+            personaOverride: personaOverride,
+            skillOverrideIDs: skillOverrideIDs
+        )
     }
 
     public var hasContent: Bool {

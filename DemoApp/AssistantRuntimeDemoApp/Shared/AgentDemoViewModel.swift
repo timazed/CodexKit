@@ -25,6 +25,20 @@ struct SkillPolicyProbeResult: Sendable {
     }
 }
 
+struct StructuredOutputDemoDraftResult: Sendable {
+    let threadID: String
+    let threadTitle: String
+    let customerMessage: String
+    let draft: StructuredShippingReplyDraft
+}
+
+struct StructuredOutputDemoImportResult: Sendable {
+    let threadID: String
+    let threadTitle: String
+    let sourceURL: URL
+    let summary: StructuredImportedContentSummary
+}
+
 @MainActor
 @Observable
 final class AgentDemoViewModel: @unchecked Sendable {
@@ -89,6 +103,9 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var isAuthenticating = false
     var pendingComposerImages: [AgentImageAttachment] = []
     var composerText = ""
+    var isRunningStructuredOutputDemo = false
+    var structuredShippingReplyResult: StructuredOutputDemoDraftResult?
+    var structuredImportedSummaryResult: StructuredOutputDemoImportResult?
     var healthKitAuthorized = false
     var notificationAuthorized = false
     var isRefreshingHealthCoach = false
