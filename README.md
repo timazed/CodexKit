@@ -488,6 +488,9 @@ print(preview)
 
 - Release notes live in [CHANGELOG.md](CHANGELOG.md)
 - CI runs on pushes/PRs via [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+- Pushing a `v*` tag creates a GitHub Release automatically via [`.github/workflows/release.yml`](.github/workflows/release.yml)
+- Tags containing a hyphen, such as `v2.0.0-alpha.1`, are published as GitHub prereleases automatically
+- The release workflow also supports manual dispatch for an existing tag if you need to publish a release page after the tag already exists
 - Stable releases are cut with annotated tags (`vMAJOR.MINOR.PATCH`)
 
 ## Contributing And Security
