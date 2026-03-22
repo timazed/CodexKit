@@ -21,6 +21,40 @@ Use `CodexKit` if you are building a SwiftUI/iOS app and want:
 
 The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
 
+## Core Concepts
+
+- `AgentRuntime`
+  The main entry point. Owns auth state, threads, tool execution, personas, skills, and optional memory.
+- `AgentThread`
+  A persistent conversation with its own status, title, persona stack, skill IDs, and optional memory context.
+- `UserMessageRequest`
+  A single turn request. Can include text, images, imported content, persona override, skill override, and memory selection.
+- `CodexResponsesBackend`
+  The built-in ChatGPT/Codex-style backend used for text/image/tool turns.
+- `ToolDefinition`
+  A host-defined capability the model can call through your app.
+- `AgentPersonaStack`
+  Layered behavior instructions pinned to a thread or applied for one turn.
+- `AgentSkill`
+  A behavior module that can carry instructions plus tool policy.
+- `AgentStructuredOutput`
+  A typed `Decodable` contract for schema-constrained replies.
+- `AgentMemoryConfiguration`
+  Optional local memory storage, retrieval, ranking, and capture policy.
+
+## Choose Your Level
+
+- Simple chat
+  Sign in, create a thread, and call `streamMessage(...)` or `sendMessage(...)`.
+- Typed app flows
+  Use `sendMessage(..., expecting:)` to get a `Decodable` value back.
+- Tool-driven agents
+  Register host tools and optionally gate them with approvals.
+- Rich behavior
+  Add thread personas, skills, and execution policies.
+- Memory-backed agents
+  Opt into automatic memory capture, guided writing, or raw record management.
+
 ## Quickstart (5 Minutes)
 
 1. Add this package to your Xcode project.
@@ -125,6 +159,17 @@ The recommended production path for iOS is:
 
 For browser OAuth, `CodexKit` uses the Codex-compatible redirect `http://localhost:1455/auth/callback` internally and only runs the loopback listener during active auth.
 
+## Platform Boundary
+
+`CodexKit` ships a ChatGPT/Codex-style account flow and backend. It does not provide general OpenAI API platform access.
+
+That means:
+
+- built in: ChatGPT sign-in, Codex-style threaded turns, tools, personas, skills, structured output, and optional local memory
+- not built in: separate API-key-based OpenAI platform clients, Realtime voice sessions, or other non-Codex API access
+
+If your app needs capabilities outside the built-in backend path, the intended approach is to expose them through your own host tools or custom backend integration.
+
 `CodexResponsesBackend` also includes built-in retry/backoff for transient failures (`429`, `5xx`, and network-transient URL errors like `networkConnectionLost`). You can tune or disable it:
 
 ```swift
@@ -162,6 +207,15 @@ Available values:
 - `.extraHigh`
 
 ## Typed Completions
+
+For most apps, there are now three common send paths:
+
+- `streamMessage(...)`
+  Stream deltas, tool events, approvals, and final turn completion.
+- `sendMessage(...)`
+  Return the assistant's final text as a `String`.
+- `sendMessage(..., expecting:)`
+  Return a typed `Decodable` value from a structured response.
 
 For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `sendMessage`:
 
@@ -560,6 +614,17 @@ The demo app exercises:
 - a one-tap skill policy probe that compares tool behavior in normal vs skill-constrained threads
 - a Health Coach tab with HealthKit steps, AI-generated coaching, local reminders, and tone switching
 
+Each tab is focused on a single story:
+
+- `Assistant`
+  Chat runtime, auth, threads, tools, reasoning level, personas, and skills.
+- `Structured`
+  Typed structured output and imported-content flows.
+- `Memory`
+  High-, mid-, and low-level memory APIs.
+- `Health Coach`
+  A product-style demo using tools, memory, notifications, and HealthKit-backed context.
+
 ## Skill Examples
 
 `CodexKit` skills are behavior modules, not just tone layers. They can carry both instructions and execution policy (tool allow/require/sequence/call limits).
@@ -686,6 +751,16 @@ print(preview)
 ## Versioning And Releases
 
 `CodexKit` uses Semantic Versioning. The latest stable release is `v1.1.0`, while `main` tracks the upcoming 2.0 development line.
+
+### 2.0 Messaging API
+
+The 2.0 line standardizes runtime sends around:
+
+- `streamMessage(...)` for streaming turn events
+- `sendMessage(...)` for final text
+- `sendMessage(..., expecting:)` for typed structured replies
+
+This is the shape new examples and docs target on `main`.
 
 - Release notes live in [CHANGELOG.md](CHANGELOG.md)
 - CI runs on pushes/PRs via [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
