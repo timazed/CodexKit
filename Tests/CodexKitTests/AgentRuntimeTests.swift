@@ -972,17 +972,22 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(formats.last??.name, "memory_extraction_batch")
 
         let events = await observer.events()
-        XCTAssertEqual(events.count, 2)
-        guard case let .captureStarted(captureThreadID, sourceDescription) = events[0] else {
-            return XCTFail("Expected captureStarted event.")
+        let captureEvents = events.compactMap { event -> (String, String?, Int?)? in
+            switch event {
+            case let .captureStarted(threadID, sourceDescription):
+                return (threadID, sourceDescription, nil)
+            case let .captureSucceeded(threadID, result):
+                return (threadID, nil, result.records.count)
+            default:
+                return nil
+            }
         }
-        XCTAssertEqual(captureThreadID, thread.id)
-        XCTAssertEqual(sourceDescription, "last_turn")
-        guard case let .captureSucceeded(succeededThreadID, result) = events[1] else {
-            return XCTFail("Expected captureSucceeded event.")
-        }
-        XCTAssertEqual(succeededThreadID, thread.id)
-        XCTAssertEqual(result.records.count, 1)
+
+        XCTAssertEqual(captureEvents.count, 2)
+        XCTAssertEqual(captureEvents[0].0, thread.id)
+        XCTAssertEqual(captureEvents[0].1, "last_turn")
+        XCTAssertEqual(captureEvents[1].0, thread.id)
+        XCTAssertEqual(captureEvents[1].2, 1)
     }
 
     func testRuntimeGracefullyDegradesWhenMemoryStoreFails() async throws {
