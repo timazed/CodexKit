@@ -22,7 +22,7 @@ extension AgentDemoViewModel {
             developerLog("Running structured shipping reply demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Shipping Draft",
-                personaStack: Self.supportPersona
+                personaStack: catalog.supportPersona
             )
             let request = DemoStructuredOutputExamples.shippingReplyRequest()
             if showResolvedInstructionsDebug {
@@ -125,7 +125,7 @@ extension AgentDemoViewModel {
             developerLog("Running streamed structured output demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Streamed Delivery Update",
-                personaStack: Self.supportPersona
+                personaStack: catalog.supportPersona
             )
             let request = DemoStructuredOutputExamples.streamedStructuredRequest()
             if showResolvedInstructionsDebug {
@@ -201,7 +201,7 @@ extension AgentDemoViewModel {
                 "Streamed structured output demo finished. threadID=\(thread.id) partialCount=\(partialSnapshots.count) persistedMetadata=\(persistedMetadata != nil)"
             )
         } catch {
-            guard !Self.isCancellationError(error) else {
+            guard !diagnostics.isCancellationError(error) else {
                 return
             }
             structuredStreamingError = error.localizedDescription

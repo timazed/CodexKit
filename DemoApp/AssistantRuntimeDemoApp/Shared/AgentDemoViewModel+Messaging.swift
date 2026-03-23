@@ -105,7 +105,7 @@ extension AgentDemoViewModel {
             )
             let skillThread = try await runtime.createThread(
                 title: "Skill Policy Probe: Health Coach",
-                skillIDs: [Self.healthCoachSkill.id]
+                skillIDs: [catalog.healthCoachSkill.id]
             )
             threads = await runtime.threads()
 

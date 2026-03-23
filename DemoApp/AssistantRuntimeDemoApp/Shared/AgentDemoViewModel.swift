@@ -80,58 +80,106 @@ struct AutomaticPolicyMemoryDemoResult: Sendable {
     let records: [MemoryRecord]
 }
 
-@MainActor
-@Observable
-final class AgentDemoViewModel: @unchecked Sendable {
-    nonisolated static let developerLoggingDefaultsKey = "AssistantRuntimeDemoApp.developerLoggingEnabled"
-    nonisolated static let logger = Logger(
+struct DemoCatalog {
+    let supportPersona: AgentPersonaStack
+    let plannerPersona: AgentPersonaStack
+    let reviewerOverridePersona: AgentPersonaStack
+    let healthCoachToolName: String
+    let travelPlannerToolName: String
+    let healthCoachSkill: AgentSkill
+    let travelPlannerSkill: AgentSkill
+
+    init() {
+        supportPersona = AgentPersonaStack(layers: [
+            .init(
+                name: "domain",
+                instructions: "You are an expert customer support agent for a shipping app."
+            ),
+            .init(
+                name: "style",
+                instructions: "Be concise, calm, and action-oriented."
+            ),
+        ])
+        plannerPersona = AgentPersonaStack(layers: [
+            .init(
+                name: "planner",
+                instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
+            ),
+        ])
+        reviewerOverridePersona = AgentPersonaStack(layers: [
+            .init(
+                name: "reviewer",
+                instructions: "For this reply only, act as a strict reviewer and call out risks first."
+            ),
+        ])
+
+        healthCoachToolName = "health_coach_fetch_progress"
+        travelPlannerToolName = "travel_planner_build_day_plan"
+        healthCoachSkill = AgentSkill(
+            id: "health_coach",
+            name: "Health Coach",
+            instructions: "You are a health coach focused on daily step goals and execution. For every user turn, call the \(healthCoachToolName) tool exactly once before your final reply, then provide one practical walking plan and one accountability line.",
+            executionPolicy: .init(
+                allowedToolNames: [healthCoachToolName],
+                requiredToolNames: [healthCoachToolName],
+                maxToolCalls: 1
+            )
+        )
+        travelPlannerSkill = AgentSkill(
+            id: "travel_planner",
+            name: "Travel Planner",
+            instructions: "You are a travel planning assistant for mobile users. Provide concise day-by-day itineraries, practical logistics, and a compact packing checklist.",
+            executionPolicy: .init(
+                allowedToolNames: [travelPlannerToolName],
+                maxToolCalls: 1
+            )
+        )
+    }
+}
+
+struct DemoDiagnostics {
+    private let developerLoggingDefaultsKey = "AssistantRuntimeDemoApp.developerLoggingEnabled"
+    private let logger = Logger(
         subsystem: "ai.assistantruntime.demoapp",
         category: "DemoTool"
     )
-    nonisolated static let supportPersona = AgentPersonaStack(layers: [
-        .init(
-            name: "domain",
-            instructions: "You are an expert customer support agent for a shipping app."
-        ),
-        .init(
-            name: "style",
-            instructions: "Be concise, calm, and action-oriented."
-        ),
-    ])
-    nonisolated static let plannerPersona = AgentPersonaStack(layers: [
-        .init(
-            name: "planner",
-            instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
-        ),
-    ])
-    nonisolated static let reviewerOverridePersona = AgentPersonaStack(layers: [
-        .init(
-            name: "reviewer",
-            instructions: "For this reply only, act as a strict reviewer and call out risks first."
-        ),
-    ])
-    nonisolated static let healthCoachToolName = "health_coach_fetch_progress"
-    nonisolated static let travelPlannerToolName = "travel_planner_build_day_plan"
-    nonisolated static let healthCoachSkill = AgentSkill(
-        id: "health_coach",
-        name: "Health Coach",
-        instructions: "You are a health coach focused on daily step goals and execution. For every user turn, call the \(healthCoachToolName) tool exactly once before your final reply, then provide one practical walking plan and one accountability line.",
-        executionPolicy: .init(
-            allowedToolNames: [healthCoachToolName],
-            requiredToolNames: [healthCoachToolName],
-            maxToolCalls: 1
-        )
-    )
-    nonisolated static let travelPlannerSkill = AgentSkill(
-        id: "travel_planner",
-        name: "Travel Planner",
-        instructions: "You are a travel planning assistant for mobile users. Provide concise day-by-day itineraries, practical logistics, and a compact packing checklist.",
-        executionPolicy: .init(
-            allowedToolNames: [travelPlannerToolName],
-            maxToolCalls: 1
-        )
-    )
 
+    func initialDeveloperLoggingEnabled(userDefaults: UserDefaults = .standard) -> Bool {
+        if userDefaults.object(forKey: developerLoggingDefaultsKey) != nil {
+            return userDefaults.bool(forKey: developerLoggingDefaultsKey)
+        }
+#if DEBUG
+        return true
+#else
+        return false
+#endif
+    }
+
+    func persistDeveloperLoggingEnabled(
+        _ enabled: Bool,
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.set(enabled, forKey: developerLoggingDefaultsKey)
+    }
+
+    func isCancellationError(_ error: Error) -> Bool {
+        error is CancellationError
+    }
+
+    func log(_ message: String) {
+        logger.notice("\(message, privacy: .public)")
+        print("[CodexKit Demo] \(message)")
+    }
+
+    func error(_ message: String) {
+        logger.error("\(message, privacy: .public)")
+        print("[CodexKit Demo][Error] \(message)")
+    }
+}
+
+@MainActor
+@Observable
+final class AgentDemoViewModel: @unchecked Sendable {
     var session: ChatGPTSession?
     var threads: [AgentThread] = []
     var messages: [AgentMessage] = []
@@ -140,10 +188,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var showResolvedInstructionsDebug = false
     var developerLoggingEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(
-                developerLoggingEnabled,
-                forKey: Self.developerLoggingDefaultsKey
-            )
+            diagnostics.persistDeveloperLoggingEnabled(developerLoggingEnabled)
             developerLog(
                 developerLoggingEnabled
                     ? "Developer logging enabled."
@@ -194,6 +239,10 @@ final class AgentDemoViewModel: @unchecked Sendable {
     let enableWebSearch: Bool
     let stateURL: URL?
     let keychainAccount: String
+    let catalog: DemoCatalog
+    let diagnostics: DemoDiagnostics
+    let toolOutputFactory: DemoToolOutputFactory
+    let healthCoachDesign: DemoHealthCoachDesign
 
     var runtime: AgentRuntime
     var activeThreadID: String?
@@ -214,11 +263,15 @@ final class AgentDemoViewModel: @unchecked Sendable {
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
     ) {
+        self.catalog = DemoCatalog()
+        self.diagnostics = DemoDiagnostics()
+        self.toolOutputFactory = DemoToolOutputFactory()
+        self.healthCoachDesign = DemoHealthCoachDesign()
         self.runtime = runtime
         self.model = model
         self.enableWebSearch = enableWebSearch
         self.reasoningEffort = reasoningEffort
-        self.developerLoggingEnabled = Self.initialDeveloperLoggingEnabled()
+        self.developerLoggingEnabled = diagnostics.initialDeveloperLoggingEnabled()
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
@@ -389,7 +442,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
     func createSupportPersonaThread() async {
         await createThreadInternal(
             title: "Support Persona Demo",
-            personaStack: Self.supportPersona
+            personaStack: catalog.supportPersona
         )
     }
 
@@ -401,7 +454,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
         do {
             try await runtime.setPersonaStack(
-                Self.plannerPersona,
+                catalog.plannerPersona,
                 for: activeThreadID
             )
             threads = await runtime.threads()
@@ -417,7 +470,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
         await sendMessageInternal(
             "Review this conversation setup and tell me the biggest risks first.",
-            personaOverride: Self.reviewerOverridePersona
+            personaOverride: catalog.reviewerOverridePersona
         )
     }
 
@@ -425,7 +478,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         await createThreadInternal(
             title: "Skill Demo: Health Coach",
             personaStack: nil,
-            skillIDs: [Self.healthCoachSkill.id]
+            skillIDs: [catalog.healthCoachSkill.id]
         )
     }
 
@@ -433,7 +486,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         await createThreadInternal(
             title: "Skill Demo: Travel Planner",
             personaStack: nil,
-            skillIDs: [Self.travelPlannerSkill.id]
+            skillIDs: [catalog.travelPlannerSkill.id]
         )
     }
 
@@ -496,7 +549,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
     }
 
     func reportError(_ error: Error) {
-        guard !Self.isCancellationError(error) else {
+        guard !diagnostics.isCancellationError(error) else {
             developerLog("Ignoring CancellationError from async UI task.")
             return
         }
@@ -516,35 +569,18 @@ final class AgentDemoViewModel: @unchecked Sendable {
         lastError = nil
     }
 
-    nonisolated static func isCancellationError(_ error: Error) -> Bool {
-        error is CancellationError
-    }
-
-    nonisolated static func initialDeveloperLoggingEnabled() -> Bool {
-        if UserDefaults.standard.object(forKey: developerLoggingDefaultsKey) != nil {
-            return UserDefaults.standard.bool(forKey: developerLoggingDefaultsKey)
-        }
-#if DEBUG
-        return true
-#else
-        return false
-#endif
-    }
-
     func developerLog(_ message: String) {
         guard developerLoggingEnabled else {
             return
         }
-        Self.logger.notice("\(message, privacy: .public)")
-        print("[CodexKit Demo] \(message)")
+        diagnostics.log(message)
     }
 
     func developerErrorLog(_ message: String) {
         guard developerLoggingEnabled else {
             return
         }
-        Self.logger.error("\(message, privacy: .public)")
-        print("[CodexKit Demo][Error] \(message)")
+        diagnostics.error(message)
     }
 
     func signOut() async {

@@ -29,17 +29,96 @@ enum HealthCoachToneMode: String, CaseIterable, Identifiable {
     }
 }
 
-@MainActor
-extension AgentDemoViewModel {
-    nonisolated static let healthCoachThreadTitle = "Health Coach"
-    nonisolated static let healthReminderIdentifierPrefix = "health-coach-reminder"
-    nonisolated static let healthReminderSchedule: [(hour: Int, minute: Int)] = [
+struct DemoHealthCoachDesign {
+    let threadTitle = "Health Coach"
+    let reminderIdentifierPrefix = "health-coach-reminder"
+    let reminderSchedule: [(hour: Int, minute: Int)] = [
         (10, 0),
         (13, 0),
         (16, 0),
         (19, 0),
     ]
 
+    func persona(for toneMode: HealthCoachToneMode) -> AgentPersonaStack {
+        let styleInstructions: String
+
+        switch toneMode {
+        case .hardcorePersonal:
+            styleInstructions = """
+            Be blunt, forceful, and no-nonsense. Push accountability hard, call out excuses directly, and give action commands.
+            Address the user directly as "you."
+            Never use slurs, body-shaming labels, identity-targeted insults, or humiliation.
+            If the goal is completed, switch to brief earned praise: "Well done, you pushed through."
+            """
+
+        case .firmCoach:
+            styleInstructions = """
+            Be firm, direct, and practical. Keep pressure on execution with concise next actions.
+            Address the user directly as "you."
+            Avoid insults and avoid coddling.
+            If the goal is completed, give brief earned praise.
+            """
+        }
+
+        return AgentPersonaStack(layers: [
+            .init(
+                name: "domain",
+                instructions: "You are a step-goal accountability coach for a mobile health app."
+            ),
+            .init(
+                name: "style",
+                instructions: styleInstructions
+            ),
+        ])
+    }
+
+    func coachFeedbackCacheKey(
+        steps: Int,
+        goal: Int,
+        toneMode: HealthCoachToneMode
+    ) -> String {
+        "\(toneMode.rawValue)-\(steps)-\(goal)-\(max(goal - steps, 0))"
+    }
+
+    func fallbackReminderBody(
+        remaining: Int,
+        toneMode: HealthCoachToneMode
+    ) -> String {
+        if remaining <= 0 {
+            return "You are on pace. Stay consistent and finish strong."
+        }
+
+        switch toneMode {
+        case .hardcorePersonal:
+            return "You still owe \(remaining) steps today. Move now and close it."
+        case .firmCoach:
+            return "\(remaining) steps remain. Take a focused walking block now."
+        }
+    }
+
+    func reminderCopyCacheKey(
+        remaining: Int,
+        goal: Int,
+        toneMode: HealthCoachToneMode
+    ) -> String {
+        let ratio = goal > 0 ? Double(remaining) / Double(goal) : 0
+        let band: String
+        switch ratio {
+        case ...0:
+            band = "complete"
+        case ..<0.2:
+            band = "close"
+        case ..<0.6:
+            band = "mid"
+        default:
+            band = "far"
+        }
+        return "\(toneMode.rawValue)-\(band)"
+    }
+}
+
+@MainActor
+extension AgentDemoViewModel {
     func initializeHealthCoachIfNeeded() async {
         guard !healthCoachInitialized else {
             return
@@ -161,7 +240,7 @@ extension AgentDemoViewModel {
             return
         }
 
-        let cacheKey = Self.coachFeedbackCacheKey(
+        let cacheKey = healthCoachDesign.coachFeedbackCacheKey(
             steps: todayStepCount,
             goal: dailyStepGoal,
             toneMode: healthCoachToneMode
@@ -244,7 +323,7 @@ extension AgentDemoViewModel {
         }
 
         let existingThreads = await runtime.threads()
-        if let existing = existingThreads.first(where: { $0.title == Self.healthCoachThreadTitle }) {
+        if let existing = existingThreads.first(where: { $0.title == healthCoachDesign.threadTitle }) {
             try await runtime.setPersonaStack(persona, for: existing.id)
             healthCoachThreadID = existing.id
             threads = await runtime.threads()
@@ -252,7 +331,7 @@ extension AgentDemoViewModel {
         }
 
         let thread = try await runtime.createThread(
-            title: Self.healthCoachThreadTitle,
+            title: healthCoachDesign.threadTitle,
             personaStack: persona
         )
         healthCoachThreadID = thread.id
@@ -261,86 +340,7 @@ extension AgentDemoViewModel {
     }
 
     func currentHealthCoachPersona() -> AgentPersonaStack {
-        Self.healthCoachPersona(toneMode: healthCoachToneMode)
-    }
-
-    nonisolated static func healthCoachPersona(
-        toneMode: HealthCoachToneMode
-    ) -> AgentPersonaStack {
-        let styleInstructions: String
-
-        switch toneMode {
-        case .hardcorePersonal:
-            styleInstructions = """
-            Be blunt, forceful, and no-nonsense. Push accountability hard, call out excuses directly, and give action commands.
-            Address the user directly as "you."
-            Never use slurs, body-shaming labels, identity-targeted insults, or humiliation.
-            If the goal is completed, switch to brief earned praise: "Well done, you pushed through."
-            """
-
-        case .firmCoach:
-            styleInstructions = """
-            Be firm, direct, and practical. Keep pressure on execution with concise next actions.
-            Address the user directly as "you."
-            Avoid insults and avoid coddling.
-            If the goal is completed, give brief earned praise.
-            """
-        }
-
-        return AgentPersonaStack(layers: [
-            .init(
-                name: "domain",
-                instructions: "You are a step-goal accountability coach for a mobile health app."
-            ),
-            .init(
-                name: "style",
-                instructions: styleInstructions
-            ),
-        ])
-    }
-
-    nonisolated static func coachFeedbackCacheKey(
-        steps: Int,
-        goal: Int,
-        toneMode: HealthCoachToneMode
-    ) -> String {
-        "\(toneMode.rawValue)-\(steps)-\(goal)-\(max(goal - steps, 0))"
-    }
-
-    nonisolated static func fallbackReminderBody(
-        remaining: Int,
-        toneMode: HealthCoachToneMode
-    ) -> String {
-        if remaining <= 0 {
-            return "You are on pace. Stay consistent and finish strong."
-        }
-
-        switch toneMode {
-        case .hardcorePersonal:
-            return "You still owe \(remaining) steps today. Move now and close it."
-        case .firmCoach:
-            return "\(remaining) steps remain. Take a focused walking block now."
-        }
-    }
-
-    nonisolated static func reminderCopyCacheKey(
-        remaining: Int,
-        goal: Int,
-        toneMode: HealthCoachToneMode
-    ) -> String {
-        let ratio = goal > 0 ? Double(remaining) / Double(goal) : 0
-        let band: String
-        switch ratio {
-        case ...0:
-            band = "complete"
-        case ..<0.2:
-            band = "close"
-        case ..<0.6:
-            band = "mid"
-        default:
-            band = "far"
-        }
-        return "\(toneMode.rawValue)-\(band)"
+        healthCoachDesign.persona(for: healthCoachToneMode)
     }
 
     func updateReminderScheduleIfPossible() async {
