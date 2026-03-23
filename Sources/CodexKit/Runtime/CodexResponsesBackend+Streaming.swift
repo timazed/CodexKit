@@ -183,17 +183,27 @@ extension CodexResponsesTurnSession {
         configuration: CodexResponsesBackendConfiguration,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         threadID: String,
         items: [WorkingHistoryItem],
         tools: [ToolDefinition],
         session: ChatGPTSession,
         encoder: JSONEncoder
     ) throws -> URLRequest {
+        let resolvedInstructions = if let streamedStructuredOutput {
+            instructions + "\n\n" + streamedStructuredOutputInstructions(for: streamedStructuredOutput)
+        } else {
+            instructions
+        }
         let requestBody = ResponsesRequestBody(
             model: configuration.model,
             reasoning: .init(effort: configuration.reasoningEffort),
-            instructions: instructions,
-            text: .init(format: .init(responseFormat: responseFormat)),
+            instructions: resolvedInstructions,
+            text: .init(
+                format: .init(
+                    responseFormat: streamedStructuredOutput == nil ? responseFormat : nil
+                )
+            ),
             input: items.map(\.jsonValue),
             tools: responsesTools(
                 from: tools,

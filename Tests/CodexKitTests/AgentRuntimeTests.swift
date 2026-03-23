@@ -65,6 +65,7 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(state.threads.first?.personaStack, nil)
         XCTAssertEqual(state.threads.first?.memoryContext, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.images, [])
+        XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.structuredOutput, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.text, "Hello from legacy state")
     }
 
@@ -137,6 +138,7 @@ actor UnauthorizedThenSuccessBackend: AgentBackend {
         message: UserMessageRequest,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
+        streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
@@ -150,7 +152,8 @@ actor UnauthorizedThenSuccessBackend: AgentBackend {
             thread: thread,
             message: message,
             selectedTool: nil,
-            structuredResponseText: nil
+            structuredResponseText: nil,
+            streamedStructuredOutput: nil
         )
     }
 
@@ -183,6 +186,7 @@ actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
         message _: UserMessageRequest,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
+        streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
@@ -190,7 +194,8 @@ actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
             thread: thread,
             message: .init(text: ""),
             selectedTool: nil,
-            structuredResponseText: nil
+            structuredResponseText: nil,
+            streamedStructuredOutput: nil
         )
     }
 
@@ -214,10 +219,40 @@ actor ImageReplyAgentBackend: AgentBackend {
         message _: UserMessageRequest,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
+        streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
         ImageReplyTurn(threadID: thread.id)
+    }
+}
+
+actor OptionalStructuredMissingBackend: AgentBackend {
+    func createThread(session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: UUID().uuidString)
+    }
+
+    func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
+        AgentThread(id: id)
+    }
+
+    func beginTurn(
+        thread: AgentThread,
+        history _: [AgentMessage],
+        message: UserMessageRequest,
+        instructions _: String,
+        responseFormat _: AgentStructuredOutputFormat?,
+        streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
+        tools _: [ToolDefinition],
+        session _: ChatGPTSession
+    ) async throws -> any AgentTurnStreaming {
+        MockAgentTurnSession(
+            thread: thread,
+            message: message,
+            selectedTool: nil,
+            structuredResponseText: nil,
+            streamedStructuredOutput: nil
+        )
     }
 }
 

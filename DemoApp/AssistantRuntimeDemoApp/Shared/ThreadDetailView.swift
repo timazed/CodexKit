@@ -119,8 +119,14 @@ private extension ThreadDetailView {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
-                            Text(message.displayText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if shouldShowVisibleText(for: message) {
+                                Text(message.displayText)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            if let structuredOutput = message.structuredOutput {
+                                structuredOutputCard(structuredOutput, for: message)
+                            }
 
                             if !message.images.isEmpty {
                                 attachmentGallery(for: message.images)
@@ -287,6 +293,60 @@ private extension ThreadDetailView {
             }
             .padding(.top, 4)
         }
+    }
+
+    func structuredOutputCard(
+        _ structuredOutput: AgentStructuredOutputMetadata,
+        for message: AgentMessage
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Structured Payload")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if isPureStructuredPayloadMessage(message) {
+                Text("This assistant turn resolved into a typed structured payload.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Label(structuredOutput.formatName, systemImage: "square.stack.3d.up.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            Text(structuredOutput.payload.prettyJSONString)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                )
+                .textSelection(.enabled)
+        }
+        .padding(.top, shouldShowVisibleText(for: message) ? 4 : 0)
+    }
+
+    func shouldShowVisibleText(for message: AgentMessage) -> Bool {
+        guard !isPureStructuredPayloadMessage(message) else {
+            return false
+        }
+        return !message.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func isPureStructuredPayloadMessage(_ message: AgentMessage) -> Bool {
+        guard let structuredOutput = message.structuredOutput else {
+            return false
+        }
+
+        let rawText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty,
+              let data = rawText.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) else {
+            return false
+        }
+
+        return parsed == structuredOutput.payload
     }
 
     func importPhoto(from item: PhotosPickerItem) async {

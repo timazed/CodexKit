@@ -1,3 +1,4 @@
+import CodexKit
 import Foundation
 import SwiftUI
 
@@ -15,6 +16,7 @@ struct StructuredOutputDemoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 overviewCard
+                streamedStructuredCard
                 shippingDraftCard
                 importedContentCard
             }
@@ -34,6 +36,10 @@ private extension StructuredOutputDemoView {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            Text("The streamed demo goes one step further: it shows live assistant narration, best-effort typed partials, and the final persisted payload metadata without asking the app to parse hidden text markers.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
             if let session = viewModel.session {
                 Label("Signed in as \(session.account.email)", systemImage: "checkmark.seal.fill")
                     .font(.subheadline.weight(.medium))
@@ -48,6 +54,176 @@ private extension StructuredOutputDemoView {
                     selectedTab = .assistant
                 }
             }
+        }
+    }
+
+    var streamedStructuredCard: some View {
+        DemoSectionCard {
+            Text("Streamed Text + Typed Payload")
+                .font(.headline)
+
+            Text("Streams customer-facing prose and a typed delivery update in the same turn. The final payload is also persisted on the assistant message as metadata.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            sampleInputCard(
+                title: "Sample mixed-mode prompt",
+                body: DemoStructuredOutputExamples.streamedStructuredPrompt
+            )
+
+            DemoActionTile(
+                title: viewModel.isRunningStructuredStreamingDemo ? "Streaming Structured Turn..." : "Run Streamed Structured Demo",
+                subtitle: "Uses `streamMessage(..., expecting:)` to yield prose deltas, typed partials, and a committed payload.",
+                systemImage: "bubble.left.and.text.bubble.right.fill",
+                isProminent: true,
+                isDisabled: viewModel.session == nil || viewModel.isRunningStructuredStreamingDemo
+            ) {
+                Task {
+                    await viewModel.runStreamedStructuredOutputDemo()
+                }
+            }
+
+            streamedStatusPanel
+
+            if let result = viewModel.structuredStreamingResult {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Run checks")
+                            .font(.subheadline.weight(.semibold))
+
+                        statusRow(
+                            title: "Committed typed payload",
+                            detail: "A final `StreamedStructuredDeliveryUpdate` was emitted before turn completion.",
+                            passed: true
+                        )
+                        statusRow(
+                            title: "Persisted metadata",
+                            detail: result.persistedMetadata == nil
+                                ? "The final assistant message did not keep structured metadata."
+                                : "The final assistant message now includes `structuredOutput` metadata for restore and inspection.",
+                            passed: result.persistedMetadata != nil
+                        )
+                        statusRow(
+                            title: "Partial snapshots",
+                            detail: result.partialSnapshots.isEmpty
+                                ? "This run did not produce a decodable partial before commit, which is still valid."
+                                : "Received \(result.partialSnapshots.count) best-effort typed partial snapshot\(result.partialSnapshots.count == 1 ? "" : "s").",
+                            passed: true
+                        )
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                    )
+
+                    Text("Visible assistant text")
+                        .font(.subheadline.weight(.semibold))
+
+                    Text(result.visibleText.isEmpty ? "No visible text captured." : result.visibleText)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.primary.opacity(0.04))
+                        )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Typed partial snapshots")
+                            .font(.subheadline.weight(.semibold))
+
+                        if result.partialSnapshots.isEmpty {
+                            Text("No decodable partial arrived before commit on this run.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(Array(result.partialSnapshots.enumerated()), id: \.offset) { index, partial in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Partial \(index + 1)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    resultRow(label: "Headline", value: partial.statusHeadline)
+                                    resultRow(label: "Promise", value: partial.customerPromise)
+                                    resultRow(label: "Next Action", value: partial.nextAction)
+                                }
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.accentColor.opacity(0.08))
+                                )
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Committed payload")
+                            .font(.subheadline.weight(.semibold))
+                        resultRow(label: "Headline", value: result.committedPayload.statusHeadline)
+                        resultRow(label: "Promise", value: result.committedPayload.customerPromise)
+                        resultRow(label: "Next Action", value: result.committedPayload.nextAction)
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Persisted metadata")
+                            .font(.subheadline.weight(.semibold))
+
+                        if let metadata = result.persistedMetadata {
+                            resultRow(label: "Format", value: metadata.formatName)
+                            Text(metadata.payload.prettyJSONString)
+                                .font(.system(.footnote, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.primary.opacity(0.04))
+                                )
+                                .textSelection(.enabled)
+                        } else {
+                            Text("No structured metadata was persisted with the final assistant message.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button("Open Thread In Assistant") {
+                        Task {
+                            await viewModel.activateThread(id: result.threadID)
+                            selectedTab = .assistant
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    var streamedStatusPanel: some View {
+        if viewModel.isRunningStructuredStreamingDemo {
+            statusBanner(
+                title: "Streaming in progress",
+                detail: "Watching for live prose, typed partials, and the final persisted payload metadata.",
+                tint: .orange
+            )
+        } else if let result = viewModel.structuredStreamingResult {
+            let metadataState = result.persistedMetadata == nil ? "missing" : "saved"
+            statusBanner(
+                title: "Streamed structured demo passed",
+                detail: "Committed payload received and metadata \(metadataState) on thread `\(result.threadTitle)`.",
+                tint: .green
+            )
+        } else if let error = viewModel.structuredStreamingError {
+            statusBanner(
+                title: "Streamed structured demo failed",
+                detail: error,
+                tint: .red
+            )
         }
     }
 
@@ -201,5 +377,42 @@ private extension StructuredOutputDemoView {
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    func statusBanner(title: String, detail: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Text(detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(tint.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(tint.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    func statusRow(title: String, detail: String, passed: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(passed ? .green : .red)
+                .font(.subheadline)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

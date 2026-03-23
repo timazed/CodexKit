@@ -70,4 +70,13 @@ public enum JSONValue: Codable, Hashable, Sendable {
         }
         return value
     }
+
+    public var prettyJSONString: String {
+        guard let data = try? JSONEncoder().encode(self),
+              let string = String(data: data, encoding: .utf8)
+        else {
+            return ""
+        }
+        return string
+    }
 }

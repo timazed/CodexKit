@@ -4,6 +4,9 @@ public enum AgentBackendEvent: Sendable {
     case turnStarted(AgentTurn)
     case assistantMessageDelta(threadID: String, turnID: String, delta: String)
     case assistantMessageCompleted(AgentMessage)
+    case structuredOutputPartial(JSONValue)
+    case structuredOutputCommitted(JSONValue)
+    case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
     case toolCallRequested(ToolInvocation)
     case turnCompleted(AgentTurnSummary)
 }
@@ -23,6 +26,7 @@ public protocol AgentBackend: Sendable {
         message: UserMessageRequest,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming
