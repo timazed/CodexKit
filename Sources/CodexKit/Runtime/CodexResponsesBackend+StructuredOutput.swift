@@ -35,52 +35,7 @@ struct CodexResponsesStructuredStreamParser {
         pending.append(delta)
         var events: [StructuredStreamParsingEvent] = []
 
-        processing: while true {
-            switch mode {
-            case .visible:
-                if let range = pending.range(of: Self.openTag) {
-                    let visible = String(pending[..<range.lowerBound])
-                    if !visible.isEmpty {
-                        events.append(.visibleText(visible))
-                    }
-                    pending.removeSubrange(pending.startIndex..<range.upperBound)
-                    mode = .structured
-                    continue processing
-                }
-
-                let retainCount = Self.trailingMatchLength(in: pending, against: Self.openTag)
-                let emitCount = pending.count - retainCount
-                guard emitCount > 0 else {
-                    break processing
-                }
-
-                let index = pending.index(pending.startIndex, offsetBy: emitCount)
-                let visible = String(pending[..<index])
-                if !visible.isEmpty {
-                    events.append(.visibleText(visible))
-                }
-                pending.removeSubrange(pending.startIndex..<index)
-
-            case .structured:
-                if let range = pending.range(of: Self.closeTag) {
-                    structuredBuffer.append(contentsOf: pending[..<range.lowerBound])
-                    events.append(contentsOf: snapshotEvents(stage: .partial))
-                    pending.removeSubrange(pending.startIndex..<range.upperBound)
-                    mode = .visible
-                    continue processing
-                }
-
-                let retainCount = Self.trailingMatchLength(in: pending, against: Self.closeTag)
-                let emitCount = pending.count - retainCount
-                guard emitCount > 0 else {
-                    break processing
-                }
-
-                let index = pending.index(pending.startIndex, offsetBy: emitCount)
-                structuredBuffer.append(contentsOf: pending[..<index])
-                pending.removeSubrange(pending.startIndex..<index)
-                events.append(contentsOf: snapshotEvents(stage: .partial))
-            }
+        while consumeAvailableContent(into: &events) {
         }
 
         return events
@@ -118,6 +73,69 @@ struct CodexResponsesStructuredStreamParser {
             }
             return []
         }
+    }
+
+    private mutating func consumeAvailableContent(
+        into events: inout [StructuredStreamParsingEvent]
+    ) -> Bool {
+        switch mode {
+        case .visible:
+            return consumeVisibleContent(into: &events)
+        case .structured:
+            return consumeStructuredContent(into: &events)
+        }
+    }
+
+    private mutating func consumeVisibleContent(
+        into events: inout [StructuredStreamParsingEvent]
+    ) -> Bool {
+        if let range = pending.range(of: Self.openTag) {
+            let visible = String(pending[..<range.lowerBound])
+            if !visible.isEmpty {
+                events.append(.visibleText(visible))
+            }
+            pending.removeSubrange(pending.startIndex..<range.upperBound)
+            mode = .structured
+            return true
+        }
+
+        let retainCount = Self.trailingMatchLength(in: pending, against: Self.openTag)
+        let emitCount = pending.count - retainCount
+        guard emitCount > 0 else {
+            return false
+        }
+
+        let index = pending.index(pending.startIndex, offsetBy: emitCount)
+        let visible = String(pending[..<index])
+        if !visible.isEmpty {
+            events.append(.visibleText(visible))
+        }
+        pending.removeSubrange(pending.startIndex..<index)
+        return true
+    }
+
+    private mutating func consumeStructuredContent(
+        into events: inout [StructuredStreamParsingEvent]
+    ) -> Bool {
+        if let range = pending.range(of: Self.closeTag) {
+            structuredBuffer.append(contentsOf: pending[..<range.lowerBound])
+            events.append(contentsOf: snapshotEvents(stage: .partial))
+            pending.removeSubrange(pending.startIndex..<range.upperBound)
+            mode = .visible
+            return true
+        }
+
+        let retainCount = Self.trailingMatchLength(in: pending, against: Self.closeTag)
+        let emitCount = pending.count - retainCount
+        guard emitCount > 0 else {
+            return false
+        }
+
+        let index = pending.index(pending.startIndex, offsetBy: emitCount)
+        structuredBuffer.append(contentsOf: pending[..<index])
+        pending.removeSubrange(pending.startIndex..<index)
+        events.append(contentsOf: snapshotEvents(stage: .partial))
+        return true
     }
 
     private static func trailingMatchLength(
