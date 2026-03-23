@@ -178,6 +178,7 @@ extension AgentRuntime {
             responseFormat: MemoryExtractionDraftResponse.responseFormat(
                 maxMemories: max(1, options.maxMemories)
             ),
+            streamedStructuredOutput: nil,
             tools: [],
             session: session
         )

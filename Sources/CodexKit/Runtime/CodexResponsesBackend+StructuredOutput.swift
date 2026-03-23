@@ -1,0 +1,246 @@
+import Foundation
+
+enum StructuredStreamParserMode {
+    case visible
+    case structured
+}
+
+enum StructuredStreamParsingEvent {
+    case visibleText(String)
+    case structuredOutputPartial(JSONValue)
+    case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
+}
+
+enum StructuredStreamFinalResult {
+    case none
+    case committed(JSONValue)
+    case invalid(AgentStructuredOutputValidationFailure)
+}
+
+struct StructuredStreamExtraction {
+    let visibleText: String
+    let finalResult: StructuredStreamFinalResult
+}
+
+struct CodexResponsesStructuredStreamParser {
+    static let openTag = "<codexkit-structured-output>"
+    static let closeTag = "</codexkit-structured-output>"
+
+    private var mode: StructuredStreamParserMode = .visible
+    private var pending = ""
+    private var structuredBuffer = ""
+    private var lastPartial: JSONValue?
+
+    mutating func consume(delta: String) -> [StructuredStreamParsingEvent] {
+        pending.append(delta)
+        var events: [StructuredStreamParsingEvent] = []
+
+        processing: while true {
+            switch mode {
+            case .visible:
+                if let range = pending.range(of: Self.openTag) {
+                    let visible = String(pending[..<range.lowerBound])
+                    if !visible.isEmpty {
+                        events.append(.visibleText(visible))
+                    }
+                    pending.removeSubrange(pending.startIndex..<range.upperBound)
+                    mode = .structured
+                    continue processing
+                }
+
+                let retainCount = Self.trailingMatchLength(in: pending, against: Self.openTag)
+                let emitCount = pending.count - retainCount
+                guard emitCount > 0 else {
+                    break processing
+                }
+
+                let index = pending.index(pending.startIndex, offsetBy: emitCount)
+                let visible = String(pending[..<index])
+                if !visible.isEmpty {
+                    events.append(.visibleText(visible))
+                }
+                pending.removeSubrange(pending.startIndex..<index)
+
+            case .structured:
+                if let range = pending.range(of: Self.closeTag) {
+                    structuredBuffer.append(contentsOf: pending[..<range.lowerBound])
+                    events.append(contentsOf: snapshotEvents(stage: .partial))
+                    pending.removeSubrange(pending.startIndex..<range.upperBound)
+                    mode = .visible
+                    continue processing
+                }
+
+                let retainCount = Self.trailingMatchLength(in: pending, against: Self.closeTag)
+                let emitCount = pending.count - retainCount
+                guard emitCount > 0 else {
+                    break processing
+                }
+
+                let index = pending.index(pending.startIndex, offsetBy: emitCount)
+                structuredBuffer.append(contentsOf: pending[..<index])
+                pending.removeSubrange(pending.startIndex..<index)
+                events.append(contentsOf: snapshotEvents(stage: .partial))
+            }
+        }
+
+        return events
+    }
+
+    func finalize(rawMessage: String) -> StructuredStreamExtraction {
+        Self.extractFinal(from: rawMessage)
+    }
+
+    private mutating func snapshotEvents(
+        stage: AgentStructuredOutputValidationStage
+    ) -> [StructuredStreamParsingEvent] {
+        guard let data = structuredBuffer.data(using: .utf8) else {
+            return []
+        }
+
+        do {
+            let value = try JSONDecoder().decode(JSONValue.self, from: data)
+            guard value != lastPartial else {
+                return []
+            }
+            lastPartial = value
+            return [.structuredOutputPartial(value)]
+        } catch {
+            if stage == .committed {
+                return [
+                    .structuredOutputValidationFailed(
+                        AgentStructuredOutputValidationFailure(
+                            stage: .committed,
+                            message: error.localizedDescription,
+                            rawPayload: structuredBuffer
+                        )
+                    ),
+                ]
+            }
+            return []
+        }
+    }
+
+    private static func trailingMatchLength(
+        in buffer: String,
+        against marker: String
+    ) -> Int {
+        let maxLength = min(buffer.count, marker.count - 1)
+        guard maxLength > 0 else {
+            return 0
+        }
+
+        for length in stride(from: maxLength, through: 1, by: -1) {
+            let suffix = buffer.suffix(length)
+            if marker.hasPrefix(String(suffix)) {
+                return length
+            }
+        }
+
+        return 0
+    }
+
+    private static func extractFinal(from rawMessage: String) -> StructuredStreamExtraction {
+        guard let openRange = rawMessage.range(of: openTag) else {
+            return StructuredStreamExtraction(
+                visibleText: rawMessage.trimmingCharacters(in: .whitespacesAndNewlines),
+                finalResult: .none
+            )
+        }
+
+        let remaining = rawMessage[openRange.upperBound...]
+        guard let closeRange = remaining.range(of: closeTag) else {
+            return StructuredStreamExtraction(
+                visibleText: rawMessage[..<openRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines),
+                finalResult: .invalid(
+                    AgentStructuredOutputValidationFailure(
+                        stage: .committed,
+                        message: "The structured output block was never closed.",
+                        rawPayload: String(remaining)
+                    )
+                )
+            )
+        }
+
+        let payload = String(remaining[..<closeRange.lowerBound])
+        let suffix = remaining[closeRange.upperBound...]
+        let visibleText = (String(rawMessage[..<openRange.lowerBound]) + String(suffix))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let trailing = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trailing.contains(openTag) {
+            return StructuredStreamExtraction(
+                visibleText: visibleText,
+                finalResult: .invalid(
+                    AgentStructuredOutputValidationFailure(
+                        stage: .committed,
+                        message: "Multiple structured output blocks were emitted in one turn.",
+                        rawPayload: payload
+                    )
+                )
+            )
+        }
+
+        guard let data = payload.data(using: .utf8) else {
+            return StructuredStreamExtraction(
+                visibleText: visibleText,
+                finalResult: .invalid(
+                    AgentStructuredOutputValidationFailure(
+                        stage: .committed,
+                        message: "The structured output payload could not be read as UTF-8.",
+                        rawPayload: payload
+                    )
+                )
+            )
+        }
+
+        do {
+            let value = try JSONDecoder().decode(JSONValue.self, from: data)
+            return StructuredStreamExtraction(
+                visibleText: visibleText,
+                finalResult: .committed(value)
+            )
+        } catch {
+            return StructuredStreamExtraction(
+                visibleText: visibleText,
+                finalResult: .invalid(
+                    AgentStructuredOutputValidationFailure(
+                        stage: .committed,
+                        message: error.localizedDescription,
+                        rawPayload: payload
+                    )
+                )
+            )
+        }
+    }
+}
+
+extension CodexResponsesTurnSession {
+    static func streamedStructuredOutputInstructions(
+        for request: AgentStreamedStructuredOutputRequest
+    ) -> String {
+        let schemaData = (try? JSONEncoder().encode(request.responseFormat.schema.jsonValue))
+            ?? Data("{}".utf8)
+        let schema = String(decoding: schemaData, as: UTF8.self)
+        let description = request.responseFormat.description
+            .map { "Description: \($0)\n" }
+            ?? ""
+
+        let requirementLine = request.options.required
+            ? "You must emit exactly one hidden structured output block."
+            : "Emit the hidden structured output block only when it is useful and you can satisfy the schema."
+
+        return """
+        CodexKit private streaming contract:
+        - Respond with normal user-facing assistant text first.
+        - Do not mention any hidden framing or transport markers in the visible text.
+        - After the visible text, optionally append one hidden structured output block using the exact tags below.
+        - Hidden block opening tag: \(CodexResponsesStructuredStreamParser.openTag)
+        - Hidden block closing tag: \(CodexResponsesStructuredStreamParser.closeTag)
+        - The hidden block contents must be valid JSON matching the declared schema.
+        - \(requirementLine)
+        \(description)Schema name: \(request.responseFormat.name)
+        Schema JSON:
+        \(schema)
+        """
+    }
+}

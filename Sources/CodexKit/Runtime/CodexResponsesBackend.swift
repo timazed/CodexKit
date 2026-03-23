@@ -67,6 +67,7 @@ public actor CodexResponsesBackend: AgentBackend {
         message: UserMessageRequest,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
@@ -74,6 +75,7 @@ public actor CodexResponsesBackend: AgentBackend {
             configuration: configuration,
             instructions: instructions,
             responseFormat: responseFormat,
+            streamedStructuredOutput: streamedStructuredOutput,
             urlSession: urlSession,
             encoder: encoder,
             decoder: decoder,
@@ -82,6 +84,28 @@ public actor CodexResponsesBackend: AgentBackend {
             message: message,
             tools: tools,
             session: session
+        )
+    }
+}
+
+private extension CodexResponsesBackend {
+    static func structuredMetadata(
+        from text: String,
+        responseFormat: AgentStructuredOutputFormat?
+    ) -> AgentStructuredOutputMetadata? {
+        guard let responseFormat else {
+            return nil
+        }
+
+        let payloadText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = payloadText.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(JSONValue.self, from: data) else {
+            return nil
+        }
+
+        return AgentStructuredOutputMetadata(
+            formatName: responseFormat.name,
+            payload: payload
         )
     }
 }
@@ -95,6 +119,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         configuration: CodexResponsesBackendConfiguration,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -117,6 +142,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                         configuration: configuration,
                         instructions: instructions,
                         responseFormat: responseFormat,
+                        streamedStructuredOutput: streamedStructuredOutput,
                         urlSession: urlSession,
                         encoder: encoder,
                         decoder: decoder,
@@ -158,6 +184,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         configuration: CodexResponsesBackendConfiguration,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -186,6 +213,8 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         var shouldContinue = true
         var pendingToolImages: [AgentImageAttachment] = []
         var pendingToolFallbackTexts: [String] = []
+        var structuredParser = CodexResponsesStructuredStreamParser()
+        var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
 
         while shouldContinue {
             shouldContinue = false
@@ -201,6 +230,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                         configuration: configuration,
                         instructions: instructions,
                         responseFormat: responseFormat,
+                        streamedStructuredOutput: streamedStructuredOutput,
                         threadID: threadID,
                         items: workingHistory,
                         tools: tools,
@@ -218,36 +248,109 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                         switch event {
                         case let .assistantTextDelta(delta):
                             emittedRetryUnsafeOutput = true
-                            continuation.yield(
-                                .assistantMessageDelta(
-                                    threadID: threadID,
-                                    turnID: turnID,
-                                    delta: delta
+                            if streamedStructuredOutput != nil {
+                                for parsedEvent in structuredParser.consume(delta: delta) {
+                                    switch parsedEvent {
+                                    case let .visibleText(visibleDelta):
+                                        guard !visibleDelta.isEmpty else {
+                                            continue
+                                        }
+                                        continuation.yield(
+                                            .assistantMessageDelta(
+                                                threadID: threadID,
+                                                turnID: turnID,
+                                                delta: visibleDelta
+                                            )
+                                        )
+                                    case let .structuredOutputPartial(value):
+                                        continuation.yield(.structuredOutputPartial(value))
+                                    case let .structuredOutputValidationFailed(validationFailure):
+                                        continuation.yield(.structuredOutputValidationFailed(validationFailure))
+                                    }
+                                }
+                            } else {
+                                continuation.yield(
+                                    .assistantMessageDelta(
+                                        threadID: threadID,
+                                        turnID: turnID,
+                                        delta: delta
+                                    )
                                 )
-                            )
+                            }
 
                         case let .assistantMessage(messageTemplate):
                             emittedRetryUnsafeOutput = true
 
+                            let normalizedMessage: AgentMessage
+                            if let streamedStructuredOutput {
+                                let extraction = structuredParser.finalize(rawMessage: messageTemplate.text)
+
+                                switch extraction.finalResult {
+                                case .none:
+                                    break
+                                case let .committed(value):
+                                    pendingStructuredOutputMetadata = AgentStructuredOutputMetadata(
+                                        formatName: streamedStructuredOutput.responseFormat.name,
+                                        payload: value
+                                    )
+                                    continuation.yield(.structuredOutputCommitted(value))
+                                case let .invalid(validationFailure):
+                                    continuation.yield(.structuredOutputValidationFailed(validationFailure))
+                                    throw AgentRuntimeError.structuredOutputInvalid(
+                                        stage: validationFailure.stage,
+                                        underlyingMessage: validationFailure.message
+                                    )
+                                }
+
+                                normalizedMessage = AgentMessage(
+                                    threadID: threadID,
+                                    role: .assistant,
+                                    text: extraction.visibleText,
+                                    images: messageTemplate.images
+                                )
+                            } else {
+                                normalizedMessage = AgentMessage(
+                                    threadID: threadID,
+                                    role: .assistant,
+                                    text: messageTemplate.text,
+                                    images: messageTemplate.images
+                                )
+                            }
+
                             let assistantText: String
-                            if messageTemplate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            if normalizedMessage.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                                !pendingToolFallbackTexts.isEmpty {
                                 assistantText = pendingToolFallbackTexts.joined(separator: "\n\n")
                             } else {
-                                assistantText = messageTemplate.text
+                                assistantText = normalizedMessage.text
                             }
 
-                            let mergedImages = (messageTemplate.images + pendingToolImages).uniqued()
+                            let mergedImages = (normalizedMessage.images + pendingToolImages).uniqued()
                             let message = AgentMessage(
                                 threadID: threadID,
                                 role: .assistant,
                                 text: assistantText,
-                                images: mergedImages
+                                images: mergedImages,
+                                structuredOutput: pendingStructuredOutputMetadata
+                                    ?? CodexResponsesBackend.structuredMetadata(
+                                        from: assistantText,
+                                        responseFormat: responseFormat
+                                    )
                             )
                             workingHistory.append(.assistantMessage(message))
                             continuation.yield(.assistantMessageCompleted(message))
                             pendingToolImages.removeAll(keepingCapacity: true)
                             pendingToolFallbackTexts.removeAll(keepingCapacity: true)
+                            pendingStructuredOutputMetadata = nil
+
+                        case let .structuredOutputPartial(value):
+                            continuation.yield(.structuredOutputPartial(value))
+
+                        case let .structuredOutputCommitted(value):
+                            continuation.yield(.structuredOutputCommitted(value))
+
+                        case let .structuredOutputValidationFailed(validationFailure):
+                            continuation.yield(.structuredOutputValidationFailed(validationFailure))
 
                         case let .functionCall(functionCall):
                             emittedRetryUnsafeOutput = true

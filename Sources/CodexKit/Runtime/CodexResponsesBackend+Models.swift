@@ -170,6 +170,9 @@ struct FunctionCallRecord: Sendable {
 enum CodexResponsesStreamEvent: Sendable {
     case assistantTextDelta(String)
     case assistantMessage(AgentMessage)
+    case structuredOutputPartial(JSONValue)
+    case structuredOutputCommitted(JSONValue)
+    case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
     case functionCall(FunctionCallRecord)
     case completed(AgentUsage)
 }

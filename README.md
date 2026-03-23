@@ -121,6 +121,7 @@ let stream = try await runtime.streamMessage(
 | Structured local memory layer | Yes |
 | Text + image input | Yes |
 | Typed structured output (`Decodable`) | Yes |
+| Mixed streamed text + typed structured output | Yes |
 | Share/import helper (`AgentImportedContent`) | Yes |
 | App Intents / Shortcuts example | Yes |
 | Assistant image attachment rendering | Yes |
@@ -216,6 +217,8 @@ For most apps, there are now three common send paths:
 
 - `streamMessage(...)`
   Stream deltas, tool events, approvals, and final turn completion.
+- `streamMessage(..., expecting:)`
+  Stream normal turn events plus typed structured-output events in the same turn.
 - `sendMessage(...)`
   Return the assistant's final text as a `String`.
 - `sendMessage(..., expecting:)`
@@ -259,6 +262,32 @@ let draft = try await runtime.sendMessage(
     expecting: ShippingReplyDraft.self
 )
 ```
+
+If you want streamed prose and typed machine output in the same turn, use the streaming overload:
+
+```swift
+let stream = try await runtime.streamMessage(
+    UserMessageRequest(text: "Draft a response for the delayed package."),
+    in: thread.id,
+    expecting: ShippingReplyDraft.self,
+    options: .init(required: true)
+)
+
+for try await event in stream {
+    switch event {
+    case let .assistantMessageDelta(_, _, delta):
+        print("visible:", delta)
+    case let .structuredOutputPartial(snapshot):
+        print("partial:", snapshot)
+    case let .structuredOutputCommitted(snapshot):
+        print("final:", snapshot)
+    default:
+        break
+    }
+}
+```
+
+The structured payload is delivered out-of-band from assistant prose. CodexKit strips its internal framing before emitting text deltas or committed assistant messages, and persists the final committed payload metadata with the assistant message for later restore/inspection.
 
 `CodexKit` sends that through the OpenAI Responses structured-output path and stores the assistant's final JSON reply in thread history like any other assistant turn.
 
@@ -761,6 +790,7 @@ print(preview)
 The 2.0 line standardizes runtime sends around:
 
 - `streamMessage(...)` for streaming turn events
+- `streamMessage(..., expecting:)` for mixed prose + typed structured stream events
 - `sendMessage(...)` for final text
 - `sendMessage(..., expecting:)` for typed structured replies
 

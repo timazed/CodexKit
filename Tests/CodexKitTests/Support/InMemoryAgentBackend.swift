@@ -39,6 +39,7 @@ public actor InMemoryAgentBackend: AgentBackend {
         message: UserMessageRequest,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session _: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
@@ -65,7 +66,11 @@ public actor InMemoryAgentBackend: AgentBackend {
             thread: updatedThread,
             message: message,
             selectedTool: selectedTool,
-            structuredResponseText: responseFormat == nil ? nil : structuredResponseText
+            structuredResponseText: (responseFormat != nil || streamedStructuredOutput != nil)
+                ? structuredResponseText
+                : nil,
+            responseFormat: responseFormat,
+            streamedStructuredOutput: streamedStructuredOutput
         )
     }
 
@@ -86,7 +91,9 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
         thread: AgentThread,
         message: UserMessageRequest,
         selectedTool: ToolDefinition?,
-        structuredResponseText: String?
+        structuredResponseText: String?,
+        responseFormat: AgentStructuredOutputFormat? = nil,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?
     ) {
         let pendingResults = PendingToolResults()
         self.pendingResults = pendingResults
@@ -125,16 +132,46 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
                     let result = try await pendingResults.wait(for: invocation.id)
                     let responseText = result.primaryText
                         ?? "The tool completed without returning display text."
+                    let visibleText = "Tool result from \(selectedTool.name): \(responseText)"
+
+                    for chunk in MockAgentTurnSession.chunks(for: visibleText) {
+                        continuation.yield(
+                            .assistantMessageDelta(
+                                threadID: thread.id,
+                                turnID: turn.id,
+                                delta: chunk
+                            )
+                        )
+                        try await Task.sleep(for: .milliseconds(30))
+                    }
+
+                    if let streamedStructuredOutput {
+                        try MockAgentTurnSession.emitStructuredEvents(
+                            responseText: structuredResponseText ?? #"{"reply":"Structured echo","priority":"normal"}"#,
+                            request: streamedStructuredOutput,
+                            into: continuation
+                        )
+                    }
+
+                    let structuredMetadata = try MockAgentTurnSession.structuredMetadata(
+                        responseText: structuredResponseText,
+                        request: streamedStructuredOutput,
+                        responseFormat: responseFormat
+                    )
 
                     let fullMessage = AgentMessage(
                         threadID: thread.id,
                         role: .assistant,
-                        text: "Tool result from \(selectedTool.name): \(responseText)"
+                        text: visibleText,
+                        structuredOutput: structuredMetadata
                     )
 
                     continuation.yield(.assistantMessageCompleted(fullMessage))
                 } else {
-                    let response = structuredResponseText ?? "Echo: \(message.text)"
+                    let visibleText = "Echo: \(message.text)"
+                    let response = streamedStructuredOutput == nil
+                        ? (structuredResponseText ?? visibleText)
+                        : visibleText
                     for chunk in MockAgentTurnSession.chunks(for: response) {
                         continuation.yield(
                             .assistantMessageDelta(
@@ -146,12 +183,27 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
                         try await Task.sleep(for: .milliseconds(35))
                     }
 
+                    if let streamedStructuredOutput {
+                        try MockAgentTurnSession.emitStructuredEvents(
+                            responseText: structuredResponseText ?? #"{"reply":"Structured echo","priority":"normal"}"#,
+                            request: streamedStructuredOutput,
+                            into: continuation
+                        )
+                    }
+
+                    let structuredMetadata = try MockAgentTurnSession.structuredMetadata(
+                        responseText: structuredResponseText,
+                        request: streamedStructuredOutput,
+                        responseFormat: responseFormat
+                    )
+
                     continuation.yield(
                         .assistantMessageCompleted(
                             AgentMessage(
                                 threadID: thread.id,
                                 role: .assistant,
-                                text: response
+                                text: response,
+                                structuredOutput: structuredMetadata
                             )
                         )
                     )
@@ -199,6 +251,49 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
         }
 
         return chunks
+    }
+
+    private static func emitStructuredEvents(
+        responseText: String,
+        request: AgentStreamedStructuredOutputRequest,
+        into continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
+    ) throws {
+        guard let data = responseText.data(using: .utf8) else {
+            continuation.yield(
+                .structuredOutputValidationFailed(
+                    AgentStructuredOutputValidationFailure(
+                        stage: .committed,
+                        message: "The in-memory structured output was not UTF-8.",
+                        rawPayload: responseText
+                    )
+                )
+            )
+            return
+        }
+
+        let value = try JSONDecoder().decode(JSONValue.self, from: data)
+        if request.options.emitPartials {
+            continuation.yield(.structuredOutputPartial(value))
+        }
+        continuation.yield(.structuredOutputCommitted(value))
+    }
+
+    private static func structuredMetadata(
+        responseText: String?,
+        request: AgentStreamedStructuredOutputRequest?,
+        responseFormat: AgentStructuredOutputFormat?
+    ) throws -> AgentStructuredOutputMetadata? {
+        guard let responseText,
+              let data = responseText.data(using: .utf8)
+        else {
+            return nil
+        }
+
+        let value = try JSONDecoder().decode(JSONValue.self, from: data)
+        return AgentStructuredOutputMetadata(
+            formatName: request?.responseFormat.name ?? responseFormat?.name ?? "structured_output",
+            payload: value
+        )
     }
 }
 

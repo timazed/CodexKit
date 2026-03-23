@@ -59,6 +59,25 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
         )
     }
 
+    public static func structuredOutputMissing(
+        formatName: String
+    ) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "structured_output_missing",
+            message: "The assistant turn completed without returning structured output for \(formatName)."
+        )
+    }
+
+    public static func structuredOutputInvalid(
+        stage: AgentStructuredOutputValidationStage,
+        underlyingMessage: String
+    ) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "structured_output_invalid",
+            message: "The assistant returned invalid \(stage.rawValue) structured output: \(underlyingMessage)"
+        )
+    }
+
     public static func invalidSkillID(_ skillID: String) -> AgentRuntimeError {
         AgentRuntimeError(
             code: "invalid_skill_id",
@@ -367,6 +386,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
     public var role: AgentRole
     public var text: String
     public var images: [AgentImageAttachment]
+    public var structuredOutput: AgentStructuredOutputMetadata?
     public var createdAt: Date
 
     public init(
@@ -375,6 +395,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         role: AgentRole,
         text: String,
         images: [AgentImageAttachment] = [],
+        structuredOutput: AgentStructuredOutputMetadata? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -382,6 +403,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         self.role = role
         self.text = text
         self.images = images
+        self.structuredOutput = structuredOutput
         self.createdAt = createdAt
     }
 
@@ -407,6 +429,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         case role
         case text
         case images
+        case structuredOutput
         case createdAt
     }
 
@@ -417,6 +440,10 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         role = try container.decode(AgentRole.self, forKey: .role)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        structuredOutput = try container.decodeIfPresent(
+            AgentStructuredOutputMetadata.self,
+            forKey: .structuredOutput
+        )
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     }
 }

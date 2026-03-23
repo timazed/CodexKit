@@ -39,6 +39,16 @@ struct StructuredOutputDemoImportResult: Sendable {
     let summary: StructuredImportedContentSummary
 }
 
+struct StructuredStreamingDemoResult: Sendable {
+    let threadID: String
+    let threadTitle: String
+    let prompt: String
+    let visibleText: String
+    let partialSnapshots: [StreamedStructuredDeliveryUpdate]
+    let committedPayload: StreamedStructuredDeliveryUpdate
+    let persistedMetadata: AgentStructuredOutputMetadata?
+}
+
 struct GuidedMemoryDemoResult: Sendable {
     let record: MemoryRecord
     let diagnostics: MemoryStoreDiagnostics
@@ -135,8 +145,11 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var pendingComposerImages: [AgentImageAttachment] = []
     var composerText = ""
     var isRunningStructuredOutputDemo = false
+    var isRunningStructuredStreamingDemo = false
     var structuredShippingReplyResult: StructuredOutputDemoDraftResult?
     var structuredImportedSummaryResult: StructuredOutputDemoImportResult?
+    var structuredStreamingResult: StructuredStreamingDemoResult?
+    var structuredStreamingError: String?
     var isRunningMemoryDemo = false
     var automaticMemoryResult: AutomaticMemoryDemoResult?
     var automaticPolicyMemoryResult: AutomaticPolicyMemoryDemoResult?
