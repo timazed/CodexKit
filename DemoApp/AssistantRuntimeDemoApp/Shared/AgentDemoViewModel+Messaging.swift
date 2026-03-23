@@ -209,9 +209,11 @@ extension AgentDemoViewModel {
         if renderInActiveTranscript {
             streamingText = ""
         }
+        var bufferedStreamingText = ""
+        var lastStreamingFlushAt = Date.distantPast
 
         developerLog(
-            "Starting streamed turn. threadID=\(threadID) textLength=\(request.text?.count ?? 0) imageCount=\(request.images.count)"
+            "Starting streamed turn. threadID=\(threadID) textLength=\(request.text.count) imageCount=\(request.images.count)"
         )
 
         let stream = try await runtime.streamMessage(
@@ -220,6 +222,24 @@ extension AgentDemoViewModel {
         )
         if renderInActiveTranscript {
             setMessages(await runtime.messages(for: threadID))
+        }
+
+        func flushStreamingText(force: Bool = false) {
+            guard renderInActiveTranscript else {
+                return
+            }
+            guard !bufferedStreamingText.isEmpty else {
+                return
+            }
+
+            let now = Date()
+            guard force || now.timeIntervalSince(lastStreamingFlushAt) >= 0.05 else {
+                return
+            }
+
+            streamingText.append(bufferedStreamingText)
+            bufferedStreamingText.removeAll(keepingCapacity: true)
+            lastStreamingFlushAt = now
         }
 
         for try await event in stream {
@@ -248,10 +268,12 @@ extension AgentDemoViewModel {
 
             case let .assistantMessageDelta(_, _, delta):
                 if renderInActiveTranscript {
-                    streamingText.append(delta)
+                    bufferedStreamingText.append(delta)
+                    flushStreamingText()
                 }
 
             case let .messageCommitted(message):
+                flushStreamingText(force: true)
                 if message.role == .assistant {
                     let reply = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !reply.isEmpty {
@@ -276,8 +298,8 @@ extension AgentDemoViewModel {
 
             case let .toolCallStarted(invocation):
                 diagnostics.sawToolCall = true
-                Self.logger.info(
-                    "Tool call requested: \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
+                developerLog(
+                    "Tool call requested. threadID=\(threadID) tool=\(invocation.toolName) arguments=\(String(describing: invocation.arguments))"
                 )
 
             case let .toolCallFinished(result):
@@ -290,11 +312,12 @@ extension AgentDemoViewModel {
                         diagnostics.firstFailureMessage = result.primaryText ?? result.errorMessage
                     }
                 }
-                Self.logger.info(
-                    "Tool call finished: \(result.toolName, privacy: .public) success=\(result.success, privacy: .public) output=\(result.primaryText ?? "<no text result>", privacy: .public)"
+                developerLog(
+                    "Tool call finished. threadID=\(threadID) tool=\(result.toolName) success=\(result.success) output=\(result.primaryText ?? result.errorMessage ?? "<no text result>")"
                 )
 
             case .turnCompleted:
+                flushStreamingText(force: true)
                 if renderInActiveTranscript {
                     setMessages(await runtime.messages(for: threadID))
                 }
@@ -302,11 +325,12 @@ extension AgentDemoViewModel {
                 developerLog("Turn completed. threadID=\(threadID)")
 
             case let .turnFailed(error):
+                flushStreamingText(force: true)
                 diagnostics.turnFailedCode = error.code
                 developerErrorLog(
                     "Turn failed. threadID=\(threadID) code=\(error.code) message=\(error.message)"
                 )
-                lastError = error.message
+                reportError(error.message)
             }
         }
 

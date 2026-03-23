@@ -6,6 +6,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private let url: URL
     private let legacyStateURL: URL?
+    private let attachmentStore: RuntimeAttachmentStore
     private let databaseExistedAtInitialization: Bool
     private let dbQueue: DatabaseQueue
     private let migrator: DatabaseMigrator
@@ -17,8 +18,14 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     ) throws {
         self.url = url
         let fileManager = FileManager.default
+        let basename = url.deletingPathExtension().lastPathComponent
         self.databaseExistedAtInitialization = fileManager.fileExists(atPath: url.path)
         self.legacyStateURL = legacyStateURL ?? Self.defaultLegacyImportURL(for: url)
+        self.attachmentStore = RuntimeAttachmentStore(
+            rootURL: url.deletingLastPathComponent()
+                .appendingPathComponent("\(basename).codexkit-state", isDirectory: true)
+                .appendingPathComponent("attachments", isDirectory: true)
+        )
 
         let directory = url.deletingLastPathComponent()
         if !directory.path.isEmpty {
@@ -72,10 +79,10 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                     (row.threadID, try Self.decodeSummary(from: row))
                 }
             )
-            let historyByThread = try Dictionary(
-                grouping: historyRows.map { try Self.decodeHistoryRecord(from: $0) },
-                by: \.item.threadID
-            )
+            let decodedHistoryRows = try historyRows.map {
+                try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore)
+            }
+            let historyByThread = Dictionary(grouping: decodedHistoryRows, by: { $0.item.threadID })
 
             return StoredRuntimeState(
                 threads: threads,
@@ -89,8 +96,13 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         try await ensurePrepared()
 
         let normalized = state.normalized()
+        try attachmentStore.reset()
         try await dbQueue.write { db in
-            try Self.replaceDatabaseContents(with: normalized, in: db)
+            try Self.replaceDatabaseContents(
+                with: normalized,
+                in: db,
+                attachmentStore: attachmentStore
+            )
         }
     }
 
@@ -106,17 +118,23 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
 
         try await dbQueue.write { db in
-            var partialState = try Self.loadPartialState(for: affectedThreadIDs, from: db)
+            var partialState = try Self.loadPartialState(
+                for: affectedThreadIDs,
+                from: db,
+                attachmentStore: attachmentStore
+            )
             partialState = try partialState.applying(operations)
 
             for threadID in affectedThreadIDs {
                 try Self.deletePersistedThread(threadID, in: db)
+                try attachmentStore.removeThread(threadID)
             }
 
             try Self.persistThreads(
                 ids: affectedThreadIDs,
                 from: partialState,
-                in: db
+                in: db,
+                attachmentStore: attachmentStore
             )
         }
     }
@@ -150,7 +168,8 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             return try Self.fetchHistoryPage(
                 threadID: id,
                 query: query,
-                in: db
+                in: db,
+                attachmentStore: attachmentStore
             )
         }
     }
@@ -222,7 +241,8 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 createdAtRange: query.createdAtRange,
                 turnID: query.turnID,
                 includeRedacted: query.includeRedacted,
-                in: db
+                in: db,
+                attachmentStore: attachmentStore
             )
 
             let state = StoredRuntimeState(
@@ -301,7 +321,8 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private static func replaceDatabaseContents(
         with normalized: StoredRuntimeState,
-        in db: Database
+        in db: Database,
+        attachmentStore: RuntimeAttachmentStore
     ) throws {
         let threadRows = try normalized.threads.map(Self.makeThreadRow)
         let summaryRows = try normalized.threads.compactMap { thread -> RuntimeSummaryRow? in
@@ -312,7 +333,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
         let historyRows = try normalized.historyByThread.values
             .flatMap { $0 }
-            .map(Self.makeHistoryRow)
+            .map { try Self.makeHistoryRow(from: $0, attachmentStore: attachmentStore) }
         let structuredOutputRows = try Self.structuredOutputRows(from: normalized.historyByThread)
 
         try RuntimeStructuredOutputRow.deleteAll(db)
@@ -366,20 +387,26 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
 
         try await dbQueue.write { db in
-            try Self.replaceDatabaseContents(with: state, in: db)
+            try attachmentStore.reset()
+            try Self.replaceDatabaseContents(
+                with: state,
+                in: db,
+                attachmentStore: attachmentStore
+            )
         }
     }
 
     private static func loadPartialState(
         for threadIDs: Set<String>,
-        from db: Database
+        from db: Database,
+        attachmentStore: RuntimeAttachmentStore
     ) throws -> StoredRuntimeState {
         guard !threadIDs.isEmpty else {
             return .empty
         }
 
         let ids = Array(threadIDs)
-        let placeholders = sqlPlaceholders(count: ids.count)
+        let placeholders = Self.sqlPlaceholders(count: ids.count)
         let threadRows = try RuntimeThreadRow.fetchAll(
             db,
             sql: "SELECT * FROM \(RuntimeThreadRow.databaseTableName) WHERE threadID IN \(placeholders)",
@@ -401,13 +428,13 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         )
 
         let threads = try threadRows.map { try Self.decodeThread(from: $0) }
-        let summaries = try Dictionary(
+        let summaries = try Dictionary<String, AgentThreadSummary>(
             uniqueKeysWithValues: summaryRows.map { ($0.threadID, try Self.decodeSummary(from: $0)) }
         )
-        let history = try Dictionary(
-            grouping: historyRows.map { try Self.decodeHistoryRecord(from: $0) },
-            by: \.item.threadID
-        )
+        let decodedHistoryRows = try historyRows.map {
+            try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore)
+        }
+        let history = Dictionary(grouping: decodedHistoryRows, by: { $0.item.threadID })
         let nextSequence = history.mapValues { ($0.last?.sequenceNumber ?? 0) + 1 }
 
         return StoredRuntimeState(
@@ -421,7 +448,8 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     private static func persistThreads(
         ids threadIDs: Set<String>,
         from state: StoredRuntimeState,
-        in db: Database
+        in db: Database,
+        attachmentStore: RuntimeAttachmentStore
     ) throws {
         let normalized = state.normalized()
         let threads = normalized.threads.filter { threadIDs.contains($0.id) }
@@ -435,7 +463,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 try Self.makeSummaryRow(from: summary).insert(db)
             }
             for record in normalized.historyByThread[thread.id] ?? [] {
-                try Self.makeHistoryRow(from: record).insert(db)
+                try Self.makeHistoryRow(from: record, attachmentStore: attachmentStore).insert(db)
             }
         }
 
@@ -462,7 +490,8 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         createdAtRange: ClosedRange<Date>?,
         turnID: String?,
         includeRedacted: Bool,
-        in db: Database
+        in db: Database,
+        attachmentStore: RuntimeAttachmentStore
     ) throws -> [AgentHistoryRecord] {
         var clauses = ["threadID = ?"]
         var arguments: [any DatabaseValueConvertible] = [threadID]
@@ -494,13 +523,14 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             db,
             sql: sql,
             arguments: StatementArguments(arguments)
-        ).map { try Self.decodeHistoryRecord(from: $0) }
+        ).map { try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore) }
     }
 
     private static func fetchHistoryPage(
         threadID: String,
         query: AgentHistoryQuery,
-        in db: Database
+        in db: Database,
+        attachmentStore: RuntimeAttachmentStore
     ) throws -> AgentThreadHistoryPage {
         let limit = max(1, query.limit)
         let kinds = historyKinds(from: query.filter)
@@ -533,7 +563,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             let hasMoreBefore = fetched.count > limit
             let pageRowsDescending = Array(fetched.prefix(limit))
             let pageRecords = try pageRowsDescending
-                .map { try Self.decodeHistoryRecord(from: $0) }
+                .map { try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore) }
                 .reversed()
 
             let hasMoreAfter: Bool
@@ -583,7 +613,9 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             )
             let hasMoreAfter = fetched.count > limit
             let pageRows = Array(fetched.prefix(limit))
-            let pageRecords = try pageRows.map { try Self.decodeHistoryRecord(from: $0) }
+            let pageRecords = try pageRows.map {
+                try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore)
+            }
 
             let hasMoreBefore: Bool
             if let anchor {
@@ -878,8 +910,15 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         )
     }
 
-    private static func makeHistoryRow(from record: AgentHistoryRecord) throws -> RuntimeHistoryRow {
-        RuntimeHistoryRow(
+    private static func makeHistoryRow(
+        from record: AgentHistoryRecord,
+        attachmentStore: RuntimeAttachmentStore
+    ) throws -> RuntimeHistoryRow {
+        let persisted = try PersistedAgentHistoryRecord(
+            record: record,
+            attachmentStore: attachmentStore
+        )
+        return RuntimeHistoryRow(
             storageID: "\(record.item.threadID):\(record.sequenceNumber)",
             recordID: record.id,
             threadID: record.item.threadID,
@@ -888,7 +927,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             kind: record.item.kind.rawValue,
             turnID: record.item.turnID,
             isRedacted: record.redaction != nil,
-            encodedRecord: try JSONEncoder().encode(record)
+            encodedRecord: try JSONEncoder().encode(persisted)
         )
     }
 
@@ -947,8 +986,15 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         try JSONDecoder().decode(AgentThreadSummary.self, from: row.encodedSummary)
     }
 
-    private static func decodeHistoryRecord(from row: RuntimeHistoryRow) throws -> AgentHistoryRecord {
-        try JSONDecoder().decode(AgentHistoryRecord.self, from: row.encodedRecord)
+    private static func decodeHistoryRecord(
+        from row: RuntimeHistoryRow,
+        attachmentStore: RuntimeAttachmentStore
+    ) throws -> AgentHistoryRecord {
+        let decoder = JSONDecoder()
+        if let persisted = try? decoder.decode(PersistedAgentHistoryRecord.self, from: row.encodedRecord) {
+            return try persisted.decode(using: attachmentStore)
+        }
+        return try decoder.decode(AgentHistoryRecord.self, from: row.encodedRecord)
     }
 
     private static func decodeStructuredOutputRecord(from row: RuntimeStructuredOutputRow) throws -> AgentStructuredOutputRecord {

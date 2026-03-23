@@ -218,9 +218,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         self.model = model
         self.enableWebSearch = enableWebSearch
         self.reasoningEffort = reasoningEffort
-        self.developerLoggingEnabled = UserDefaults.standard.bool(
-            forKey: Self.developerLoggingDefaultsKey
-        )
+        self.developerLoggingEnabled = Self.initialDeveloperLoggingEnabled()
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
@@ -520,6 +518,17 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     nonisolated static func isCancellationError(_ error: Error) -> Bool {
         error is CancellationError
+    }
+
+    nonisolated static func initialDeveloperLoggingEnabled() -> Bool {
+        if UserDefaults.standard.object(forKey: developerLoggingDefaultsKey) != nil {
+            return UserDefaults.standard.bool(forKey: developerLoggingDefaultsKey)
+        }
+#if DEBUG
+        return true
+#else
+        return false
+#endif
     }
 
     func developerLog(_ message: String) {

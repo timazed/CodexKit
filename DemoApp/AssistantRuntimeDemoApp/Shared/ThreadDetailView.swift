@@ -114,52 +114,11 @@ private extension ThreadDetailView {
             } else {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(threadMessages) { message in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(message.role.rawValue.capitalized)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-
-                            if shouldShowVisibleText(for: message) {
-                                Text(message.displayText)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            if let structuredOutput = message.structuredOutput {
-                                structuredOutputCard(structuredOutput, for: message)
-                            }
-
-                            if !message.images.isEmpty {
-                                attachmentGallery(for: message.images)
-
-                                Text(message.images.count == 1 ? "1 image attached" : "\(message.images.count) images attached")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(
-                                    message.role == .user
-                                        ? Color.accentColor.opacity(0.12)
-                                        : Color.primary.opacity(0.04)
-                                )
-                        )
+                        ThreadMessageBubble(message: message)
                     }
 
                     if isStreamingActive {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Assistant")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Text(viewModel.streamingText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.primary.opacity(0.04))
-                        )
+                        ThreadStreamingBubble(text: viewModel.streamingText)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -277,78 +236,6 @@ private extension ThreadDetailView {
         }
     }
 
-    @ViewBuilder
-    func attachmentGallery(for images: [AgentImageAttachment]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(images) { image in
-                    if let platformImage = platformImage(from: image.data) {
-                        Image(platformImage: platformImage)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 120, height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                }
-            }
-            .padding(.top, 4)
-        }
-    }
-
-    func structuredOutputCard(
-        _ structuredOutput: AgentStructuredOutputMetadata,
-        for message: AgentMessage
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Structured Payload")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            if isPureStructuredPayloadMessage(message) {
-                Text("This assistant turn resolved into a typed structured payload.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Label(structuredOutput.formatName, systemImage: "square.stack.3d.up.fill")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            Text(structuredOutput.payload.prettyJSONString)
-                .font(.system(.footnote, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
-                )
-                .textSelection(.enabled)
-        }
-        .padding(.top, shouldShowVisibleText(for: message) ? 4 : 0)
-    }
-
-    func shouldShowVisibleText(for message: AgentMessage) -> Bool {
-        guard !isPureStructuredPayloadMessage(message) else {
-            return false
-        }
-        return !message.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func isPureStructuredPayloadMessage(_ message: AgentMessage) -> Bool {
-        guard let structuredOutput = message.structuredOutput else {
-            return false
-        }
-
-        let rawText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rawText.isEmpty,
-              let data = rawText.data(using: .utf8),
-              let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-            return false
-        }
-
-        return parsed == structuredOutput.payload
-    }
-
     func importPhoto(from item: PhotosPickerItem) async {
         isImportingPhoto = true
 
@@ -383,13 +270,168 @@ private extension ThreadDetailView {
         return "image/jpeg"
     }
 
+}
+
+private struct ThreadStreamingBubble: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Assistant")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+}
+
+private struct ThreadMessageBubble: View {
+    let message: AgentMessage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(message.role.rawValue.capitalized)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if shouldShowVisibleText {
+                Text(message.displayText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let structuredOutput = message.structuredOutput {
+                structuredOutputCard(structuredOutput)
+            }
+
+            if !message.images.isEmpty {
+                ThreadAttachmentGallery(images: message.images)
+
+                Text(message.images.count == 1 ? "1 image attached" : "\(message.images.count) images attached")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    message.role == .user
+                        ? Color.accentColor.opacity(0.12)
+                        : Color.primary.opacity(0.04)
+                )
+        )
+    }
+
+    private var shouldShowVisibleText: Bool {
+        guard !isPureStructuredPayloadMessage else {
+            return false
+        }
+        return !message.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isPureStructuredPayloadMessage: Bool {
+        guard let structuredOutput = message.structuredOutput else {
+            return false
+        }
+
+        let rawText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty,
+              let data = rawText.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) else {
+            return false
+        }
+
+        return parsed == structuredOutput.payload
+    }
+
+    @ViewBuilder
+    private func structuredOutputCard(_ structuredOutput: AgentStructuredOutputMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Structured Payload")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if isPureStructuredPayloadMessage {
+                Text("This assistant turn resolved into a typed structured payload.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Label(structuredOutput.formatName, systemImage: "square.stack.3d.up.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            Text(structuredOutput.payload.prettyJSONString)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                )
+                .textSelection(.enabled)
+        }
+        .padding(.top, shouldShowVisibleText ? 4 : 0)
+    }
+}
+
+private struct ThreadAttachmentGallery: View {
+    let images: [AgentImageAttachment]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(images) { image in
+                    ThreadAttachmentThumbnail(image: image)
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+}
+
+private struct ThreadAttachmentThumbnail: View {
+    let image: AgentImageAttachment
+
+    var body: some View {
+        Group {
+            if let platformImage = ThreadAttachmentImageCache.image(for: image) {
+                Image(platformImage: platformImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+    }
+}
+
 #if canImport(UIKit)
-    func platformImage(from data: Data) -> UIImage? {
-        UIImage(data: data)
-    }
+private typealias ThreadPlatformImage = UIImage
 #elseif canImport(AppKit)
-    func platformImage(from data: Data) -> NSImage? {
-        NSImage(data: data)
-    }
+private typealias ThreadPlatformImage = NSImage
 #endif
+
+@MainActor
+private enum ThreadAttachmentImageCache {
+    private static let cache = NSCache<NSString, ThreadPlatformImage>()
+
+    static func image(for attachment: AgentImageAttachment) -> ThreadPlatformImage? {
+        let key = attachment.id as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        guard let image = ThreadPlatformImage(data: attachment.data) else {
+            return nil
+        }
+        cache.setObject(image, forKey: key)
+        return image
+    }
 }

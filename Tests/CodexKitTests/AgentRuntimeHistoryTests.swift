@@ -610,6 +610,67 @@ extension AgentRuntimeTests {
         )
         XCTAssertFalse(history.records.isEmpty)
     }
+
+    func testGRDBRuntimeStateStoreExternalizesImageAttachments() async throws {
+        let url = temporaryRuntimeSQLiteURL()
+        let attachmentsDirectory = url.deletingLastPathComponent()
+            .appendingPathComponent("\(url.deletingPathExtension().lastPathComponent).codexkit-state", isDirectory: true)
+            .appendingPathComponent("attachments", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: attachmentsDirectory.deletingLastPathComponent())
+        }
+
+        let imageData = Data([0x89, 0x50, 0x4E, 0x47, 0xDE, 0xAD, 0xBE, 0xEF])
+        let runtime = try makeHistoryRuntime(
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: try GRDBRuntimeStateStore(url: url)
+        )
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Attachment Thread")
+        _ = try await runtime.sendMessage(
+            UserMessageRequest(
+                text: "here is an image",
+                images: [.png(imageData)]
+            ),
+            in: thread.id
+        )
+
+        let reloadedRuntime = try makeHistoryRuntime(
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: try GRDBRuntimeStateStore(url: url)
+        )
+
+        let history = try await reloadedRuntime.execute(
+            HistoryItemsQuery(threadID: thread.id, kinds: [.message])
+        )
+        guard let userMessage = history.records.compactMap({ record -> AgentMessage? in
+            guard case let .message(message) = record.item, message.role == .user else {
+                return nil
+            }
+            return message
+        }).first else {
+            return XCTFail("Expected a persisted user message with an attachment.")
+        }
+
+        XCTAssertEqual(userMessage.images.count, 1)
+        XCTAssertEqual(userMessage.images.first?.data, imageData)
+
+        let attachmentFiles = try FileManager.default.contentsOfDirectory(
+            at: attachmentsDirectory.appendingPathComponent(thread.id, isDirectory: true)
+                .appendingPathComponent(userMessage.id, isDirectory: true),
+            includingPropertiesForKeys: nil
+        )
+        XCTAssertEqual(attachmentFiles.count, 1)
+
+        let databaseData = try Data(contentsOf: url)
+        XCTAssertNil(databaseData.range(of: imageData.base64EncodedData()))
+    }
 }
 
 private func makeHistoryRuntime(

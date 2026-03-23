@@ -41,6 +41,23 @@ extension AgentDemoView {
                     .foregroundStyle(.secondary)
             }
 
+            Toggle(
+                "Developer Logging",
+                isOn: Binding(
+                    get: { viewModel.developerLoggingEnabled },
+                    set: { viewModel.developerLoggingEnabled = $0 }
+                )
+            )
+            .toggleStyle(.switch)
+
+            Text("Debug builds start with logging enabled. Logs print to the Xcode console for restore, sign-in, thread lifecycle, turn events, and tool activity.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("State store: \(viewModel.resolvedStateURL.lastPathComponent)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+
             LazyVGrid(columns: tileColumns, spacing: 12) {
                 registerToolTile
 
@@ -88,24 +105,6 @@ extension AgentDemoView {
             Text("Pick a thinking level for future requests. Existing threads stay intact; only new turns use the updated effort.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-
-            Toggle(
-                "Developer Logging",
-                isOn: Binding(
-                    get: { viewModel.developerLoggingEnabled },
-                    set: { viewModel.developerLoggingEnabled = $0 }
-                )
-            )
-            .toggleStyle(.switch)
-
-            Text("Logs restore, sign-in, thread lifecycle, turn events, and tool activity to the Xcode console.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text("State store: \(viewModel.resolvedStateURL.lastPathComponent)")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-
             LazyVGrid(columns: tileColumns, spacing: 12) {
                 ForEach(ReasoningEffort.allCases, id: \.self) { effort in
                     reasoningEffortTile(for: effort)

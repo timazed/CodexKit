@@ -166,9 +166,16 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let fileManager = FileManager.default
+    private let attachmentStore: RuntimeAttachmentStore
 
     public init(url: URL) {
         self.url = url
+        let basename = url.deletingPathExtension().lastPathComponent
+        self.attachmentStore = RuntimeAttachmentStore(
+            rootURL: url.deletingLastPathComponent()
+                .appendingPathComponent("\(basename).codexkit-state", isDirectory: true)
+                .appendingPathComponent("attachments", isDirectory: true)
+        )
     }
 
     public func loadState() async throws -> StoredRuntimeState {
@@ -283,6 +290,9 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
 
         let data = try Data(contentsOf: historyURL)
+        if let persisted = try? decoder.decode([PersistedAgentHistoryRecord].self, from: data) {
+            return try persisted.map { try $0.decode(using: attachmentStore) }
+        }
         return try decoder.decode([AgentHistoryRecord].self, from: data)
     }
 
@@ -300,11 +310,18 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             at: historyDirectoryURL,
             withIntermediateDirectories: true
         )
+        try attachmentStore.reset()
 
         for thread in normalized.threads {
             let historyURL = historyFileURL(for: thread.id)
             let history = normalized.historyByThread[thread.id] ?? []
-            let data = try encoder.encode(history)
+            let persisted = try history.map {
+                try PersistedAgentHistoryRecord(
+                    record: $0,
+                    attachmentStore: attachmentStore
+                )
+            }
+            let data = try encoder.encode(persisted)
             try data.write(to: historyURL, options: .atomic)
         }
 
