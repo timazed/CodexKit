@@ -56,6 +56,8 @@ public struct ToolInvocation: Identifiable, Hashable, Sendable {
     }
 }
 
+extension ToolInvocation: Codable {}
+
 public enum ToolResultContent: Hashable, Sendable {
     case text(String)
     case image(URL)
@@ -68,25 +70,52 @@ public enum ToolResultContent: Hashable, Sendable {
     }
 }
 
+extension ToolResultContent: Codable {}
+
+public struct ToolSessionDescriptor: Codable, Hashable, Sendable {
+    public let sessionID: String
+    public let status: String
+    public let metadata: JSONValue?
+    public let resumable: Bool
+    public let isTerminal: Bool
+
+    public init(
+        sessionID: String,
+        status: String,
+        metadata: JSONValue? = nil,
+        resumable: Bool = false,
+        isTerminal: Bool = true
+    ) {
+        self.sessionID = sessionID
+        self.status = status
+        self.metadata = metadata
+        self.resumable = resumable
+        self.isTerminal = isTerminal
+    }
+}
+
 public struct ToolResultEnvelope: Hashable, Sendable {
     public let invocationID: String
     public let toolName: String
     public let success: Bool
     public let content: [ToolResultContent]
     public let errorMessage: String?
+    public let session: ToolSessionDescriptor?
 
     public init(
         invocationID: String,
         toolName: String,
         success: Bool,
         content: [ToolResultContent] = [],
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        session: ToolSessionDescriptor? = nil
     ) {
         self.invocationID = invocationID
         self.toolName = toolName
         self.success = success
         self.content = content
         self.errorMessage = errorMessage
+        self.session = session
     }
 
     public var primaryText: String? {
@@ -95,33 +124,46 @@ public struct ToolResultEnvelope: Hashable, Sendable {
 
     public static func success(
         invocation: ToolInvocation,
-        text: String
+        text: String,
+        session: ToolSessionDescriptor? = nil
     ) -> ToolResultEnvelope {
         ToolResultEnvelope(
             invocationID: invocation.id,
             toolName: invocation.toolName,
             success: true,
-            content: [.text(text)]
+            content: [.text(text)],
+            session: session
         )
     }
 
     public static func failure(
         invocation: ToolInvocation,
-        message: String
+        message: String,
+        session: ToolSessionDescriptor? = nil
     ) -> ToolResultEnvelope {
         ToolResultEnvelope(
             invocationID: invocation.id,
             toolName: invocation.toolName,
             success: false,
             content: [.text(message)],
-            errorMessage: message
+            errorMessage: message,
+            session: session
         )
     }
 
-    public static func denied(invocation: ToolInvocation) -> ToolResultEnvelope {
-        failure(invocation: invocation, message: "Tool execution was denied by the user.")
+    public static func denied(
+        invocation: ToolInvocation,
+        session: ToolSessionDescriptor? = nil
+    ) -> ToolResultEnvelope {
+        failure(
+            invocation: invocation,
+            message: "Tool execution was denied by the user.",
+            session: session
+        )
     }
 }
+
+extension ToolResultEnvelope: Codable {}
 
 public struct ToolExecutionContext: Sendable {
     public let threadID: String

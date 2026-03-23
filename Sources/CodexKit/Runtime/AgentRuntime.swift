@@ -64,6 +64,7 @@ public actor AgentRuntime {
     var skillsByID: [String: AgentSkill]
 
     var state: StoredRuntimeState = .empty
+    var pendingStoreOperations: [AgentStoreWriteOperation] = []
 
     struct ResolvedTurnSkills {
         let threadSkills: [AgentSkill]
@@ -170,7 +171,9 @@ public actor AgentRuntime {
     @discardableResult
     public func restore() async throws -> StoredRuntimeState {
         _ = try await sessionManager.restore()
+        _ = try await stateStore.prepare()
         state = try await stateStore.loadState()
+        pendingStoreOperations.removeAll()
         return state
     }
 
@@ -216,7 +219,19 @@ public actor AgentRuntime {
     // MARK: - Instruction Resolution
 
     func persistState() async throws {
-        try await stateStore.saveState(state)
+        state = state.normalized()
+        guard !pendingStoreOperations.isEmpty else {
+            try await stateStore.saveState(state)
+            return
+        }
+
+        let operations = pendingStoreOperations
+        try await stateStore.apply(operations)
+        pendingStoreOperations.removeAll()
+    }
+
+    func enqueueStoreOperation(_ operation: AgentStoreWriteOperation) {
+        pendingStoreOperations.append(operation)
     }
 
     func resolveInstructions(

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
+public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sendable, Codable {
     public let code: String
     public let message: String
 
@@ -46,6 +46,13 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
         AgentRuntimeError(
             code: "assistant_response_missing",
             message: "The assistant turn completed without returning a final assistant message."
+        )
+    }
+
+    public static func invalidHistoryCursor() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_history_cursor",
+            message: "The requested history cursor is invalid for this thread."
         )
     }
 

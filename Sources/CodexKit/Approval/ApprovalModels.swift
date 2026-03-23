@@ -30,6 +30,8 @@ public struct ApprovalRequest: Identifiable, Hashable, Sendable {
     }
 }
 
+extension ApprovalRequest: Codable {}
+
 public struct ApprovalResolution: Hashable, Sendable {
     public let requestID: String
     public let threadID: String
@@ -51,6 +53,8 @@ public struct ApprovalResolution: Hashable, Sendable {
         self.decidedAt = decidedAt
     }
 }
+
+extension ApprovalResolution: Codable {}
 
 public protocol ApprovalPresenting: Sendable {
     func requestApproval(_ request: ApprovalRequest) async throws -> ApprovalDecision

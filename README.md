@@ -89,12 +89,12 @@ let runtime = try AgentRuntime(configuration: .init(
         )
     ),
     approvalPresenter: approvalInbox,
-    stateStore: FileRuntimeStateStore(
+    stateStore: try GRDBRuntimeStateStore(
         url: FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first!
-        .appendingPathComponent("CodexKit/runtime-state.json")
+        .appendingPathComponent("CodexKit/runtime-state.sqlite")
     )
 ))
 
@@ -140,7 +140,7 @@ flowchart LR
     A["SwiftUI App"] --> B["AgentRuntime"]
     B --> C["ChatGPTAuthProvider"]
     B --> D["SessionSecureStore<br/>KeychainSessionSecureStore"]
-    B --> E["RuntimeStateStore<br/>FileRuntimeStateStore"]
+    B --> E["RuntimeStateStore<br/>GRDBRuntimeStateStore"]
     B --> F["CodexResponsesBackend"]
     B --> G["ToolRegistry + Executors"]
     B --> H["ApprovalPresenter<br/>ApprovalInbox"]
@@ -154,8 +154,19 @@ The recommended production path for iOS is:
 - `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
-- `FileRuntimeStateStore`
+- `GRDBRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
+
+Bundled runtime-state stores now include:
+
+- `GRDBRuntimeStateStore`
+  The recommended production store. Uses SQLite through GRDB, supports migrations, query pushdown, redaction, whole-thread deletion, paged history reads, and lightweight restore/inspection.
+- `FileRuntimeStateStore`
+  A simple JSON-backed fallback for small apps, tests, or export/import-style workflows.
+- `InMemoryRuntimeStateStore`
+  Useful for previews and tests.
+
+If you are migrating from the older file-backed store, `GRDBRuntimeStateStore(url:)` automatically imports a sibling `*.json` runtime state file on first open. For example, `runtime-state.sqlite` will import from `runtime-state.json` if it exists and the SQLite store is still empty.
 
 `ChatGPTAuthProvider` supports:
 
@@ -210,6 +221,43 @@ Available values:
 - `.medium`
 - `.high`
 - `.extraHigh`
+
+## Persistent State And Queries
+
+`CodexKit` now treats runtime persistence as a queryable store instead of a single “load the whole thread” blob. For most apps, the main thing to know is:
+
+- use `GRDBRuntimeStateStore` for persisted production state
+- use `fetchThreadHistory(id:query:)` and `fetchLatestStructuredOutputMetadata(id:)` for common thread inspection
+- use the typed `execute(_:)` query surface when you need more control over filtering, sorting, paging, or cross-thread reads
+
+```swift
+let stateStore = try GRDBRuntimeStateStore(
+    url: FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+    ).first!
+    .appendingPathComponent("CodexKit/runtime-state.sqlite")
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore
+))
+
+let page = try await runtime.fetchThreadHistory(
+    id: thread.id,
+    query: .init(limit: 40, direction: .backward)
+)
+
+let snapshots = try await runtime.execute(
+    ThreadSnapshotQuery(limit: 20)
+)
+```
+
+This path also supports explicit history redaction and whole-thread deletion without forcing hosts to replay raw event streams themselves.
 
 ## Typed Completions
 
@@ -342,7 +390,7 @@ let runtime = try AgentRuntime(configuration: .init(
         configuration: .init(model: "gpt-5.4")
     ),
     approvalPresenter: approvalPresenter,
-    stateStore: FileRuntimeStateStore(url: stateURL),
+    stateStore: try GRDBRuntimeStateStore(url: stateURL),
     memory: .init(
         store: try SQLiteMemoryStore(url: memoryURL),
         automaticCapturePolicy: .init(
@@ -456,12 +504,12 @@ let runtime = try AgentRuntime(configuration: .init(
     ),
     backend: CodexResponsesBackend(),
     approvalPresenter: approvalInbox,
-    stateStore: FileRuntimeStateStore(
+    stateStore: try GRDBRuntimeStateStore(
         url: FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first!
-        .appendingPathComponent("CodexKit/runtime-state.json")
+        .appendingPathComponent("CodexKit/runtime-state.sqlite")
     ),
     memory: .init(store: memoryStore)
 ))
@@ -646,6 +694,7 @@ The demo app exercises:
 - thread-pinned personas and one-turn overrides
 - a one-tap skill policy probe that compares tool behavior in normal vs skill-constrained threads
 - a Health Coach tab with HealthKit steps, AI-generated coaching, local reminders, and tone switching
+- GRDB-backed runtime persistence with automatic import from older `runtime-state.json` state on first launch
 
 Each tab is focused on a single story:
 
@@ -762,7 +811,7 @@ print(preview)
 ## Production Checklist
 
 - Store sessions in keychain (`KeychainSessionSecureStore`)
-- Use persistent runtime state (`FileRuntimeStateStore`)
+- Use persistent runtime state (`GRDBRuntimeStateStore`)
 - Gate impactful tools with approvals
 - Handle auth cancellation and sign-out resets cleanly
 - Tune retry/backoff policy for your app’s UX and latency targets
