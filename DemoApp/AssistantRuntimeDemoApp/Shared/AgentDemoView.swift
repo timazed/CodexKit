@@ -32,7 +32,6 @@ struct AgentDemoView: View {
 #endif
         .task {
             await viewModel.restore()
-            await viewModel.registerDemoTool()
         }
         .sheet(item: approvalRequestBinding) { request in
             approvalSheet(for: request)

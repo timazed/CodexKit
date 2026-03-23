@@ -83,6 +83,7 @@ struct AutomaticPolicyMemoryDemoResult: Sendable {
 @MainActor
 @Observable
 final class AgentDemoViewModel: @unchecked Sendable {
+    nonisolated static let developerLoggingDefaultsKey = "AssistantRuntimeDemoApp.developerLoggingEnabled"
     nonisolated static let logger = Logger(
         subsystem: "ai.assistantruntime.demoapp",
         category: "DemoTool"
@@ -137,6 +138,19 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var streamingText = ""
     var lastError: String?
     var showResolvedInstructionsDebug = false
+    var developerLoggingEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                developerLoggingEnabled,
+                forKey: Self.developerLoggingDefaultsKey
+            )
+            developerLog(
+                developerLoggingEnabled
+                    ? "Developer logging enabled."
+                    : "Developer logging disabled."
+            )
+        }
+    }
     var lastResolvedInstructions: String?
     var lastResolvedInstructionsThreadTitle: String?
     var isRunningSkillPolicyProbe = false
@@ -204,6 +218,9 @@ final class AgentDemoViewModel: @unchecked Sendable {
         self.model = model
         self.enableWebSearch = enableWebSearch
         self.reasoningEffort = reasoningEffort
+        self.developerLoggingEnabled = UserDefaults.standard.bool(
+            forKey: Self.developerLoggingDefaultsKey
+        )
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
@@ -219,6 +236,14 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     var activeThreadPersonaSummary: String? {
         personaSummary(for: activeThread)
+    }
+
+    var resolvedStateURL: URL {
+        stateURL ?? AgentDemoRuntimeFactory.defaultStateURL()
+    }
+
+    var legacyStateURL: URL {
+        resolvedStateURL.deletingPathExtension().appendingPathExtension("json")
     }
 
     var healthProgressFraction: Double {
@@ -248,13 +273,19 @@ final class AgentDemoViewModel: @unchecked Sendable {
     }
 
     func restore() async {
+        developerLog(
+            "Restore started. store=\(resolvedStateURL.path) legacyJSONPresent=\(FileManager.default.fileExists(atPath: legacyStateURL.path))"
+        )
         do {
             _ = try await runtime.restore()
             await registerDemoTool()
             await registerDemoSkills()
             await refreshSnapshot()
+            developerLog(
+                "Restore finished. sessionPresent=\(session != nil) threadCount=\(threads.count)"
+            )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -266,6 +297,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         isAuthenticating = true
         lastError = nil
         currentAuthenticationMethod = authenticationMethod
+        developerLog("Sign-in started. method=\(authenticationMethod.rawValue)")
         runtime = AgentDemoRuntimeFactory.makeRuntime(
             authenticationMethod: authenticationMethod,
             model: model,
@@ -290,10 +322,13 @@ final class AgentDemoViewModel: @unchecked Sendable {
             if healthCoachInitialized {
                 await refreshHealthCoachProgress()
             }
+            developerLog(
+                "Sign-in finished. account=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
+            )
         } catch {
             await deviceCodePromptCoordinator.clear()
             await refreshSnapshot()
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -308,6 +343,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         }
 
         self.reasoningEffort = reasoningEffort
+        developerLog("Reconfiguring runtime. reasoningEffort=\(reasoningEffort.rawValue)")
         let preservedActiveThreadID = activeThreadID
         let preservedHealthCoachThreadID = healthCoachThreadID
 
@@ -337,8 +373,11 @@ final class AgentDemoViewModel: @unchecked Sendable {
                threads.contains(where: { $0.id == preservedHealthCoachThreadID }) {
                 healthCoachThreadID = preservedHealthCoachThreadID
             }
+            developerLog(
+                "Runtime reconfigured. reasoningEffort=\(reasoningEffort.rawValue) threadCount=\(threads.count)"
+            )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -369,7 +408,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
             )
             threads = await runtime.threads()
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -454,7 +493,17 @@ final class AgentDemoViewModel: @unchecked Sendable {
     }
 
     func reportError(_ message: String) {
+        developerErrorLog(message)
         lastError = message
+    }
+
+    func reportError(_ error: Error) {
+        guard !Self.isCancellationError(error) else {
+            developerLog("Ignoring CancellationError from async UI task.")
+            return
+        }
+        developerErrorLog(error.localizedDescription)
+        lastError = error.localizedDescription
     }
 
     func approvePendingRequest() {
@@ -467,6 +516,26 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     func dismissError() {
         lastError = nil
+    }
+
+    nonisolated static func isCancellationError(_ error: Error) -> Bool {
+        error is CancellationError
+    }
+
+    func developerLog(_ message: String) {
+        guard developerLoggingEnabled else {
+            return
+        }
+        Self.logger.notice("\(message, privacy: .public)")
+        print("[CodexKit Demo] \(message)")
+    }
+
+    func developerErrorLog(_ message: String) {
+        guard developerLoggingEnabled else {
+            return
+        }
+        Self.logger.error("\(message, privacy: .public)")
+        print("[CodexKit Demo][Error] \(message)")
     }
 
     func signOut() async {
@@ -506,7 +575,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
             cachedAIReminderGeneratedAt = nil
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -514,10 +583,14 @@ final class AgentDemoViewModel: @unchecked Sendable {
         session = await runtime.currentSession()
         guard session != nil else {
             clearConversationSnapshot()
+            developerLog("Snapshot refreshed with no active session.")
             return
         }
 
         threads = await runtime.threads()
+        developerLog(
+            "Snapshot refreshed. session=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
+        )
 
         let selectedThreadID = activeThreadID
         if let selectedThreadID,

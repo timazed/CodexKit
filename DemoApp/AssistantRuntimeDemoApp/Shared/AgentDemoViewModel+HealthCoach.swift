@@ -66,7 +66,7 @@ extension AgentDemoViewModel {
             }
         } catch {
             healthKitAuthorized = false
-            lastError = error.localizedDescription
+            reportError(error)
         }
 
         notificationAuthorized = await requestNotificationAuthorization()
@@ -102,7 +102,7 @@ extension AgentDemoViewModel {
             await updateReminderScheduleIfPossible()
             await refreshAICoachFeedback()
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
 #else
         healthCoachFeedback = "Health Coach is currently available on iOS only."
@@ -139,7 +139,7 @@ extension AgentDemoViewModel {
             threads = await runtime.threads()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
 
         await updateReminderScheduleIfPossible()
@@ -231,7 +231,7 @@ extension AgentDemoViewModel {
                 }
             }
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 

@@ -51,7 +51,7 @@ extension AgentDemoViewModel {
             )
             threads = await runtime.threads()
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -90,7 +90,7 @@ extension AgentDemoViewModel {
             )
             threads = await runtime.threads()
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -115,7 +115,7 @@ extension AgentDemoViewModel {
                 diagnostics: diagnostics
             )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -143,7 +143,7 @@ extension AgentDemoViewModel {
                 diagnostics: diagnostics
             )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -199,7 +199,7 @@ extension AgentDemoViewModel {
                 )
             )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 }

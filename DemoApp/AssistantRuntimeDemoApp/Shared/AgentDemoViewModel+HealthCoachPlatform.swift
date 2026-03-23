@@ -142,7 +142,7 @@ extension AgentDemoViewModel {
                     }
                 }
             } catch {
-                lastError = error.localizedDescription
+                reportError(error)
             }
         }
     }

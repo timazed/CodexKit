@@ -89,6 +89,23 @@ extension AgentDemoView {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            Toggle(
+                "Developer Logging",
+                isOn: Binding(
+                    get: { viewModel.developerLoggingEnabled },
+                    set: { viewModel.developerLoggingEnabled = $0 }
+                )
+            )
+            .toggleStyle(.switch)
+
+            Text("Logs restore, sign-in, thread lifecycle, turn events, and tool activity to the Xcode console.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("State store: \(viewModel.resolvedStateURL.lastPathComponent)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+
             LazyVGrid(columns: tileColumns, spacing: 12) {
                 ForEach(ReasoningEffort.allCases, id: \.self) { effort in
                     reasoningEffortTile(for: effort)

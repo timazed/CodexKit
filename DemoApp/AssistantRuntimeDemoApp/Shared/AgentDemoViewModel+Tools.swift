@@ -15,8 +15,9 @@ extension AgentDemoViewModel {
         do {
             try await runtime.replaceSkill(Self.healthCoachSkill)
             try await runtime.replaceSkill(Self.travelPlannerSkill)
+            developerLog("Registered demo skills: \(Self.healthCoachSkill.id), \(Self.travelPlannerSkill.id)")
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -73,8 +74,11 @@ extension AgentDemoViewModel {
             try await registerTool(travelPlannerDefinition) { invocation, _ in
                 Self.makeTravelDayPlan(invocation: invocation)
             }
+            developerLog(
+                "Registered demo tools: \(Self.healthCoachToolName), \(Self.travelPlannerToolName)"
+            )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
