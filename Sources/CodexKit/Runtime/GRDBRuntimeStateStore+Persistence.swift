@@ -33,13 +33,10 @@ extension GRDBRuntimeStateStore {
             return
         }
 
+        let persistence = self.persistence
         try await dbQueue.write { db in
             try attachmentStore.reset()
-            try Self.replaceDatabaseContents(
-                with: state,
-                in: db,
-                attachmentStore: attachmentStore
-            )
+            try persistence.replaceDatabaseContents(with: state, in: db)
         }
     }
 
@@ -48,24 +45,27 @@ extension GRDBRuntimeStateStore {
             try RuntimeUserVersionQuery().execute(in: db)
         }
     }
+}
 
-    static func replaceDatabaseContents(
+struct GRDBRuntimeStorePersistence: Sendable {
+    let attachmentStore: RuntimeAttachmentStore
+
+    func replaceDatabaseContents(
         with normalized: StoredRuntimeState,
-        in db: Database,
-        attachmentStore: RuntimeAttachmentStore
+        in db: Database
     ) throws {
-        let threadRows = try normalized.threads.map(Self.makeThreadRow)
+        let threadRows = try normalized.threads.map(makeThreadRow)
         let summaryRows = try normalized.threads.compactMap { thread -> RuntimeSummaryRow? in
             guard let summary = normalized.summariesByThread[thread.id] else {
                 return nil
             }
-            return try Self.makeSummaryRow(from: summary)
+            return try makeSummaryRow(from: summary)
         }
         let historyRows = try normalized.historyByThread.values
             .flatMap { $0 }
-            .map { try Self.makeHistoryRow(from: $0, attachmentStore: attachmentStore) }
-        let structuredOutputRows = try Self.structuredOutputRows(from: normalized.historyByThread)
-        let contextRows = try normalized.contextStateByThread.values.map(Self.makeContextStateRow)
+            .map(makeHistoryRow)
+        let structuredOutputRows = try self.structuredOutputRows(from: normalized.historyByThread)
+        let contextRows = try normalized.contextStateByThread.values.map(makeContextStateRow)
 
         try RuntimeContextStateRow.deleteAll(db)
         try RuntimeStructuredOutputRow.deleteAll(db)
@@ -73,27 +73,16 @@ extension GRDBRuntimeStateStore {
         try RuntimeSummaryRow.deleteAll(db)
         try RuntimeThreadRow.deleteAll(db)
 
-        for row in threadRows {
-            try row.insert(db)
-        }
-        for row in summaryRows {
-            try row.insert(db)
-        }
-        for row in historyRows {
-            try row.insert(db)
-        }
-        for row in structuredOutputRows {
-            try row.insert(db)
-        }
-        for row in contextRows {
-            try row.insert(db)
-        }
+        for row in threadRows { try row.insert(db) }
+        for row in summaryRows { try row.insert(db) }
+        for row in historyRows { try row.insert(db) }
+        for row in structuredOutputRows { try row.insert(db) }
+        for row in contextRows { try row.insert(db) }
     }
 
-    static func loadPartialState(
+    func loadPartialState(
         for threadIDs: Set<String>,
-        from db: Database,
-        attachmentStore: RuntimeAttachmentStore
+        from db: Database
     ) throws -> StoredRuntimeState {
         guard !threadIDs.isEmpty else {
             return .empty
@@ -106,12 +95,10 @@ extension GRDBRuntimeStateStore {
         let summaryRows = try RuntimeSummaryRow
             .filter(ids.contains(Column("threadID")))
             .fetchAll(db)
-        // History loading keeps raw SQL here so we can preserve a deterministic
-        // thread + sequence ordering across multiple thread IDs in one fetch.
         let historyRows = try RuntimeHistoryRowsRequest(
             sql: """
             SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
-            WHERE threadID IN \(Self.sqlPlaceholders(count: ids.count))
+            WHERE threadID IN \(sqlPlaceholders(count: ids.count))
             ORDER BY threadID ASC, sequenceNumber ASC
             """,
             arguments: StatementArguments(ids)
@@ -120,16 +107,14 @@ extension GRDBRuntimeStateStore {
             .filter(ids.contains(Column("threadID")))
             .fetchAll(db)
 
-        let threads = try threadRows.map { try Self.decodeThread(from: $0) }
+        let threads = try threadRows.map(decodeThread)
         let summaries = try Dictionary<String, AgentThreadSummary>(
-            uniqueKeysWithValues: summaryRows.map { ($0.threadID, try Self.decodeSummary(from: $0)) }
+            uniqueKeysWithValues: summaryRows.map { ($0.threadID, try decodeSummary(from: $0)) }
         )
-        let decodedHistoryRows = try historyRows.map {
-            try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore)
-        }
+        let decodedHistoryRows = try historyRows.map(decodeHistoryRecord)
         let history = Dictionary(grouping: decodedHistoryRows, by: { $0.item.threadID })
         let contextState = try Dictionary<String, AgentThreadContextState>(
-            uniqueKeysWithValues: contextRows.map { ($0.threadID, try Self.decodeContextState(from: $0)) }
+            uniqueKeysWithValues: contextRows.map { ($0.threadID, try decodeContextState(from: $0)) }
         )
         let nextSequence = history.mapValues { ($0.last?.sequenceNumber ?? 0) + 1 }
 
@@ -142,11 +127,10 @@ extension GRDBRuntimeStateStore {
         )
     }
 
-    static func persistThreads(
+    func persistThreads(
         ids threadIDs: Set<String>,
         from state: StoredRuntimeState,
-        in db: Database,
-        attachmentStore: RuntimeAttachmentStore
+        in db: Database
     ) throws {
         let normalized = state.normalized()
         let threads = normalized.threads.filter { threadIDs.contains($0.id) }
@@ -155,33 +139,33 @@ extension GRDBRuntimeStateStore {
         }
 
         for thread in threads {
-            try Self.makeThreadRow(from: thread).insert(db)
+            try makeThreadRow(from: thread).insert(db)
             if let summary = normalized.summariesByThread[thread.id] {
-                try Self.makeSummaryRow(from: summary).insert(db)
+                try makeSummaryRow(from: summary).insert(db)
             }
             if let contextState = normalized.contextStateByThread[thread.id] {
-                try Self.makeContextStateRow(from: contextState).insert(db)
+                try makeContextStateRow(from: contextState).insert(db)
             }
             for record in normalized.historyByThread[thread.id] ?? [] {
-                try Self.makeHistoryRow(from: record, attachmentStore: attachmentStore).insert(db)
+                try makeHistoryRow(from: record).insert(db)
             }
         }
 
-        for row in try Self.structuredOutputRows(
+        for row in try structuredOutputRows(
             from: normalized.historyByThread.filter { threadIDs.contains($0.key) }
         ) {
             try row.insert(db)
         }
     }
 
-    static func deletePersistedThread(
+    func deletePersistedThread(
         _ threadID: String,
         in db: Database
     ) throws {
         _ = try RuntimeThreadRow.deleteOne(db, key: threadID)
     }
 
-    static func makeThreadRow(from thread: AgentThread) throws -> RuntimeThreadRow {
+    func makeThreadRow(from thread: AgentThread) throws -> RuntimeThreadRow {
         RuntimeThreadRow(
             threadID: thread.id,
             createdAt: thread.createdAt.timeIntervalSince1970,
@@ -191,7 +175,7 @@ extension GRDBRuntimeStateStore {
         )
     }
 
-    static func makeSummaryRow(from summary: AgentThreadSummary) throws -> RuntimeSummaryRow {
+    func makeSummaryRow(from summary: AgentThreadSummary) throws -> RuntimeSummaryRow {
         RuntimeSummaryRow(
             threadID: summary.threadID,
             createdAt: summary.createdAt.timeIntervalSince1970,
@@ -204,10 +188,7 @@ extension GRDBRuntimeStateStore {
         )
     }
 
-    static func makeHistoryRow(
-        from record: AgentHistoryRecord,
-        attachmentStore: RuntimeAttachmentStore
-    ) throws -> RuntimeHistoryRow {
+    func makeHistoryRow(from record: AgentHistoryRecord) throws -> RuntimeHistoryRow {
         let persisted = try PersistedAgentHistoryRecord(
             record: record,
             attachmentStore: attachmentStore
@@ -226,7 +207,7 @@ extension GRDBRuntimeStateStore {
         )
     }
 
-    static func makeContextStateRow(from state: AgentThreadContextState) throws -> RuntimeContextStateRow {
+    func makeContextStateRow(from state: AgentThreadContextState) throws -> RuntimeContextStateRow {
         RuntimeContextStateRow(
             threadID: state.threadID,
             generation: state.generation,
@@ -234,7 +215,7 @@ extension GRDBRuntimeStateStore {
         )
     }
 
-    static func structuredOutputRows(
+    func structuredOutputRows(
         from historyByThread: [String: [AgentHistoryRecord]]
     ) throws -> [RuntimeStructuredOutputRow] {
         try historyByThread.values
@@ -242,16 +223,15 @@ extension GRDBRuntimeStateStore {
             .compactMap { record -> RuntimeStructuredOutputRow? in
                 switch record.item {
                 case let .structuredOutput(output):
-                    return try Self.makeStructuredOutputRow(
+                    return try makeStructuredOutputRow(
                         id: "structured:\(record.id)",
                         record: output
                     )
-
                 case let .message(message):
                     guard let metadata = message.structuredOutput else {
                         return nil
                     }
-                    return try Self.makeStructuredOutputRow(
+                    return try makeStructuredOutputRow(
                         id: "message:\(message.id)",
                         record: AgentStructuredOutputRecord(
                             threadID: message.threadID,
@@ -261,14 +241,13 @@ extension GRDBRuntimeStateStore {
                             committedAt: message.createdAt
                         )
                     )
-
                 default:
                     return nil
                 }
             }
     }
 
-    static func makeStructuredOutputRow(
+    func makeStructuredOutputRow(
         id: String,
         record: AgentStructuredOutputRecord
     ) throws -> RuntimeStructuredOutputRow {
@@ -281,22 +260,19 @@ extension GRDBRuntimeStateStore {
         )
     }
 
-    static func decodeThread(from row: RuntimeThreadRow) throws -> AgentThread {
+    func decodeThread(from row: RuntimeThreadRow) throws -> AgentThread {
         try JSONDecoder().decode(AgentThread.self, from: row.encodedThread)
     }
 
-    static func decodeSummary(from row: RuntimeSummaryRow) throws -> AgentThreadSummary {
+    func decodeSummary(from row: RuntimeSummaryRow) throws -> AgentThreadSummary {
         try JSONDecoder().decode(AgentThreadSummary.self, from: row.encodedSummary)
     }
 
-    static func decodeContextState(from row: RuntimeContextStateRow) throws -> AgentThreadContextState {
+    func decodeContextState(from row: RuntimeContextStateRow) throws -> AgentThreadContextState {
         try JSONDecoder().decode(AgentThreadContextState.self, from: row.encodedState)
     }
 
-    static func decodeHistoryRecord(
-        from row: RuntimeHistoryRow,
-        attachmentStore: RuntimeAttachmentStore
-    ) throws -> AgentHistoryRecord {
+    func decodeHistoryRecord(from row: RuntimeHistoryRow) throws -> AgentHistoryRecord {
         let decoder = JSONDecoder()
         if let persisted = try? decoder.decode(PersistedAgentHistoryRecord.self, from: row.encodedRecord) {
             return try persisted.decode(using: attachmentStore)
@@ -304,11 +280,19 @@ extension GRDBRuntimeStateStore {
         return try decoder.decode(AgentHistoryRecord.self, from: row.encodedRecord)
     }
 
-    static func decodeStructuredOutputRecord(from row: RuntimeStructuredOutputRow) throws -> AgentStructuredOutputRecord {
+    func decodeStructuredOutputRecord(from row: RuntimeStructuredOutputRow) throws -> AgentStructuredOutputRecord {
         try JSONDecoder().decode(AgentStructuredOutputRecord.self, from: row.encodedRecord)
     }
 
-    static func makeMigrator() -> DatabaseMigrator {
+    private func sqlPlaceholders(count: Int) -> String {
+        "(" + Array(repeating: "?", count: count).joined(separator: ", ") + ")"
+    }
+}
+
+struct GRDBRuntimeStoreSchema: Sendable {
+    let currentStoreSchemaVersion: Int
+
+    func makeMigrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
         migrator.registerMigration("runtime_store_v1") { db in
