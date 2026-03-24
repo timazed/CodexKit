@@ -243,6 +243,107 @@ extension AgentRuntimeTests {
         let reply = try await sendTask.value
         XCTAssertEqual(reply, "Echo: Observe me")
     }
+
+    func testObserveMessagesPublishesInitialStateAndLocalPendingMessage() async throws {
+        let backend = DelayedBeginTurnBackend()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Observe Messages")
+        let observedInitialState = expectation(description: "Observed the initial empty message state")
+        let observedPendingMessage = expectation(description: "Observed the local pending user message")
+        observedPendingMessage.assertForOverFulfill = false
+        var snapshots: [[String]] = []
+        var cancellables = Set<AnyCancellable>()
+
+        let publisher = runtime.observeMessages(in: thread.id)
+        publisher
+            .sink { messages in
+                snapshots.append(messages.map(\.text))
+                if messages.isEmpty {
+                    observedInitialState.fulfill()
+                }
+                if messages.count == 1,
+                   messages.last?.role == .user,
+                   messages.last?.text == "Observe messages" {
+                    observedPendingMessage.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        await fulfillment(of: [observedInitialState], timeout: 0.5)
+
+        let sendTask = Task {
+            try await runtime.sendMessage(UserMessageRequest(text: "Observe messages"), in: thread.id)
+        }
+
+        await backend.waitForBeginTurnStart()
+        await fulfillment(of: [observedPendingMessage], timeout: 0.5)
+        XCTAssertTrue(snapshots.contains([]))
+        XCTAssertTrue(snapshots.contains(["Observe messages"]))
+
+        await backend.releaseBeginTurn()
+        let reply = try await sendTask.value
+        XCTAssertEqual(reply, "Echo: Observe messages")
+    }
+
+    func testObserveThreadContextStatePublishesInitialAndCompactedValues() async throws {
+        let backend = CompactingTestBackend()
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            contextCompaction: .init(
+                isEnabled: true,
+                mode: .manual,
+                strategy: .localOnly
+            )
+        )
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Observe Context")
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
+
+        let observedInitialState = expectation(description: "Observed the initial context state")
+        let observedCompactedState = expectation(description: "Observed the compacted context state")
+        observedCompactedState.assertForOverFulfill = false
+        var contexts: [AgentThreadContextState?] = []
+        var cancellables = Set<AnyCancellable>()
+
+        let publisher = runtime.observeThreadContextState(id: thread.id)
+        publisher
+            .sink { state in
+                contexts.append(state)
+                if state?.generation == 0 {
+                    observedInitialState.fulfill()
+                }
+                if let state,
+                   state.generation == 1,
+                   state.lastCompactionReason == .manual {
+                    observedCompactedState.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        await fulfillment(of: [observedInitialState], timeout: 0.5)
+
+        let compacted = try await runtime.compactThreadContext(id: thread.id)
+        XCTAssertEqual(compacted.generation, 1)
+
+        await fulfillment(of: [observedCompactedState], timeout: 0.5)
+        XCTAssertTrue(contexts.contains(where: { $0?.generation == 0 }))
+        XCTAssertTrue(contexts.contains(where: { $0?.generation == 1 }))
+    }
 }
 
 func drainStructuredStream<Output: Sendable>(
