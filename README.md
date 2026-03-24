@@ -796,7 +796,7 @@ The demo app exercises:
 - Responses web search in checked-in configuration
 - thread-pinned personas and one-turn overrides
 - a one-tap skill policy probe that compares tool behavior in normal vs skill-constrained threads
-- a thread-level `Context Compaction` card that shows visible-vs-effective message counts and lets you trigger manual compaction
+- a thread-level `Context Compaction` card that shows visible-vs-effective token usage and lets you trigger manual compaction
 - a Health Coach tab with HealthKit steps, AI-generated coaching, local reminders, and tone switching
 - GRDB-backed runtime persistence with automatic import from older `runtime-state.json` state on first launch
 
