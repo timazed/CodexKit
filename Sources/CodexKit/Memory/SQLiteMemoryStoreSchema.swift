@@ -12,6 +12,9 @@ struct SQLiteMemoryStoreSchema: Sendable {
         var migrator = DatabaseMigrator()
 
         migrator.registerMigration("memory_store_v1") { db in
+            // Schema DDL stays as raw SQL here because GRDB's query interface
+            // is designed for data access, while table/index/FTS creation is
+            // clearest and most direct in SQLite DDL.
             try db.execute(sql: """
             CREATE TABLE IF NOT EXISTS memory_records (
                 namespace TEXT NOT NULL,
@@ -87,6 +90,7 @@ struct SQLiteMemoryStoreSchema: Sendable {
             USING fts5(namespace UNINDEXED, record_id UNINDEXED, content);
             """)
 
+            // PRAGMA user_version is SQLite-specific migration state.
             try db.execute(sql: "PRAGMA user_version = \(currentVersion)")
         }
 

@@ -64,7 +64,7 @@ struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws -> [MemoryRecord] {
-        let rows = try MemoryRecordRow
+        let rows = try MemoryRecordDatabaseRow
             .filter(Column("namespace") == namespace)
             .fetchAll(db)
 
@@ -102,7 +102,7 @@ struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws -> MemoryRecord? {
-        let row = try MemoryRecordRow
+        let row = try MemoryRecordDatabaseRow
             .filter(Column("namespace") == namespace)
             .filter(Column("id") == id)
             .fetchOne(db)
@@ -117,14 +117,10 @@ struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws {
-        try db.execute(
-            sql: """
-            UPDATE memory_records
-            SET status = ?
-            WHERE namespace = ? AND id = ?;
-            """,
-            arguments: [MemoryRecordStatus.archived.rawValue, namespace, id]
-        )
+        try MemoryRecordDatabaseRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("id") == id)
+            .updateAll(db, Column("status").set(to: MemoryRecordStatus.archived.rawValue))
     }
 
     func deleteRecord(
@@ -132,14 +128,14 @@ struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws {
-        try db.execute(
-            sql: "DELETE FROM memory_fts WHERE namespace = ? AND record_id = ?;",
-            arguments: [namespace, id]
-        )
-        try db.execute(
-            sql: "DELETE FROM memory_records WHERE namespace = ? AND id = ?;",
-            arguments: [namespace, id]
-        )
+        try MemoryFTSRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("record_id") == id)
+            .deleteAll(db)
+        try MemoryRecordDatabaseRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("id") == id)
+            .deleteAll(db)
     }
 
     func deleteRecord(
@@ -159,74 +155,73 @@ struct SQLiteMemoryStoreRepository: Sendable {
         _ record: MemoryRecord,
         in db: Database
     ) throws {
-        try db.execute(
-            sql: """
-            INSERT OR REPLACE INTO memory_records (
-                namespace, id, scope, kind, summary, evidence_json, importance,
-                created_at, observed_at, expires_at, tags_json, related_ids_json,
-                dedupe_key, is_pinned, attributes_json, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            arguments: [
-                record.namespace,
-                record.id,
-                record.scope.rawValue,
-                record.kind,
-                record.summary,
-                try codec.encode(record.evidence),
-                record.importance,
-                record.createdAt.timeIntervalSince1970,
-                record.observedAt?.timeIntervalSince1970,
-                record.expiresAt?.timeIntervalSince1970,
-                try codec.encode(record.tags),
-                try codec.encode(record.relatedIDs),
-                record.dedupeKey,
-                record.isPinned ? 1 : 0,
-                try codec.encodeNullable(record.attributes),
-                record.status.rawValue,
-            ]
-        )
+        try MemoryRecordDatabaseRow
+            .filter(Column("namespace") == record.namespace)
+            .filter(Column("id") == record.id)
+            .deleteAll(db)
+        try makeDatabaseRow(from: record).insert(db)
 
-        try db.execute(
-            sql: "DELETE FROM memory_tags WHERE namespace = ? AND record_id = ?;",
-            arguments: [record.namespace, record.id]
-        )
-        try db.execute(
-            sql: "DELETE FROM memory_related_ids WHERE namespace = ? AND record_id = ?;",
-            arguments: [record.namespace, record.id]
-        )
-        try db.execute(
-            sql: "DELETE FROM memory_fts WHERE namespace = ? AND record_id = ?;",
-            arguments: [record.namespace, record.id]
-        )
+        try MemoryTagRow
+            .filter(Column("namespace") == record.namespace)
+            .filter(Column("record_id") == record.id)
+            .deleteAll(db)
+        try MemoryRelatedIDRow
+            .filter(Column("namespace") == record.namespace)
+            .filter(Column("record_id") == record.id)
+            .deleteAll(db)
+        try MemoryFTSRow
+            .filter(Column("namespace") == record.namespace)
+            .filter(Column("record_id") == record.id)
+            .deleteAll(db)
 
         for tag in record.tags {
-            try db.execute(
-                sql: "INSERT INTO memory_tags(namespace, record_id, tag) VALUES (?, ?, ?);",
-                arguments: [record.namespace, record.id, tag]
-            )
+            try MemoryTagRow(
+                namespace: record.namespace,
+                recordID: record.id,
+                tag: tag
+            ).insert(db)
         }
 
         for relatedID in record.relatedIDs {
-            try db.execute(
-                sql: """
-                INSERT INTO memory_related_ids(namespace, record_id, related_id)
-                VALUES (?, ?, ?);
-                """,
-                arguments: [record.namespace, record.id, relatedID]
-            )
+            try MemoryRelatedIDRow(
+                namespace: record.namespace,
+                recordID: record.id,
+                relatedID: relatedID
+            ).insert(db)
         }
 
         let ftsContent = ([record.summary] + record.evidence + record.tags + [record.kind])
             .joined(separator: " ")
-        try db.execute(
-            sql: "INSERT INTO memory_fts(namespace, record_id, content) VALUES (?, ?, ?);",
-            arguments: [record.namespace, record.id, ftsContent]
+        try MemoryFTSRow(
+            namespace: record.namespace,
+            recordID: record.id,
+            content: ftsContent
+        ).insert(db)
+    }
+
+    private func makeDatabaseRow(from record: MemoryRecord) throws -> MemoryRecordDatabaseRow {
+        try MemoryRecordDatabaseRow(
+            namespace: record.namespace,
+            id: record.id,
+            scope: record.scope.rawValue,
+            kind: record.kind,
+            summary: record.summary,
+            evidenceJSON: codec.encode(record.evidence),
+            importance: record.importance,
+            createdAt: record.createdAt.timeIntervalSince1970,
+            observedAt: record.observedAt?.timeIntervalSince1970,
+            expiresAt: record.expiresAt?.timeIntervalSince1970,
+            tagsJSON: codec.encode(record.tags),
+            relatedIDsJSON: codec.encode(record.relatedIDs),
+            dedupeKey: record.dedupeKey,
+            isPinned: record.isPinned,
+            attributesJSON: codec.encodeNullable(record.attributes),
+            status: record.status.rawValue
         )
     }
 
     private func makeRecord(
-        from row: MemoryRecordRow,
+        from row: MemoryRecordDatabaseRow,
         namespace: String
     ) throws -> MemoryRecord {
         MemoryRecord(
@@ -324,5 +319,87 @@ struct MemoryRecordRow: FetchableRecord, TableRecord {
         isPinned = row["is_pinned"] as Bool? ?? false
         attributesJSON = row["attributes_json"]
         status = row["status"]
+    }
+}
+
+struct MemoryRecordDatabaseRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
+    static let databaseTableName = "memory_records"
+
+    let namespace: String
+    let id: String
+    let scope: String
+    let kind: String
+    let summary: String
+    let evidenceJSON: String
+    let importance: Double
+    let createdAt: Double
+    let observedAt: Double?
+    let expiresAt: Double?
+    let tagsJSON: String
+    let relatedIDsJSON: String
+    let dedupeKey: String?
+    let isPinned: Bool
+    let attributesJSON: String?
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case namespace
+        case id
+        case scope
+        case kind
+        case summary
+        case evidenceJSON = "evidence_json"
+        case importance
+        case createdAt = "created_at"
+        case observedAt = "observed_at"
+        case expiresAt = "expires_at"
+        case tagsJSON = "tags_json"
+        case relatedIDsJSON = "related_ids_json"
+        case dedupeKey = "dedupe_key"
+        case isPinned = "is_pinned"
+        case attributesJSON = "attributes_json"
+        case status
+    }
+}
+
+struct MemoryTagRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
+    static let databaseTableName = "memory_tags"
+
+    let namespace: String
+    let recordID: String
+    let tag: String
+
+    enum CodingKeys: String, CodingKey {
+        case namespace
+        case recordID = "record_id"
+        case tag
+    }
+}
+
+struct MemoryRelatedIDRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
+    static let databaseTableName = "memory_related_ids"
+
+    let namespace: String
+    let recordID: String
+    let relatedID: String
+
+    enum CodingKeys: String, CodingKey {
+        case namespace
+        case recordID = "record_id"
+        case relatedID = "related_id"
+    }
+}
+
+struct MemoryFTSRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
+    static let databaseTableName = "memory_fts"
+
+    let namespace: String
+    let recordID: String
+    let content: String
+
+    enum CodingKeys: String, CodingKey {
+        case namespace
+        case recordID = "record_id"
+        case content
     }
 }
