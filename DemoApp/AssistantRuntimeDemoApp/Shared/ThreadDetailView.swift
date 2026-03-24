@@ -89,8 +89,19 @@ private extension ThreadDetailView {
         viewModel.observedThreadContextState ?? viewModel.activeThreadContextState
     }
 
-    var observedSummary: AgentThreadSummary? {
-        viewModel.observedThreadSummary
+    var observedSummary: AgentThreadSummary? { viewModel.observedThreadSummary }
+
+    var turnActivityStatus: AgentThreadStatus? {
+        guard let status = observedThread?.status else {
+            return nil
+        }
+
+        switch status {
+        case .streaming where !isStreamingActive, .waitingForApproval, .waitingForToolResult:
+            return status
+        default:
+            return nil
+        }
     }
 
     var threadHeaderCard: some View {
@@ -131,7 +142,6 @@ private extension ThreadDetailView {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Observation Demo")
                     .font(.headline)
-
                 Text("This card is driven by `observeThread`, `observeMessages`, `observeThreadSummary`, and `observeThreadContextState`, so title, transcript, summary, and compaction changes update live without a manual refresh.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -168,6 +178,10 @@ private extension ThreadDetailView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(threadMessages) { message in
                         ThreadMessageBubble(message: message)
+                    }
+
+                    if let turnActivityStatus {
+                        ThreadTurnActivityView(status: turnActivityStatus)
                     }
 
                     if isStreamingActive {
