@@ -22,7 +22,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - lets you attach a photo from the library and send it with or without text
 - renders attached user images in the transcript
 - streams assistant output into the UI
-- demonstrates live Combine observation of thread, message, summary, and context-state updates
+- demonstrates live Combine observation of thread, message, summary, context-state, and context-usage updates
 - lets you rename the active thread from the thread detail screen using `setTitle(_:for:)`
 - includes a thread-level `Context Compaction` card so you can compact effective prompt state without removing visible transcript history
 - supports approval prompts for host-defined tools that opt into `requiresApproval`
@@ -54,8 +54,9 @@ The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`,
 
 The checked-in demo enables context compaction in automatic mode. In a thread detail screen, the `Context Compaction` card shows:
 
-- visible transcript message count
-- effective prompt message count
+- visible transcript token usage
+- effective prompt token usage
+- estimated context window fullness when available
 - compaction generation
 - last compaction reason/time
 - a `Compact Context Now` action for manual testing
@@ -66,12 +67,14 @@ The same thread detail screen also includes an `Observation Demo` card. It subsc
 - `observeMessages(in:)`
 - `observeThreadSummary(id:)`
 - `observeThreadContextState(id:)`
+- `observeThreadContextUsage(id:)`
 
 Use that card to verify that:
 
 - local title changes propagate immediately through `setTitle(_:for:)`
 - new messages appear from the observation stream without a manual refresh
 - context compaction updates the observed context state live
+- effective prompt usage updates live in estimated tokens
 
 ## Files
 

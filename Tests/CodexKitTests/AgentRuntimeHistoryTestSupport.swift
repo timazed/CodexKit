@@ -163,8 +163,10 @@ private actor PartialEmissionGate {
     }
 }
 
-actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting {
+actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting, AgentBackendContextWindowProviding {
     nonisolated let baseInstructions: String? = nil
+    nonisolated let modelContextWindowTokenCount: Int? = 272_000
+    nonisolated let usableContextWindowTokenCount: Int? = 258_400
 
     private let failOnHistoryCountAbove: Int?
     private var threads: [String: AgentThread] = [:]

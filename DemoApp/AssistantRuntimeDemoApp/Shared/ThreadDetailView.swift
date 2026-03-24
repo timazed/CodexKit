@@ -85,17 +85,13 @@ private extension ThreadDetailView {
         viewModel.observedThread?.id == threadID ? viewModel.observedThread : activeThread
     }
 
-    var observedContextState: AgentThreadContextState? {
-        viewModel.observedThreadContextState ?? viewModel.activeThreadContextState
-    }
+    var observedContextState: AgentThreadContextState? { viewModel.observedThreadContextState ?? viewModel.activeThreadContextState }
+    var observedContextUsage: AgentThreadContextUsage? { viewModel.observedThreadContextUsage ?? viewModel.activeThreadContextUsage }
 
     var observedSummary: AgentThreadSummary? { viewModel.observedThreadSummary }
 
     var turnActivityStatus: AgentThreadStatus? {
-        guard let status = observedThread?.status else {
-            return nil
-        }
-
+        guard let status = observedThread?.status else { return nil }
         switch status {
         case .streaming where !isStreamingActive, .waitingForApproval, .waitingForToolResult:
             return status
@@ -120,17 +116,11 @@ private extension ThreadDetailView {
             }
 
             HStack(spacing: 10) {
-                Label(
-                    viewModel.model,
-                    systemImage: "cpu"
-                )
+                Label(viewModel.model, systemImage: "cpu")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                Label(
-                    reasoningEffortTitle,
-                    systemImage: reasoningEffortSymbol
-                )
+                Label(reasoningEffortTitle, systemImage: reasoningEffortSymbol)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -142,7 +132,7 @@ private extension ThreadDetailView {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Observation Demo")
                     .font(.headline)
-                Text("This card is driven by `observeThread`, `observeMessages`, `observeThreadSummary`, and `observeThreadContextState`, so title, transcript, summary, and compaction changes update live without a manual refresh.")
+                Text("This card is driven by `observeThread`, `observeMessages`, `observeThreadSummary`, `observeThreadContextState`, and `observeThreadContextUsage`, so title, transcript, summary, compaction state, and context usage all update live without a manual refresh.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -157,9 +147,7 @@ private extension ThreadDetailView {
                 .textFieldStyle(.roundedBorder)
 
             Button {
-                Task {
-                    await viewModel.updateActiveThreadTitle(threadTitleDraft)
-                }
+                Task { await viewModel.updateActiveThreadTitle(threadTitleDraft) }
             } label: {
                 Label("Save Thread Title", systemImage: "pencil")
             }
@@ -198,7 +186,6 @@ private extension ThreadDetailView {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Context Compaction")
                     .font(.headline)
-
                 Text("Preserves the visible transcript, but rewrites the runtime’s hidden effective prompt context for future turns.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -206,17 +193,37 @@ private extension ThreadDetailView {
 
             HStack(spacing: 12) {
                 compactionMetric(
-                    title: "Visible Messages",
-                    value: "\(threadMessages.count)"
+                    title: "Visible Context",
+                    value: "\(viewModel.formattedTokenCount(observedContextUsage?.visibleEstimatedTokenCount ?? 0)) tokens"
                 )
                 compactionMetric(
-                    title: "Effective Messages",
-                    value: "\(observedContextState?.effectiveMessages.count ?? threadMessages.count)"
+                    title: "Effective Context",
+                    value: "\(viewModel.formattedTokenCount(observedContextUsage?.effectiveEstimatedTokenCount ?? 0)) tokens"
                 )
-                compactionMetric(
-                    title: "Generation",
-                    value: "\(observedContextState?.generation ?? 0)"
-                )
+                compactionMetric(title: "Generation", value: "\(observedContextState?.generation ?? 0)")
+            }
+
+            if let contextUsage = observedContextUsage,
+               let percentFull = contextUsage.percentUsed,
+               let windowTokens = contextUsage.usableContextWindowTokenCount {
+                let effectiveTokens = viewModel.formattedTokenCount(contextUsage.effectiveEstimatedTokenCount)
+                let usableTokens = viewModel.formattedTokenCount(windowTokens)
+                Text("Estimated context window: \(percentFull)% full (\(effectiveTokens) / \(usableTokens) usable tokens)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Estimated effective prompt usage: \(viewModel.formattedTokenCount(observedContextUsage?.effectiveEstimatedTokenCount ?? 0)) tokens")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let contextUsage = observedContextUsage,
+               contextUsage.estimatedTokenSavings > 0 {
+                let visibleTokens = viewModel.formattedTokenCount(contextUsage.visibleEstimatedTokenCount)
+                let effectiveTokens = viewModel.formattedTokenCount(contextUsage.effectiveEstimatedTokenCount)
+                Text("Current compaction savings: ~\(visibleTokens) -> \(effectiveTokens) estimated tokens")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if let contextState = observedContextState {
@@ -226,13 +233,11 @@ private extension ThreadDetailView {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-
                     if let lastCompactedAt = contextState.lastCompactedAt {
                         Text("Updated \(lastCompactedAt.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-
                     if let summaryMessage = contextState.effectiveMessages.first(where: { $0.role == .system }),
                        !summaryMessage.text.isEmpty {
                         Text(summaryMessage.text)
@@ -250,14 +255,9 @@ private extension ThreadDetailView {
 
             HStack(spacing: 10) {
                 Button {
-                    Task {
-                        await viewModel.compactActiveThreadContext()
-                    }
+                    Task { await viewModel.compactActiveThreadContext() }
                 } label: {
-                    Label(
-                        viewModel.isCompactingThreadContext ? "Compacting..." : "Compact Context Now",
-                        systemImage: viewModel.isCompactingThreadContext ? "hourglass" : "arrow.triangle.branch"
-                    )
+                    Label(viewModel.isCompactingThreadContext ? "Compacting..." : "Compact Context Now", systemImage: viewModel.isCompactingThreadContext ? "hourglass" : "arrow.triangle.branch")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.session == nil || activeThread == nil || viewModel.isCompactingThreadContext)
@@ -346,9 +346,7 @@ private extension ThreadDetailView {
     }
 
     var threadMessages: [AgentMessage] {
-        guard viewModel.activeThreadID == threadID else {
-            return []
-        }
+        guard viewModel.activeThreadID == threadID else { return [] }
         return viewModel.observedMessages.isEmpty ? viewModel.messages : viewModel.observedMessages
     }
 

@@ -10,9 +10,14 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Compaction")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
+        let longMessages = [
+            String(repeating: "first message context ", count: 30),
+            String(repeating: "second message context ", count: 30),
+            String(repeating: "third message context ", count: 30),
+        ]
+        for message in longMessages {
+            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+        }
 
         let visibleBefore = await runtime.messages(for: thread.id)
         XCTAssertEqual(visibleBefore.count, 6)
@@ -79,6 +84,56 @@ extension AgentRuntimeTests {
         let restoredContext = try await reloadedRuntime.fetchThreadContextState(id: thread.id)
         XCTAssertEqual(restoredContext?.generation, 1)
         XCTAssertFalse(restoredContext?.effectiveMessages.isEmpty ?? true)
+    }
+
+    func testFetchThreadContextUsageReportsVisibleAndEffectiveTokenCounts() async throws {
+        let backend = CompactingTestBackend()
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            contextCompaction: .init(
+                isEnabled: true,
+                mode: .manual,
+                strategy: .preferRemoteThenLocal
+            )
+        )
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Usage")
+        let longMessages = [
+            String(repeating: "first message context ", count: 30),
+            String(repeating: "second message context ", count: 30),
+            String(repeating: "third message context ", count: 30),
+        ]
+        for message in longMessages {
+            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+        }
+
+        let usageBefore = try await runtime.fetchThreadContextUsage(id: thread.id)
+        let unwrappedUsageBefore = try XCTUnwrap(usageBefore)
+        XCTAssertEqual(
+            unwrappedUsageBefore.visibleEstimatedTokenCount,
+            unwrappedUsageBefore.effectiveEstimatedTokenCount
+        )
+        XCTAssertEqual(unwrappedUsageBefore.modelContextWindowTokenCount, 272_000)
+        XCTAssertEqual(unwrappedUsageBefore.usableContextWindowTokenCount, 258_400)
+        XCTAssertNotNil(unwrappedUsageBefore.percentUsed)
+
+        _ = try await runtime.compactThreadContext(id: thread.id)
+
+        let usageAfter = try await runtime.fetchThreadContextUsage(id: thread.id)
+        let unwrappedUsageAfter = try XCTUnwrap(usageAfter)
+        XCTAssertEqual(
+            unwrappedUsageAfter.visibleEstimatedTokenCount,
+            unwrappedUsageBefore.visibleEstimatedTokenCount
+        )
+        XCTAssertLessThan(
+            unwrappedUsageAfter.effectiveEstimatedTokenCount,
+            unwrappedUsageBefore.effectiveEstimatedTokenCount
+        )
+        XCTAssertGreaterThan(unwrappedUsageAfter.estimatedTokenSavings, 0)
     }
 
     func testContextCompactionConfigurationDefaultsAndCodableShape() throws {

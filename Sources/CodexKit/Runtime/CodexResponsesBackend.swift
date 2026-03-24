@@ -36,6 +36,23 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     }
 }
 
+extension CodexResponsesBackendConfiguration {
+    var modelContextWindowTokenCount: Int? {
+        let normalizedModel = model.lowercased()
+        if normalizedModel.hasPrefix("gpt-5") {
+            return 272_000
+        }
+        return nil
+    }
+
+    var usableContextWindowTokenCount: Int? {
+        guard let modelContextWindowTokenCount else {
+            return nil
+        }
+        return (modelContextWindowTokenCount * 95) / 100
+    }
+}
+
 public actor CodexResponsesBackend: AgentBackend {
     public nonisolated let baseInstructions: String?
 
@@ -85,6 +102,16 @@ public actor CodexResponsesBackend: AgentBackend {
             tools: tools,
             session: session
         )
+    }
+}
+
+extension CodexResponsesBackend: AgentBackendContextWindowProviding {
+    public nonisolated var modelContextWindowTokenCount: Int? {
+        configuration.modelContextWindowTokenCount
+    }
+
+    public nonisolated var usableContextWindowTokenCount: Int? {
+        configuration.usableContextWindowTokenCount
     }
 }
 

@@ -84,6 +84,10 @@ extension AgentRuntime: AgentRuntimeQueryable, AgentRuntimeThreadInspecting {
         ).first
     }
 
+    public func fetchThreadContextUsage(id: String) async throws -> AgentThreadContextUsage? {
+        threadContextUsage(for: id)
+    }
+
     public func fetchLatestStructuredOutput<Output: Decodable & Sendable>(
         id: String,
         as outputType: Output.Type,

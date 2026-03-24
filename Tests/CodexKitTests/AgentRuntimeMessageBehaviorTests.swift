@@ -303,16 +303,21 @@ extension AgentRuntimeTests {
             contextCompaction: .init(
                 isEnabled: true,
                 mode: .manual,
-                strategy: .localOnly
+                strategy: .preferRemoteThenLocal
             )
         )
         _ = try await runtime.restore()
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Observe Context")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
+        let longMessages = [
+            String(repeating: "first message context ", count: 30),
+            String(repeating: "second message context ", count: 30),
+            String(repeating: "third message context ", count: 30),
+        ]
+        for message in longMessages {
+            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+        }
 
         let observedInitialState = expectation(description: "Observed the initial context state")
         let observedCompactedState = expectation(description: "Observed the compacted context state")
@@ -343,6 +348,59 @@ extension AgentRuntimeTests {
         await fulfillment(of: [observedCompactedState], timeout: 0.5)
         XCTAssertTrue(contexts.contains(where: { $0?.generation == 0 }))
         XCTAssertTrue(contexts.contains(where: { $0?.generation == 1 }))
+    }
+
+    func testObserveThreadContextUsagePublishesInitialAndCompactedUsage() async throws {
+        let backend = CompactingTestBackend()
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            contextCompaction: .init(
+                isEnabled: true,
+                mode: .manual,
+                strategy: .preferRemoteThenLocal
+            )
+        )
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Observe Usage")
+        let longMessages = [
+            String(repeating: "first message context ", count: 30),
+            String(repeating: "second message context ", count: 30),
+            String(repeating: "third message context ", count: 30),
+        ]
+        for message in longMessages {
+            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+        }
+
+        let observedInitialUsage = expectation(description: "Observed the initial context usage")
+        let observedCompactedUsage = expectation(description: "Observed compacted context usage")
+        observedCompactedUsage.assertForOverFulfill = false
+        var usages: [AgentThreadContextUsage?] = []
+        var cancellables = Set<AnyCancellable>()
+
+        runtime.observeThreadContextUsage(id: thread.id)
+            .sink { usage in
+                usages.append(usage)
+                if let usage,
+                   usage.visibleEstimatedTokenCount == usage.effectiveEstimatedTokenCount,
+                   usage.visibleEstimatedTokenCount > 0 {
+                    observedInitialUsage.fulfill()
+                }
+                if let usage, usage.estimatedTokenSavings > 0 {
+                    observedCompactedUsage.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        await fulfillment(of: [observedInitialUsage], timeout: 0.5)
+
+        _ = try await runtime.compactThreadContext(id: thread.id)
+
+        await fulfillment(of: [observedCompactedUsage], timeout: 0.5)
+        XCTAssertTrue(usages.contains(where: { ($0?.estimatedTokenSavings ?? 0) > 0 }))
     }
 
     func testSetTitlePublishesObservedThreadUpdateAndPersists() async throws {

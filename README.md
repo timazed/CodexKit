@@ -302,6 +302,13 @@ runtime.observeThreadContextState(id: thread.id)
     }
     .store(in: &cancellables)
 
+runtime.observeThreadContextUsage(id: thread.id)
+    .receive(on: DispatchQueue.main)
+    .sink { usage in
+        print("Estimated effective tokens:", usage?.effectiveEstimatedTokenCount ?? 0)
+    }
+    .store(in: &cancellables)
+
 try await runtime.setTitle("Shipping Triage", for: thread.id)
 ```
 
@@ -312,6 +319,7 @@ Available built-in publishers:
 - `observeMessages(in:)`
 - `observeThreadSummary(id:)`
 - `observeThreadContextState(id:)`
+- `observeThreadContextUsage(id:)`
 
 The checked-in demo app includes a thread detail `Observation Demo` card that exercises these publishers live, along with a rename control that calls `setTitle(_:for:)`.
 
@@ -339,12 +347,16 @@ let runtime = try AgentRuntime(configuration: .init(
 
 let contextState = try await runtime.compactThreadContext(id: thread.id)
 print(contextState.generation)
+
+let usage = try await runtime.fetchThreadContextUsage(id: thread.id)
+print(usage?.effectiveEstimatedTokenCount ?? 0)
 ```
 
-For debug tooling or host inspection, you can also read the compacted effective context directly:
+For debug tooling or host inspection, you can also read the compacted effective context and the current estimated context-window usage directly:
 
 ```swift
 let contextState = try await runtime.fetchThreadContextState(id: thread.id)
+let usage = try await runtime.fetchThreadContextUsage(id: thread.id)
 let contexts = try await runtime.execute(
     ThreadContextStateQuery(threadIDs: [thread.id])
 )

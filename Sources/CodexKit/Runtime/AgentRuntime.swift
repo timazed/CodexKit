@@ -297,6 +297,12 @@ public actor AgentRuntime {
                 state: state.contextStateByThread[threadID]
             )
         )
+        observationCenter.send(
+            .threadContextUsageChanged(
+                threadID: threadID,
+                usage: threadContextUsage(for: threadID)
+            )
+        )
     }
 
     func resolveInstructions(

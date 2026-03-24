@@ -7,6 +7,7 @@ public enum AgentRuntimeObservation: Sendable {
     case messagesChanged(threadID: String, messages: [AgentMessage])
     case threadSummaryChanged(AgentThreadSummary)
     case threadContextStateChanged(threadID: String, state: AgentThreadContextState?)
+    case threadContextUsageChanged(threadID: String, usage: AgentThreadContextUsage?)
     case threadDeleted(threadID: String)
 }
 
@@ -18,6 +19,7 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
     private var messageSubjects: [String: CurrentValueSubject<[AgentMessage], Never>] = [:]
     private var summarySubjects: [String: CurrentValueSubject<AgentThreadSummary?, Never>] = [:]
     private var contextStateSubjects: [String: CurrentValueSubject<AgentThreadContextState?, Never>] = [:]
+    private var contextUsageSubjects: [String: CurrentValueSubject<AgentThreadContextUsage?, Never>] = [:]
 
     public init() {}
 
@@ -53,6 +55,12 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
         }
     }
 
+    public func threadContextUsagePublisher(for threadID: String) -> AnyPublisher<AgentThreadContextUsage?, Never> {
+        withLock {
+            contextUsageSubject(for: threadID).eraseToAnyPublisher()
+        }
+    }
+
     func send(_ observation: AgentRuntimeObservation) {
         var updates: [() -> Void] = []
 
@@ -77,15 +85,21 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
                 let subject = contextStateSubject(for: threadID)
                 updates.append { subject.send(state) }
 
+            case let .threadContextUsageChanged(threadID, usage):
+                let subject = contextUsageSubject(for: threadID)
+                updates.append { subject.send(usage) }
+
             case let .threadDeleted(threadID):
                 let threadSubject = threadSubject(for: threadID)
                 let messageSubject = messageSubject(for: threadID)
                 let summarySubject = summarySubject(for: threadID)
                 let contextStateSubject = contextStateSubject(for: threadID)
+                let contextUsageSubject = contextUsageSubject(for: threadID)
                 updates.append { threadSubject.send(nil) }
                 updates.append { messageSubject.send([]) }
                 updates.append { summarySubject.send(nil) }
                 updates.append { contextStateSubject.send(nil) }
+                updates.append { contextUsageSubject.send(nil) }
             }
         }
 
@@ -129,6 +143,15 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
         return subject
     }
 
+    private func contextUsageSubject(for threadID: String) -> CurrentValueSubject<AgentThreadContextUsage?, Never> {
+        if let subject = contextUsageSubjects[threadID] {
+            return subject
+        }
+        let subject = CurrentValueSubject<AgentThreadContextUsage?, Never>(nil)
+        contextUsageSubjects[threadID] = subject
+        return subject
+    }
+
     private func withLock<T>(_ body: () -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
@@ -155,5 +178,9 @@ extension AgentRuntime {
 
     public nonisolated func observeThreadContextState(id threadID: String) -> AnyPublisher<AgentThreadContextState?, Never> {
         observationCenter.threadContextStatePublisher(for: threadID)
+    }
+
+    public nonisolated func observeThreadContextUsage(id threadID: String) -> AnyPublisher<AgentThreadContextUsage?, Never> {
+        observationCenter.threadContextUsagePublisher(for: threadID)
     }
 }

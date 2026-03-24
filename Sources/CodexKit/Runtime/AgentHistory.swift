@@ -178,6 +178,7 @@ public protocol AgentRuntimeThreadInspecting: Sendable {
     ) async throws -> AgentThreadHistoryPage
     func fetchLatestStructuredOutputMetadata(id: String) async throws -> AgentStructuredOutputMetadata?
     func fetchThreadContextState(id: String) async throws -> AgentThreadContextState?
+    func fetchThreadContextUsage(id: String) async throws -> AgentThreadContextUsage?
 }
 
 public extension AgentThreadSummary {

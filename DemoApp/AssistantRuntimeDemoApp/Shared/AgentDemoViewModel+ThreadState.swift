@@ -280,9 +280,13 @@ extension AgentDemoViewModel {
         do {
             activeThreadContextState = try await runtime.fetchThreadContextState(id: resolvedThreadID)
             observedThreadContextState = activeThreadContextState
+            activeThreadContextUsage = try await runtime.fetchThreadContextUsage(id: resolvedThreadID)
+            observedThreadContextUsage = activeThreadContextUsage
         } catch {
             activeThreadContextState = nil
             observedThreadContextState = nil
+            activeThreadContextUsage = nil
+            observedThreadContextUsage = nil
             developerErrorLog("Failed to fetch thread context state. threadID=\(resolvedThreadID) error=\(error.localizedDescription)")
         }
     }
@@ -325,10 +329,11 @@ extension AgentDemoViewModel {
         do {
             developerLog("Manual context compaction started. threadID=\(activeThreadID)")
             activeThreadContextState = try await runtime.compactThreadContext(id: activeThreadID)
+            activeThreadContextUsage = try await runtime.fetchThreadContextUsage(id: activeThreadID)
             threads = await runtime.threads()
             setMessages(await runtime.messages(for: activeThreadID))
             developerLog(
-                "Manual context compaction finished. threadID=\(activeThreadID) generation=\(activeThreadContextState?.generation ?? 0) effectiveMessages=\(activeThreadContextState?.effectiveMessages.count ?? 0)"
+                "Manual context compaction finished. threadID=\(activeThreadID) generation=\(activeThreadContextState?.generation ?? 0) effectiveTokens=\(activeThreadContextUsage?.effectiveEstimatedTokenCount ?? 0)"
             )
         } catch {
             reportError(error)

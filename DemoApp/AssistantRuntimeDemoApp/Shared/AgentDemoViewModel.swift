@@ -239,6 +239,8 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var observedMessages: [AgentMessage] = []
     var observedThreadSummary: AgentThreadSummary?
     var observedThreadContextState: AgentThreadContextState?
+    var activeThreadContextUsage: AgentThreadContextUsage?
+    var observedThreadContextUsage: AgentThreadContextUsage?
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator

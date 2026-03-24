@@ -16,10 +16,12 @@ extension AgentRuntime {
             return
         }
 
+        let currentEffectiveMessages = state.contextStateByThread[message.threadID]?.effectiveMessages
+            ?? Array((state.messagesByThread[message.threadID] ?? []).dropLast())
         let current = state.contextStateByThread[message.threadID]
             ?? AgentThreadContextState(
                 threadID: message.threadID,
-                effectiveMessages: state.messagesByThread[message.threadID] ?? []
+                effectiveMessages: currentEffectiveMessages
             )
         let updated = AgentThreadContextState(
             threadID: current.threadID,

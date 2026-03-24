@@ -72,6 +72,17 @@ extension AgentDemoViewModel {
                 self.activeThreadContextState = contextState
             }
             .store(in: &activeThreadObservationCancellables)
+
+        runtime.observeThreadContextUsage(id: threadID)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] contextUsage in
+                guard let self else {
+                    return
+                }
+                self.observedThreadContextUsage = contextUsage
+                self.activeThreadContextUsage = contextUsage
+            }
+            .store(in: &activeThreadObservationCancellables)
     }
 
     func resetObservedThreadState() {
@@ -80,5 +91,17 @@ extension AgentDemoViewModel {
         observedThreadSummary = nil
         observedThreadContextState = nil
         activeThreadContextState = nil
+        observedThreadContextUsage = nil
+        activeThreadContextUsage = nil
+    }
+
+    func formattedTokenCount(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 {
+            return String(format: "%.1fM", Double(tokens) / 1_000_000)
+        }
+        if tokens >= 1_000 {
+            return String(format: "%.1fk", Double(tokens) / 1_000)
+        }
+        return "\(tokens)"
     }
 }
