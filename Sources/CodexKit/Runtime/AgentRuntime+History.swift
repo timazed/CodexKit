@@ -156,6 +156,20 @@ extension AgentRuntime {
             createdAt: createdAt,
             item: item
         )
+        var metadata: [String: String] = [
+            "thread_id": threadID,
+            "record_id": record.id,
+            "sequence": "\(record.sequenceNumber)",
+            "kind": historyItemKind(for: item).rawValue,
+        ]
+        if let systemEventType = historySystemEventType(for: item) {
+            metadata["system_event_type"] = systemEventType
+        }
+        logger.debug(
+            .persistence,
+            "Appending history item.",
+            metadata: metadata
+        )
         state.historyByThread[threadID, default: []].append(record)
         state.nextHistorySequenceByThread[threadID] = nextSequence + 1
         enqueueStoreOperation(
@@ -328,6 +342,36 @@ extension AgentRuntime {
             updatedAt: updatedAt,
             resultPreview: result?.primaryText
         )
+    }
+
+    private func historyItemKind(
+        for item: AgentHistoryItem
+    ) -> AgentHistoryItemKind {
+        switch item {
+        case .message:
+            return .message
+        case .toolCall:
+            return .toolCall
+        case .toolResult:
+            return .toolResult
+        case .structuredOutput:
+            return .structuredOutput
+        case .approval:
+            return .approval
+        case .systemEvent:
+            return .systemEvent
+        }
+    }
+
+    private func historySystemEventType(
+        for item: AgentHistoryItem
+    ) -> String? {
+        switch item {
+        case let .systemEvent(record):
+            return record.type.rawValue
+        default:
+            return nil
+        }
     }
 }
 

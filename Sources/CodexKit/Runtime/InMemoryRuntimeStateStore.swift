@@ -2,20 +2,32 @@ import Foundation
 
 public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
     private var state: StoredRuntimeState
+    private let logger: AgentLogger
 
-    public init(initialState: StoredRuntimeState = .empty) {
+    public init(
+        initialState: StoredRuntimeState = .empty,
+        logging: AgentLoggingConfiguration = .disabled
+    ) {
         state = initialState.normalized()
+        logger = AgentLogger(configuration: logging)
     }
 
     public func loadState() async throws -> StoredRuntimeState {
-        state
+        logger.debug(.persistence, "Loading in-memory runtime state.")
+        return state
     }
 
     public func saveState(_ state: StoredRuntimeState) async throws {
+        logger.debug(
+            .persistence,
+            "Saving in-memory runtime state.",
+            metadata: ["threads": "\(state.threads.count)"]
+        )
         self.state = state.normalized()
     }
 
     public func prepare() async throws -> AgentStoreMetadata {
+        logger.info(.persistence, "Preparing in-memory runtime state store.")
         state = state.normalized()
         return try await readMetadata()
     }

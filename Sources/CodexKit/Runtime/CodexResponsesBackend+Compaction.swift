@@ -8,6 +8,14 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentCompactionResult {
+        logger.info(
+            .compaction,
+            "Starting remote context compaction.",
+            metadata: [
+                "thread_id": thread.id,
+                "history_count": "\(effectiveHistory.count)"
+            ]
+        )
         let requestFactory = CodexResponsesRequestFactory(
             configuration: configuration,
             encoder: encoder
@@ -49,6 +57,15 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
+            logger.error(
+                .compaction,
+                "Remote context compaction failed.",
+                metadata: [
+                    "thread_id": thread.id,
+                    "status": "\(httpResponse.statusCode)",
+                    "body": body
+                ]
+            )
             throw AgentRuntimeError(
                 code: "responses_compact_failed",
                 message: "The ChatGPT compact endpoint failed with status \(httpResponse.statusCode): \(body)"
@@ -63,6 +80,16 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         guard !messages.isEmpty else {
             throw AgentRuntimeError.contextCompactionUnsupported()
         }
+
+        logger.info(
+            .compaction,
+            "Remote context compaction completed.",
+            metadata: [
+                "thread_id": thread.id,
+                "message_count_before": "\(effectiveHistory.count)",
+                "message_count_after": "\(messages.count)"
+            ]
+        )
 
         return AgentCompactionResult(
             effectiveMessages: messages,

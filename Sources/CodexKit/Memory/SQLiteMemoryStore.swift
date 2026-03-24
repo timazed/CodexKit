@@ -3,13 +3,18 @@ import GRDB
 
 public actor SQLiteMemoryStore: MemoryStoring {
     private let url: URL
+    private let logger: AgentLogger
     private let dbQueue: DatabaseQueue
     private let schema: SQLiteMemoryStoreSchema
     private let repository: SQLiteMemoryStoreRepository
     private let migrator: DatabaseMigrator
 
-    public init(url: URL) throws {
+    public init(
+        url: URL,
+        logging: AgentLoggingConfiguration = .disabled
+    ) throws {
         self.url = url
+        self.logger = AgentLogger(configuration: logging)
         self.schema = SQLiteMemoryStoreSchema()
         let codec = SQLiteMemoryStoreCodec()
         self.repository = SQLiteMemoryStoreRepository(codec: codec)
@@ -36,9 +41,11 @@ public actor SQLiteMemoryStore: MemoryStoring {
         }
 
         try migrator.migrate(dbQueue)
+        logger.info(.memory, "SQLite memory store prepared.", metadata: ["url": url.path])
     }
 
     public func put(_ record: MemoryRecord) async throws {
+        logger.debug(.memory, "Writing memory record.", metadata: ["namespace": record.namespace, "record_id": record.id])
         try MemoryQueryEngine.validateNamespace(record.namespace)
         let repository = self.repository
         try await writeTransaction { db in
@@ -51,6 +58,7 @@ public actor SQLiteMemoryStore: MemoryStoring {
     }
 
     public func putMany(_ records: [MemoryRecord]) async throws {
+        logger.debug(.memory, "Writing many memory records.", metadata: ["count": "\(records.count)"])
         let repository = self.repository
         try await writeTransaction { db in
             for record in records {
@@ -65,6 +73,7 @@ public actor SQLiteMemoryStore: MemoryStoring {
     }
 
     public func upsert(_ record: MemoryRecord, dedupeKey: String) async throws {
+        logger.debug(.memory, "Upserting memory record by dedupe key.", metadata: ["namespace": record.namespace, "record_id": record.id])
         try MemoryQueryEngine.validateNamespace(record.namespace)
         let repository = self.repository
         try await writeTransaction { db in
@@ -77,6 +86,14 @@ public actor SQLiteMemoryStore: MemoryStoring {
     }
 
     public func query(_ query: MemoryQuery) async throws -> MemoryQueryResult {
+        logger.debug(
+            .memory,
+            "Querying memory store.",
+            metadata: [
+                "namespace": query.namespace,
+                "text_length": "\(query.text?.count ?? 0)"
+            ]
+        )
         try MemoryQueryEngine.validateNamespace(query.namespace)
         let records = try await dbQueue.read { db in
             try repository.loadRecords(namespace: query.namespace, in: db)

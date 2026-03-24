@@ -20,6 +20,7 @@ Use `CodexKit` if you are building a SwiftUI app for iOS or macOS and want:
 - host-defined tools with approval gates
 - persona- and skill-aware agent behavior
 - hidden runtime context compaction with preserved user-visible history
+- opt-in developer logging across runtime, auth, backend, and bundled stores
 - share/import-friendly message construction
 
 The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
@@ -226,6 +227,52 @@ let backend = CodexResponsesBackend(
     )
 )
 ```
+
+## Developer Logging
+
+`CodexKit` includes opt-in developer logging for the SDK itself. Logging is disabled by default and can be enabled independently on the runtime, built-in backend, and bundled stores.
+
+```swift
+let logging = AgentLoggingConfiguration.console(
+    minimumLevel: .debug
+)
+
+let backend = CodexResponsesBackend(
+    configuration: .init(
+        model: "gpt-5.4",
+        logging: logging
+    )
+)
+
+let stateStore = try GRDBRuntimeStateStore(
+    url: stateURL,
+    logging: logging
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalInbox,
+    stateStore: stateStore,
+    logging: logging
+))
+```
+
+Available logging categories include:
+
+- `auth`
+- `runtime`
+- `persistence`
+- `network`
+- `retry`
+- `compaction`
+- `tools`
+- `approvals`
+- `structuredOutput`
+- `memory`
+
+Use `AgentConsoleLogSink` for stderr-style console logs, `AgentOSLogSink` for unified Apple logging, or provide your own `AgentLogSink`.
 
 Available values:
 

@@ -2,6 +2,7 @@ import Foundation
 
 struct CodexResponsesTurnRunner {
     let configuration: CodexResponsesBackendConfiguration
+    let logger: AgentLogger
     let instructions: String
     let responseFormat: AgentStructuredOutputFormat?
     let streamedStructuredOutput: AgentStreamedStructuredOutputRequest?
@@ -17,6 +18,7 @@ struct CodexResponsesTurnRunner {
 
     init(
         configuration: CodexResponsesBackendConfiguration,
+        logger: AgentLogger,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
@@ -31,11 +33,16 @@ struct CodexResponsesTurnRunner {
         continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
     ) {
         self.configuration = configuration
+        self.logger = logger
         self.instructions = instructions
         self.responseFormat = responseFormat
         self.streamedStructuredOutput = streamedStructuredOutput
         self.requestFactory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder)
-        self.streamClient = CodexResponsesEventStreamClient(urlSession: urlSession, decoder: decoder)
+        self.streamClient = CodexResponsesEventStreamClient(
+            urlSession: urlSession,
+            decoder: decoder,
+            logger: logger
+        )
         self.toolOutputAdapter = CodexResponsesToolOutputAdapter(urlSession: urlSession)
         self.threadID = threadID
         self.turnID = turnID
@@ -49,6 +56,16 @@ struct CodexResponsesTurnRunner {
         history: [AgentMessage],
         newMessage: UserMessageRequest
     ) async throws -> AgentUsage {
+        logger.debug(
+            .network,
+            "Starting backend turn runner.",
+            metadata: [
+                "thread_id": threadID,
+                "turn_id": turnID,
+                "history_count": "\(history.count)",
+                "tool_count": "\(tools.count)"
+            ]
+        )
         var state = TurnRunState(
             workingHistory: initialWorkingHistory(history: history, newMessage: newMessage)
         )
@@ -93,6 +110,15 @@ struct CodexResponsesTurnRunner {
         // Build one request per pass. Retries replay the same request, while a new pass
         // is only started after tool output mutates the working history.
         let request = try makeRequest(for: state)
+        logger.debug(
+            .network,
+            "Starting backend turn pass.",
+            metadata: [
+                "thread_id": threadID,
+                "turn_id": turnID,
+                "working_items": "\(state.workingHistory.count)"
+            ]
+        )
 
         for attempt in 1...retryPolicy.maxAttempts {
             var retryState = RetryAttemptState()
@@ -109,8 +135,29 @@ struct CodexResponsesTurnRunner {
                     policy: retryPolicy,
                     retryState: retryState
                 ) else {
+                    logger.error(
+                        .network,
+                        "Backend turn pass failed without retry.",
+                        metadata: [
+                            "thread_id": threadID,
+                            "turn_id": turnID,
+                            "attempt": "\(attempt)",
+                            "error": error.localizedDescription
+                        ]
+                    )
                     throw error
                 }
+                logger.warning(
+                    .retry,
+                    "Retrying backend turn pass.",
+                    metadata: [
+                        "thread_id": threadID,
+                        "turn_id": turnID,
+                        "attempt": "\(attempt)",
+                        "max_attempts": "\(retryPolicy.maxAttempts)",
+                        "error": error.localizedDescription
+                    ]
+                )
                 try await sleepBeforeRetry(attempt: attempt, policy: retryPolicy)
             }
         }
@@ -175,6 +222,15 @@ struct CodexResponsesTurnRunner {
             return .none
 
         case let .functionCall(functionCall):
+            logger.info(
+                .tools,
+                "Received tool call from backend.",
+                metadata: [
+                    "thread_id": threadID,
+                    "turn_id": turnID,
+                    "tool_name": functionCall.name
+                ]
+            )
             try await handleFunctionCall(functionCall, state: &state)
             return .toolCall
 
@@ -182,6 +238,16 @@ struct CodexResponsesTurnRunner {
             state.aggregateUsage.inputTokens += usage.inputTokens
             state.aggregateUsage.cachedInputTokens += usage.cachedInputTokens
             state.aggregateUsage.outputTokens += usage.outputTokens
+            logger.debug(
+                .network,
+                "Backend stream completed pass.",
+                metadata: [
+                    "thread_id": threadID,
+                    "turn_id": turnID,
+                    "input_tokens": "\(usage.inputTokens)",
+                    "output_tokens": "\(usage.outputTokens)"
+                ]
+            )
             return .none
         }
     }

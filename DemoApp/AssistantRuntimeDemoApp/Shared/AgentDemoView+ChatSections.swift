@@ -50,7 +50,7 @@ extension AgentDemoView {
             )
             .toggleStyle(.switch)
 
-            Text("Debug builds start with logging enabled. Logs print to the Xcode console for restore, sign-in, thread lifecycle, turn events, and tool activity.")
+            Text("Debug builds start with logging enabled. Logs print to the Xcode console for both demo actions and SDK internals like history writes, thread creation, network calls, retries, compaction, and tool activity.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

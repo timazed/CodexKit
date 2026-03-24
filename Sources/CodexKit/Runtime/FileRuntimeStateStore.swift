@@ -2,13 +2,18 @@ import Foundation
 
 public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
     private let url: URL
+    private let logger: AgentLogger
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let fileManager = FileManager.default
     private let attachmentStore: RuntimeAttachmentStore
 
-    public init(url: URL) {
+    public init(
+        url: URL,
+        logging: AgentLoggingConfiguration = .disabled
+    ) {
         self.url = url
+        self.logger = AgentLogger(configuration: logging)
         let basename = url.deletingPathExtension().lastPathComponent
         self.attachmentStore = RuntimeAttachmentStore(
             rootURL: url.deletingLastPathComponent()
@@ -18,14 +23,24 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     }
 
     public func loadState() async throws -> StoredRuntimeState {
-        try loadNormalizedStateMigratingIfNeeded()
+        logger.debug(.persistence, "Loading file runtime state.", metadata: ["url": url.path])
+        return try loadNormalizedStateMigratingIfNeeded()
     }
 
     public func saveState(_ state: StoredRuntimeState) async throws {
+        logger.info(
+            .persistence,
+            "Saving file runtime state snapshot.",
+            metadata: [
+                "url": url.path,
+                "threads": "\(state.threads.count)"
+            ]
+        )
         try persistLayout(for: state.normalized())
     }
 
     public func prepare() async throws -> AgentStoreMetadata {
+        logger.info(.persistence, "Preparing file runtime state store.", metadata: ["url": url.path])
         _ = try loadNormalizedStateMigratingIfNeeded()
         return try await readMetadata()
     }
@@ -107,6 +122,11 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
         let data = try Data(contentsOf: url)
         let legacy = try decoder.decode(StoredRuntimeState.self, from: data).normalized()
+        logger.info(
+            .persistence,
+            "Migrating legacy file runtime state layout.",
+            metadata: ["url": url.path]
+        )
         try persistLayout(for: legacy)
         return legacy
     }
