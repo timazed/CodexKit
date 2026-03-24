@@ -259,6 +259,16 @@ let runtime = try AgentRuntime(configuration: .init(
 ))
 ```
 
+You can also filter by category:
+
+```swift
+let logging = AgentLoggingConfiguration.osLog(
+    minimumLevel: .debug,
+    categories: [.runtime, .persistence, .network, .tools],
+    subsystem: "com.example.myapp"
+)
+```
+
 Available logging categories include:
 
 - `auth`
@@ -274,12 +284,36 @@ Available logging categories include:
 
 Use `AgentConsoleLogSink` for stderr-style console logs, `AgentOSLogSink` for unified Apple logging, or provide your own `AgentLogSink`.
 
-Available values:
+Custom sinks make it possible to bridge `CodexKit` logs into your own telemetry or logging pipeline:
 
-- `.low`
-- `.medium`
-- `.high`
-- `.extraHigh`
+```swift
+struct RemoteTelemetrySink: AgentLogSink {
+    func log(_ entry: AgentLogEntry) {
+        Telemetry.shared.enqueue(
+            level: entry.level,
+            category: entry.category.rawValue,
+            message: entry.message,
+            metadata: entry.metadata,
+            timestamp: entry.timestamp
+        )
+    }
+}
+
+let logging = AgentLoggingConfiguration(
+    minimumLevel: .info,
+    sink: RemoteTelemetrySink()
+)
+```
+
+`AgentLogEntry` includes:
+
+- timestamp
+- level
+- category
+- message
+- metadata
+
+For remote telemetry or file-backed logging, prefer a sink that buffers or enqueues work quickly. `AgentLogSink.log(_:)` is called inline, so it should avoid blocking network I/O on the caller's execution path.
 
 ## Persistent State And Queries
 
