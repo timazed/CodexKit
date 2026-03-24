@@ -1,6 +1,6 @@
 # CodexKit Demo App
 
-This folder contains the checked-in iOS example app for exercising the `CodexKit` embedded agent runtime.
+This folder contains the checked-in iOS example app for exercising the `CodexKit` embedded agent runtime. The package itself supports both iOS and macOS; this demo remains the iOS sample app.
 
 ## Open the app in Xcode
 

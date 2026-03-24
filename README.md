@@ -3,13 +3,13 @@
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/main-2.0.0--dev-orange)
 
-`CodexKit` is a lightweight iOS-first SDK for embedding OpenAI Codex-style agents in Apple apps.
+`CodexKit` is a lightweight SDK for embedding OpenAI Codex-style agents in Apple apps, with explicit support for iOS and macOS.
 
 `main` documents the upcoming `2.0` development line. If you are integrating the latest stable release, use the [`v1.1.0` docs](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md) instead.
 
 ## Who This Is For
 
-Use `CodexKit` if you are building a SwiftUI/iOS app and want:
+Use `CodexKit` if you are building a SwiftUI app for iOS or macOS and want:
 
 - ChatGPT sign-in (device code or OAuth)
 - secure session persistence
@@ -102,7 +102,7 @@ let runtime = try AgentRuntime(configuration: .init(
 let _ = try await runtime.signIn()
 let thread = try await runtime.createThread(title: "First Chat")
 let stream = try await runtime.streamMessage(
-    UserMessageRequest(text: "Hello from iOS."),
+    UserMessageRequest(text: "Hello from Apple platforms."),
     in: thread.id
 )
 ```
@@ -111,6 +111,7 @@ let stream = try await runtime.streamMessage(
 
 | Capability | Support |
 | --- | --- |
+| Supported platforms | iOS 17+, macOS 14+ |
 | iOS auth: device code | Yes |
 | iOS auth: browser OAuth (localhost callback) | Yes |
 | Threaded runtime state + restore | Yes |
@@ -134,6 +135,11 @@ let stream = try await runtime.streamMessage(
 - `CodexKit`: core runtime, auth, backend, tools, approvals
 - `CodexKitUI`: optional SwiftUI-facing helpers
 
+Supported package platforms:
+
+- iOS 17+
+- macOS 14+
+
 ## Architecture
 
 ```mermaid
@@ -150,7 +156,7 @@ flowchart LR
 
 ## Recommended Live Setup
 
-The recommended production path for iOS is:
+The recommended production path for iOS and macOS is:
 
 - `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
