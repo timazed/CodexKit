@@ -22,6 +22,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - lets you attach a photo from the library and send it with or without text
 - renders attached user images in the transcript
 - streams assistant output into the UI
+- includes a thread-level `Context Compaction` card so you can compact effective prompt state without removing visible transcript history
 - supports approval prompts for host-defined tools that opt into `requiresApproval`
 - demonstrates thread-pinned personas and one-turn persona overrides
 - includes first-class framework skill examples for `health_coach` and `travel_planner`
@@ -48,6 +49,14 @@ The demo uses the new configuration-first surface:
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
 The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use. Runtime state is stored in `runtime-state.sqlite`, memory is stored in `memory.sqlite`, and the GRDB-backed runtime store will import an older sibling `runtime-state.json` file automatically on first launch if one exists.
+
+The checked-in demo enables context compaction in automatic mode. In a thread detail screen, the `Context Compaction` card shows:
+
+- visible transcript message count
+- effective prompt message count
+- compaction generation
+- last compaction reason/time
+- a `Compact Context Now` action for manual testing
 
 ## Files
 

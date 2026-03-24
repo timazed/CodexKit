@@ -19,6 +19,7 @@ Use `CodexKit` if you are building a SwiftUI/iOS app and want:
 - typed one-shot text and structured completions
 - host-defined tools with approval gates
 - persona- and skill-aware agent behavior
+- hidden runtime context compaction with preserved user-visible history
 - share/import-friendly message construction
 
 The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
@@ -166,6 +167,11 @@ Bundled runtime-state stores now include:
 - `InMemoryRuntimeStateStore`
   Useful for previews and tests.
 
+The bundled memory store is:
+
+- `SQLiteMemoryStore`
+  Uses SQLite through GRDB for persisted memory records. Ordinary record reads/writes use GRDB requests directly; the remaining raw SQL is limited to SQLite-specific `PRAGMA` and FTS `MATCH` / `bm25()` paths.
+
 If you are migrating from the older file-backed store, `GRDBRuntimeStateStore(url:)` automatically imports a sibling `*.json` runtime state file on first open. For example, `runtime-state.sqlite` will import from `runtime-state.json` if it exists and the SQLite store is still empty.
 
 `ChatGPTAuthProvider` supports:
@@ -229,6 +235,7 @@ Available values:
 - use `GRDBRuntimeStateStore` for persisted production state
 - use `fetchThreadHistory(id:query:)` and `fetchLatestStructuredOutputMetadata(id:)` for common thread inspection
 - use the typed `execute(_:)` query surface when you need more control over filtering, sorting, paging, or cross-thread reads
+- use hidden context compaction when you want to optimize future turns without removing preserved thread history from UI or inspection APIs
 
 ```swift
 let stateStore = try GRDBRuntimeStateStore(
@@ -258,6 +265,41 @@ let snapshots = try await runtime.execute(
 ```
 
 This path also supports explicit history redaction and whole-thread deletion without forcing hosts to replay raw event streams themselves.
+
+## Effective Context Compaction
+
+`CodexKit` can compact the runtime's effective prompt context without mutating canonical thread history.
+
+- visible history stays intact for `messages(for:)`, `fetchThreadHistory(...)`, and normal thread UI
+- compacted effective context is used only for future turns
+- compaction markers are persisted for audit/debug semantics and hidden from normal history reads by default
+- manual compaction is always available when the feature is enabled; `.automatic` additionally lets the runtime compact pre-turn or after a context-limit retry path
+
+```swift
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore,
+    contextCompaction: .init(
+        isEnabled: true,
+        mode: .automatic
+    )
+))
+
+let contextState = try await runtime.compactThreadContext(id: thread.id)
+print(contextState.generation)
+```
+
+For debug tooling or host inspection, you can also read the compacted effective context directly:
+
+```swift
+let contextState = try await runtime.fetchThreadContextState(id: thread.id)
+let contexts = try await runtime.execute(
+    ThreadContextStateQuery(threadIDs: [thread.id])
+)
+```
 
 ## Typed Completions
 
@@ -693,6 +735,7 @@ The demo app exercises:
 - Responses web search in checked-in configuration
 - thread-pinned personas and one-turn overrides
 - a one-tap skill policy probe that compares tool behavior in normal vs skill-constrained threads
+- a thread-level `Context Compaction` card that shows visible-vs-effective message counts and lets you trigger manual compaction
 - a Health Coach tab with HealthKit steps, AI-generated coaching, local reminders, and tone switching
 - GRDB-backed runtime persistence with automatic import from older `runtime-state.json` state on first launch
 
