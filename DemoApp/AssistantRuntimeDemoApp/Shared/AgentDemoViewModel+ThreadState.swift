@@ -39,6 +39,7 @@ extension AgentDemoViewModel {
             approvalInbox: approvalInbox,
             deviceCodePromptCoordinator: deviceCodePromptCoordinator
         )
+        configureRuntimeObservationBindings()
 
         defer {
             isAuthenticating = false
@@ -88,6 +89,7 @@ extension AgentDemoViewModel {
             approvalInbox: approvalInbox,
             deviceCodePromptCoordinator: deviceCodePromptCoordinator
         )
+        configureRuntimeObservationBindings()
 
         do {
             _ = try await runtime.restore()
@@ -172,6 +174,7 @@ extension AgentDemoViewModel {
 
     func activateThread(id: String) async {
         activeThreadID = id
+        bindActiveThreadObservation(for: id)
         setMessages(await runtime.messages(for: id))
         streamingText = ""
         await refreshThreadContextState(for: id)
@@ -202,6 +205,8 @@ extension AgentDemoViewModel {
             memoryPreviewResult = nil
             activeThreadID = nil
             healthCoachThreadID = nil
+            activeThreadObservationCancellables.removeAll()
+            resetObservedThreadState()
             healthCoachFeedback = "Set a step goal, then start moving."
             healthLastUpdatedAt = nil
             healthKitAuthorized = false
@@ -234,6 +239,7 @@ extension AgentDemoViewModel {
         let selectedThreadID = activeThreadID
         if let selectedThreadID,
            threads.contains(where: { $0.id == selectedThreadID }) {
+            bindActiveThreadObservation(for: selectedThreadID)
             setMessages(await runtime.messages(for: selectedThreadID))
             await refreshThreadContextState(for: selectedThreadID)
             return
@@ -241,12 +247,13 @@ extension AgentDemoViewModel {
 
         if let firstThread = threads.first {
             activeThreadID = firstThread.id
+            bindActiveThreadObservation(for: firstThread.id)
             setMessages(await runtime.messages(for: firstThread.id))
             await refreshThreadContextState(for: firstThread.id)
         } else {
             activeThreadID = nil
             messages = []
-            activeThreadContextState = nil
+            resetObservedThreadState()
         }
     }
 
@@ -260,20 +267,44 @@ extension AgentDemoViewModel {
         isRunningSkillPolicyProbe = false
         skillPolicyProbeResult = nil
         activeThreadID = nil
-        activeThreadContextState = nil
+        activeThreadObservationCancellables.removeAll()
+        resetObservedThreadState()
     }
 
     func refreshThreadContextState(for threadID: String? = nil) async {
         guard let resolvedThreadID = threadID ?? activeThreadID else {
-            activeThreadContextState = nil
+            resetObservedThreadState()
             return
         }
 
         do {
             activeThreadContextState = try await runtime.fetchThreadContextState(id: resolvedThreadID)
+            observedThreadContextState = activeThreadContextState
         } catch {
             activeThreadContextState = nil
+            observedThreadContextState = nil
             developerErrorLog("Failed to fetch thread context state. threadID=\(resolvedThreadID) error=\(error.localizedDescription)")
+        }
+    }
+
+    func updateActiveThreadTitle(_ title: String) async {
+        guard let activeThreadID else {
+            lastError = "Select a thread before renaming it."
+            return
+        }
+
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        do {
+            try await runtime.setTitle(
+                normalizedTitle.isEmpty ? nil : normalizedTitle,
+                for: activeThreadID
+            )
+            developerLog(
+                "Updated thread title. threadID=\(activeThreadID) title=\(normalizedTitle.isEmpty ? "<untitled>" : normalizedTitle)"
+            )
+        } catch {
+            reportError(error)
         }
     }
 

@@ -91,6 +91,20 @@ extension AgentRuntime {
         return thread.personaStack
     }
 
+    public func setTitle(
+        _ title: String?,
+        for threadID: String
+    ) async throws {
+        guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        state.threads[index].title = title
+        state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
+        try await persistState()
+    }
+
     public func setPersonaStack(
         _ personaStack: AgentPersonaStack?,
         for threadID: String

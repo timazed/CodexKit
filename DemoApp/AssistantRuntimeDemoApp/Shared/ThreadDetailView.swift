@@ -15,6 +15,7 @@ struct ThreadDetailView: View {
 
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isImportingPhoto = false
+    @State private var threadTitleDraft = ""
     @FocusState private var isComposerFocused: Bool
 
     init(viewModel: AgentDemoViewModel, threadID: String) {
@@ -26,6 +27,7 @@ struct ThreadDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 threadHeaderCard
+                observationCard
                 compactionCard
                 transcriptCard
             }
@@ -50,10 +52,16 @@ struct ThreadDetailView: View {
             }
             .background(.regularMaterial)
         }
-        .navigationTitle(activeThread?.title ?? "Thread")
+        .navigationTitle(observedThread?.title ?? activeThread?.title ?? "Thread")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: threadID) {
             await viewModel.activateThread(id: threadID)
+            threadTitleDraft = observedThread?.title ?? ""
+        }
+        .onChange(of: observedThread?.title) { previousValue, newValue in
+            if threadTitleDraft == (previousValue ?? "") || threadTitleDraft.isEmpty {
+                threadTitleDraft = newValue ?? ""
+            }
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else {
@@ -73,12 +81,24 @@ private extension ThreadDetailView {
         viewModel.threads.first { $0.id == threadID }
     }
 
+    var observedThread: AgentThread? {
+        viewModel.observedThread?.id == threadID ? viewModel.observedThread : activeThread
+    }
+
+    var observedContextState: AgentThreadContextState? {
+        viewModel.observedThreadContextState ?? viewModel.activeThreadContextState
+    }
+
+    var observedSummary: AgentThreadSummary? {
+        viewModel.observedThreadSummary
+    }
+
     var threadHeaderCard: some View {
         DemoSectionCard {
-            Text(activeThread?.title ?? "Thread")
+            Text(observedThread?.title ?? activeThread?.title ?? "Thread")
                 .font(.title3.weight(.semibold))
 
-            Text(activeThread?.status.rawValue.capitalized ?? "Idle")
+            Text(observedThread?.status.rawValue.capitalized ?? activeThread?.status.rawValue.capitalized ?? "Idle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -103,6 +123,38 @@ private extension ThreadDetailView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    var observationCard: some View {
+        DemoSectionCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Observation Demo")
+                    .font(.headline)
+
+                Text("This card is driven by `observeThread`, `observeMessages`, `observeThreadSummary`, and `observeThreadContextState`, so title, transcript, summary, and compaction changes update live without a manual refresh.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                compactionMetric(title: "Observed Messages", value: "\(viewModel.observedMessages.count)")
+                compactionMetric(title: "Latest Preview", value: observedSummary?.latestAssistantMessagePreview?.isEmpty == false ? "Ready" : "None")
+                compactionMetric(title: "Observed Status", value: observedThread?.status.rawValue.capitalized ?? "Idle")
+            }
+
+            TextField("Rename this thread", text: $threadTitleDraft)
+                .textFieldStyle(.roundedBorder)
+
+            Button {
+                Task {
+                    await viewModel.updateActiveThreadTitle(threadTitleDraft)
+                }
+            } label: {
+                Label("Save Thread Title", systemImage: "pencil")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(viewModel.session == nil || observedThread == nil)
         }
     }
 
@@ -145,15 +197,15 @@ private extension ThreadDetailView {
                 )
                 compactionMetric(
                     title: "Effective Messages",
-                    value: "\(viewModel.activeThreadContextState?.effectiveMessages.count ?? threadMessages.count)"
+                    value: "\(observedContextState?.effectiveMessages.count ?? threadMessages.count)"
                 )
                 compactionMetric(
                     title: "Generation",
-                    value: "\(viewModel.activeThreadContextState?.generation ?? 0)"
+                    value: "\(observedContextState?.generation ?? 0)"
                 )
             }
 
-            if let contextState = viewModel.activeThreadContextState {
+            if let contextState = observedContextState {
                 VStack(alignment: .leading, spacing: 6) {
                     if let reason = contextState.lastCompactionReason {
                         Text("Last compaction: \(reason.rawValue)")
@@ -195,17 +247,11 @@ private extension ThreadDetailView {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.session == nil || activeThread == nil || viewModel.isCompactingThreadContext)
-
-                Button {
-                    Task {
-                        await viewModel.refreshThreadContextState(for: threadID)
-                    }
-                } label: {
-                    Label("Refresh State", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .disabled(viewModel.session == nil || activeThread == nil)
             }
+
+            Text("Observed context state updates here automatically after compaction and future turns.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -286,7 +332,10 @@ private extension ThreadDetailView {
     }
 
     var threadMessages: [AgentMessage] {
-        viewModel.activeThreadID == threadID ? viewModel.messages : []
+        guard viewModel.activeThreadID == threadID else {
+            return []
+        }
+        return viewModel.observedMessages.isEmpty ? viewModel.messages : viewModel.observedMessages
     }
 
     var isStreamingActive: Bool {

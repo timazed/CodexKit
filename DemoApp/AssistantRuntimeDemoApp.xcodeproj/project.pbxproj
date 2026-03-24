@@ -27,6 +27,7 @@
 		1A2B3C4D5E6F700000000012 /* MemoryDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000012 /* MemoryDemoView.swift */; };
 		1A2B3C4D5E6F700000000013 /* AgentDemoViewModel+ComposerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000013 /* AgentDemoViewModel+ComposerState.swift */; };
 		1A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift */; };
+		1A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift */; };
 		7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */; };
 		84726927B752451499D9257F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 906A95007C8ECB92CFC2CE15 /* Foundation.framework */; };
 		B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA22585116A120BA97F76B8 /* AgentDemoView.swift */; };
@@ -57,6 +58,7 @@
 		2A2B3C4D5E6F700000000012 /* MemoryDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MemoryDemoView.swift; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000013 /* AgentDemoViewModel+ComposerState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+ComposerState.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+ThreadState.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+Observation.swift"; sourceTree = "<group>"; };
 		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
 		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
 		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
@@ -139,6 +141,7 @@
 				2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */,
 				2A2B3C4D5E6F700000000013 /* AgentDemoViewModel+ComposerState.swift */,
 				2A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift */,
+				2A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift */,
 				2A2B3C4D5E6F700000000006 /* AgentDemoViewModel+Messaging.swift */,
 				2A2B3C4D5E6F700000000007 /* AgentDemoViewModel+Tools.swift */,
 				2A2B3C4D5E6F700000000008 /* AgentDemoViewModel+HealthCoach.swift */,
@@ -248,6 +251,7 @@
 				1A2B3C4D5E6F700000000012 /* MemoryDemoView.swift in Sources */,
 				1A2B3C4D5E6F700000000013 /* AgentDemoViewModel+ComposerState.swift in Sources */,
 				1A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift in Sources */,
+				1A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift in Sources */,
 				7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */,
 				BB4F38E64D1EBBB3821AC4E3 /* AgentDemoRuntimeFactory.swift in Sources */,
 				B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */,

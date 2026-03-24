@@ -266,6 +266,49 @@ let snapshots = try await runtime.execute(
 
 This path also supports explicit history redaction and whole-thread deletion without forcing hosts to replay raw event streams themselves.
 
+## Live Observation
+
+`CodexKit` exposes Combine publishers so apps can react to runtime state changes without polling or manual callback wiring.
+
+```swift
+import Combine
+
+var cancellables = Set<AnyCancellable>()
+
+runtime.observeThread(id: thread.id)
+    .receive(on: DispatchQueue.main)
+    .sink { thread in
+        print("Observed title:", thread?.title ?? "Untitled")
+    }
+    .store(in: &cancellables)
+
+runtime.observeMessages(in: thread.id)
+    .receive(on: DispatchQueue.main)
+    .sink { messages in
+        print("Observed message count:", messages.count)
+    }
+    .store(in: &cancellables)
+
+runtime.observeThreadContextState(id: thread.id)
+    .receive(on: DispatchQueue.main)
+    .sink { contextState in
+        print("Observed compaction generation:", contextState?.generation ?? 0)
+    }
+    .store(in: &cancellables)
+
+try await runtime.setTitle("Shipping Triage", for: thread.id)
+```
+
+Available built-in publishers:
+
+- `observeThreads()`
+- `observeThread(id:)`
+- `observeMessages(in:)`
+- `observeThreadSummary(id:)`
+- `observeThreadContextState(id:)`
+
+The checked-in demo app includes a thread detail `Observation Demo` card that exercises these publishers live, along with a rename control that calls `setTitle(_:for:)`.
+
 ## Effective Context Compaction
 
 `CodexKit` can compact the runtime's effective prompt context without mutating canonical thread history.

@@ -1,3 +1,4 @@
+import Combine
 import CodexKit
 import CodexKitUI
 import Foundation
@@ -234,6 +235,10 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var currentAuthenticationMethod: DemoAuthenticationMethod = .deviceCode
     var activeThreadContextState: AgentThreadContextState?
     var isCompactingThreadContext = false
+    var observedThread: AgentThread?
+    var observedMessages: [AgentMessage] = []
+    var observedThreadSummary: AgentThreadSummary?
+    var observedThreadContextState: AgentThreadContextState?
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
@@ -249,6 +254,10 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var runtime: AgentRuntime
     var activeThreadID: String?
     var healthCoachThreadID: String?
+    @ObservationIgnored
+    var runtimeObservationCancellables: Set<AnyCancellable> = []
+    @ObservationIgnored
+    var activeThreadObservationCancellables: Set<AnyCancellable> = []
 
 #if os(iOS)
     let healthStore = HKHealthStore()
@@ -278,6 +287,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
         self.deviceCodePromptCoordinator = deviceCodePromptCoordinator
+        configureRuntimeObservationBindings()
     }
 
     var activeThread: AgentThread? {

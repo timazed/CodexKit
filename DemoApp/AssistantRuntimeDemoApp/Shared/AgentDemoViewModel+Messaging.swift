@@ -28,6 +28,7 @@ extension AgentDemoViewModel {
             )
             threads = await runtime.threads()
             activeThreadID = thread.id
+            bindActiveThreadObservation(for: thread.id)
             setMessages(await runtime.messages(for: thread.id))
             developerLog(
                 "Created thread. id=\(thread.id) title=\(thread.title ?? "<untitled>") totalThreads=\(threads.count)"

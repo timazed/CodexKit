@@ -344,6 +344,59 @@ extension AgentRuntimeTests {
         XCTAssertTrue(contexts.contains(where: { $0?.generation == 0 }))
         XCTAssertTrue(contexts.contains(where: { $0?.generation == 1 }))
     }
+
+    func testSetTitlePublishesObservedThreadUpdateAndPersists() async throws {
+        let stateStore = InMemoryRuntimeStateStore()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Original Title")
+        let observedInitialThread = expectation(description: "Observed the initial thread")
+        let observedRetitledThread = expectation(description: "Observed the retitled thread")
+        observedRetitledThread.assertForOverFulfill = false
+        var observedTitles: [String?] = []
+        var cancellables = Set<AnyCancellable>()
+
+        runtime.observeThread(id: thread.id)
+            .sink { observedThread in
+                observedTitles.append(observedThread?.title)
+                if observedThread?.title == "Original Title" {
+                    observedInitialThread.fulfill()
+                }
+                if observedThread?.title == "Updated Title" {
+                    observedRetitledThread.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        await fulfillment(of: [observedInitialThread], timeout: 0.5)
+
+        try await runtime.setTitle("Updated Title", for: thread.id)
+
+        await fulfillment(of: [observedRetitledThread], timeout: 0.5)
+        XCTAssertTrue(observedTitles.contains("Original Title"))
+        XCTAssertTrue(observedTitles.contains("Updated Title"))
+
+        let restoredRuntime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+        _ = try await restoredRuntime.restore()
+
+        let restoredThreads = await restoredRuntime.threads()
+        let restoredThread = try XCTUnwrap(restoredThreads.first(where: { $0.id == thread.id }))
+        XCTAssertEqual(restoredThread.title, "Updated Title")
+    }
 }
 
 func drainStructuredStream<Output: Sendable>(
