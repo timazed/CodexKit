@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -39,6 +39,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+ChatSections.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+ComposerAndSheets.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000003 /* HealthCoachView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HealthCoachView.swift; sourceTree = "<group>"; };
@@ -61,7 +62,6 @@
 		2A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+ThreadState.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+Observation.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThreadTurnActivityView.swift; sourceTree = "<group>"; };
-		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
 		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
 		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
 		690A3E5A03E545F88FAF9A44 /* AssistantRuntimeDemoApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AssistantRuntimeDemoApp.entitlements; sourceTree = "<group>"; };
@@ -93,7 +93,6 @@
 				690A3E5A03E545F88FAF9A44 /* AssistantRuntimeDemoApp.entitlements */,
 				FE27E9F3273C1EAF47AE5198 /* Info.plist */,
 			);
-			name = AssistantRuntimeDemoApp;
 			path = AssistantRuntimeDemoApp;
 			sourceTree = "<group>";
 		};
@@ -159,7 +158,6 @@
 				2A2B3C4D5E6F700000000011 /* AgentDemoViewModel+Memory.swift */,
 				2A2B3C4D5E6F700000000012 /* MemoryDemoView.swift */,
 			);
-			name = Shared;
 			path = Shared;
 			sourceTree = "<group>";
 		};
@@ -193,8 +191,9 @@
 		26901593A1B92DDA950D134D /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2630;
 			};
 			buildConfigurationList = 01B4A49BA7FDE96517E1DFD0 /* Build configuration list for PBXProject "AssistantRuntimeDemoApp" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -205,11 +204,9 @@
 				Base,
 			);
 			mainGroup = B7BD2AF1370DA44DA0C52952;
-			minimizedProjectReferenceProxies = 0;
 			packageReferences = (
 				802CFFA933DE41B7A27EFE75 /* XCLocalSwiftPackageReference ".." */,
 			);
-			preferredProjectObjectVersion = 77;
 			productRefGroup = CA88F59A68B805C4F9DA5CAA /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -300,9 +297,12 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = T9G4574SJG;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -321,6 +321,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -336,11 +337,13 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = T9G4574SJG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AssistantRuntimeDemoApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.assistantruntime.demoapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -359,11 +362,13 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = T9G4574SJG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AssistantRuntimeDemoApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.assistantruntime.demoapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -406,9 +411,12 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = T9G4574SJG;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -420,6 +428,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
