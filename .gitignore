@@ -102,6 +102,7 @@ iOSInjectionProject/
 !*/xcshareddata/swiftpm/Package.resolved
 ### Xcode Patch ###
 **/xcshareddata/WorkspaceSettings.xcsettings
+DemoApp/AssistantRuntimeDemoApp.xcodeproj/project.xcworkspace/
 
 #Cocoapods
 Pods/

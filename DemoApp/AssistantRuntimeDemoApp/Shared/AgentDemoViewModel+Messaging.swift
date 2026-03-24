@@ -18,6 +18,9 @@ extension AgentDemoViewModel {
         skillIDs: [String] = []
     ) async {
         do {
+            developerLog(
+                "Creating thread. title=\(title ?? "<untitled>") skills=\(skillIDs.joined(separator: ",")) personaLayers=\(personaStack?.layers.count ?? 0)"
+            )
             let thread = try await runtime.createThread(
                 title: title,
                 personaStack: personaStack,
@@ -25,9 +28,13 @@ extension AgentDemoViewModel {
             )
             threads = await runtime.threads()
             activeThreadID = thread.id
+            bindActiveThreadObservation(for: thread.id)
             setMessages(await runtime.messages(for: thread.id))
+            developerLog(
+                "Created thread. id=\(thread.id) title=\(thread.title ?? "<untitled>") totalThreads=\(threads.count)"
+            )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -58,6 +65,9 @@ extension AgentDemoViewModel {
         )
 
         do {
+            developerLog(
+                "Sending message. threadID=\(activeThreadID) textLength=\(trimmedText.count) images=\(images.count) personaOverrideLayers=\(personaOverride?.layers.count ?? 0)"
+            )
             _ = try await sendRequest(
                 request,
                 in: activeThreadID,
@@ -65,7 +75,7 @@ extension AgentDemoViewModel {
                 renderInActiveTranscript: true
             )
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -96,7 +106,7 @@ extension AgentDemoViewModel {
             )
             let skillThread = try await runtime.createThread(
                 title: "Skill Policy Probe: Health Coach",
-                skillIDs: [Self.healthCoachSkill.id]
+                skillIDs: [catalog.healthCoachSkill.id]
             )
             threads = await runtime.threads()
 
@@ -145,7 +155,7 @@ extension AgentDemoViewModel {
                 lastError = "Probe completed, but result was inconclusive. Review the two thread summaries."
             }
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -183,6 +193,9 @@ extension AgentDemoViewModel {
                 )
                 let threadTitle = threads.first(where: { $0.id == threadID })?.title
                 lastResolvedInstructionsThreadTitle = threadTitle ?? "Untitled Thread"
+                developerLog(
+                    "Captured resolved instructions. threadID=\(threadID) title=\(lastResolvedInstructionsThreadTitle ?? "Untitled Thread")"
+                )
             } catch {
                 lastResolvedInstructions = nil
                 lastResolvedInstructionsThreadTitle = nil
@@ -197,6 +210,12 @@ extension AgentDemoViewModel {
         if renderInActiveTranscript {
             streamingText = ""
         }
+        var bufferedStreamingText = ""
+        var lastStreamingFlushAt = Date.distantPast
+
+        developerLog(
+            "Starting streamed turn. threadID=\(threadID) textLength=\(request.text.count) imageCount=\(request.images.count)"
+        )
 
         let stream = try await runtime.streamMessage(
             request,
@@ -206,10 +225,31 @@ extension AgentDemoViewModel {
             setMessages(await runtime.messages(for: threadID))
         }
 
+        func flushStreamingText(force: Bool = false) {
+            guard renderInActiveTranscript else {
+                return
+            }
+            guard !bufferedStreamingText.isEmpty else {
+                return
+            }
+
+            let now = Date()
+            guard force || now.timeIntervalSince(lastStreamingFlushAt) >= 0.05 else {
+                return
+            }
+
+            streamingText.append(bufferedStreamingText)
+            bufferedStreamingText.removeAll(keepingCapacity: true)
+            lastStreamingFlushAt = now
+        }
+
         for try await event in stream {
             switch event {
             case let .threadStarted(thread):
                 threads = [thread] + threads.filter { $0.id != thread.id }
+                developerLog(
+                    "Thread started event. id=\(thread.id) title=\(thread.title ?? "<untitled>") status=\(thread.status.rawValue)"
+                )
 
             case let .threadStatusChanged(threadID, status):
                 threads = threads.map { thread in
@@ -222,16 +262,19 @@ extension AgentDemoViewModel {
                     updated.updatedAt = Date()
                     return updated
                 }
+                developerLog("Thread status changed. threadID=\(threadID) status=\(status.rawValue)")
 
             case .turnStarted:
-                break
+                developerLog("Turn started. threadID=\(threadID)")
 
             case let .assistantMessageDelta(_, _, delta):
                 if renderInActiveTranscript {
-                    streamingText.append(delta)
+                    bufferedStreamingText.append(delta)
+                    flushStreamingText()
                 }
 
             case let .messageCommitted(message):
+                flushStreamingText(force: true)
                 if message.role == .assistant {
                     let reply = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !reply.isEmpty {
@@ -244,17 +287,20 @@ extension AgentDemoViewModel {
                         streamingText = ""
                     }
                 }
+                developerLog(
+                    "Message committed. threadID=\(threadID) role=\(message.role.rawValue) textLength=\(message.text.count)"
+                )
 
             case .approvalRequested:
-                break
+                developerLog("Approval requested. threadID=\(threadID)")
 
             case .approvalResolved:
-                break
+                developerLog("Approval resolved. threadID=\(threadID)")
 
             case let .toolCallStarted(invocation):
                 diagnostics.sawToolCall = true
-                Self.logger.info(
-                    "Tool call requested: \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
+                developerLog(
+                    "Tool call requested. threadID=\(threadID) tool=\(invocation.toolName) arguments=\(String(describing: invocation.arguments))"
                 )
 
             case let .toolCallFinished(result):
@@ -267,19 +313,27 @@ extension AgentDemoViewModel {
                         diagnostics.firstFailureMessage = result.primaryText ?? result.errorMessage
                     }
                 }
-                Self.logger.info(
-                    "Tool call finished: \(result.toolName, privacy: .public) success=\(result.success, privacy: .public) output=\(result.primaryText ?? "<no text result>", privacy: .public)"
+                developerLog(
+                    "Tool call finished. threadID=\(threadID) tool=\(result.toolName) success=\(result.success) output=\(result.primaryText ?? result.errorMessage ?? "<no text result>")"
                 )
 
             case .turnCompleted:
+                flushStreamingText(force: true)
                 if renderInActiveTranscript {
                     setMessages(await runtime.messages(for: threadID))
                 }
                 threads = await runtime.threads()
+                developerLog("Turn completed. threadID=\(threadID)")
+                await refreshThreadContextState(for: threadID)
 
             case let .turnFailed(error):
+                flushStreamingText(force: true)
                 diagnostics.turnFailedCode = error.code
-                lastError = error.message
+                developerErrorLog(
+                    "Turn failed. threadID=\(threadID) code=\(error.code) message=\(error.message)"
+                )
+                await refreshThreadContextState(for: threadID)
+                reportError(error.message)
             }
         }
 

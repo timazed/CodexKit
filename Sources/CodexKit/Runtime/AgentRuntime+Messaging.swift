@@ -48,61 +48,72 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        let session = try await sessionManager.requireSession()
         let userMessage = AgentMessage(
             threadID: threadID,
             role: .user,
             text: request.text,
             images: request.images
         )
-        let priorMessages = state.messagesByThread[threadID] ?? []
-        let resolvedTurnSkills = try resolveTurnSkills(
-            thread: thread,
-            message: request
-        )
-        let resolvedInstructions = await resolveInstructions(
-            thread: thread,
-            message: request,
-            resolvedTurnSkills: resolvedTurnSkills
-        )
 
         try await appendMessage(userMessage)
         try await setThreadStatus(.streaming, for: threadID)
-
-        let tools = await toolRegistry.allDefinitions()
-        let turnStart = try await beginTurnWithUnauthorizedRecovery(
-            thread: thread,
-            history: priorMessages,
-            message: request,
-            instructions: resolvedInstructions,
-            responseFormat: nil,
-            streamedStructuredOutput: AgentStreamedStructuredOutputRequest(
-                responseFormat: responseFormat,
-                options: options
-            ),
-            tools: tools,
-            session: session
-        )
-        let turnStream = turnStart.turnStream
-        let turnSession = turnStart.session
 
         return AsyncThrowingStream { continuation in
             continuation.yield(.messageCommitted(userMessage))
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
 
             Task {
-                await self.consumeStructuredTurnStream(
-                    turnStream,
-                    for: threadID,
-                    userMessage: userMessage,
-                    session: turnSession,
-                    resolvedTurnSkills: resolvedTurnSkills,
-                    responseFormat: responseFormat,
-                    options: options,
-                    decoder: decoder,
-                    outputType: outputType,
-                    continuation: continuation
-                )
+                do {
+                    let session = try await self.sessionManager.requireSession()
+                    let resolvedTurnSkills = try self.resolveTurnSkills(
+                        thread: thread,
+                        message: request
+                    )
+                    let resolvedInstructions = await self.resolveInstructions(
+                        thread: thread,
+                        message: request,
+                        resolvedTurnSkills: resolvedTurnSkills
+                    )
+                    let tools = await self.toolRegistry.allDefinitions()
+                    try await self.maybeCompactThreadContextBeforeTurn(
+                        thread: thread,
+                        request: request,
+                        instructions: resolvedInstructions,
+                        tools: tools,
+                        session: session
+                    )
+                    let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
+                        thread: thread,
+                        history: self.effectiveHistory(for: threadID),
+                        message: request,
+                        instructions: resolvedInstructions,
+                        responseFormat: nil,
+                        streamedStructuredOutput: AgentStreamedStructuredOutputRequest(
+                            responseFormat: responseFormat,
+                            options: options
+                        ),
+                        tools: tools,
+                        session: session
+                    )
+                    await self.consumeStructuredTurnStream(
+                        turnStart.turnStream,
+                        for: threadID,
+                        userMessage: userMessage,
+                        session: turnStart.session,
+                        resolvedTurnSkills: resolvedTurnSkills,
+                        responseFormat: responseFormat,
+                        options: options,
+                        decoder: decoder,
+                        outputType: outputType,
+                        continuation: continuation
+                    )
+                } catch {
+                    await self.handleStructuredTurnStartupFailure(
+                        error,
+                        for: threadID,
+                        continuation: continuation
+                    )
+                }
             }
         }
     }
@@ -176,54 +187,65 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        let session = try await sessionManager.requireSession()
         let userMessage = AgentMessage(
             threadID: threadID,
             role: .user,
             text: request.text,
             images: request.images
         )
-        let priorMessages = state.messagesByThread[threadID] ?? []
-        let resolvedTurnSkills = try resolveTurnSkills(
-            thread: thread,
-            message: request
-        )
-        let resolvedInstructions = await resolveInstructions(
-            thread: thread,
-            message: request,
-            resolvedTurnSkills: resolvedTurnSkills
-        )
 
         try await appendMessage(userMessage)
         try await setThreadStatus(.streaming, for: threadID)
-
-        let tools = await toolRegistry.allDefinitions()
-        let turnStart = try await beginTurnWithUnauthorizedRecovery(
-            thread: thread,
-            history: priorMessages,
-            message: request,
-            instructions: resolvedInstructions,
-            responseFormat: responseFormat,
-            streamedStructuredOutput: streamedStructuredOutput,
-            tools: tools,
-            session: session
-        )
-        let turnStream = turnStart.turnStream
-        let turnSession = turnStart.session
 
         return AsyncThrowingStream { continuation in
             continuation.yield(.messageCommitted(userMessage))
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
 
             Task {
-                await self.consumeTurnStream(
-                    turnStream,
-                    for: threadID,
-                    userMessage: userMessage,
-                    session: turnSession,
-                    resolvedTurnSkills: resolvedTurnSkills,
-                    continuation: continuation
-                )
+                do {
+                    let session = try await self.sessionManager.requireSession()
+                    let resolvedTurnSkills = try self.resolveTurnSkills(
+                        thread: thread,
+                        message: request
+                    )
+                    let resolvedInstructions = await self.resolveInstructions(
+                        thread: thread,
+                        message: request,
+                        resolvedTurnSkills: resolvedTurnSkills
+                    )
+                    let tools = await self.toolRegistry.allDefinitions()
+                    try await self.maybeCompactThreadContextBeforeTurn(
+                        thread: thread,
+                        request: request,
+                        instructions: resolvedInstructions,
+                        tools: tools,
+                        session: session
+                    )
+                    let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
+                        thread: thread,
+                        history: self.effectiveHistory(for: threadID),
+                        message: request,
+                        instructions: resolvedInstructions,
+                        responseFormat: responseFormat,
+                        streamedStructuredOutput: streamedStructuredOutput,
+                        tools: tools,
+                        session: session
+                    )
+                    await self.consumeTurnStream(
+                        turnStart.turnStream,
+                        for: threadID,
+                        userMessage: userMessage,
+                        session: turnStart.session,
+                        resolvedTurnSkills: resolvedTurnSkills,
+                        continuation: continuation
+                    )
+                } catch {
+                    await self.handleTurnStartupFailure(
+                        error,
+                        for: threadID,
+                        continuation: continuation
+                    )
+                }
             }
         }
     }
@@ -241,21 +263,51 @@ extension AgentRuntime {
         turnStream: any AgentTurnStreaming,
         session: ChatGPTSession
     ) {
-        let beginTurn = try await withUnauthorizedRecovery(
-            initialSession: session
-        ) { session in
-            try await backend.beginTurn(
+        do {
+            let beginTurn = try await withUnauthorizedRecovery(
+                initialSession: session
+            ) { session in
+                try await backend.beginTurn(
+                    thread: thread,
+                    history: history,
+                    message: message,
+                    instructions: instructions,
+                    responseFormat: responseFormat,
+                    streamedStructuredOutput: streamedStructuredOutput,
+                    tools: tools,
+                    session: session
+                )
+            }
+            return (beginTurn.result, beginTurn.session)
+        } catch {
+            let compacted = try await maybeCompactThreadContextAfterContextFailure(
                 thread: thread,
-                history: history,
-                message: message,
+                request: message,
                 instructions: instructions,
-                responseFormat: responseFormat,
-                streamedStructuredOutput: streamedStructuredOutput,
                 tools: tools,
-                session: session
+                session: session,
+                error: error
             )
+            guard compacted else {
+                throw error
+            }
+
+            let beginTurn = try await withUnauthorizedRecovery(
+                initialSession: session
+            ) { session in
+                try await backend.beginTurn(
+                    thread: thread,
+                    history: self.effectiveHistory(for: thread.id),
+                    message: message,
+                    instructions: instructions,
+                    responseFormat: responseFormat,
+                    streamedStructuredOutput: streamedStructuredOutput,
+                    tools: tools,
+                    session: session
+                )
+            }
+            return (beginTurn.result, beginTurn.session)
         }
-        return (beginTurn.result, beginTurn.session)
     }
 
     // MARK: - Previews
@@ -278,5 +330,58 @@ extension AgentRuntime {
             message: request,
             resolvedTurnSkills: resolvedTurnSkills
         )
+    }
+
+    private func runtimeError(for error: Error) -> AgentRuntimeError {
+        (error as? AgentRuntimeError)
+            ?? AgentRuntimeError(
+                code: "turn_failed",
+                message: error.localizedDescription
+            )
+    }
+
+    private func recordTurnStartupFailure(
+        _ error: Error,
+        for threadID: String
+    ) async -> AgentRuntimeError {
+        let runtimeError = runtimeError(for: error)
+        appendHistoryItem(
+            .systemEvent(
+                AgentSystemEventRecord(
+                    type: .turnFailed,
+                    threadID: threadID,
+                    error: runtimeError,
+                    occurredAt: Date()
+                )
+            ),
+            threadID: threadID,
+            createdAt: Date()
+        )
+        try? setLatestTurnStatus(.failed, for: threadID)
+        try? setLatestPartialStructuredOutput(nil, for: threadID)
+        try? await setThreadStatus(.failed, for: threadID)
+        return runtimeError
+    }
+
+    private func handleTurnStartupFailure(
+        _ error: Error,
+        for threadID: String,
+        continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
+    ) async {
+        let runtimeError = await recordTurnStartupFailure(error, for: threadID)
+        continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+        continuation.yield(.turnFailed(runtimeError))
+        continuation.finish(throwing: error)
+    }
+
+    private func handleStructuredTurnStartupFailure<Output>(
+        _ error: Error,
+        for threadID: String,
+        continuation: AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error>.Continuation
+    ) async {
+        let runtimeError = await recordTurnStartupFailure(error, for: threadID)
+        continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+        continuation.yield(.turnFailed(runtimeError))
+        continuation.finish(throwing: error)
     }
 }

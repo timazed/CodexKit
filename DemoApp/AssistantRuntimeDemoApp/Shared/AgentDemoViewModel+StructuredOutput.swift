@@ -19,9 +19,10 @@ extension AgentDemoViewModel {
         }
 
         do {
+            developerLog("Running structured shipping reply demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Shipping Draft",
-                personaStack: Self.supportPersona
+                personaStack: catalog.supportPersona
             )
             let request = DemoStructuredOutputExamples.shippingReplyRequest()
             if showResolvedInstructionsDebug {
@@ -47,8 +48,9 @@ extension AgentDemoViewModel {
             threads = await runtime.threads()
             activeThreadID = thread.id
             setMessages(await runtime.messages(for: thread.id))
+            developerLog("Structured shipping reply demo finished. threadID=\(thread.id)")
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -68,6 +70,7 @@ extension AgentDemoViewModel {
         }
 
         do {
+            developerLog("Running structured imported summary demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Imported Summary"
             )
@@ -95,8 +98,9 @@ extension AgentDemoViewModel {
             threads = await runtime.threads()
             activeThreadID = thread.id
             setMessages(await runtime.messages(for: thread.id))
+            developerLog("Structured imported summary demo finished. threadID=\(thread.id)")
         } catch {
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 
@@ -118,9 +122,10 @@ extension AgentDemoViewModel {
         }
 
         do {
+            developerLog("Running streamed structured output demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Streamed Delivery Update",
-                personaStack: Self.supportPersona
+                personaStack: catalog.supportPersona
             )
             let request = DemoStructuredOutputExamples.streamedStructuredRequest()
             if showResolvedInstructionsDebug {
@@ -155,9 +160,13 @@ extension AgentDemoViewModel {
                     if partialSnapshots.last != partial {
                         partialSnapshots.append(partial)
                     }
+                    developerLog("Structured partial received. threadID=\(thread.id)")
 
                 case let .structuredOutputCommitted(payload):
                     committedPayload = payload
+                    developerLog(
+                        "Structured payload committed. threadID=\(thread.id) format=\(StreamedStructuredDeliveryUpdate.responseFormat.name)"
+                    )
 
                 case let .turnFailed(error):
                     throw error
@@ -188,9 +197,15 @@ extension AgentDemoViewModel {
             threads = await runtime.threads()
             activeThreadID = thread.id
             setMessages(messages)
+            developerLog(
+                "Streamed structured output demo finished. threadID=\(thread.id) partialCount=\(partialSnapshots.count) persistedMetadata=\(persistedMetadata != nil)"
+            )
         } catch {
+            guard !diagnostics.isCancellationError(error) else {
+                return
+            }
             structuredStreamingError = error.localizedDescription
-            lastError = error.localizedDescription
+            reportError(error)
         }
     }
 }

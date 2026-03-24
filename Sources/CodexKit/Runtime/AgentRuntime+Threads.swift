@@ -34,7 +34,20 @@ extension AgentRuntime {
         thread.personaStack = resolvedPersonaStack
         thread.skillIDs = skillIDs
         thread.memoryContext = memoryContext
-        try await upsertThread(thread)
+        try await upsertThread(thread, persist: false)
+        appendHistoryItem(
+            .systemEvent(
+                AgentSystemEventRecord(
+                    type: .threadCreated,
+                    threadID: thread.id,
+                    occurredAt: thread.createdAt
+                )
+            ),
+            threadID: thread.id,
+            createdAt: thread.createdAt
+        )
+        updateThreadTimestamp(thread.createdAt, for: thread.id)
+        try await persistState()
         return thread
     }
 
@@ -47,7 +60,20 @@ extension AgentRuntime {
             try await backend.resumeThread(id: id, session: session)
         }
         let thread = resume.result
-        try await upsertThread(thread)
+        try await upsertThread(thread, persist: false)
+        appendHistoryItem(
+            .systemEvent(
+                AgentSystemEventRecord(
+                    type: .threadResumed,
+                    threadID: thread.id,
+                    occurredAt: Date()
+                )
+            ),
+            threadID: thread.id,
+            createdAt: Date()
+        )
+        updateThreadTimestamp(Date(), for: thread.id)
+        try await persistState()
         return thread
     }
 
@@ -65,6 +91,20 @@ extension AgentRuntime {
         return thread.personaStack
     }
 
+    public func setTitle(
+        _ title: String?,
+        for threadID: String
+    ) async throws {
+        guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        state.threads[index].title = title
+        state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
+        try await persistState()
+    }
+
     public func setPersonaStack(
         _ personaStack: AgentPersonaStack?,
         for threadID: String
@@ -75,6 +115,7 @@ extension AgentRuntime {
 
         state.threads[index].personaStack = personaStack
         state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
         try await persistState()
     }
 
@@ -102,12 +143,16 @@ extension AgentRuntime {
 
         state.threads[index].memoryContext = memoryContext
         state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
         try await persistState()
     }
 
     // MARK: - State Mutation
 
-    func upsertThread(_ thread: AgentThread) async throws {
+    func upsertThread(
+        _ thread: AgentThread,
+        persist: Bool = true
+    ) async throws {
         if let index = state.threads.firstIndex(where: { $0.id == thread.id }) {
             var mergedThread = thread
             if mergedThread.title == nil {
@@ -123,10 +168,19 @@ extension AgentRuntime {
                 mergedThread.memoryContext = state.threads[index].memoryContext
             }
             state.threads[index] = mergedThread
+            enqueueStoreOperation(.upsertThread(state.threads[index]))
         } else {
             state.threads.append(thread)
+            enqueueStoreOperation(.upsertThread(thread))
         }
-        try await persistState()
+        if state.summariesByThread[thread.id] == nil {
+            let summary = state.threadSummaryFallback(for: thread)
+            state.summariesByThread[thread.id] = summary
+            enqueueStoreOperation(.upsertSummary(threadID: thread.id, summary: summary))
+        }
+        if persist {
+            try await persistState()
+        }
     }
 
     func setThreadStatus(
@@ -137,13 +191,35 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
+        let previousStatus = state.threads[index].status
         state.threads[index].status = status
         state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
+        if previousStatus != status {
+            appendHistoryItem(
+                .systemEvent(
+                    AgentSystemEventRecord(
+                        type: .threadStatusChanged,
+                        threadID: threadID,
+                        status: status,
+                        occurredAt: state.threads[index].updatedAt
+                    )
+                ),
+                threadID: threadID,
+                createdAt: state.threads[index].updatedAt
+            )
+        }
         try await persistState()
     }
 
     func appendMessage(_ message: AgentMessage) async throws {
         state.messagesByThread[message.threadID, default: []].append(message)
+        appendEffectiveMessage(message)
+        appendHistoryItem(
+            .message(message),
+            threadID: message.threadID,
+            createdAt: message.createdAt
+        )
 
         if let index = state.threads.firstIndex(where: { $0.id == message.threadID }) {
             state.threads[index].updatedAt = message.createdAt
@@ -156,6 +232,7 @@ extension AgentRuntime {
                         : "Image message (\(message.images.count))"
                 }
             }
+            enqueueStoreOperation(.upsertThread(state.threads[index]))
         }
 
         try await persistState()

@@ -1,6 +1,6 @@
 # CodexKit Demo App
 
-This folder contains the checked-in iOS example app for exercising the `CodexKit` embedded agent runtime.
+This folder contains the checked-in iOS example app for exercising the `CodexKit` embedded agent runtime. The package itself supports both iOS and macOS; this demo remains the iOS sample app.
 
 ## Open the app in Xcode
 
@@ -22,6 +22,9 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - lets you attach a photo from the library and send it with or without text
 - renders attached user images in the transcript
 - streams assistant output into the UI
+- demonstrates live Combine observation of thread, message, summary, context-state, and context-usage updates
+- lets you rename the active thread from the thread detail screen using `setTitle(_:for:)`
+- includes a thread-level `Context Compaction` card so you can compact effective prompt state without removing visible transcript history
 - supports approval prompts for host-defined tools that opt into `requiresApproval`
 - demonstrates thread-pinned personas and one-turn persona overrides
 - includes first-class framework skill examples for `health_coach` and `travel_planner`
@@ -44,10 +47,34 @@ The demo uses the new configuration-first surface:
 - `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
-- `FileRuntimeStateStore`
+- `GRDBRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
-The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use.
+The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use. Runtime state is stored in `runtime-state.sqlite`, memory is stored in `memory.sqlite`, and the GRDB-backed runtime store will import an older sibling `runtime-state.json` file automatically on first launch if one exists.
+
+The checked-in demo enables context compaction in automatic mode. In a thread detail screen, the `Context Compaction` card shows:
+
+- visible transcript token usage
+- effective prompt token usage
+- estimated context window fullness when available
+- compaction generation
+- last compaction reason/time
+- a `Compact Context Now` action for manual testing
+
+The same thread detail screen also includes an `Observation Demo` card. It subscribes to:
+
+- `observeThread(id:)`
+- `observeMessages(in:)`
+- `observeThreadSummary(id:)`
+- `observeThreadContextState(id:)`
+- `observeThreadContextUsage(id:)`
+
+Use that card to verify that:
+
+- local title changes propagate immediately through `setTitle(_:for:)`
+- new messages appear from the observation stream without a manual refresh
+- context compaction updates the observed context state live
+- effective prompt usage updates live in estimated tokens
 
 ## Files
 

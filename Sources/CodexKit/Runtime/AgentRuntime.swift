@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 public actor AgentRuntime {
@@ -27,6 +28,7 @@ public actor AgentRuntime {
         public let tools: [ToolRegistration]
         public let skills: [AgentSkill]
         public let definitionSourceLoader: AgentDefinitionSourceLoader
+        public let contextCompaction: AgentContextCompactionConfiguration
 
         public init(
             authProvider: any ChatGPTAuthProviding,
@@ -38,7 +40,8 @@ public actor AgentRuntime {
             baseInstructions: String? = nil,
             tools: [ToolRegistration] = [],
             skills: [AgentSkill] = [],
-            definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader()
+            definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader(),
+            contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration()
         ) {
             self.authProvider = authProvider
             self.secureStore = secureStore
@@ -50,6 +53,7 @@ public actor AgentRuntime {
             self.tools = tools
             self.skills = skills
             self.definitionSourceLoader = definitionSourceLoader
+            self.contextCompaction = contextCompaction
         }
     }
 
@@ -61,9 +65,12 @@ public actor AgentRuntime {
     let memoryConfiguration: AgentMemoryConfiguration?
     let baseInstructions: String?
     let definitionSourceLoader: AgentDefinitionSourceLoader
+    let contextCompactionConfiguration: AgentContextCompactionConfiguration
+    nonisolated let observationCenter: AgentRuntimeObservationCenter
     var skillsByID: [String: AgentSkill]
 
     var state: StoredRuntimeState = .empty
+    var pendingStoreOperations: [AgentStoreWriteOperation] = []
 
     struct ResolvedTurnSkills {
         let threadSkills: [AgentSkill]
@@ -164,13 +171,22 @@ public actor AgentRuntime {
         self.memoryConfiguration = configuration.memory
         self.baseInstructions = configuration.baseInstructions ?? configuration.backend.baseInstructions
         self.definitionSourceLoader = configuration.definitionSourceLoader
+        self.contextCompactionConfiguration = configuration.contextCompaction
+        self.observationCenter = AgentRuntimeObservationCenter()
         self.skillsByID = try Self.validatedSkills(from: configuration.skills)
+    }
+
+    public nonisolated var observations: AnyPublisher<AgentRuntimeObservation, Never> {
+        observationCenter.publisher
     }
 
     @discardableResult
     public func restore() async throws -> StoredRuntimeState {
         _ = try await sessionManager.restore()
+        _ = try await stateStore.prepare()
         state = try await stateStore.loadState()
+        pendingStoreOperations.removeAll()
+        publishAllObservations()
         return state
     }
 
@@ -216,7 +232,77 @@ public actor AgentRuntime {
     // MARK: - Instruction Resolution
 
     func persistState() async throws {
-        try await stateStore.saveState(state)
+        state = state.normalized()
+        guard !pendingStoreOperations.isEmpty else {
+            try await stateStore.saveState(state)
+            publishAllObservations()
+            return
+        }
+
+        let operations = pendingStoreOperations
+        try await stateStore.apply(operations)
+        pendingStoreOperations.removeAll()
+        publishObservations(for: operations)
+    }
+
+    func enqueueStoreOperation(_ operation: AgentStoreWriteOperation) {
+        pendingStoreOperations.append(operation)
+    }
+
+    func publishAllObservations() {
+        observationCenter.send(.threadsChanged(threads()))
+        for thread in state.threads {
+            publishThreadObservations(for: thread.id)
+        }
+    }
+
+    func publishObservations(for operations: [AgentStoreWriteOperation]) {
+        let deletedThreadIDs = Set(operations.compactMap { operation -> String? in
+            guard case let .deleteThread(threadID) = operation else {
+                return nil
+            }
+            return threadID
+        })
+        let affectedThreadIDs = Set(operations.map(\.affectedThreadID))
+
+        observationCenter.send(.threadsChanged(threads()))
+        for threadID in deletedThreadIDs {
+            observationCenter.send(.threadDeleted(threadID: threadID))
+        }
+        for threadID in affectedThreadIDs.subtracting(deletedThreadIDs) {
+            publishThreadObservations(for: threadID)
+        }
+    }
+
+    func publishThreadObservations(for threadID: String) {
+        guard let thread = thread(for: threadID) else {
+            return
+        }
+
+        observationCenter.send(.threadChanged(thread))
+        observationCenter.send(
+            .messagesChanged(
+                threadID: threadID,
+                messages: state.messagesByThread[threadID] ?? []
+            )
+        )
+        observationCenter.send(
+            .threadSummaryChanged(
+                state.summariesByThread[threadID] ?? state.threadSummaryFallback(for: thread)
+            )
+        )
+        observationCenter.send(
+            .threadContextStateChanged(
+                threadID: threadID,
+                state: state.contextStateByThread[threadID]
+            )
+        )
+        observationCenter.send(
+            .threadContextUsageChanged(
+                threadID: threadID,
+                usage: threadContextUsage(for: threadID)
+            )
+        )
     }
 
     func resolveInstructions(

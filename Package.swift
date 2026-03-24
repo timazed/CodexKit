@@ -17,9 +17,15 @@ let package = Package(
             targets: ["CodexKitUI"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0"),
+    ],
     targets: [
         .target(
-            name: "CodexKit"
+            name: "CodexKit",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ]
         ),
         .target(
             name: "CodexKitUI",

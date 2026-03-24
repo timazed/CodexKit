@@ -1,7 +1,7 @@
 import CodexKit
 import Foundation
 
-private struct HealthCoachToolSnapshot: Sendable {
+struct HealthCoachToolSnapshot: Sendable {
     let stepsToday: Int
     let dailyGoal: Int
     let remainingSteps: Int
@@ -9,116 +9,8 @@ private struct HealthCoachToolSnapshot: Sendable {
     let healthKitAuthorized: Bool
 }
 
-@MainActor
-extension AgentDemoViewModel {
-    func registerDemoSkills() async {
-        do {
-            try await runtime.replaceSkill(Self.healthCoachSkill)
-            try await runtime.replaceSkill(Self.travelPlannerSkill)
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func registerDemoTool() async {
-        do {
-            let healthCoachDefinition = ToolDefinition(
-                name: Self.healthCoachToolName,
-                description: "Fetch a live health-coach progress snapshot from HealthKit-aware app state.",
-                inputSchema: .object([
-                    "type": .string("object"),
-                    "properties": .object([:]),
-                ])
-            )
-
-            let travelPlannerDefinition = ToolDefinition(
-                name: Self.travelPlannerToolName,
-                description: "Build a compact deterministic day-by-day travel plan.",
-                inputSchema: .object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "destination": .object([
-                            "type": .string("string"),
-                            "description": .string("Trip destination."),
-                        ]),
-                        "trip_days": .object([
-                            "type": .string("number"),
-                            "description": .string("Number of trip days."),
-                        ]),
-                        "budget_level": .object([
-                            "type": .string("string"),
-                            "description": .string("Budget level: low, medium, or high."),
-                        ]),
-                        "companions": .object([
-                            "type": .string("string"),
-                            "description": .string("Who is traveling, for example solo, couple, or family."),
-                        ]),
-                    ]),
-                    "required": .array([
-                        .string("destination"),
-                    ]),
-                ])
-            )
-
-            try await registerTool(healthCoachDefinition) { [weak self] invocation, _ in
-                guard let self else {
-                    return .failure(invocation: invocation, message: "Health coach context is unavailable.")
-                }
-                let snapshot = await self.captureHealthCoachToolSnapshot()
-                return Self.makeHealthCoachProgress(
-                    invocation: invocation,
-                    snapshot: snapshot
-                )
-            }
-            try await registerTool(travelPlannerDefinition) { invocation, _ in
-                Self.makeTravelDayPlan(invocation: invocation)
-            }
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    private func registerTool(
-        _ definition: ToolDefinition,
-        execute: @escaping @Sendable (ToolInvocation, ToolExecutionContext) async throws -> ToolResultEnvelope
-    ) async throws {
-        try await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, context in
-            Self.logger.info(
-                "Executing tool \(invocation.toolName, privacy: .public) with arguments: \(String(describing: invocation.arguments), privacy: .public)"
-            )
-            let result = try await execute(invocation, context)
-            Self.logger.info(
-                "Tool \(invocation.toolName, privacy: .public) returned: \(result.primaryText ?? "<no text result>", privacy: .public)"
-            )
-            return result
-        })
-    }
-
-    private func captureHealthCoachToolSnapshot() async -> HealthCoachToolSnapshot {
-        var stepsToday = todayStepCount
-#if os(iOS)
-        if healthKitAuthorized,
-           let refreshedStepCount = try? await fetchTodayStepCount() {
-            stepsToday = refreshedStepCount
-            todayStepCount = refreshedStepCount
-            healthLastUpdatedAt = Date()
-        }
-#endif
-        let safeGoal = max(dailyStepGoal, 1_000)
-        let remainingSteps = max(safeGoal - stepsToday, 0)
-        let endOfDay = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86_400)
-        let hoursLeftToday = max(Int(ceil(endOfDay.timeIntervalSinceNow / 3600)), 1)
-
-        return HealthCoachToolSnapshot(
-            stepsToday: stepsToday,
-            dailyGoal: safeGoal,
-            remainingSteps: remainingSteps,
-            hoursLeftToday: hoursLeftToday,
-            healthKitAuthorized: healthKitAuthorized
-        )
-    }
-
-    private nonisolated static func makeHealthCoachProgress(
+struct DemoToolOutputFactory {
+    func makeHealthCoachProgress(
         invocation: ToolInvocation,
         snapshot: HealthCoachToolSnapshot
     ) -> ToolResultEnvelope {
@@ -132,7 +24,7 @@ extension AgentDemoViewModel {
         )
     }
 
-    nonisolated static func makeTravelDayPlan(invocation: ToolInvocation) -> ToolResultEnvelope {
+    func makeTravelDayPlan(invocation: ToolInvocation) -> ToolResultEnvelope {
         guard case let .object(arguments) = invocation.arguments else {
             return .failure(
                 invocation: invocation,
@@ -165,6 +57,125 @@ extension AgentDemoViewModel {
             """
         )
     }
+}
+
+@MainActor
+extension AgentDemoViewModel {
+    func registerDemoSkills() async {
+        do {
+            try await runtime.replaceSkill(catalog.healthCoachSkill)
+            try await runtime.replaceSkill(catalog.travelPlannerSkill)
+            developerLog("Registered demo skills: \(catalog.healthCoachSkill.id), \(catalog.travelPlannerSkill.id)")
+        } catch {
+            reportError(error)
+        }
+    }
+
+    func registerDemoTool() async {
+        do {
+            let healthCoachDefinition = ToolDefinition(
+                name: catalog.healthCoachToolName,
+                description: "Fetch a live health-coach progress snapshot from HealthKit-aware app state.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([:]),
+                ])
+            )
+
+            let travelPlannerDefinition = ToolDefinition(
+                name: catalog.travelPlannerToolName,
+                description: "Build a compact deterministic day-by-day travel plan.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "destination": .object([
+                            "type": .string("string"),
+                            "description": .string("Trip destination."),
+                        ]),
+                        "trip_days": .object([
+                            "type": .string("number"),
+                            "description": .string("Number of trip days."),
+                        ]),
+                        "budget_level": .object([
+                            "type": .string("string"),
+                            "description": .string("Budget level: low, medium, or high."),
+                        ]),
+                        "companions": .object([
+                            "type": .string("string"),
+                            "description": .string("Who is traveling, for example solo, couple, or family."),
+                        ]),
+                    ]),
+                    "required": .array([
+                        .string("destination"),
+                    ]),
+                ])
+            )
+
+            try await registerTool(healthCoachDefinition) { [weak self] invocation, _ in
+                guard let self else {
+                    return .failure(invocation: invocation, message: "Health coach context is unavailable.")
+                }
+                let snapshot = await self.captureHealthCoachToolSnapshot()
+                return self.toolOutputFactory.makeHealthCoachProgress(
+                    invocation: invocation,
+                    snapshot: snapshot
+                )
+            }
+            try await registerTool(travelPlannerDefinition) { invocation, _ in
+                self.toolOutputFactory.makeTravelDayPlan(invocation: invocation)
+            }
+            developerLog(
+                "Registered demo tools: \(catalog.healthCoachToolName), \(catalog.travelPlannerToolName)"
+            )
+        } catch {
+            reportError(error)
+        }
+    }
+
+    private func registerTool(
+        _ definition: ToolDefinition,
+        execute: @escaping @Sendable (ToolInvocation, ToolExecutionContext) async throws -> ToolResultEnvelope
+    ) async throws {
+        try await runtime.replaceTool(definition, executor: AnyToolExecutor { invocation, context in
+            await MainActor.run {
+                self.developerLog(
+                    "Executing tool \(invocation.toolName) with arguments: \(String(describing: invocation.arguments))"
+                )
+            }
+            let result = try await execute(invocation, context)
+            await MainActor.run {
+                self.developerLog(
+                    "Tool \(invocation.toolName) returned: \(result.primaryText ?? "<no text result>")"
+                )
+            }
+            return result
+        })
+    }
+
+    private func captureHealthCoachToolSnapshot() async -> HealthCoachToolSnapshot {
+        var stepsToday = todayStepCount
+#if os(iOS)
+        if healthKitAuthorized,
+           let refreshedStepCount = try? await fetchTodayStepCount() {
+            stepsToday = refreshedStepCount
+            todayStepCount = refreshedStepCount
+            healthLastUpdatedAt = Date()
+        }
+#endif
+        let safeGoal = max(dailyStepGoal, 1_000)
+        let remainingSteps = max(safeGoal - stepsToday, 0)
+        let endOfDay = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86_400)
+        let hoursLeftToday = max(Int(ceil(endOfDay.timeIntervalSinceNow / 3600)), 1)
+
+        return HealthCoachToolSnapshot(
+            stepsToday: stepsToday,
+            dailyGoal: safeGoal,
+            remainingSteps: remainingSteps,
+            hoursLeftToday: hoursLeftToday,
+            healthKitAuthorized: healthKitAuthorized
+        )
+    }
+
 }
 
 private extension JSONValue {

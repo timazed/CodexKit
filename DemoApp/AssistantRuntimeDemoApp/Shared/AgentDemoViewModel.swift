@@ -1,3 +1,4 @@
+import Combine
 import CodexKit
 import CodexKitUI
 import Foundation
@@ -80,63 +81,122 @@ struct AutomaticPolicyMemoryDemoResult: Sendable {
     let records: [MemoryRecord]
 }
 
-@MainActor
-@Observable
-final class AgentDemoViewModel: @unchecked Sendable {
-    nonisolated static let logger = Logger(
+struct DemoCatalog {
+    let supportPersona: AgentPersonaStack
+    let plannerPersona: AgentPersonaStack
+    let reviewerOverridePersona: AgentPersonaStack
+    let healthCoachToolName: String
+    let travelPlannerToolName: String
+    let healthCoachSkill: AgentSkill
+    let travelPlannerSkill: AgentSkill
+
+    init() {
+        supportPersona = AgentPersonaStack(layers: [
+            .init(
+                name: "domain",
+                instructions: "You are an expert customer support agent for a shipping app."
+            ),
+            .init(
+                name: "style",
+                instructions: "Be concise, calm, and action-oriented."
+            ),
+        ])
+        plannerPersona = AgentPersonaStack(layers: [
+            .init(
+                name: "planner",
+                instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
+            ),
+        ])
+        reviewerOverridePersona = AgentPersonaStack(layers: [
+            .init(
+                name: "reviewer",
+                instructions: "For this reply only, act as a strict reviewer and call out risks first."
+            ),
+        ])
+
+        healthCoachToolName = "health_coach_fetch_progress"
+        travelPlannerToolName = "travel_planner_build_day_plan"
+        healthCoachSkill = AgentSkill(
+            id: "health_coach",
+            name: "Health Coach",
+            instructions: "You are a health coach focused on daily step goals and execution. For every user turn, call the \(healthCoachToolName) tool exactly once before your final reply, then provide one practical walking plan and one accountability line.",
+            executionPolicy: .init(
+                allowedToolNames: [healthCoachToolName],
+                requiredToolNames: [healthCoachToolName],
+                maxToolCalls: 1
+            )
+        )
+        travelPlannerSkill = AgentSkill(
+            id: "travel_planner",
+            name: "Travel Planner",
+            instructions: "You are a travel planning assistant for mobile users. Provide concise day-by-day itineraries, practical logistics, and a compact packing checklist.",
+            executionPolicy: .init(
+                allowedToolNames: [travelPlannerToolName],
+                maxToolCalls: 1
+            )
+        )
+    }
+}
+
+struct DemoDiagnostics {
+    private let developerLoggingDefaultsKey = "AssistantRuntimeDemoApp.developerLoggingEnabled"
+    private let logger = Logger(
         subsystem: "ai.assistantruntime.demoapp",
         category: "DemoTool"
     )
-    nonisolated static let supportPersona = AgentPersonaStack(layers: [
-        .init(
-            name: "domain",
-            instructions: "You are an expert customer support agent for a shipping app."
-        ),
-        .init(
-            name: "style",
-            instructions: "Be concise, calm, and action-oriented."
-        ),
-    ])
-    nonisolated static let plannerPersona = AgentPersonaStack(layers: [
-        .init(
-            name: "planner",
-            instructions: "Act as a careful technical planner. Focus on tradeoffs and implementation sequencing."
-        ),
-    ])
-    nonisolated static let reviewerOverridePersona = AgentPersonaStack(layers: [
-        .init(
-            name: "reviewer",
-            instructions: "For this reply only, act as a strict reviewer and call out risks first."
-        ),
-    ])
-    nonisolated static let healthCoachToolName = "health_coach_fetch_progress"
-    nonisolated static let travelPlannerToolName = "travel_planner_build_day_plan"
-    nonisolated static let healthCoachSkill = AgentSkill(
-        id: "health_coach",
-        name: "Health Coach",
-        instructions: "You are a health coach focused on daily step goals and execution. For every user turn, call the \(healthCoachToolName) tool exactly once before your final reply, then provide one practical walking plan and one accountability line.",
-        executionPolicy: .init(
-            allowedToolNames: [healthCoachToolName],
-            requiredToolNames: [healthCoachToolName],
-            maxToolCalls: 1
-        )
-    )
-    nonisolated static let travelPlannerSkill = AgentSkill(
-        id: "travel_planner",
-        name: "Travel Planner",
-        instructions: "You are a travel planning assistant for mobile users. Provide concise day-by-day itineraries, practical logistics, and a compact packing checklist.",
-        executionPolicy: .init(
-            allowedToolNames: [travelPlannerToolName],
-            maxToolCalls: 1
-        )
-    )
 
+    func initialDeveloperLoggingEnabled(userDefaults: UserDefaults = .standard) -> Bool {
+        if userDefaults.object(forKey: developerLoggingDefaultsKey) != nil {
+            return userDefaults.bool(forKey: developerLoggingDefaultsKey)
+        }
+#if DEBUG
+        return true
+#else
+        return false
+#endif
+    }
+
+    func persistDeveloperLoggingEnabled(
+        _ enabled: Bool,
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.set(enabled, forKey: developerLoggingDefaultsKey)
+    }
+
+    func isCancellationError(_ error: Error) -> Bool {
+        error is CancellationError
+    }
+
+    func log(_ message: String) {
+        logger.notice("\(message, privacy: .public)")
+        print("[CodexKit Demo] \(message)")
+    }
+
+    func error(_ message: String) {
+        logger.error("\(message, privacy: .public)")
+        print("[CodexKit Demo][Error] \(message)")
+    }
+}
+
+@MainActor
+@Observable
+final class AgentDemoViewModel: @unchecked Sendable {
     var session: ChatGPTSession?
     var threads: [AgentThread] = []
     var messages: [AgentMessage] = []
     var streamingText = ""
     var lastError: String?
     var showResolvedInstructionsDebug = false
+    var developerLoggingEnabled: Bool {
+        didSet {
+            diagnostics.persistDeveloperLoggingEnabled(developerLoggingEnabled)
+            developerLog(
+                developerLoggingEnabled
+                    ? "Developer logging enabled."
+                    : "Developer logging disabled."
+            )
+        }
+    }
     var lastResolvedInstructions: String?
     var lastResolvedInstructionsThreadTitle: String?
     var isRunningSkillPolicyProbe = false
@@ -173,6 +233,14 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var cachedAIReminderGeneratedAt: Date?
     var reasoningEffort: ReasoningEffort
     var currentAuthenticationMethod: DemoAuthenticationMethod = .deviceCode
+    var activeThreadContextState: AgentThreadContextState?
+    var isCompactingThreadContext = false
+    var observedThread: AgentThread?
+    var observedMessages: [AgentMessage] = []
+    var observedThreadSummary: AgentThreadSummary?
+    var observedThreadContextState: AgentThreadContextState?
+    var activeThreadContextUsage: AgentThreadContextUsage?
+    var observedThreadContextUsage: AgentThreadContextUsage?
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
@@ -180,10 +248,18 @@ final class AgentDemoViewModel: @unchecked Sendable {
     let enableWebSearch: Bool
     let stateURL: URL?
     let keychainAccount: String
+    let catalog: DemoCatalog
+    let diagnostics: DemoDiagnostics
+    let toolOutputFactory: DemoToolOutputFactory
+    let healthCoachDesign: DemoHealthCoachDesign
 
     var runtime: AgentRuntime
     var activeThreadID: String?
     var healthCoachThreadID: String?
+    @ObservationIgnored
+    var runtimeObservationCancellables: Set<AnyCancellable> = []
+    @ObservationIgnored
+    var activeThreadObservationCancellables: Set<AnyCancellable> = []
 
 #if os(iOS)
     let healthStore = HKHealthStore()
@@ -200,14 +276,20 @@ final class AgentDemoViewModel: @unchecked Sendable {
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
     ) {
+        self.catalog = DemoCatalog()
+        self.diagnostics = DemoDiagnostics()
+        self.toolOutputFactory = DemoToolOutputFactory()
+        self.healthCoachDesign = DemoHealthCoachDesign()
         self.runtime = runtime
         self.model = model
         self.enableWebSearch = enableWebSearch
         self.reasoningEffort = reasoningEffort
+        self.developerLoggingEnabled = diagnostics.initialDeveloperLoggingEnabled()
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
         self.deviceCodePromptCoordinator = deviceCodePromptCoordinator
+        configureRuntimeObservationBindings()
     }
 
     var activeThread: AgentThread? {
@@ -219,6 +301,14 @@ final class AgentDemoViewModel: @unchecked Sendable {
 
     var activeThreadPersonaSummary: String? {
         personaSummary(for: activeThread)
+    }
+
+    var resolvedStateURL: URL {
+        stateURL ?? AgentDemoRuntimeFactory.defaultStateURL()
+    }
+
+    var legacyStateURL: URL {
+        resolvedStateURL.deletingPathExtension().appendingPathExtension("json")
     }
 
     var healthProgressFraction: Double {
@@ -247,159 +337,6 @@ final class AgentDemoViewModel: @unchecked Sendable {
         }
     }
 
-    func restore() async {
-        do {
-            _ = try await runtime.restore()
-            await registerDemoTool()
-            await registerDemoSkills()
-            await refreshSnapshot()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func signIn(using authenticationMethod: DemoAuthenticationMethod) async {
-        guard !isAuthenticating else {
-            return
-        }
-
-        isAuthenticating = true
-        lastError = nil
-        currentAuthenticationMethod = authenticationMethod
-        runtime = AgentDemoRuntimeFactory.makeRuntime(
-            authenticationMethod: authenticationMethod,
-            model: model,
-            enableWebSearch: enableWebSearch,
-            reasoningEffort: reasoningEffort,
-            stateURL: stateURL,
-            keychainAccount: keychainAccount,
-            approvalInbox: approvalInbox,
-            deviceCodePromptCoordinator: deviceCodePromptCoordinator
-        )
-
-        defer {
-            isAuthenticating = false
-        }
-
-        do {
-            _ = try await runtime.restore()
-            await registerDemoTool()
-            await registerDemoSkills()
-            session = try await runtime.signIn()
-            await refreshSnapshot()
-            if healthCoachInitialized {
-                await refreshHealthCoachProgress()
-            }
-        } catch {
-            await deviceCodePromptCoordinator.clear()
-            await refreshSnapshot()
-            lastError = error.localizedDescription
-        }
-    }
-
-    func updateReasoningEffort(_ reasoningEffort: ReasoningEffort) async {
-        guard self.reasoningEffort != reasoningEffort else {
-            return
-        }
-
-        guard canReconfigureRuntime else {
-            lastError = "Wait for the current turn to finish before switching thinking level."
-            return
-        }
-
-        self.reasoningEffort = reasoningEffort
-        let preservedActiveThreadID = activeThreadID
-        let preservedHealthCoachThreadID = healthCoachThreadID
-
-        runtime = AgentDemoRuntimeFactory.makeRuntime(
-            authenticationMethod: currentAuthenticationMethod,
-            model: model,
-            enableWebSearch: enableWebSearch,
-            reasoningEffort: reasoningEffort,
-            stateURL: stateURL,
-            keychainAccount: keychainAccount,
-            approvalInbox: approvalInbox,
-            deviceCodePromptCoordinator: deviceCodePromptCoordinator
-        )
-
-        do {
-            _ = try await runtime.restore()
-            await registerDemoTool()
-            await refreshSnapshot()
-
-            if let preservedActiveThreadID,
-               threads.contains(where: { $0.id == preservedActiveThreadID }) {
-                activeThreadID = preservedActiveThreadID
-                messages = await runtime.messages(for: preservedActiveThreadID)
-            }
-
-            if let preservedHealthCoachThreadID,
-               threads.contains(where: { $0.id == preservedHealthCoachThreadID }) {
-                healthCoachThreadID = preservedHealthCoachThreadID
-            }
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func createThread() async {
-        await createThreadInternal(
-            title: nil,
-            personaStack: nil
-        )
-    }
-
-    func createSupportPersonaThread() async {
-        await createThreadInternal(
-            title: "Support Persona Demo",
-            personaStack: Self.supportPersona
-        )
-    }
-
-    func setPlannerPersonaOnActiveThread() async {
-        guard let activeThreadID else {
-            lastError = "Create or select a thread before swapping personas."
-            return
-        }
-
-        do {
-            try await runtime.setPersonaStack(
-                Self.plannerPersona,
-                for: activeThreadID
-            )
-            threads = await runtime.threads()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func sendReviewerOverrideExample() async {
-        if activeThreadID == nil {
-            await createSupportPersonaThread()
-        }
-
-        await sendMessageInternal(
-            "Review this conversation setup and tell me the biggest risks first.",
-            personaOverride: Self.reviewerOverridePersona
-        )
-    }
-
-    func createHealthCoachSkillThread() async {
-        await createThreadInternal(
-            title: "Skill Demo: Health Coach",
-            personaStack: nil,
-            skillIDs: [Self.healthCoachSkill.id]
-        )
-    }
-
-    func createTravelPlannerSkillThread() async {
-        await createThreadInternal(
-            title: "Skill Demo: Travel Planner",
-            personaStack: nil,
-            skillIDs: [Self.travelPlannerSkill.id]
-        )
-    }
-
     func personaSummary(for thread: AgentThread?) -> String? {
         guard let thread else {
             return nil
@@ -413,164 +350,5 @@ final class AgentDemoViewModel: @unchecked Sendable {
         }
         guard !sections.isEmpty else { return nil }
         return sections.joined(separator: " | ")
-    }
-
-    func activateThread(id: String) async {
-        activeThreadID = id
-        setMessages(await runtime.messages(for: id))
-        streamingText = ""
-    }
-
-    func sendComposerText() async {
-        let outgoingText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let outgoingImages = pendingComposerImages
-
-        guard !outgoingText.isEmpty || !outgoingImages.isEmpty else {
-            return
-        }
-
-        composerText = ""
-        pendingComposerImages = []
-        await sendMessageInternal(
-            outgoingText,
-            images: outgoingImages
-        )
-    }
-
-    func queueComposerImage(
-        data: Data,
-        mimeType: String
-    ) {
-        pendingComposerImages.append(
-            AgentImageAttachment(
-                mimeType: mimeType,
-                data: data
-            )
-        )
-    }
-
-    func removePendingComposerImage(id: String) {
-        pendingComposerImages.removeAll { $0.id == id }
-    }
-
-    func reportError(_ message: String) {
-        lastError = message
-    }
-
-    func approvePendingRequest() {
-        approvalInbox.approveCurrent()
-    }
-
-    func denyPendingRequest() {
-        approvalInbox.denyCurrent()
-    }
-
-    func dismissError() {
-        lastError = nil
-    }
-
-    func signOut() async {
-        do {
-            try await runtime.signOut()
-            await deviceCodePromptCoordinator.clear()
-            session = nil
-            threads = []
-            messages = []
-            streamingText = ""
-            composerText = ""
-            pendingComposerImages = []
-            lastResolvedInstructions = nil
-            lastResolvedInstructionsThreadTitle = nil
-            isRunningSkillPolicyProbe = false
-            skillPolicyProbeResult = nil
-            isRunningStructuredOutputDemo = false
-            structuredShippingReplyResult = nil
-            structuredImportedSummaryResult = nil
-            isRunningMemoryDemo = false
-            automaticMemoryResult = nil
-            automaticPolicyMemoryResult = nil
-            guidedMemoryResult = nil
-            rawMemoryResult = nil
-            memoryPreviewResult = nil
-            activeThreadID = nil
-            healthCoachThreadID = nil
-            healthCoachFeedback = "Set a step goal, then start moving."
-            healthLastUpdatedAt = nil
-            healthKitAuthorized = false
-            notificationAuthorized = false
-            healthCoachInitialized = false
-            cachedAICoachFeedbackKey = nil
-            cachedAICoachFeedbackGeneratedAt = nil
-            cachedAIReminderBody = nil
-            cachedAIReminderKey = nil
-            cachedAIReminderGeneratedAt = nil
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func refreshSnapshot() async {
-        session = await runtime.currentSession()
-        guard session != nil else {
-            clearConversationSnapshot()
-            return
-        }
-
-        threads = await runtime.threads()
-
-        let selectedThreadID = activeThreadID
-        if let selectedThreadID,
-           threads.contains(where: { $0.id == selectedThreadID }) {
-            setMessages(await runtime.messages(for: selectedThreadID))
-            return
-        }
-
-        if let firstThread = threads.first {
-            activeThreadID = firstThread.id
-            setMessages(await runtime.messages(for: firstThread.id))
-        } else {
-            activeThreadID = nil
-            messages = []
-        }
-    }
-
-    func clearConversationSnapshot() {
-        threads = []
-        messages = []
-        streamingText = ""
-        pendingComposerImages = []
-        lastResolvedInstructions = nil
-        lastResolvedInstructionsThreadTitle = nil
-        isRunningSkillPolicyProbe = false
-        skillPolicyProbeResult = nil
-        activeThreadID = nil
-    }
-
-    func setMessages(_ incoming: [AgentMessage]) {
-        messages = deduplicatedMessages(incoming)
-    }
-
-    func upsertMessage(_ message: AgentMessage) {
-        if let existingIndex = messages.firstIndex(where: { $0.id == message.id }) {
-            messages[existingIndex] = message
-            return
-        }
-        messages.append(message)
-    }
-
-    private func deduplicatedMessages(_ incoming: [AgentMessage]) -> [AgentMessage] {
-        var seen = Set<String>()
-        var reversedUnique: [AgentMessage] = []
-        reversedUnique.reserveCapacity(incoming.count)
-
-        for message in incoming.reversed() {
-            guard seen.insert(message.id).inserted else {
-                continue
-            }
-            reversedUnique.append(message)
-        }
-
-        return reversedUnique.reversed()
     }
 }

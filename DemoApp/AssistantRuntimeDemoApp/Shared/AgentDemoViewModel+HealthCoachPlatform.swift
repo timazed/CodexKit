@@ -85,8 +85,8 @@ extension AgentDemoViewModel {
     }
 
     func scheduleStepReminders() async {
-        let identifiers = Self.healthReminderSchedule.map { schedule in
-            "\(Self.healthReminderIdentifierPrefix)-\(schedule.hour)-\(schedule.minute)"
+        let identifiers = healthCoachDesign.reminderSchedule.map { schedule in
+            "\(healthCoachDesign.reminderIdentifierPrefix)-\(schedule.hour)-\(schedule.minute)"
         }
         notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
 
@@ -100,7 +100,7 @@ extension AgentDemoViewModel {
         let title = "Health Coach Checkpoint"
         let body = await reminderNotificationBody(remaining: remaining)
 
-        for schedule in Self.healthReminderSchedule {
+        for schedule in healthCoachDesign.reminderSchedule {
             guard let reminderDate = calendar.date(
                 bySettingHour: schedule.hour,
                 minute: schedule.minute,
@@ -124,7 +124,7 @@ extension AgentDemoViewModel {
             content.body = body
             content.sound = .default
 
-            let identifier = "\(Self.healthReminderIdentifierPrefix)-\(schedule.hour)-\(schedule.minute)"
+            let identifier = "\(healthCoachDesign.reminderIdentifierPrefix)-\(schedule.hour)-\(schedule.minute)"
             let request = UNNotificationRequest(
                 identifier: identifier,
                 content: content,
@@ -142,13 +142,13 @@ extension AgentDemoViewModel {
                     }
                 }
             } catch {
-                lastError = error.localizedDescription
+                reportError(error)
             }
         }
     }
 
     func reminderNotificationBody(remaining: Int) async -> String {
-        let cacheKey = Self.reminderCopyCacheKey(
+        let cacheKey = healthCoachDesign.reminderCopyCacheKey(
             remaining: remaining,
             goal: dailyStepGoal,
             toneMode: healthCoachToneMode
@@ -162,7 +162,7 @@ extension AgentDemoViewModel {
         }
 
         guard session != nil else {
-            return Self.fallbackReminderBody(
+            return healthCoachDesign.fallbackReminderBody(
                 remaining: remaining,
                 toneMode: healthCoachToneMode
             )
@@ -218,10 +218,10 @@ extension AgentDemoViewModel {
                 return cleaned
             }
         } catch {
-            Self.logger.error("Failed to generate AI reminder copy: \(error.localizedDescription, privacy: .public)")
+            developerErrorLog("Failed to generate AI reminder copy: \(error.localizedDescription)")
         }
 
-        return Self.fallbackReminderBody(
+        return healthCoachDesign.fallbackReminderBody(
             remaining: remaining,
             toneMode: healthCoachToneMode
         )

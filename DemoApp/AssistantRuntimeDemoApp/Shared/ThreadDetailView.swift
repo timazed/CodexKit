@@ -15,6 +15,7 @@ struct ThreadDetailView: View {
 
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isImportingPhoto = false
+    @State private var threadTitleDraft = ""
     @FocusState private var isComposerFocused: Bool
 
     init(viewModel: AgentDemoViewModel, threadID: String) {
@@ -26,6 +27,8 @@ struct ThreadDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 threadHeaderCard
+                observationCard
+                compactionCard
                 transcriptCard
             }
             .padding(20)
@@ -49,10 +52,16 @@ struct ThreadDetailView: View {
             }
             .background(.regularMaterial)
         }
-        .navigationTitle(activeThread?.title ?? "Thread")
+        .navigationTitle(observedThread?.title ?? activeThread?.title ?? "Thread")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: threadID) {
             await viewModel.activateThread(id: threadID)
+            threadTitleDraft = observedThread?.title ?? ""
+        }
+        .onChange(of: observedThread?.title) { previousValue, newValue in
+            if threadTitleDraft == (previousValue ?? "") || threadTitleDraft.isEmpty {
+                threadTitleDraft = newValue ?? ""
+            }
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else {
@@ -72,12 +81,31 @@ private extension ThreadDetailView {
         viewModel.threads.first { $0.id == threadID }
     }
 
+    var observedThread: AgentThread? {
+        viewModel.observedThread?.id == threadID ? viewModel.observedThread : activeThread
+    }
+
+    var observedContextState: AgentThreadContextState? { viewModel.observedThreadContextState ?? viewModel.activeThreadContextState }
+    var observedContextUsage: AgentThreadContextUsage? { viewModel.observedThreadContextUsage ?? viewModel.activeThreadContextUsage }
+
+    var observedSummary: AgentThreadSummary? { viewModel.observedThreadSummary }
+
+    var turnActivityStatus: AgentThreadStatus? {
+        guard let status = observedThread?.status else { return nil }
+        switch status {
+        case .streaming where !isStreamingActive, .waitingForApproval, .waitingForToolResult:
+            return status
+        default:
+            return nil
+        }
+    }
+
     var threadHeaderCard: some View {
         DemoSectionCard {
-            Text(activeThread?.title ?? "Thread")
+            Text(observedThread?.title ?? activeThread?.title ?? "Thread")
                 .font(.title3.weight(.semibold))
 
-            Text(activeThread?.status.rawValue.capitalized ?? "Idle")
+            Text(observedThread?.status.rawValue.capitalized ?? activeThread?.status.rawValue.capitalized ?? "Idle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -88,20 +116,43 @@ private extension ThreadDetailView {
             }
 
             HStack(spacing: 10) {
-                Label(
-                    viewModel.model,
-                    systemImage: "cpu"
-                )
+                Label(viewModel.model, systemImage: "cpu")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                Label(
-                    reasoningEffortTitle,
-                    systemImage: reasoningEffortSymbol
-                )
+                Label(reasoningEffortTitle, systemImage: reasoningEffortSymbol)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    var observationCard: some View {
+        DemoSectionCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Observation Demo")
+                    .font(.headline)
+                Text("This card is driven by `observeThread`, `observeMessages`, `observeThreadSummary`, `observeThreadContextState`, and `observeThreadContextUsage`, so title, transcript, summary, compaction state, and context usage all update live without a manual refresh.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                compactionMetric(title: "Observed Messages", value: "\(viewModel.observedMessages.count)")
+                compactionMetric(title: "Latest Preview", value: observedSummary?.latestAssistantMessagePreview?.isEmpty == false ? "Ready" : "None")
+                compactionMetric(title: "Observed Status", value: observedThread?.status.rawValue.capitalized ?? "Idle")
+            }
+
+            TextField("Rename this thread", text: $threadTitleDraft)
+                .textFieldStyle(.roundedBorder)
+
+            Button {
+                Task { await viewModel.updateActiveThreadTitle(threadTitleDraft) }
+            } label: {
+                Label("Save Thread Title", systemImage: "pencil")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(viewModel.session == nil || observedThread == nil)
         }
     }
 
@@ -114,56 +165,107 @@ private extension ThreadDetailView {
             } else {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(threadMessages) { message in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(message.role.rawValue.capitalized)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                        ThreadMessageBubble(message: message)
+                    }
 
-                            if shouldShowVisibleText(for: message) {
-                                Text(message.displayText)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            if let structuredOutput = message.structuredOutput {
-                                structuredOutputCard(structuredOutput, for: message)
-                            }
-
-                            if !message.images.isEmpty {
-                                attachmentGallery(for: message.images)
-
-                                Text(message.images.count == 1 ? "1 image attached" : "\(message.images.count) images attached")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(
-                                    message.role == .user
-                                        ? Color.accentColor.opacity(0.12)
-                                        : Color.primary.opacity(0.04)
-                                )
-                        )
+                    if let turnActivityStatus {
+                        ThreadTurnActivityView(status: turnActivityStatus)
                     }
 
                     if isStreamingActive {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Assistant")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Text(viewModel.streamingText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.primary.opacity(0.04))
-                        )
+                        ThreadStreamingBubble(text: viewModel.streamingText)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    var compactionCard: some View {
+        DemoSectionCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Context Compaction")
+                    .font(.headline)
+                Text("Preserves the visible transcript, but rewrites the runtime’s hidden effective prompt context for future turns.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                compactionMetric(
+                    title: "Visible Context",
+                    value: "\(viewModel.formattedTokenCount(observedContextUsage?.visibleEstimatedTokenCount ?? 0)) tokens"
+                )
+                compactionMetric(
+                    title: "Effective Context",
+                    value: "\(viewModel.formattedTokenCount(observedContextUsage?.effectiveEstimatedTokenCount ?? 0)) tokens"
+                )
+                compactionMetric(title: "Generation", value: "\(observedContextState?.generation ?? 0)")
+            }
+
+            if let contextUsage = observedContextUsage,
+               let percentFull = contextUsage.percentUsed,
+               let windowTokens = contextUsage.usableContextWindowTokenCount {
+                let effectiveTokens = viewModel.formattedTokenCount(contextUsage.effectiveEstimatedTokenCount)
+                let usableTokens = viewModel.formattedTokenCount(windowTokens)
+                Text("Estimated context window: \(percentFull)% full (\(effectiveTokens) / \(usableTokens) usable tokens)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Estimated effective prompt usage: \(viewModel.formattedTokenCount(observedContextUsage?.effectiveEstimatedTokenCount ?? 0)) tokens")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let contextUsage = observedContextUsage,
+               contextUsage.estimatedTokenSavings > 0 {
+                let visibleTokens = viewModel.formattedTokenCount(contextUsage.visibleEstimatedTokenCount)
+                let effectiveTokens = viewModel.formattedTokenCount(contextUsage.effectiveEstimatedTokenCount)
+                Text("Current compaction savings: ~\(visibleTokens) -> \(effectiveTokens) estimated tokens")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let contextState = observedContextState {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let reason = contextState.lastCompactionReason {
+                        Text("Last compaction: \(reason.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let lastCompactedAt = contextState.lastCompactedAt {
+                        Text("Updated \(lastCompactedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let summaryMessage = contextState.effectiveMessages.first(where: { $0.role == .system }),
+                       !summaryMessage.text.isEmpty {
+                        Text(summaryMessage.text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(4)
+                            .padding(.top, 2)
+                    }
+                }
+            } else {
+                Text("No compacted context exists yet for this thread. Send a few messages, then compact to compare the prompt working set against the preserved transcript.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await viewModel.compactActiveThreadContext() }
+                } label: {
+                    Label(viewModel.isCompactingThreadContext ? "Compacting..." : "Compact Context Now", systemImage: viewModel.isCompactingThreadContext ? "hourglass" : "arrow.triangle.branch")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.session == nil || activeThread == nil || viewModel.isCompactingThreadContext)
+            }
+
+            Text("Observed context state updates here automatically after compaction and future turns.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -244,7 +346,8 @@ private extension ThreadDetailView {
     }
 
     var threadMessages: [AgentMessage] {
-        viewModel.activeThreadID == threadID ? viewModel.messages : []
+        guard viewModel.activeThreadID == threadID else { return [] }
+        return viewModel.observedMessages.isEmpty ? viewModel.messages : viewModel.observedMessages
     }
 
     var isStreamingActive: Bool {
@@ -275,78 +378,6 @@ private extension ThreadDetailView {
         case .extraHigh:
             "sparkles"
         }
-    }
-
-    @ViewBuilder
-    func attachmentGallery(for images: [AgentImageAttachment]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(images) { image in
-                    if let platformImage = platformImage(from: image.data) {
-                        Image(platformImage: platformImage)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 120, height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                }
-            }
-            .padding(.top, 4)
-        }
-    }
-
-    func structuredOutputCard(
-        _ structuredOutput: AgentStructuredOutputMetadata,
-        for message: AgentMessage
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Structured Payload")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            if isPureStructuredPayloadMessage(message) {
-                Text("This assistant turn resolved into a typed structured payload.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Label(structuredOutput.formatName, systemImage: "square.stack.3d.up.fill")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            Text(structuredOutput.payload.prettyJSONString)
-                .font(.system(.footnote, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
-                )
-                .textSelection(.enabled)
-        }
-        .padding(.top, shouldShowVisibleText(for: message) ? 4 : 0)
-    }
-
-    func shouldShowVisibleText(for message: AgentMessage) -> Bool {
-        guard !isPureStructuredPayloadMessage(message) else {
-            return false
-        }
-        return !message.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func isPureStructuredPayloadMessage(_ message: AgentMessage) -> Bool {
-        guard let structuredOutput = message.structuredOutput else {
-            return false
-        }
-
-        let rawText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rawText.isEmpty,
-              let data = rawText.data(using: .utf8),
-              let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-            return false
-        }
-
-        return parsed == structuredOutput.payload
     }
 
     func importPhoto(from item: PhotosPickerItem) async {
@@ -383,13 +414,185 @@ private extension ThreadDetailView {
         return "image/jpeg"
     }
 
+    @ViewBuilder
+    func compactionMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline.monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+}
+
+private struct ThreadStreamingBubble: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Assistant")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+}
+
+private struct ThreadMessageBubble: View {
+    let message: AgentMessage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(message.role.rawValue.capitalized)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if shouldShowVisibleText {
+                Text(message.displayText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let structuredOutput = message.structuredOutput {
+                structuredOutputCard(structuredOutput)
+            }
+
+            if !message.images.isEmpty {
+                ThreadAttachmentGallery(images: message.images)
+
+                Text(message.images.count == 1 ? "1 image attached" : "\(message.images.count) images attached")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    message.role == .user
+                        ? Color.accentColor.opacity(0.12)
+                        : Color.primary.opacity(0.04)
+                )
+        )
+    }
+
+    private var shouldShowVisibleText: Bool {
+        guard !isPureStructuredPayloadMessage else {
+            return false
+        }
+        return !message.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isPureStructuredPayloadMessage: Bool {
+        guard let structuredOutput = message.structuredOutput else {
+            return false
+        }
+
+        let rawText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty,
+              let data = rawText.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) else {
+            return false
+        }
+
+        return parsed == structuredOutput.payload
+    }
+
+    @ViewBuilder
+    private func structuredOutputCard(_ structuredOutput: AgentStructuredOutputMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Structured Payload")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if isPureStructuredPayloadMessage {
+                Text("This assistant turn resolved into a typed structured payload.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Label(structuredOutput.formatName, systemImage: "square.stack.3d.up.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            Text(structuredOutput.payload.prettyJSONString)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                )
+                .textSelection(.enabled)
+        }
+        .padding(.top, shouldShowVisibleText ? 4 : 0)
+    }
+}
+
+private struct ThreadAttachmentGallery: View {
+    let images: [AgentImageAttachment]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(images) { image in
+                    ThreadAttachmentThumbnail(image: image)
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+}
+
+private struct ThreadAttachmentThumbnail: View {
+    let image: AgentImageAttachment
+
+    var body: some View {
+        Group {
+            if let platformImage = ThreadAttachmentImageCache.image(for: image) {
+                Image(platformImage: platformImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+    }
+}
+
 #if canImport(UIKit)
-    func platformImage(from data: Data) -> UIImage? {
-        UIImage(data: data)
-    }
+private typealias ThreadPlatformImage = UIImage
 #elseif canImport(AppKit)
-    func platformImage(from data: Data) -> NSImage? {
-        NSImage(data: data)
-    }
+private typealias ThreadPlatformImage = NSImage
 #endif
+
+@MainActor
+private enum ThreadAttachmentImageCache {
+    private static let cache = NSCache<NSString, ThreadPlatformImage>()
+
+    static func image(for attachment: AgentImageAttachment) -> ThreadPlatformImage? {
+        let key = attachment.id as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        guard let image = ThreadPlatformImage(data: attachment.data) else {
+            return nil
+        }
+        cache.setObject(image, forKey: key)
+        return image
+    }
 }

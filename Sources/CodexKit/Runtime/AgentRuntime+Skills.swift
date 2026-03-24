@@ -81,6 +81,7 @@ extension AgentRuntime {
 
         state.threads[index].skillIDs = skillIDs
         state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
         try await persistState()
     }
 

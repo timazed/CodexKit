@@ -102,7 +102,7 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: approvalInbox,
-            stateStore: FileRuntimeStateStore(url: stateURL ?? defaultStateURL()),
+            stateStore: try! GRDBRuntimeStateStore(url: stateURL ?? defaultStateURL()),
             memory: .init(
                 store: try! SQLiteMemoryStore(url: defaultMemoryURL()),
                 automaticCapturePolicy: .init(
@@ -115,6 +115,16 @@ enum AgentDemoRuntimeFactory {
                         ),
                         maxMemories: 2
                     )
+                )
+            ),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic,
+                visibility: .hidden,
+                strategy: .preferRemoteThenLocal,
+                trigger: .init(
+                    estimatedTokenThreshold: 2_000,
+                    retryOnContextLimitError: true
                 )
             )
         ))
@@ -143,7 +153,7 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: NonInteractiveApprovalPresenter(),
-            stateStore: FileRuntimeStateStore(url: defaultStateURL()),
+            stateStore: try! GRDBRuntimeStateStore(url: defaultStateURL()),
             memory: .init(
                 store: try! SQLiteMemoryStore(url: defaultMemoryURL()),
                 automaticCapturePolicy: .init(
@@ -157,6 +167,16 @@ enum AgentDemoRuntimeFactory {
                         maxMemories: 2
                     )
                 )
+            ),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic,
+                visibility: .hidden,
+                strategy: .preferRemoteThenLocal,
+                trigger: .init(
+                    estimatedTokenThreshold: 2_000,
+                    retryOnContextLimitError: true
+                )
             )
         ))
     }
@@ -169,7 +189,7 @@ enum AgentDemoRuntimeFactory {
 
         return baseDirectory
             .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
-            .appendingPathComponent("runtime-state.json")
+            .appendingPathComponent("runtime-state.sqlite")
     }
 
     static func defaultMemoryURL() -> URL {
