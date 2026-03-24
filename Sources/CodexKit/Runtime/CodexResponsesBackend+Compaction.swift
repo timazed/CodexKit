@@ -8,13 +8,17 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentCompactionResult {
+        let requestFactory = CodexResponsesRequestFactory(
+            configuration: configuration,
+            encoder: encoder
+        )
         let requestBody = ResponsesCompactRequestBody(
             model: configuration.model,
             reasoning: .init(effort: configuration.reasoningEffort),
             instructions: instructions,
             text: .init(format: .init(responseFormat: nil)),
             input: effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue },
-            tools: CodexResponsesTurnSession.responsesTools(
+            tools: requestFactory.responsesTools(
                 from: tools,
                 enableWebSearch: configuration.enableWebSearch
             ),

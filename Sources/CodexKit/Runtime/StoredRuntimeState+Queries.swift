@@ -2,6 +2,7 @@ import Foundation
 
 extension StoredRuntimeState {
     func normalized() -> StoredRuntimeState {
+        let projections = StoredRuntimeStateProjectionBuilder()
         let sortedThreads = threads.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
                 return lhs.id < rhs.id
@@ -20,7 +21,7 @@ extension StoredRuntimeState {
             }
 
         for (threadID, messages) in messagesByThread where normalizedHistory[threadID]?.isEmpty != false {
-            normalizedHistory[threadID] = Self.syntheticHistory(from: messages)
+            normalizedHistory[threadID] = projections.syntheticHistory(from: messages)
         }
 
         let normalizedMessages: [String: [AgentMessage]] = normalizedHistory.mapValues { records in
@@ -43,7 +44,7 @@ extension StoredRuntimeState {
         var normalizedContextState = contextStateByThread
         for thread in sortedThreads {
             let history = normalizedHistory[thread.id] ?? []
-            normalizedSummaries[thread.id] = Self.rebuildSummary(
+            normalizedSummaries[thread.id] = projections.rebuildSummary(
                 for: thread,
                 history: history,
                 existing: summariesByThread[thread.id]
@@ -80,7 +81,7 @@ extension StoredRuntimeState {
     }
 
     func threadSummaryFallback(for thread: AgentThread) -> AgentThreadSummary {
-        Self.rebuildSummary(
+        StoredRuntimeStateProjectionBuilder().rebuildSummary(
             for: thread,
             history: historyByThread[thread.id] ?? [],
             existing: summariesByThread[thread.id]
@@ -265,8 +266,10 @@ extension StoredRuntimeState {
 
         return updated.normalized()
     }
+}
 
-    private static func syntheticHistory(from messages: [AgentMessage]) -> [AgentHistoryRecord] {
+struct StoredRuntimeStateProjectionBuilder: Sendable {
+    func syntheticHistory(from messages: [AgentMessage]) -> [AgentHistoryRecord] {
         let orderedMessages = messages.enumerated().sorted { lhs, rhs in
             let left = lhs.element
             let right = rhs.element
@@ -285,7 +288,7 @@ extension StoredRuntimeState {
         }
     }
 
-    private static func rebuildSummary(
+    func rebuildSummary(
         for thread: AgentThread,
         history: [AgentHistoryRecord],
         existing: AgentThreadSummary?
@@ -306,7 +309,6 @@ extension StoredRuntimeState {
                         latestStructuredOutputMetadata = structuredOutput
                     }
                 }
-
             case let .toolCall(toolCall):
                 latestToolState = AgentLatestToolState(
                     invocationID: toolCall.invocation.id,
@@ -315,16 +317,12 @@ extension StoredRuntimeState {
                     status: .waiting,
                     updatedAt: toolCall.requestedAt
                 )
-
             case let .toolResult(toolResult):
-                latestToolState = Self.latestToolState(from: toolResult)
-
+                latestToolState = self.latestToolState(from: toolResult)
             case let .structuredOutput(structuredOutput):
                 latestStructuredOutputMetadata = structuredOutput.metadata
-
             case .approval:
                 break
-
             case let .systemEvent(systemEvent):
                 switch systemEvent.type {
                 case .turnStarted:
@@ -354,7 +352,7 @@ extension StoredRuntimeState {
         )
     }
 
-    private static func latestToolState(from toolResult: AgentToolResultRecord) -> AgentLatestToolState {
+    func latestToolState(from toolResult: AgentToolResultRecord) -> AgentLatestToolState {
         let preview = toolResult.result.primaryText
         let session = toolResult.result.session
         let status: AgentToolSessionStatus
