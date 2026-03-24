@@ -3,6 +3,8 @@ import Foundation
 #if os(iOS)
 import AppIntents
 
+private let shortcutCatalog = DemoCatalog()
+
 enum DemoShareImportExamples {
     static func articleSummaryRequest(
         excerpt: String,
@@ -93,7 +95,7 @@ struct DraftShippingSupportReplyIntent: AppIntent {
 
         let thread = try await runtime.createThread(
             title: "Shortcut Support",
-            personaStack: AgentDemoViewModel.supportPersona
+            personaStack: shortcutCatalog.supportPersona
         )
         let draft = try await runtime.sendMessage(
             UserMessageRequest(
