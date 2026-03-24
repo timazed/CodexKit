@@ -481,7 +481,7 @@ extension AgentRuntimeTests {
 
         let metadata = try await reloadedRuntime.prepareStore()
         XCTAssertEqual(metadata.storeKind, "GRDBRuntimeStateStore")
-        XCTAssertEqual(metadata.storeSchemaVersion, 1)
+        XCTAssertEqual(metadata.storeSchemaVersion, 2)
 
         let summary = try await reloadedRuntime.fetchThreadSummary(id: thread.id)
         XCTAssertEqual(summary.latestTurnStatus, .completed)
@@ -671,13 +671,149 @@ extension AgentRuntimeTests {
         let databaseData = try Data(contentsOf: url)
         XCTAssertNil(databaseData.range(of: imageData.base64EncodedData()))
     }
+
+    func testManualCompactionPreservesVisibleHistoryAndHidesMarkersByDefault() async throws {
+        let backend = CompactingTestBackend()
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic
+            )
+        )
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Compaction")
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
+
+        let visibleBefore = await runtime.messages(for: thread.id)
+        XCTAssertEqual(visibleBefore.count, 6)
+
+        let contextState = try await runtime.compactThreadContext(id: thread.id)
+        XCTAssertEqual(contextState.generation, 1)
+        XCTAssertLessThan(contextState.effectiveMessages.count, visibleBefore.count)
+
+        let visibleAfter = await runtime.messages(for: thread.id)
+        XCTAssertEqual(visibleAfter, visibleBefore)
+
+        let hiddenHistory = try await runtime.execute(
+            HistoryItemsQuery(
+                threadID: thread.id,
+                kinds: [.systemEvent]
+            )
+        )
+        XCTAssertFalse(hiddenHistory.records.contains(where: { $0.item.isCompactionMarker }))
+
+        let debugHistory = try await runtime.execute(
+            HistoryItemsQuery(
+                threadID: thread.id,
+                kinds: [.systemEvent],
+                includeCompactionEvents: true
+            )
+        )
+        XCTAssertTrue(debugHistory.records.contains(where: { $0.item.isCompactionMarker }))
+    }
+
+    func testAutomaticRetryCompactionRecoversFromContextLimitError() async throws {
+        let backend = CompactingTestBackend(failOnHistoryCountAbove: 2)
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore(),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic,
+                trigger: AgentContextCompactionTrigger(
+                    estimatedTokenThreshold: 100_000,
+                    retryOnContextLimitError: true
+                )
+            )
+        )
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Retry Compact")
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
+        let reply = try await runtime.sendMessage(UserMessageRequest(text: "four"), in: thread.id)
+
+        XCTAssertEqual(reply, "Echo: four")
+        let compactCallCount = await backend.compactCallCount()
+        let beginTurnHistoryCounts = await backend.beginTurnHistoryCounts()
+        XCTAssertEqual(compactCallCount, 1)
+        XCTAssertGreaterThanOrEqual(beginTurnHistoryCounts.count, 5)
+    }
+
+    func testContextStatePersistsAcrossGRDBReload() async throws {
+        let url = temporaryRuntimeSQLiteURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let backend = CompactingTestBackend()
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: try GRDBRuntimeStateStore(url: url),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic
+            )
+        )
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Persisted Context")
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "alpha"), in: thread.id)
+        _ = try await runtime.sendMessage(UserMessageRequest(text: "beta"), in: thread.id)
+        _ = try await runtime.compactThreadContext(id: thread.id)
+
+        let reloadedRuntime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: try GRDBRuntimeStateStore(url: url),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic
+            )
+        )
+
+        let restoredContext = try await reloadedRuntime.fetchThreadContextState(id: thread.id)
+        XCTAssertEqual(restoredContext?.generation, 1)
+        XCTAssertFalse(restoredContext?.effectiveMessages.isEmpty ?? true)
+    }
+
+    func testContextCompactionConfigurationDefaultsAndCodableShape() throws {
+        let configuration = AgentContextCompactionConfiguration()
+        XCTAssertFalse(configuration.isEnabled)
+        XCTAssertEqual(configuration.mode, .automatic)
+
+        let encoded = try JSONEncoder().encode(
+            AgentContextCompactionConfiguration(isEnabled: true, mode: .manual)
+        )
+        let decoded = try JSONDecoder().decode(
+            AgentContextCompactionConfiguration.self,
+            from: encoded
+        )
+
+        XCTAssertTrue(decoded.isEnabled)
+        XCTAssertEqual(decoded.mode, .manual)
+    }
 }
 
 private func makeHistoryRuntime(
     backend: any AgentBackend,
     approvalPresenter: any ApprovalPresenting,
     stateStore: any RuntimeStateStoring,
-    tools: [AgentRuntime.ToolRegistration] = []
+    tools: [AgentRuntime.ToolRegistration] = [],
+    contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration()
 ) throws -> AgentRuntime {
     try AgentRuntime(configuration: .init(
         authProvider: DemoChatGPTAuthProvider(),
@@ -688,7 +824,8 @@ private func makeHistoryRuntime(
         backend: backend,
         approvalPresenter: approvalPresenter,
         stateStore: stateStore,
-        tools: tools
+        tools: tools,
+        contextCompaction: contextCompaction
     ))
 }
 
@@ -783,6 +920,100 @@ private actor PartialEmissionGate {
         let continuations = commitWaiters
         commitWaiters.removeAll()
         continuations.forEach { $0.resume() }
+    }
+}
+
+private actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting {
+    nonisolated let baseInstructions: String? = nil
+
+    private let failOnHistoryCountAbove: Int?
+    private var threads: [String: AgentThread] = [:]
+    private var compactCalls = 0
+    private var historyCounts: [Int] = []
+
+    init(failOnHistoryCountAbove: Int? = nil) {
+        self.failOnHistoryCountAbove = failOnHistoryCountAbove
+    }
+
+    func createThread(session _: ChatGPTSession) async throws -> AgentThread {
+        let thread = AgentThread(id: UUID().uuidString)
+        threads[thread.id] = thread
+        return thread
+    }
+
+    func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
+        if let thread = threads[id] {
+            return thread
+        }
+        let thread = AgentThread(id: id)
+        threads[id] = thread
+        return thread
+    }
+
+    func beginTurn(
+        thread: AgentThread,
+        history: [AgentMessage],
+        message: UserMessageRequest,
+        instructions _: String,
+        responseFormat _: AgentStructuredOutputFormat?,
+        streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
+        tools _: [ToolDefinition],
+        session _: ChatGPTSession
+    ) async throws -> any AgentTurnStreaming {
+        historyCounts.append(history.count)
+        if let failOnHistoryCountAbove,
+           history.count > failOnHistoryCountAbove,
+           !history.contains(where: { $0.role == .system && $0.text.contains("Compacted conversation summary") }) {
+            throw AgentRuntimeError(
+                code: "context_limit_exceeded",
+                message: "Maximum context length exceeded."
+            )
+        }
+
+        return MockAgentTurnSession(
+            thread: thread,
+            message: message,
+            selectedTool: nil,
+            structuredResponseText: nil,
+            streamedStructuredOutput: nil
+        )
+    }
+
+    func compactContext(
+        thread: AgentThread,
+        effectiveHistory: [AgentMessage],
+        instructions _: String,
+        tools _: [ToolDefinition],
+        session _: ChatGPTSession
+    ) async throws -> AgentCompactionResult {
+        compactCalls += 1
+        let lastUser = effectiveHistory.last(where: { $0.role == .user })
+        let lastAssistant = effectiveHistory.last(where: { $0.role == .assistant })
+        var compacted = [
+            AgentMessage(
+                threadID: thread.id,
+                role: .system,
+                text: "Compacted conversation summary"
+            ),
+        ]
+        if let lastUser {
+            compacted.append(lastUser)
+        }
+        if let lastAssistant {
+            compacted.append(lastAssistant)
+        }
+        return AgentCompactionResult(
+            effectiveMessages: compacted,
+            summaryPreview: "Compacted conversation summary"
+        )
+    }
+
+    func compactCallCount() -> Int {
+        compactCalls
+    }
+
+    func beginTurnHistoryCounts() -> [Int] {
+        historyCounts
     }
 }
 

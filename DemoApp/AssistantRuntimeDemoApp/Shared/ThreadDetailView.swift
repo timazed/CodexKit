@@ -26,6 +26,7 @@ struct ThreadDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 threadHeaderCard
+                compactionCard
                 transcriptCard
             }
             .padding(20)
@@ -122,6 +123,88 @@ private extension ThreadDetailView {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    var compactionCard: some View {
+        DemoSectionCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Context Compaction")
+                    .font(.headline)
+
+                Text("Preserves the visible transcript, but rewrites the runtime’s hidden effective prompt context for future turns.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                compactionMetric(
+                    title: "Visible Messages",
+                    value: "\(threadMessages.count)"
+                )
+                compactionMetric(
+                    title: "Effective Messages",
+                    value: "\(viewModel.activeThreadContextState?.effectiveMessages.count ?? threadMessages.count)"
+                )
+                compactionMetric(
+                    title: "Generation",
+                    value: "\(viewModel.activeThreadContextState?.generation ?? 0)"
+                )
+            }
+
+            if let contextState = viewModel.activeThreadContextState {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let reason = contextState.lastCompactionReason {
+                        Text("Last compaction: \(reason.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let lastCompactedAt = contextState.lastCompactedAt {
+                        Text("Updated \(lastCompactedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let summaryMessage = contextState.effectiveMessages.first(where: { $0.role == .system }),
+                       !summaryMessage.text.isEmpty {
+                        Text(summaryMessage.text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(4)
+                            .padding(.top, 2)
+                    }
+                }
+            } else {
+                Text("No compacted context exists yet for this thread. Send a few messages, then compact to compare the prompt working set against the preserved transcript.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    Task {
+                        await viewModel.compactActiveThreadContext()
+                    }
+                } label: {
+                    Label(
+                        viewModel.isCompactingThreadContext ? "Compacting..." : "Compact Context Now",
+                        systemImage: viewModel.isCompactingThreadContext ? "hourglass" : "arrow.triangle.branch"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.session == nil || activeThread == nil || viewModel.isCompactingThreadContext)
+
+                Button {
+                    Task {
+                        await viewModel.refreshThreadContextState(for: threadID)
+                    }
+                } label: {
+                    Label("Refresh State", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.session == nil || activeThread == nil)
             }
         }
     }
@@ -268,6 +351,23 @@ private extension ThreadDetailView {
         }
 
         return "image/jpeg"
+    }
+
+    @ViewBuilder
+    func compactionMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline.monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 
 }

@@ -40,6 +40,7 @@ extension AgentRuntime: AgentRuntimeQueryable, AgentRuntimeThreadInspecting {
                 threadID: id,
                 kinds: query.filter?.includedKinds,
                 includeRedacted: true,
+                includeCompactionEvents: query.filter?.includeCompactionEvents ?? false,
                 sort: query.direction == .forward ? .sequence(.ascending) : .sequence(.descending),
                 page: AgentQueryPage(limit: query.limit, cursor: query.cursor)
             )
@@ -68,6 +69,19 @@ extension AgentRuntime: AgentRuntimeQueryable, AgentRuntimeThreadInspecting {
             )
         )
         return records.first?.metadata
+    }
+
+    public func fetchThreadContextState(id: String) async throws -> AgentThreadContextState? {
+        if let inspectingStore = stateStore as? any RuntimeStateInspecting {
+            return try await inspectingStore.fetchThreadContextState(id: id)
+        }
+
+        return try await execute(
+            ThreadContextStateQuery(
+                threadIDs: [id],
+                limit: 1
+            )
+        ).first
     }
 
     public func fetchLatestStructuredOutput<Output: Decodable & Sendable>(

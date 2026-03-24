@@ -27,6 +27,7 @@ public actor AgentRuntime {
         public let tools: [ToolRegistration]
         public let skills: [AgentSkill]
         public let definitionSourceLoader: AgentDefinitionSourceLoader
+        public let contextCompaction: AgentContextCompactionConfiguration
 
         public init(
             authProvider: any ChatGPTAuthProviding,
@@ -38,7 +39,8 @@ public actor AgentRuntime {
             baseInstructions: String? = nil,
             tools: [ToolRegistration] = [],
             skills: [AgentSkill] = [],
-            definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader()
+            definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader(),
+            contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration()
         ) {
             self.authProvider = authProvider
             self.secureStore = secureStore
@@ -50,6 +52,7 @@ public actor AgentRuntime {
             self.tools = tools
             self.skills = skills
             self.definitionSourceLoader = definitionSourceLoader
+            self.contextCompaction = contextCompaction
         }
     }
 
@@ -61,6 +64,7 @@ public actor AgentRuntime {
     let memoryConfiguration: AgentMemoryConfiguration?
     let baseInstructions: String?
     let definitionSourceLoader: AgentDefinitionSourceLoader
+    let contextCompactionConfiguration: AgentContextCompactionConfiguration
     var skillsByID: [String: AgentSkill]
 
     var state: StoredRuntimeState = .empty
@@ -165,6 +169,7 @@ public actor AgentRuntime {
         self.memoryConfiguration = configuration.memory
         self.baseInstructions = configuration.baseInstructions ?? configuration.backend.baseInstructions
         self.definitionSourceLoader = configuration.definitionSourceLoader
+        self.contextCompactionConfiguration = configuration.contextCompaction
         self.skillsByID = try Self.validatedSkills(from: configuration.skills)
     }
 

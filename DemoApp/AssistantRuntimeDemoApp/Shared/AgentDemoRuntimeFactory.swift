@@ -116,6 +116,16 @@ enum AgentDemoRuntimeFactory {
                         maxMemories: 2
                     )
                 )
+            ),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic,
+                visibility: .hidden,
+                strategy: .preferRemoteThenLocal,
+                trigger: .init(
+                    estimatedTokenThreshold: 2_000,
+                    retryOnContextLimitError: true
+                )
             )
         ))
     }
@@ -156,6 +166,16 @@ enum AgentDemoRuntimeFactory {
                         ),
                         maxMemories: 2
                     )
+                )
+            ),
+            contextCompaction: AgentContextCompactionConfiguration(
+                isEnabled: true,
+                mode: .automatic,
+                visibility: .hidden,
+                strategy: .preferRemoteThenLocal,
+                trigger: .init(
+                    estimatedTokenThreshold: 2_000,
+                    retryOnContextLimitError: true
                 )
             )
         ))

@@ -154,6 +154,20 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
             message: "The active skill policy requires tool calls that did not occur: \(toolNames.sorted().joined(separator: ", "))."
         )
     }
+
+    public static func contextCompactionDisabled() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "context_compaction_disabled",
+            message: "Context compaction is not enabled for this runtime."
+        )
+    }
+
+    public static func contextCompactionUnsupported() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "context_compaction_unsupported",
+            message: "Context compaction could not be performed with the active backend and strategy."
+        )
+    }
 }
 
 public enum AgentRole: String, Codable, Hashable, Sendable {

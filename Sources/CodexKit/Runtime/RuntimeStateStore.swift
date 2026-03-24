@@ -5,6 +5,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
     public var messagesByThread: [String: [AgentMessage]]
     public var historyByThread: [String: [AgentHistoryRecord]]
     public var summariesByThread: [String: AgentThreadSummary]
+    public var contextStateByThread: [String: AgentThreadContextState]
     public var nextHistorySequenceByThread: [String: Int]
 
     public init(
@@ -12,6 +13,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
         messagesByThread: [String: [AgentMessage]] = [:],
         historyByThread: [String: [AgentHistoryRecord]] = [:],
         summariesByThread: [String: AgentThreadSummary] = [:],
+        contextStateByThread: [String: AgentThreadContextState] = [:],
         nextHistorySequenceByThread: [String: Int] = [:]
     ) {
         self.init(
@@ -19,6 +21,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
             messagesByThread: messagesByThread,
             historyByThread: historyByThread,
             summariesByThread: summariesByThread,
+            contextStateByThread: contextStateByThread,
             nextHistorySequenceByThread: nextHistorySequenceByThread,
             normalizeState: false
         )
@@ -30,6 +33,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
         messagesByThread: [String: [AgentMessage]],
         historyByThread: [String: [AgentHistoryRecord]],
         summariesByThread: [String: AgentThreadSummary],
+        contextStateByThread: [String: AgentThreadContextState],
         nextHistorySequenceByThread: [String: Int],
         normalizeState: Bool
     ) {
@@ -37,6 +41,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
         self.messagesByThread = messagesByThread
         self.historyByThread = historyByThread
         self.summariesByThread = summariesByThread
+        self.contextStateByThread = contextStateByThread
         self.nextHistorySequenceByThread = nextHistorySequenceByThread
         if normalizeState {
             self = normalized()
@@ -50,6 +55,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
         case messagesByThread
         case historyByThread
         case summariesByThread
+        case contextStateByThread
         case nextHistorySequenceByThread
     }
 
@@ -60,6 +66,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
             messagesByThread: try container.decodeIfPresent([String: [AgentMessage]].self, forKey: .messagesByThread) ?? [:],
             historyByThread: try container.decodeIfPresent([String: [AgentHistoryRecord]].self, forKey: .historyByThread) ?? [:],
             summariesByThread: try container.decodeIfPresent([String: AgentThreadSummary].self, forKey: .summariesByThread) ?? [:],
+            contextStateByThread: try container.decodeIfPresent([String: AgentThreadContextState].self, forKey: .contextStateByThread) ?? [:],
             nextHistorySequenceByThread: try container.decodeIfPresent([String: Int].self, forKey: .nextHistorySequenceByThread) ?? [:]
         )
     }
@@ -80,6 +87,7 @@ public protocol RuntimeStateInspecting: Sendable {
         query: AgentHistoryQuery
     ) async throws -> AgentThreadHistoryPage
     func fetchLatestStructuredOutputMetadata(id: String) async throws -> AgentStructuredOutputMetadata?
+    func fetchThreadContextState(id: String) async throws -> AgentThreadContextState?
 }
 
 public extension RuntimeStateStoring {
@@ -159,6 +167,10 @@ public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspect
     public func fetchLatestStructuredOutputMetadata(id: String) async throws -> AgentStructuredOutputMetadata? {
         try state.threadSummary(id: id).latestStructuredOutputMetadata
     }
+
+    public func fetchThreadContextState(id: String) async throws -> AgentThreadContextState? {
+        state.contextStateByThread[id]
+    }
 }
 
 public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
@@ -232,6 +244,7 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 threads: manifest.threads,
                 historyByThread: [id: history],
                 summariesByThread: manifest.summariesByThread,
+                contextStateByThread: manifest.contextStateByThread,
                 nextHistorySequenceByThread: manifest.nextHistorySequenceByThread
             )
             return try state.threadHistoryPage(id: id, query: query)
@@ -243,6 +256,17 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     public func fetchLatestStructuredOutputMetadata(id: String) async throws -> AgentStructuredOutputMetadata? {
         let summary = try await fetchThreadSummary(id: id)
         return summary.latestStructuredOutputMetadata
+    }
+
+    public func fetchThreadContextState(id: String) async throws -> AgentThreadContextState? {
+        if let manifest = try loadManifest() {
+            guard manifest.threads.contains(where: { $0.id == id }) else {
+                throw AgentRuntimeError.threadNotFound(id)
+            }
+            return manifest.contextStateByThread[id]
+        }
+
+        return try loadNormalizedStateMigratingIfNeeded().contextStateByThread[id]
     }
 
     private func loadNormalizedStateMigratingIfNeeded() throws -> StoredRuntimeState {
@@ -279,6 +303,7 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             threads: manifest.threads,
             historyByThread: historyByThread,
             summariesByThread: manifest.summariesByThread,
+            contextStateByThread: manifest.contextStateByThread,
             nextHistorySequenceByThread: manifest.nextHistorySequenceByThread
         )
     }
@@ -328,6 +353,7 @@ public actor FileRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         let manifest = FileRuntimeStateManifest(
             threads: normalized.threads,
             summariesByThread: normalized.summariesByThread,
+            contextStateByThread: normalized.contextStateByThread,
             nextHistorySequenceByThread: normalized.nextHistorySequenceByThread
         )
         let manifestData = try encoder.encode(manifest)
@@ -354,16 +380,19 @@ private struct FileRuntimeStateManifest: Codable {
     let storageVersion: Int
     let threads: [AgentThread]
     let summariesByThread: [String: AgentThreadSummary]
+    let contextStateByThread: [String: AgentThreadContextState]
     let nextHistorySequenceByThread: [String: Int]
 
     init(
         threads: [AgentThread],
         summariesByThread: [String: AgentThreadSummary],
+        contextStateByThread: [String: AgentThreadContextState],
         nextHistorySequenceByThread: [String: Int]
     ) {
         self.storageVersion = 1
         self.threads = threads
         self.summariesByThread = summariesByThread
+        self.contextStateByThread = contextStateByThread
         self.nextHistorySequenceByThread = nextHistorySequenceByThread
     }
 }
@@ -408,6 +437,7 @@ extension StoredRuntimeState {
         }
 
         var normalizedSummaries: [String: AgentThreadSummary] = [:]
+        var normalizedContextState = contextStateByThread
         for thread in sortedThreads {
             let history = normalizedHistory[thread.id] ?? []
             normalizedSummaries[thread.id] = Self.rebuildSummary(
@@ -415,6 +445,16 @@ extension StoredRuntimeState {
                 history: history,
                 existing: summariesByThread[thread.id]
             )
+            if let existing = normalizedContextState[thread.id] {
+                normalizedContextState[thread.id] = AgentThreadContextState(
+                    threadID: thread.id,
+                    effectiveMessages: existing.effectiveMessages,
+                    generation: existing.generation,
+                    lastCompactedAt: existing.lastCompactedAt,
+                    lastCompactionReason: existing.lastCompactionReason,
+                    latestMarkerID: existing.latestMarkerID
+                )
+            }
         }
 
         return StoredRuntimeState(
@@ -422,6 +462,7 @@ extension StoredRuntimeState {
             messagesByThread: normalizedMessages,
             historyByThread: normalizedHistory,
             summariesByThread: normalizedSummaries,
+            contextStateByThread: normalizedContextState,
             nextHistorySequenceByThread: normalizedNextSequence,
             normalizeState: false
         )
@@ -508,6 +549,17 @@ extension StoredRuntimeState {
                 updated.historyByThread[threadID, default: []].append(contentsOf: items)
                 let nextSequence = (updated.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1
                 updated.nextHistorySequenceByThread[threadID] = nextSequence
+
+            case let .appendCompactionMarker(threadID, marker):
+                updated.historyByThread[threadID, default: []].append(marker)
+                let nextSequence = (updated.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1
+                updated.nextHistorySequenceByThread[threadID] = nextSequence
+
+            case let .upsertThreadContextState(threadID, state):
+                updated.contextStateByThread[threadID] = state
+
+            case let .deleteThreadContextState(threadID):
+                updated.contextStateByThread.removeValue(forKey: threadID)
 
             case let .setPendingState(threadID, state):
                 if let thread = updated.threads.first(where: { $0.id == threadID }) {
@@ -603,6 +655,7 @@ extension StoredRuntimeState {
                 updated.messagesByThread.removeValue(forKey: threadID)
                 updated.historyByThread.removeValue(forKey: threadID)
                 updated.summariesByThread.removeValue(forKey: threadID)
+                updated.contextStateByThread.removeValue(forKey: threadID)
                 updated.nextHistorySequenceByThread.removeValue(forKey: threadID)
             }
         }
@@ -634,6 +687,9 @@ extension StoredRuntimeState {
         }
         if !query.includeRedacted {
             records = records.filter { $0.redaction == nil }
+        }
+        if !query.includeCompactionEvents {
+            records = records.filter { !$0.item.isCompactionMarker }
         }
 
         records = sort(records, using: query.sort)
@@ -746,6 +802,23 @@ extension StoredRuntimeState {
         return snapshots
     }
 
+    func execute(_ query: ThreadContextStateQuery) -> [AgentThreadContextState] {
+        var records = Array(contextStateByThread.values)
+        if let threadIDs = query.threadIDs {
+            records = records.filter { threadIDs.contains($0.threadID) }
+        }
+        records.sort { lhs, rhs in
+            if lhs.generation == rhs.generation {
+                return lhs.threadID < rhs.threadID
+            }
+            return lhs.generation > rhs.generation
+        }
+        if let limit = query.limit {
+            records = Array(records.prefix(max(0, limit)))
+        }
+        return records
+    }
+
     private static func syntheticHistory(from messages: [AgentMessage]) -> [AgentHistoryRecord] {
         let orderedMessages = messages.enumerated().sorted { lhs, rhs in
             let left = lhs.element
@@ -813,7 +886,7 @@ extension StoredRuntimeState {
                     latestTurnStatus = .completed
                 case .turnFailed:
                     latestTurnStatus = .failed
-                case .threadCreated, .threadResumed, .threadStatusChanged:
+                case .threadCreated, .threadResumed, .threadStatusChanged, .contextCompacted:
                     break
                 }
             }

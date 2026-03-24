@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
-    private static let currentStoreSchemaVersion = 1
+    private static let currentStoreSchemaVersion = 2
 
     private let url: URL
     private let legacyStateURL: URL?
@@ -72,6 +72,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             let threadRows = try RuntimeThreadRow.fetchAll(db)
             let summaryRows = try RuntimeSummaryRow.fetchAll(db)
             let historyRows = try RuntimeHistoryRow.fetchAll(db)
+            let contextRows = try RuntimeContextStateRow.fetchAll(db)
 
             let threads = try threadRows.map { try Self.decodeThread(from: $0) }
             let summariesByThread = try Dictionary(
@@ -83,11 +84,17 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore)
             }
             let historyByThread = Dictionary(grouping: decodedHistoryRows, by: { $0.item.threadID })
+            let contextStateByThread = try Dictionary(
+                uniqueKeysWithValues: contextRows.map { row in
+                    (row.threadID, try Self.decodeContextState(from: row))
+                }
+            )
 
             return StoredRuntimeState(
                 threads: threads,
                 historyByThread: historyByThread,
-                summariesByThread: summariesByThread
+                summariesByThread: summariesByThread,
+                contextStateByThread: contextStateByThread
             )
         }
     }
@@ -179,6 +186,19 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         return summary.latestStructuredOutputMetadata
     }
 
+    public func fetchThreadContextState(id: String) async throws -> AgentThreadContextState? {
+        try await ensurePrepared()
+        return try await dbQueue.read { db in
+            guard try RuntimeThreadRow.fetchOne(db, key: id) != nil else {
+                throw AgentRuntimeError.threadNotFound(id)
+            }
+            guard let row = try RuntimeContextStateRow.fetchOne(db, key: id) else {
+                return nil
+            }
+            return try Self.decodeContextState(from: row)
+        }
+    }
+
     public func execute<Query: AgentQuerySpec>(_ query: Query) async throws -> Query.Result {
         try await ensurePrepared()
 
@@ -196,6 +216,9 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
         if let snapshotQuery = query as? ThreadSnapshotQuery {
             return try await executeThreadSnapshotQuery(snapshotQuery) as! Query.Result
+        }
+        if let contextQuery = query as? ThreadContextStateQuery {
+            return try await executeThreadContextStateQuery(contextQuery) as! Query.Result
         }
 
         let state = try await loadState()
@@ -241,6 +264,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 createdAtRange: query.createdAtRange,
                 turnID: query.turnID,
                 includeRedacted: query.includeRedacted,
+                includeCompactionEvents: query.includeCompactionEvents,
                 in: db,
                 attachmentStore: attachmentStore
             )
@@ -255,22 +279,77 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private func executeThreadQuery(_ query: ThreadMetadataQuery) async throws -> [AgentThread] {
         try await dbQueue.read { db in
-            let rows = try RuntimeThreadRow.fetchAll(
-                db,
-                sql: Self.threadMetadataSQL(for: query),
-                arguments: StatementArguments(Self.threadMetadataArguments(for: query))
-            )
+            var request = RuntimeThreadRow.all()
+            if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
+                request = request.filter(threadIDs.contains(Column("threadID")))
+            }
+            if let statuses = query.statuses, !statuses.isEmpty {
+                request = request.filter(statuses.map(\.rawValue).contains(Column("status")))
+            }
+            if let range = query.updatedAtRange {
+                request = request.filter(Column("updatedAt") >= range.lowerBound.timeIntervalSince1970)
+                request = request.filter(Column("updatedAt") <= range.upperBound.timeIntervalSince1970)
+            }
+
+            switch query.sort {
+            case let .updatedAt(order):
+                request = order == .ascending
+                    ? request.order(Column("updatedAt").asc, Column("threadID").asc)
+                    : request.order(Column("updatedAt").desc, Column("threadID").asc)
+            case let .createdAt(order):
+                request = order == .ascending
+                    ? request.order(Column("createdAt").asc, Column("threadID").asc)
+                    : request.order(Column("createdAt").desc, Column("threadID").asc)
+            }
+
+            if let limit = query.limit {
+                request = request.limit(max(0, limit))
+            }
+
+            let rows = try request.fetchAll(db)
             return try rows.map { try Self.decodeThread(from: $0) }
+        }
+    }
+
+    private func executeThreadContextStateQuery(_ query: ThreadContextStateQuery) async throws -> [AgentThreadContextState] {
+        try await dbQueue.read { db in
+            var request = RuntimeContextStateRow.all()
+            if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
+                request = request.filter(threadIDs.contains(Column("threadID")))
+            }
+            request = request.order(Column("generation").desc, Column("threadID").asc)
+            if let limit = query.limit {
+                request = request.limit(max(0, limit))
+            }
+
+            return try request.fetchAll(db).map { try Self.decodeContextState(from: $0) }
         }
     }
 
     private func executePendingStateQuery(_ query: PendingStateQuery) async throws -> [AgentPendingStateRecord] {
         try await dbQueue.read { db in
-            let summaries = try RuntimeSummaryRow.fetchAll(
-                db,
-                sql: Self.pendingStateSQL(for: query),
-                arguments: StatementArguments(Self.pendingStateArguments(for: query))
-            )
+            var request = RuntimeSummaryRow
+                .filter(Column("pendingStateKind") != nil)
+
+            if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
+                request = request.filter(threadIDs.contains(Column("threadID")))
+            }
+            if let kinds = query.kinds, !kinds.isEmpty {
+                request = request.filter(kinds.map(\.rawValue).contains(Column("pendingStateKind")))
+            }
+
+            switch query.sort {
+            case let .updatedAt(order):
+                request = order == .ascending
+                    ? request.order(Column("updatedAt").asc)
+                    : request.order(Column("updatedAt").desc)
+            }
+
+            if let limit = query.limit {
+                request = request.limit(max(0, limit))
+            }
+
+            let summaries = try request.fetchAll(db)
             let records = try summaries.compactMap { row -> AgentPendingStateRecord? in
                 let summary = try Self.decodeSummary(from: row)
                 guard let pendingState = summary.pendingState else {
@@ -288,11 +367,27 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private func executeStructuredOutputQuery(_ query: StructuredOutputQuery) async throws -> [AgentStructuredOutputRecord] {
         try await dbQueue.read { db in
-            var records = try RuntimeStructuredOutputRow.fetchAll(
-                db,
-                sql: Self.structuredOutputSQL(for: query),
-                arguments: StatementArguments(Self.structuredOutputArguments(for: query))
-            ).map { try Self.decodeStructuredOutputRecord(from: $0) }
+            var request = RuntimeStructuredOutputRow.all()
+            if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
+                request = request.filter(threadIDs.contains(Column("threadID")))
+            }
+            if let formatNames = query.formatNames, !formatNames.isEmpty {
+                request = request.filter(formatNames.contains(Column("formatName")))
+            }
+
+            switch query.sort {
+            case let .committedAt(order):
+                request = order == .ascending
+                    ? request.order(Column("committedAt").asc)
+                    : request.order(Column("committedAt").desc)
+            }
+
+            if let limit = query.limit, !query.latestOnly {
+                request = request.limit(max(0, limit))
+            }
+
+            var records = try request.fetchAll(db)
+                .map { try Self.decodeStructuredOutputRecord(from: $0) }
 
             if query.latestOnly {
                 var seen = Set<String>()
@@ -308,11 +403,27 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private func executeThreadSnapshotQuery(_ query: ThreadSnapshotQuery) async throws -> [AgentThreadSnapshot] {
         try await dbQueue.read { db in
-            let snapshots = try RuntimeSummaryRow.fetchAll(
-                db,
-                sql: Self.threadSnapshotSQL(for: query),
-                arguments: StatementArguments(Self.threadSnapshotArguments(for: query))
-            )
+            var request = RuntimeSummaryRow.all()
+            if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
+                request = request.filter(threadIDs.contains(Column("threadID")))
+            }
+
+            switch query.sort {
+            case let .updatedAt(order):
+                request = order == .ascending
+                    ? request.order(Column("updatedAt").asc, Column("threadID").asc)
+                    : request.order(Column("updatedAt").desc, Column("threadID").asc)
+            case let .createdAt(order):
+                request = order == .ascending
+                    ? request.order(Column("createdAt").asc, Column("threadID").asc)
+                    : request.order(Column("createdAt").desc, Column("threadID").asc)
+            }
+
+            if let limit = query.limit {
+                request = request.limit(max(0, limit))
+            }
+
+            let snapshots = try request.fetchAll(db)
                 .map { try Self.decodeSummary(from: $0) }
                 .map(\.snapshot)
             return snapshots
@@ -335,7 +446,9 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             .flatMap { $0 }
             .map { try Self.makeHistoryRow(from: $0, attachmentStore: attachmentStore) }
         let structuredOutputRows = try Self.structuredOutputRows(from: normalized.historyByThread)
+        let contextRows = try normalized.contextStateByThread.values.map(Self.makeContextStateRow)
 
+        try RuntimeContextStateRow.deleteAll(db)
         try RuntimeStructuredOutputRow.deleteAll(db)
         try RuntimeHistoryRow.deleteAll(db)
         try RuntimeSummaryRow.deleteAll(db)
@@ -351,6 +464,9 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             try row.insert(db)
         }
         for row in structuredOutputRows {
+            try row.insert(db)
+        }
+        for row in contextRows {
             try row.insert(db)
         }
     }
@@ -370,7 +486,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
 
         let threadCount = try await dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \(RuntimeThreadRow.databaseTableName)") ?? 0
+            try RuntimeThreadCountQuery().execute(in: db)
         }
         return threadCount == 0
     }
@@ -406,26 +522,25 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
 
         let ids = Array(threadIDs)
-        let placeholders = Self.sqlPlaceholders(count: ids.count)
-        let threadRows = try RuntimeThreadRow.fetchAll(
-            db,
-            sql: "SELECT * FROM \(RuntimeThreadRow.databaseTableName) WHERE threadID IN \(placeholders)",
-            arguments: StatementArguments(ids)
-        )
-        let summaryRows = try RuntimeSummaryRow.fetchAll(
-            db,
-            sql: "SELECT * FROM \(RuntimeSummaryRow.databaseTableName) WHERE threadID IN \(placeholders)",
-            arguments: StatementArguments(ids)
-        )
-        let historyRows = try RuntimeHistoryRow.fetchAll(
-            db,
+        let threadRows = try RuntimeThreadRow
+            .filter(ids.contains(Column("threadID")))
+            .fetchAll(db)
+        let summaryRows = try RuntimeSummaryRow
+            .filter(ids.contains(Column("threadID")))
+            .fetchAll(db)
+        // History loading keeps raw SQL here so we can preserve a deterministic
+        // thread + sequence ordering across multiple thread IDs in one fetch.
+        let historyRows = try RuntimeHistoryRowsRequest(
             sql: """
             SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
-            WHERE threadID IN \(placeholders)
+            WHERE threadID IN \(Self.sqlPlaceholders(count: ids.count))
             ORDER BY threadID ASC, sequenceNumber ASC
             """,
             arguments: StatementArguments(ids)
-        )
+        ).execute(in: db)
+        let contextRows = try RuntimeContextStateRow
+            .filter(ids.contains(Column("threadID")))
+            .fetchAll(db)
 
         let threads = try threadRows.map { try Self.decodeThread(from: $0) }
         let summaries = try Dictionary<String, AgentThreadSummary>(
@@ -435,12 +550,16 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore)
         }
         let history = Dictionary(grouping: decodedHistoryRows, by: { $0.item.threadID })
+        let contextState = try Dictionary<String, AgentThreadContextState>(
+            uniqueKeysWithValues: contextRows.map { ($0.threadID, try Self.decodeContextState(from: $0)) }
+        )
         let nextSequence = history.mapValues { ($0.last?.sequenceNumber ?? 0) + 1 }
 
         return StoredRuntimeState(
             threads: threads,
             historyByThread: history,
             summariesByThread: summaries,
+            contextStateByThread: contextState,
             nextHistorySequenceByThread: nextSequence
         )
     }
@@ -462,6 +581,9 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             if let summary = normalized.summariesByThread[thread.id] {
                 try Self.makeSummaryRow(from: summary).insert(db)
             }
+            if let contextState = normalized.contextStateByThread[thread.id] {
+                try Self.makeContextStateRow(from: contextState).insert(db)
+            }
             for record in normalized.historyByThread[thread.id] ?? [] {
                 try Self.makeHistoryRow(from: record, attachmentStore: attachmentStore).insert(db)
             }
@@ -478,10 +600,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         _ threadID: String,
         in db: Database
     ) throws {
-        try db.execute(
-            sql: "DELETE FROM \(RuntimeThreadRow.databaseTableName) WHERE threadID = ?",
-            arguments: [threadID]
-        )
+        _ = try RuntimeThreadRow.deleteOne(db, key: threadID)
     }
 
     private static func fetchHistoryRows(
@@ -490,6 +609,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         createdAtRange: ClosedRange<Date>?,
         turnID: String?,
         includeRedacted: Bool,
+        includeCompactionEvents: Bool,
         in db: Database,
         attachmentStore: RuntimeAttachmentStore
     ) throws -> [AgentHistoryRecord] {
@@ -513,17 +633,21 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         if !includeRedacted {
             clauses.append("isRedacted = 0")
         }
+        if !includeCompactionEvents {
+            clauses.append("isCompactionMarker = 0")
+        }
 
+        // This stays in SQL because the history query shape is highly dynamic and
+        // we always want sequence-ordered reads for restore/query replay semantics.
         let sql = """
         SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
         WHERE \(clauses.joined(separator: " AND "))
         ORDER BY sequenceNumber ASC
         """
-        return try RuntimeHistoryRow.fetchAll(
-            db,
+        return try RuntimeHistoryRowsRequest(
             sql: sql,
             arguments: StatementArguments(arguments)
-        ).map { try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore) }
+        ).execute(in: db).map { try Self.decodeHistoryRecord(from: $0, attachmentStore: attachmentStore) }
     }
 
     private static func fetchHistoryPage(
@@ -534,6 +658,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     ) throws -> AgentThreadHistoryPage {
         let limit = max(1, query.limit)
         let kinds = historyKinds(from: query.filter)
+        let includeCompactionEvents = query.filter?.includeCompactionEvents ?? false
         let anchor = try decodeCursorSequence(query.cursor, expectedThreadID: threadID)
 
         switch query.direction {
@@ -548,18 +673,22 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 clauses.append("sequenceNumber < ?")
                 arguments.append(anchor)
             }
+            if !includeCompactionEvents {
+                clauses.append("isCompactionMarker = 0")
+            }
 
+            // Cursor paging is kept as raw SQL because the descending window + overfetch
+            // pattern is much clearer here than trying to express it through chained requests.
             let sql = """
             SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
             WHERE \(clauses.joined(separator: " AND "))
             ORDER BY sequenceNumber DESC
             LIMIT \(limit + 1)
             """
-            let fetched = try RuntimeHistoryRow.fetchAll(
-                db,
+            let fetched = try RuntimeHistoryRowsRequest(
                 sql: sql,
                 arguments: StatementArguments(arguments)
-            )
+            ).execute(in: db)
             let hasMoreBefore = fetched.count > limit
             let pageRowsDescending = Array(fetched.prefix(limit))
             let pageRecords = try pageRowsDescending
@@ -571,6 +700,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 hasMoreAfter = try historyRecordExists(
                     threadID: threadID,
                     kinds: kinds,
+                    includeCompactionEvents: includeCompactionEvents,
                     comparator: "sequenceNumber >= ?",
                     value: anchor,
                     in: db
@@ -599,18 +729,22 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 clauses.append("sequenceNumber > ?")
                 arguments.append(anchor)
             }
+            if !includeCompactionEvents {
+                clauses.append("isCompactionMarker = 0")
+            }
 
+            // Forward paging mirrors the backward cursor window and stays in SQL for the
+            // same reason: explicit sequence bounds and overfetch are easier to verify here.
             let sql = """
             SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
             WHERE \(clauses.joined(separator: " AND "))
             ORDER BY sequenceNumber ASC
             LIMIT \(limit + 1)
             """
-            let fetched = try RuntimeHistoryRow.fetchAll(
-                db,
+            let fetched = try RuntimeHistoryRowsRequest(
                 sql: sql,
                 arguments: StatementArguments(arguments)
-            )
+            ).execute(in: db)
             let hasMoreAfter = fetched.count > limit
             let pageRows = Array(fetched.prefix(limit))
             let pageRecords = try pageRows.map {
@@ -622,6 +756,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 hasMoreBefore = try historyRecordExists(
                     threadID: threadID,
                     kinds: kinds,
+                    includeCompactionEvents: includeCompactionEvents,
                     comparator: "sequenceNumber <= ?",
                     value: anchor,
                     in: db
@@ -644,6 +779,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     private static func historyRecordExists(
         threadID: String,
         kinds: Set<AgentHistoryItemKind>?,
+        includeCompactionEvents: Bool,
         comparator: String,
         value: Int,
         in db: Database
@@ -654,139 +790,22 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             clauses.append("kind IN \(sqlPlaceholders(count: kinds.count))")
             for kind in kinds { arguments.append(kind.rawValue) }
         }
+        if !includeCompactionEvents {
+            clauses.append("isCompactionMarker = 0")
+        }
 
+        // EXISTS is one of the few cases where the raw SQL is both shorter and more obvious
+        // than the equivalent GRDB request composition for cursor-bound history checks.
         let sql = """
         SELECT EXISTS(
             SELECT 1 FROM \(RuntimeHistoryRow.databaseTableName)
             WHERE \(clauses.joined(separator: " AND "))
         )
         """
-        return try Bool.fetchOne(db, sql: sql, arguments: StatementArguments(arguments)) ?? false
-    }
-
-    private static func threadMetadataSQL(for query: ThreadMetadataQuery) -> String {
-        var sql = "SELECT * FROM \(RuntimeThreadRow.databaseTableName)"
-        var clauses: [String] = []
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            clauses.append("threadID IN \(sqlPlaceholders(count: threadIDs.count))")
-        }
-        if let statuses = query.statuses, !statuses.isEmpty {
-            clauses.append("status IN \(sqlPlaceholders(count: statuses.count))")
-        }
-        if query.updatedAtRange != nil {
-            clauses.append("updatedAt >= ?")
-            clauses.append("updatedAt <= ?")
-        }
-        if !clauses.isEmpty {
-            sql += " WHERE " + clauses.joined(separator: " AND ")
-        }
-        sql += " ORDER BY " + threadSortClause(query.sort)
-        if let limit = query.limit {
-            sql += " LIMIT \(max(0, limit))"
-        }
-        return sql
-    }
-
-    private static func threadMetadataArguments(for query: ThreadMetadataQuery) -> [any DatabaseValueConvertible] {
-        var arguments: [any DatabaseValueConvertible] = []
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            for threadID in threadIDs {
-                arguments.append(threadID)
-            }
-        }
-        if let statuses = query.statuses, !statuses.isEmpty {
-            for status in statuses {
-                arguments.append(status.rawValue)
-            }
-        }
-        if let range = query.updatedAtRange {
-            arguments.append(range.lowerBound.timeIntervalSince1970)
-            arguments.append(range.upperBound.timeIntervalSince1970)
-        }
-        return arguments
-    }
-
-    private static func pendingStateSQL(for query: PendingStateQuery) -> String {
-        var sql = "SELECT * FROM \(RuntimeSummaryRow.databaseTableName) WHERE pendingStateKind IS NOT NULL"
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            sql += " AND threadID IN \(sqlPlaceholders(count: threadIDs.count))"
-        }
-        if let kinds = query.kinds, !kinds.isEmpty {
-            sql += " AND pendingStateKind IN \(sqlPlaceholders(count: kinds.count))"
-        }
-        sql += " ORDER BY updatedAt " + sortDirection(for: query.sort)
-        if let limit = query.limit {
-            sql += " LIMIT \(max(0, limit))"
-        }
-        return sql
-    }
-
-    private static func pendingStateArguments(for query: PendingStateQuery) -> [any DatabaseValueConvertible] {
-        var arguments: [any DatabaseValueConvertible] = []
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            for threadID in threadIDs {
-                arguments.append(threadID)
-            }
-        }
-        if let kinds = query.kinds, !kinds.isEmpty {
-            for kind in kinds {
-                arguments.append(kind.rawValue)
-            }
-        }
-        return arguments
-    }
-
-    private static func structuredOutputSQL(for query: StructuredOutputQuery) -> String {
-        var sql = "SELECT * FROM \(RuntimeStructuredOutputRow.databaseTableName)"
-        var clauses: [String] = []
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            clauses.append("threadID IN \(sqlPlaceholders(count: threadIDs.count))")
-        }
-        if let formatNames = query.formatNames, !formatNames.isEmpty {
-            clauses.append("formatName IN \(sqlPlaceholders(count: formatNames.count))")
-        }
-        if !clauses.isEmpty {
-            sql += " WHERE " + clauses.joined(separator: " AND ")
-        }
-        sql += " ORDER BY committedAt " + sortDirection(for: query.sort)
-        if let limit = query.limit, !query.latestOnly {
-            sql += " LIMIT \(max(0, limit))"
-        }
-        return sql
-    }
-
-    private static func structuredOutputArguments(for query: StructuredOutputQuery) -> [any DatabaseValueConvertible] {
-        var arguments: [any DatabaseValueConvertible] = []
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            for threadID in threadIDs {
-                arguments.append(threadID)
-            }
-        }
-        if let formatNames = query.formatNames, !formatNames.isEmpty {
-            for formatName in formatNames {
-                arguments.append(formatName)
-            }
-        }
-        return arguments
-    }
-
-    private static func threadSnapshotSQL(for query: ThreadSnapshotQuery) -> String {
-        var sql = "SELECT * FROM \(RuntimeSummaryRow.databaseTableName)"
-        if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
-            sql += " WHERE threadID IN \(sqlPlaceholders(count: threadIDs.count))"
-        }
-        sql += " ORDER BY " + snapshotSortClause(query.sort)
-        if let limit = query.limit {
-            sql += " LIMIT \(max(0, limit))"
-        }
-        return sql
-    }
-
-    private static func threadSnapshotArguments(for query: ThreadSnapshotQuery) -> [any DatabaseValueConvertible] {
-        guard let threadIDs = query.threadIDs, !threadIDs.isEmpty else {
-            return []
-        }
-        return threadIDs.map { $0 as any DatabaseValueConvertible }
+        return try RuntimeHistoryExistenceQuery(
+            sql: sql,
+            arguments: StatementArguments(arguments)
+        ).execute(in: db)
     }
 
     private static func defaultLegacyImportURL(for url: URL) -> URL {
@@ -795,38 +814,6 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private static func sqlPlaceholders(count: Int) -> String {
         "(" + Array(repeating: "?", count: count).joined(separator: ", ") + ")"
-    }
-
-    private static func threadSortClause(_ sort: AgentThreadMetadataSort) -> String {
-        switch sort {
-        case let .updatedAt(order):
-            "updatedAt \(order == .ascending ? "ASC" : "DESC"), threadID ASC"
-        case let .createdAt(order):
-            "createdAt \(order == .ascending ? "ASC" : "DESC"), threadID ASC"
-        }
-    }
-
-    private static func snapshotSortClause(_ sort: AgentThreadSnapshotSort) -> String {
-        switch sort {
-        case let .updatedAt(order):
-            "updatedAt \(order == .ascending ? "ASC" : "DESC"), threadID ASC"
-        case let .createdAt(order):
-            "createdAt \(order == .ascending ? "ASC" : "DESC"), threadID ASC"
-        }
-    }
-
-    private static func sortDirection(for sort: AgentPendingStateSort) -> String {
-        switch sort {
-        case let .updatedAt(order):
-            order == .ascending ? "ASC" : "DESC"
-        }
-    }
-
-    private static func sortDirection(for sort: AgentStructuredOutputSort) -> String {
-        switch sort {
-        case let .committedAt(order):
-            order == .ascending ? "ASC" : "DESC"
-        }
     }
 
     private static func historyKinds(from filter: AgentHistoryFilter?) -> Set<AgentHistoryItemKind>? {
@@ -926,8 +913,17 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             createdAt: record.createdAt.timeIntervalSince1970,
             kind: record.item.kind.rawValue,
             turnID: record.item.turnID,
+            isCompactionMarker: record.item.isCompactionMarker,
             isRedacted: record.redaction != nil,
             encodedRecord: try JSONEncoder().encode(persisted)
+        )
+    }
+
+    private static func makeContextStateRow(from state: AgentThreadContextState) throws -> RuntimeContextStateRow {
+        RuntimeContextStateRow(
+            threadID: state.threadID,
+            generation: state.generation,
+            encodedState: try JSONEncoder().encode(state)
         )
     }
 
@@ -986,6 +982,10 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         try JSONDecoder().decode(AgentThreadSummary.self, from: row.encodedSummary)
     }
 
+    private static func decodeContextState(from row: RuntimeContextStateRow) throws -> AgentThreadContextState {
+        try JSONDecoder().decode(AgentThreadContextState.self, from: row.encodedState)
+    }
+
     private static func decodeHistoryRecord(
         from row: RuntimeHistoryRow,
         attachmentStore: RuntimeAttachmentStore
@@ -1036,6 +1036,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 table.column("createdAt", .double).notNull()
                 table.column("kind", .text).notNull()
                 table.column("turnID", .text)
+                table.column("isCompactionMarker", .boolean).notNull().defaults(to: false)
                 table.column("isRedacted", .boolean).notNull().defaults(to: false)
                 table.column("encodedRecord", .blob).notNull()
             }
@@ -1057,6 +1058,35 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
             try db.create(index: "runtime_structured_outputs_thread_committed_at", on: RuntimeStructuredOutputRow.databaseTableName, columns: ["threadID", "committedAt"])
             try db.create(index: "runtime_structured_outputs_format_name", on: RuntimeStructuredOutputRow.databaseTableName, columns: ["formatName"])
+
+            try db.create(table: RuntimeContextStateRow.databaseTableName) { table in
+                table.column("threadID", .text)
+                    .primaryKey()
+                    .references(RuntimeThreadRow.databaseTableName, onDelete: .cascade)
+                table.column("generation", .integer).notNull()
+                table.column("encodedState", .blob).notNull()
+            }
+
+            try db.execute(sql: "PRAGMA user_version = \(currentStoreSchemaVersion)")
+        }
+
+        migrator.registerMigration("runtime_store_v2_compaction_state") { db in
+            let historyColumns = try db.columns(in: RuntimeHistoryRow.databaseTableName).map(\.name)
+            if !historyColumns.contains("isCompactionMarker") {
+                try db.alter(table: RuntimeHistoryRow.databaseTableName) { table in
+                    table.add(column: "isCompactionMarker", .boolean).notNull().defaults(to: false)
+                }
+            }
+
+            if try !db.tableExists(RuntimeContextStateRow.databaseTableName) {
+                try db.create(table: RuntimeContextStateRow.databaseTableName) { table in
+                    table.column("threadID", .text)
+                        .primaryKey()
+                        .references(RuntimeThreadRow.databaseTableName, onDelete: .cascade)
+                    table.column("generation", .integer).notNull()
+                    table.column("encodedState", .blob).notNull()
+                }
+            }
 
             try db.execute(sql: "PRAGMA user_version = \(currentStoreSchemaVersion)")
         }
@@ -1116,7 +1146,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     private func readUserVersion() async throws -> Int {
         try await dbQueue.read { db in
-            try Int.fetchOne(db, sql: "PRAGMA user_version;") ?? 0
+            try RuntimeUserVersionQuery().execute(in: db)
         }
     }
 }
@@ -1129,6 +1159,16 @@ private struct RuntimeThreadRow: Codable, FetchableRecord, PersistableRecord, Ta
     let updatedAt: Double
     let status: String
     let encodedThread: Data
+}
+
+private struct RuntimeThreadCountQuery {
+    func execute(in db: Database) throws -> Int {
+        let row = try SQLRequest<Row>(
+            sql: "SELECT COUNT(*) AS thread_count FROM \(RuntimeThreadRow.databaseTableName)"
+        ).fetchOne(db)
+        let count: Int? = row?["thread_count"]
+        return count ?? 0
+    }
 }
 
 private struct RuntimeSummaryRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
@@ -1154,8 +1194,29 @@ private struct RuntimeHistoryRow: Codable, FetchableRecord, PersistableRecord, T
     let createdAt: Double
     let kind: String
     let turnID: String?
+    let isCompactionMarker: Bool
     let isRedacted: Bool
     let encodedRecord: Data
+}
+
+private struct RuntimeHistoryRowsRequest {
+    let sql: String
+    let arguments: StatementArguments
+
+    func execute(in db: Database) throws -> [RuntimeHistoryRow] {
+        try SQLRequest<RuntimeHistoryRow>(sql: sql, arguments: arguments).fetchAll(db)
+    }
+}
+
+private struct RuntimeHistoryExistenceQuery {
+    let sql: String
+    let arguments: StatementArguments
+
+    func execute(in db: Database) throws -> Bool {
+        let row = try SQLRequest<Row>(sql: sql, arguments: arguments).fetchOne(db)
+        let exists: Bool? = row?[0]
+        return exists ?? false
+    }
 }
 
 private struct RuntimeStructuredOutputRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
@@ -1166,6 +1227,21 @@ private struct RuntimeStructuredOutputRow: Codable, FetchableRecord, Persistable
     let formatName: String
     let committedAt: Double
     let encodedRecord: Data
+}
+
+private struct RuntimeContextStateRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
+    static let databaseTableName = "runtime_context_states"
+
+    let threadID: String
+    let generation: Int
+    let encodedState: Data
+}
+
+private struct RuntimeUserVersionQuery {
+    func execute(in db: Database) throws -> Int {
+        let row = try SQLRequest<Row>(sql: "PRAGMA user_version;").fetchOne(db)
+        return row?[0] ?? 0
+    }
 }
 
 private struct GRDBHistoryCursorPayload: Codable {

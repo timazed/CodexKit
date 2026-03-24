@@ -109,6 +109,7 @@ public struct AgentHistoryFilter: Sendable, Hashable {
     public var includeStructuredOutputs: Bool
     public var includeApprovals: Bool
     public var includeSystemEvents: Bool
+    public var includeCompactionEvents: Bool
 
     public init(
         includeMessages: Bool = true,
@@ -116,7 +117,8 @@ public struct AgentHistoryFilter: Sendable, Hashable {
         includeToolResults: Bool = true,
         includeStructuredOutputs: Bool = true,
         includeApprovals: Bool = true,
-        includeSystemEvents: Bool = true
+        includeSystemEvents: Bool = true,
+        includeCompactionEvents: Bool = false
     ) {
         self.includeMessages = includeMessages
         self.includeToolCalls = includeToolCalls
@@ -124,6 +126,7 @@ public struct AgentHistoryFilter: Sendable, Hashable {
         self.includeStructuredOutputs = includeStructuredOutputs
         self.includeApprovals = includeApprovals
         self.includeSystemEvents = includeSystemEvents
+        self.includeCompactionEvents = includeCompactionEvents
     }
 }
 
@@ -174,6 +177,7 @@ public protocol AgentRuntimeThreadInspecting: Sendable {
         query: AgentHistoryQuery
     ) async throws -> AgentThreadHistoryPage
     func fetchLatestStructuredOutputMetadata(id: String) async throws -> AgentStructuredOutputMetadata?
+    func fetchThreadContextState(id: String) async throws -> AgentThreadContextState?
 }
 
 public extension AgentThreadSummary {
@@ -288,6 +292,7 @@ public enum AgentSystemEventType: String, Codable, Hashable, Sendable {
     case turnStarted
     case turnCompleted
     case turnFailed
+    case contextCompacted
 }
 
 public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
@@ -297,6 +302,7 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
     public let status: AgentThreadStatus?
     public let turnSummary: AgentTurnSummary?
     public let error: AgentRuntimeError?
+    public let compaction: AgentContextCompactionMarker?
     public let occurredAt: Date
 
     public init(
@@ -306,6 +312,7 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
         status: AgentThreadStatus? = nil,
         turnSummary: AgentTurnSummary? = nil,
         error: AgentRuntimeError? = nil,
+        compaction: AgentContextCompactionMarker? = nil,
         occurredAt: Date = Date()
     ) {
         self.type = type
@@ -314,6 +321,7 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
         self.status = status
         self.turnSummary = turnSummary
         self.error = error
+        self.compaction = compaction
         self.occurredAt = occurredAt
     }
 }
@@ -566,17 +574,20 @@ extension AgentHistoryFilter {
     func matches(_ item: AgentHistoryItem) -> Bool {
         switch item {
         case .message:
-            includeMessages
+            return includeMessages
         case .toolCall:
-            includeToolCalls
+            return includeToolCalls
         case .toolResult:
-            includeToolResults
+            return includeToolResults
         case .structuredOutput:
-            includeStructuredOutputs
+            return includeStructuredOutputs
         case .approval:
-            includeApprovals
-        case .systemEvent:
-            includeSystemEvents
+            return includeApprovals
+        case let .systemEvent(record):
+            if record.type == .contextCompacted {
+                return includeSystemEvents && includeCompactionEvents
+            }
+            return includeSystemEvents
         }
     }
 }
@@ -629,8 +640,19 @@ extension AgentHistoryItem {
         case let .approval(record):
             return "approval:\(record.request?.id ?? record.resolution?.requestID ?? UUID().uuidString)"
         case let .systemEvent(record):
+            if record.type == .contextCompacted,
+               let generation = record.compaction?.generation {
+                return "systemEvent:\(record.type.rawValue):\(record.threadID):\(generation)"
+            }
             return "systemEvent:\(record.type.rawValue):\(record.turnID ?? record.threadID)"
         }
+    }
+
+    public var isCompactionMarker: Bool {
+        guard case let .systemEvent(record) = self else {
+            return false
+        }
+        return record.type == .contextCompacted
     }
 }
 

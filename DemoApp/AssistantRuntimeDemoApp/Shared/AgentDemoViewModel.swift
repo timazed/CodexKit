@@ -232,6 +232,8 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var cachedAIReminderGeneratedAt: Date?
     var reasoningEffort: ReasoningEffort
     var currentAuthenticationMethod: DemoAuthenticationMethod = .deviceCode
+    var activeThreadContextState: AgentThreadContextState?
+    var isCompactingThreadContext = false
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
@@ -509,6 +511,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         activeThreadID = id
         setMessages(await runtime.messages(for: id))
         streamingText = ""
+        await refreshThreadContextState(for: id)
     }
 
     func sendComposerText() async {
@@ -641,15 +644,18 @@ final class AgentDemoViewModel: @unchecked Sendable {
         if let selectedThreadID,
            threads.contains(where: { $0.id == selectedThreadID }) {
             setMessages(await runtime.messages(for: selectedThreadID))
+            await refreshThreadContextState(for: selectedThreadID)
             return
         }
 
         if let firstThread = threads.first {
             activeThreadID = firstThread.id
             setMessages(await runtime.messages(for: firstThread.id))
+            await refreshThreadContextState(for: firstThread.id)
         } else {
             activeThreadID = nil
             messages = []
+            activeThreadContextState = nil
         }
     }
 
@@ -663,6 +669,48 @@ final class AgentDemoViewModel: @unchecked Sendable {
         isRunningSkillPolicyProbe = false
         skillPolicyProbeResult = nil
         activeThreadID = nil
+        activeThreadContextState = nil
+    }
+
+    func refreshThreadContextState(for threadID: String? = nil) async {
+        guard let resolvedThreadID = threadID ?? activeThreadID else {
+            activeThreadContextState = nil
+            return
+        }
+
+        do {
+            activeThreadContextState = try await runtime.fetchThreadContextState(id: resolvedThreadID)
+        } catch {
+            activeThreadContextState = nil
+            developerErrorLog("Failed to fetch thread context state. threadID=\(resolvedThreadID) error=\(error.localizedDescription)")
+        }
+    }
+
+    func compactActiveThreadContext() async {
+        guard let activeThreadID else {
+            lastError = "Select a thread before compacting its prompt context."
+            return
+        }
+        guard !isCompactingThreadContext else {
+            return
+        }
+
+        isCompactingThreadContext = true
+        defer {
+            isCompactingThreadContext = false
+        }
+
+        do {
+            developerLog("Manual context compaction started. threadID=\(activeThreadID)")
+            activeThreadContextState = try await runtime.compactThreadContext(id: activeThreadID)
+            threads = await runtime.threads()
+            setMessages(await runtime.messages(for: activeThreadID))
+            developerLog(
+                "Manual context compaction finished. threadID=\(activeThreadID) generation=\(activeThreadContextState?.generation ?? 0) effectiveMessages=\(activeThreadContextState?.effectiveMessages.count ?? 0)"
+            )
+        } catch {
+            reportError(error)
+        }
     }
 
     func setMessages(_ incoming: [AgentMessage]) {

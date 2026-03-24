@@ -5,7 +5,7 @@ private struct SQLiteMemoryStoreSchema: Sendable {
     let currentVersion = 1
 
     func existingVersion(in db: Database) throws -> Int {
-        try Int.fetchOne(db, sql: "PRAGMA user_version;") ?? 0
+        try MemoryUserVersionQuery().execute(in: db)
     }
 
     func makeMigrator() -> DatabaseMigrator {
@@ -157,18 +157,9 @@ private struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws -> [MemoryRecord] {
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT
-                id, scope, kind, summary, evidence_json, importance,
-                created_at, observed_at, expires_at, tags_json,
-                related_ids_json, dedupe_key, is_pinned, attributes_json, status
-            FROM memory_records
-            WHERE namespace = ?;
-            """,
-            arguments: [namespace]
-        )
+        let rows = try MemoryRecordRow
+            .filter(Column("namespace") == namespace)
+            .fetchAll(db)
 
         return try rows.map { row in
             try makeRecord(from: row, namespace: namespace)
@@ -185,15 +176,10 @@ private struct SQLiteMemoryStoreRepository: Sendable {
             return [:]
         }
 
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT record_id, bm25(memory_fts) AS score
-            FROM memory_fts
-            WHERE namespace = ? AND memory_fts MATCH ?;
-            """,
-            arguments: [namespace, matchQuery]
-        )
+        let rows = try MemoryFTSScoreRowsRequest(
+            namespace: namespace,
+            matchQuery: matchQuery
+        ).execute(in: db)
 
         var scores: [String: Double] = [:]
         for row in rows {
@@ -209,19 +195,10 @@ private struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws -> MemoryRecord? {
-        let row = try Row.fetchOne(
-            db,
-            sql: """
-            SELECT
-                id, scope, kind, summary, evidence_json, importance,
-                created_at, observed_at, expires_at, tags_json,
-                related_ids_json, dedupe_key, is_pinned, attributes_json, status
-            FROM memory_records
-            WHERE namespace = ? AND id = ?
-            LIMIT 1;
-            """,
-            arguments: [namespace, id]
-        )
+        let row = try MemoryRecordRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("id") == id)
+            .fetchOne(db)
         guard let row else {
             return nil
         }
@@ -263,17 +240,11 @@ private struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws {
-        if let id = try String.fetchOne(
-            db,
-            sql: """
-            SELECT id
-            FROM memory_records
-            WHERE namespace = ? AND dedupe_key = ?
-            LIMIT 1;
-            """,
-            arguments: [namespace, dedupeKey]
-        ) {
-            try deleteRecord(id: id, namespace: namespace, in: db)
+        if let row = try MemoryRecordRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("dedupe_key") == dedupeKey)
+            .fetchOne(db) {
+            try deleteRecord(id: row.id, namespace: namespace, in: db)
         }
     }
 
@@ -348,26 +319,26 @@ private struct SQLiteMemoryStoreRepository: Sendable {
     }
 
     private func makeRecord(
-        from row: Row,
+        from row: MemoryRecordRow,
         namespace: String
     ) throws -> MemoryRecord {
         MemoryRecord(
-            id: row["id"],
+            id: row.id,
             namespace: namespace,
-            scope: MemoryScope(rawValue: row["scope"]),
-            kind: row["kind"],
-            summary: row["summary"],
-            evidence: try codec.decode([String].self, from: row["evidence_json"]),
-            importance: row["importance"],
-            createdAt: Date(timeIntervalSince1970: row["created_at"]),
-            observedAt: (row["observed_at"] as Double?).map(Date.init(timeIntervalSince1970:)),
-            expiresAt: (row["expires_at"] as Double?).map(Date.init(timeIntervalSince1970:)),
-            tags: try codec.decode([String].self, from: row["tags_json"]),
-            relatedIDs: try codec.decode([String].self, from: row["related_ids_json"]),
-            dedupeKey: row["dedupe_key"],
-            isPinned: (row["is_pinned"] as Int64? ?? 0) == 1,
-            attributes: try codec.decodeNullable(JSONValue.self, from: row["attributes_json"]),
-            status: MemoryRecordStatus(rawValue: row["status"]) ?? .active
+            scope: MemoryScope(rawValue: row.scope),
+            kind: row.kind,
+            summary: row.summary,
+            evidence: try codec.decode([String].self, from: row.evidenceJSON),
+            importance: row.importance,
+            createdAt: Date(timeIntervalSince1970: row.createdAt),
+            observedAt: row.observedAt.map(Date.init(timeIntervalSince1970:)),
+            expiresAt: row.expiresAt.map(Date.init(timeIntervalSince1970:)),
+            tags: try codec.decode([String].self, from: row.tagsJSON),
+            relatedIDs: try codec.decode([String].self, from: row.relatedIDsJSON),
+            dedupeKey: row.dedupeKey,
+            isPinned: row.isPinned,
+            attributes: try codec.decodeNullable(JSONValue.self, from: row.attributesJSON),
+            status: MemoryRecordStatus(rawValue: row.status) ?? .active
         )
     }
 
@@ -376,15 +347,10 @@ private struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws -> Bool {
-        try Bool.fetchOne(
-            db,
-            sql: """
-            SELECT EXISTS(
-                SELECT 1 FROM memory_records WHERE namespace = ? AND id = ?
-            );
-            """,
-            arguments: [namespace, id]
-        ) ?? false
+        try MemoryRecordRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("id") == id)
+            .fetchCount(db) > 0
     }
 
     private func recordExists(
@@ -392,15 +358,73 @@ private struct SQLiteMemoryStoreRepository: Sendable {
         namespace: String,
         in db: Database
     ) throws -> Bool {
-        try Bool.fetchOne(
-            db,
+        try MemoryRecordRow
+            .filter(Column("namespace") == namespace)
+            .filter(Column("dedupe_key") == dedupeKey)
+            .fetchCount(db) > 0
+    }
+}
+
+private struct MemoryUserVersionQuery: Sendable {
+    func execute(in db: Database) throws -> Int {
+        // PRAGMA is SQLite-specific and doesn't map cleanly to GRDB's query interface.
+        let row = try SQLRequest<Row>(sql: "PRAGMA user_version;").fetchOne(db)
+        return row?[0] ?? 0
+    }
+}
+
+private struct MemoryFTSScoreRowsRequest: Sendable {
+    let namespace: String
+    let matchQuery: String
+
+    func execute(in db: Database) throws -> [Row] {
+        // FTS5 MATCH and bm25() are much clearer and more direct in raw SQL than in GRDB's query interface.
+        try SQLRequest<Row>(
             sql: """
-            SELECT EXISTS(
-                SELECT 1 FROM memory_records WHERE namespace = ? AND dedupe_key = ?
-            );
+            SELECT record_id, bm25(memory_fts) AS score
+            FROM memory_fts
+            WHERE namespace = ? AND memory_fts MATCH ?;
             """,
-            arguments: [namespace, dedupeKey]
-        ) ?? false
+            arguments: [namespace, matchQuery]
+        ).fetchAll(db)
+    }
+}
+
+private struct MemoryRecordRow: FetchableRecord, TableRecord {
+    static let databaseTableName = "memory_records"
+
+    let id: String
+    let scope: String
+    let kind: String
+    let summary: String
+    let evidenceJSON: String
+    let importance: Double
+    let createdAt: Double
+    let observedAt: Double?
+    let expiresAt: Double?
+    let tagsJSON: String
+    let relatedIDsJSON: String
+    let dedupeKey: String?
+    let isPinned: Bool
+    let attributesJSON: String?
+    let status: String
+
+    init(row: Row) {
+        id = row["id"]
+        scope = row["scope"]
+        kind = row["kind"]
+        summary = row["summary"]
+        evidenceJSON = row["evidence_json"]
+        importance = row["importance"]
+        createdAt = row["created_at"]
+        observedAt = row["observed_at"]
+        expiresAt = row["expires_at"]
+        tagsJSON = row["tags_json"]
+        relatedIDsJSON = row["related_ids_json"]
+        dedupeKey = row["dedupe_key"]
+        isPinned = row["is_pinned"] as Bool? ?? false
+        attributesJSON = row["attributes_json"]
+        status = row["status"]
     }
 }
 

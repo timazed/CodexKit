@@ -131,6 +131,7 @@ public struct HistoryItemsQuery: AgentQuerySpec {
     public var createdAtRange: ClosedRange<Date>?
     public var turnID: String?
     public var includeRedacted: Bool
+    public var includeCompactionEvents: Bool
     public var sort: AgentHistorySort
     public var page: AgentQueryPage?
 
@@ -140,6 +141,7 @@ public struct HistoryItemsQuery: AgentQuerySpec {
         createdAtRange: ClosedRange<Date>? = nil,
         turnID: String? = nil,
         includeRedacted: Bool = true,
+        includeCompactionEvents: Bool = false,
         sort: AgentHistorySort = .sequence(.ascending),
         page: AgentQueryPage? = nil
     ) {
@@ -148,6 +150,7 @@ public struct HistoryItemsQuery: AgentQuerySpec {
         self.createdAtRange = createdAtRange
         self.turnID = turnID
         self.includeRedacted = includeRedacted
+        self.includeCompactionEvents = includeCompactionEvents
         self.sort = sort
         self.page = page
     }
@@ -404,6 +407,9 @@ public enum AgentStoreWriteOperation: Sendable, Hashable {
     case upsertThread(AgentThread)
     case upsertSummary(threadID: String, summary: AgentThreadSummary)
     case appendHistoryItems(threadID: String, items: [AgentHistoryRecord])
+    case appendCompactionMarker(threadID: String, marker: AgentHistoryRecord)
+    case upsertThreadContextState(threadID: String, state: AgentThreadContextState?)
+    case deleteThreadContextState(threadID: String)
     case setPendingState(threadID: String, state: AgentThreadPendingState?)
     case setPartialStructuredSnapshot(threadID: String, snapshot: AgentPartialStructuredOutputSnapshot?)
     case upsertToolSession(threadID: String, session: AgentToolSessionRecord)
@@ -426,6 +432,12 @@ extension AgentStoreWriteOperation {
         case let .upsertSummary(threadID, _):
             threadID
         case let .appendHistoryItems(threadID, _):
+            threadID
+        case let .appendCompactionMarker(threadID, _):
+            threadID
+        case let .upsertThreadContextState(threadID, _):
+            threadID
+        case let .deleteThreadContextState(threadID):
             threadID
         case let .setPendingState(threadID, _):
             threadID

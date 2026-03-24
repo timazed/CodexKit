@@ -200,6 +200,7 @@ extension AgentRuntime {
 
     func appendMessage(_ message: AgentMessage) async throws {
         state.messagesByThread[message.threadID, default: []].append(message)
+        appendEffectiveMessage(message)
         appendHistoryItem(
             .message(message),
             threadID: message.threadID,

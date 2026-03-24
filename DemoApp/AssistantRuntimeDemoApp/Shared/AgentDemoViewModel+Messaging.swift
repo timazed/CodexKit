@@ -323,6 +323,7 @@ extension AgentDemoViewModel {
                 }
                 threads = await runtime.threads()
                 developerLog("Turn completed. threadID=\(threadID)")
+                await refreshThreadContextState(for: threadID)
 
             case let .turnFailed(error):
                 flushStreamingText(force: true)
@@ -330,6 +331,7 @@ extension AgentDemoViewModel {
                 developerErrorLog(
                     "Turn failed. threadID=\(threadID) code=\(error.code) message=\(error.message)"
                 )
+                await refreshThreadContextState(for: threadID)
                 reportError(error.message)
             }
         }

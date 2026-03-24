@@ -30,6 +30,26 @@ struct ResponsesRequestBody: Encodable {
     }
 }
 
+struct ResponsesCompactRequestBody: Encodable {
+    let model: String
+    let reasoning: ResponsesReasoningConfiguration
+    let instructions: String
+    let text: ResponsesTextConfiguration
+    let input: [JSONValue]
+    let tools: [JSONValue]
+    let parallelToolCalls: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case reasoning
+        case instructions
+        case text
+        case input
+        case tools
+        case parallelToolCalls = "parallel_tool_calls"
+    }
+}
+
 struct ResponsesReasoningConfiguration: Encodable {
     let effort: String
 

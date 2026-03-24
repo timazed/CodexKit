@@ -55,7 +55,6 @@ extension AgentRuntime {
             text: request.text,
             images: request.images
         )
-        let priorMessages = state.messagesByThread[threadID] ?? []
         let resolvedTurnSkills = try resolveTurnSkills(
             thread: thread,
             message: request
@@ -70,9 +69,16 @@ extension AgentRuntime {
         try await setThreadStatus(.streaming, for: threadID)
 
         let tools = await toolRegistry.allDefinitions()
+        try await maybeCompactThreadContextBeforeTurn(
+            thread: thread,
+            request: request,
+            instructions: resolvedInstructions,
+            tools: tools,
+            session: session
+        )
         let turnStart = try await beginTurnWithUnauthorizedRecovery(
             thread: thread,
-            history: priorMessages,
+            history: effectiveHistory(for: threadID),
             message: request,
             instructions: resolvedInstructions,
             responseFormat: nil,
@@ -183,7 +189,6 @@ extension AgentRuntime {
             text: request.text,
             images: request.images
         )
-        let priorMessages = state.messagesByThread[threadID] ?? []
         let resolvedTurnSkills = try resolveTurnSkills(
             thread: thread,
             message: request
@@ -198,9 +203,16 @@ extension AgentRuntime {
         try await setThreadStatus(.streaming, for: threadID)
 
         let tools = await toolRegistry.allDefinitions()
+        try await maybeCompactThreadContextBeforeTurn(
+            thread: thread,
+            request: request,
+            instructions: resolvedInstructions,
+            tools: tools,
+            session: session
+        )
         let turnStart = try await beginTurnWithUnauthorizedRecovery(
             thread: thread,
-            history: priorMessages,
+            history: effectiveHistory(for: threadID),
             message: request,
             instructions: resolvedInstructions,
             responseFormat: responseFormat,
@@ -241,21 +253,51 @@ extension AgentRuntime {
         turnStream: any AgentTurnStreaming,
         session: ChatGPTSession
     ) {
-        let beginTurn = try await withUnauthorizedRecovery(
-            initialSession: session
-        ) { session in
-            try await backend.beginTurn(
+        do {
+            let beginTurn = try await withUnauthorizedRecovery(
+                initialSession: session
+            ) { session in
+                try await backend.beginTurn(
+                    thread: thread,
+                    history: history,
+                    message: message,
+                    instructions: instructions,
+                    responseFormat: responseFormat,
+                    streamedStructuredOutput: streamedStructuredOutput,
+                    tools: tools,
+                    session: session
+                )
+            }
+            return (beginTurn.result, beginTurn.session)
+        } catch {
+            let compacted = try await maybeCompactThreadContextAfterContextFailure(
                 thread: thread,
-                history: history,
-                message: message,
+                request: message,
                 instructions: instructions,
-                responseFormat: responseFormat,
-                streamedStructuredOutput: streamedStructuredOutput,
                 tools: tools,
-                session: session
+                session: session,
+                error: error
             )
+            guard compacted else {
+                throw error
+            }
+
+            let beginTurn = try await withUnauthorizedRecovery(
+                initialSession: session
+            ) { session in
+                try await backend.beginTurn(
+                    thread: thread,
+                    history: self.effectiveHistory(for: thread.id),
+                    message: message,
+                    instructions: instructions,
+                    responseFormat: responseFormat,
+                    streamedStructuredOutput: streamedStructuredOutput,
+                    tools: tools,
+                    session: session
+                )
+            }
+            return (beginTurn.result, beginTurn.session)
         }
-        return (beginTurn.result, beginTurn.session)
     }
 
     // MARK: - Previews
