@@ -113,15 +113,16 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
                     url: authorizeURL,
                     callbackURLScheme: nil
                 ) { callbackURL, error in
-                    self?.finishAuthenticationSession(
-                        with: callbackURL.map(Result.success)
-                            ?? .failure(
-                                error ?? AgentRuntimeError(
-                                    code: "oauth_authentication_cancelled",
-                                    message: "The ChatGPT sign-in flow did not complete."
-                                )
+                    let result = callbackURL.map(Result.success)
+                        ?? .failure(
+                            error ?? AgentRuntimeError(
+                                code: "oauth_authentication_cancelled",
+                                message: "The ChatGPT sign-in flow did not complete."
                             )
-                    )
+                        )
+                    runAuthenticationCallbackOnMainActor { [weak self] in
+                        self?.finishAuthenticationSession(with: result)
+                    }
                 }
 
                 let contextProvider = LoopbackPresentationContextProvider(anchor: anchor)
