@@ -44,11 +44,8 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            Task { @MainActor [weak self] in
-                let session = ASWebAuthenticationSession(
-                    url: authorizeURL,
-                    callbackURLScheme: callbackScheme
-                ) { callbackURL, error in
+            let completion: @Sendable (URL?, (any Error)?) -> Void = { [weak self] callbackURL, error in
+                runAuthenticationCallbackOnMainActor { [weak self] in
                     self?.activeSession = nil
                     self?.activePresentationContextProvider = nil
 
@@ -64,6 +61,14 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
                         )
                     )
                 }
+            }
+
+            Task { @MainActor [weak self] in
+                let session = ASWebAuthenticationSession(
+                    url: authorizeURL,
+                    callbackURLScheme: callbackScheme,
+                    completionHandler: completion
+                )
                 let contextProvider = PresentationContextProvider(anchor: anchor)
                 session.presentationContextProvider = contextProvider
                 #if os(iOS)

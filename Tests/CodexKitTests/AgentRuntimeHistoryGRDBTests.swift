@@ -133,4 +133,38 @@ extension AgentRuntimeTests {
         XCTAssertEqual(attachmentFiles.count, 1)
         XCTAssertNil(try Data(contentsOf: url).range(of: imageData.base64EncodedData()))
     }
+
+    func testGRDBRuntimeStateStoreTreatsExplicitEmptyFiltersAsMatchNothing() async throws {
+        let url = temporaryRuntimeSQLiteURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let backend = InMemoryAgentBackend(structuredResponseText: #"{"reply":"The replacement is shipping today.","priority":"urgent"}"#)
+        let runtime = try makeHistoryRuntime(
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: try GRDBRuntimeStateStore(url: url)
+        )
+
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Explicit Empty Filters")
+        _ = try await runtime.sendMessage(
+            UserMessageRequest(text: "Draft the shipping update."),
+            in: thread.id,
+            expecting: ShippingReplyDraft.self
+        )
+
+        let threads = try await runtime.execute(ThreadMetadataQuery(threadIDs: []))
+        XCTAssertTrue(threads.isEmpty)
+
+        let snapshots = try await runtime.execute(ThreadSnapshotQuery(threadIDs: []))
+        XCTAssertTrue(snapshots.isEmpty)
+
+        let history = try await runtime.execute(HistoryItemsQuery(threadID: thread.id, kinds: []))
+        XCTAssertTrue(history.records.isEmpty)
+
+        let structured = try await runtime.execute(StructuredOutputQuery(threadIDs: [], formatNames: []))
+        XCTAssertTrue(structured.isEmpty)
+    }
 }

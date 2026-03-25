@@ -107,22 +107,26 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
         anchor: ASPresentationAnchor
     ) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
+            let completion: @Sendable (URL?, (any Error)?) -> Void = { [weak self] callbackURL, error in
+                let result = callbackURL.map(Result.success)
+                    ?? .failure(
+                        error ?? AgentRuntimeError(
+                            code: "oauth_authentication_cancelled",
+                            message: "The ChatGPT sign-in flow did not complete."
+                        )
+                    )
+                runAuthenticationCallbackOnMainActor { [weak self] in
+                    self?.finishAuthenticationSession(with: result)
+                }
+            }
+
             Task { @MainActor [weak self] in
                 self?.activeAuthenticationContinuation = continuation
                 let session = ASWebAuthenticationSession(
                     url: authorizeURL,
-                    callbackURLScheme: nil
-                ) { callbackURL, error in
-                    self?.finishAuthenticationSession(
-                        with: callbackURL.map(Result.success)
-                            ?? .failure(
-                                error ?? AgentRuntimeError(
-                                    code: "oauth_authentication_cancelled",
-                                    message: "The ChatGPT sign-in flow did not complete."
-                                )
-                            )
-                    )
-                }
+                    callbackURLScheme: nil,
+                    completionHandler: completion
+                )
 
                 let contextProvider = LoopbackPresentationContextProvider(anchor: anchor)
                 session.presentationContextProvider = contextProvider
@@ -215,7 +219,12 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
         }
 
         self.redirectURL = redirectURL
-        self.listener = try NWListener(using: .tcp, on: port)
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(
+            host: "127.0.0.1",
+            port: port
+        )
+        self.listener = try NWListener(using: parameters)
         configureListener()
     }
 
@@ -230,6 +239,10 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
 
     func stop() {
         listener.cancel()
+    }
+
+    var requiredLocalEndpoint: NWEndpoint? {
+        listener.parameters.requiredLocalEndpoint
     }
 
     private func configureListener() {
@@ -287,6 +300,11 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
             }
 
             let updatedBuffer = buffer + (data ?? Data())
+            guard Self.httpHeadersComplete(in: updatedBuffer) || isComplete else {
+                self.receiveRequest(on: connection, buffer: updatedBuffer)
+                return
+            }
+
             if let callbackURL = Self.callbackURL(fromHTTPRequest: updatedBuffer, redirectURL: self.redirectURL) {
                 Self.sendHTMLResponse(
                     on: connection,
@@ -306,23 +324,18 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
                 return
             }
 
-            if Self.httpHeadersComplete(in: updatedBuffer) || isComplete {
-                Self.sendHTMLResponse(
-                    on: connection,
-                    statusCode: 404,
-                    body: """
-                    <html>
-                    <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px;">
-                    <h1>Not found</h1>
-                    <p>This localhost callback path is not handled by the demo app.</p>
-                    </body>
-                    </html>
-                    """
-                )
-                return
-            }
-
-            self.receiveRequest(on: connection, buffer: updatedBuffer)
+            Self.sendHTMLResponse(
+                on: connection,
+                statusCode: 404,
+                body: """
+                <html>
+                <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px;">
+                <h1>Not found</h1>
+                <p>This localhost callback path is not handled by the demo app.</p>
+                </body>
+                </html>
+                """
+            )
         }
     }
 
