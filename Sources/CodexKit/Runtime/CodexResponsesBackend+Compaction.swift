@@ -63,7 +63,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
                 metadata: [
                     "thread_id": thread.id,
                     "status": "\(httpResponse.statusCode)",
-                    "body": body
+                    "body_length": "\(body.count)"
                 ]
             )
             throw AgentRuntimeError(

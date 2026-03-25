@@ -102,7 +102,7 @@ struct CodexResponsesEventStreamClient: Sendable {
                 "Responses event stream failed with HTTP status.",
                 metadata: [
                     "status": "\(httpResponse.statusCode)",
-                    "body": body
+                    "body_length": "\(body.count)"
                 ]
             )
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {

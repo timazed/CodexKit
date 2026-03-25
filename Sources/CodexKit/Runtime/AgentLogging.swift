@@ -91,13 +91,13 @@ public struct AgentOSLogSink: AgentLogSink, Sendable {
         let renderedLine = entry.renderedLine
         switch entry.level {
         case .debug:
-            logger.debug("\(renderedLine, privacy: .public)")
+            logger.debug("\(renderedLine, privacy: .private)")
         case .info:
-            logger.info("\(renderedLine, privacy: .public)")
+            logger.info("\(renderedLine, privacy: .private)")
         case .warning:
-            logger.notice("\(renderedLine, privacy: .public)")
+            logger.notice("\(renderedLine, privacy: .private)")
         case .error:
-            logger.error("\(renderedLine, privacy: .public)")
+            logger.error("\(renderedLine, privacy: .private)")
         }
     }
 }
