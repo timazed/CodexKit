@@ -3,20 +3,28 @@ import Foundation
 public actor ChatGPTSessionManager {
     private let authProvider: any ChatGPTAuthProviding
     private let secureStore: any SessionSecureStoring
+    private let logger: AgentLogger
     private var session: ChatGPTSession?
 
     public init(
         authProvider: any ChatGPTAuthProviding,
-        secureStore: any SessionSecureStoring
+        secureStore: any SessionSecureStoring,
+        logging: AgentLoggingConfiguration = .disabled
     ) {
         self.authProvider = authProvider
         self.secureStore = secureStore
+        self.logger = AgentLogger(configuration: logging)
     }
 
     @discardableResult
     public func restore() throws -> ChatGPTSession? {
         let restored = try secureStore.loadSession()
         session = restored
+        logger.debug(
+            .auth,
+            "Restored session from secure store.",
+            metadata: ["restored": "\(restored != nil)"]
+        )
         return restored
     }
 
@@ -29,15 +37,33 @@ public actor ChatGPTSessionManager {
         let signedInSession = try await authProvider.signInInteractively()
         try secureStore.saveSession(signedInSession)
         session = signedInSession
+        logger.info(
+            .auth,
+            "Persisted signed-in session.",
+            metadata: ["account_id": signedInSession.account.id]
+        )
         return signedInSession
     }
 
     @discardableResult
     public func refresh(reason: ChatGPTAuthRefreshReason) async throws -> ChatGPTSession {
         let current = try requireStoredSession()
+        logger.info(
+            .auth,
+            "Refreshing session.",
+            metadata: [
+                "reason": String(describing: reason),
+                "account_id": current.account.id
+            ]
+        )
         let refreshed = try await authProvider.refresh(session: current, reason: reason)
         try secureStore.saveSession(refreshed)
         session = refreshed
+        logger.info(
+            .auth,
+            "Session refresh completed.",
+            metadata: ["account_id": refreshed.account.id]
+        )
         return refreshed
     }
 
@@ -46,6 +72,11 @@ public actor ChatGPTSessionManager {
         session = nil
         try secureStore.deleteSession()
         await authProvider.signOut(session: current)
+        logger.info(
+            .auth,
+            "Session signed out.",
+            metadata: ["had_session": "\(current != nil)"]
+        )
     }
 
     public func requireSession() async throws -> ChatGPTSession {
@@ -61,11 +92,20 @@ public actor ChatGPTSessionManager {
     public func recoverUnauthorizedSession(
         previousAccessToken: String?
     ) async throws -> ChatGPTSession {
+        logger.warning(
+            .auth,
+            "Attempting unauthorized-session recovery."
+        )
         if let restored = try secureStore.loadSession() {
             session = restored
             if let previousAccessToken,
                restored.accessToken != previousAccessToken,
                !restored.requiresRefresh() {
+                logger.info(
+                    .auth,
+                    "Recovered session from secure store after unauthorized response.",
+                    metadata: ["account_id": restored.account.id]
+                )
                 return restored
             }
         }

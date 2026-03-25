@@ -6,6 +6,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     let url: URL
     let legacyStateURL: URL?
+    let logger: AgentLogger
     let attachmentStore: RuntimeAttachmentStore
     let databaseExistedAtInitialization: Bool
     let dbQueue: DatabaseQueue
@@ -22,9 +23,11 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
     public init(
         url: URL,
-        importingLegacyStateFrom legacyStateURL: URL? = nil
+        importingLegacyStateFrom legacyStateURL: URL? = nil,
+        logging: AgentLoggingConfiguration = .disabled
     ) throws {
         self.url = url
+        self.logger = AgentLogger(configuration: logging)
         let fileManager = FileManager.default
         let basename = url.deletingPathExtension().lastPathComponent
         self.databaseExistedAtInitialization = fileManager.fileExists(atPath: url.path)
@@ -77,6 +80,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     public func loadState() async throws -> StoredRuntimeState {
         try await ensurePrepared()
         let persistence = self.persistence
+        logger.debug(.persistence, "Loading GRDB runtime state.", metadata: ["url": url.path])
 
         return try await dbQueue.read { db in
             let threadRows = try RuntimeThreadRow.fetchAll(db)
@@ -114,6 +118,14 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
         let normalized = state.normalized()
         let persistence = self.persistence
+        logger.info(
+            .persistence,
+            "Saving GRDB runtime state snapshot.",
+            metadata: [
+                "url": url.path,
+                "threads": "\(normalized.threads.count)"
+            ]
+        )
         try attachmentStore.reset()
         try await dbQueue.write { db in
             try persistence.replaceDatabaseContents(
@@ -135,6 +147,15 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
 
         let persistence = self.persistence
+        logger.debug(
+            .persistence,
+            "Applying GRDB runtime state operations.",
+            metadata: [
+                "url": url.path,
+                "operation_count": "\(operations.count)",
+                "affected_threads": "\(affectedThreadIDs.count)"
+            ]
+        )
         try await dbQueue.write { db in
             var partialState = try persistence.loadPartialState(
                 for: affectedThreadIDs,
@@ -241,6 +262,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             return
         }
 
+        logger.info(.persistence, "Preparing GRDB runtime state store.", metadata: ["url": url.path])
         let version = try await readUserVersion()
         guard version <= Self.currentStoreSchemaVersion else {
             throw AgentStoreError.migrationFailed(
@@ -250,8 +272,14 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
         try migrator.migrate(dbQueue)
         if try await shouldImportLegacyState() {
+            logger.info(
+                .persistence,
+                "Importing legacy file runtime state into GRDB store.",
+                metadata: ["legacy_url": legacyStateURL?.path ?? ""]
+            )
             try await importLegacyState()
         }
         isPrepared = true
+        logger.info(.persistence, "GRDB runtime state store prepared.", metadata: ["url": url.path])
     }
 }

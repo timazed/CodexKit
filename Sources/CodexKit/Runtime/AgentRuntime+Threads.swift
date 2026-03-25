@@ -22,6 +22,14 @@ extension AgentRuntime {
         }
 
         let session = try await sessionManager.requireSession()
+        logger.info(
+            .runtime,
+            "Creating thread.",
+            metadata: [
+                "has_title": "\(title != nil)",
+                "skill_count": "\(skillIDs.count)"
+            ]
+        )
         let creation = try await withUnauthorizedRecovery(
             initialSession: session
         ) { session in
@@ -48,11 +56,17 @@ extension AgentRuntime {
         )
         updateThreadTimestamp(thread.createdAt, for: thread.id)
         try await persistState()
+        logger.info(
+            .runtime,
+            "Thread created.",
+            metadata: ["thread_id": thread.id]
+        )
         return thread
     }
 
     @discardableResult
     public func resumeThread(id: String) async throws -> AgentThread {
+        logger.info(.runtime, "Resuming thread.", metadata: ["thread_id": id])
         let session = try await sessionManager.requireSession()
         let resume = try await withUnauthorizedRecovery(
             initialSession: session
@@ -74,6 +88,7 @@ extension AgentRuntime {
         )
         updateThreadTimestamp(Date(), for: thread.id)
         try await persistState()
+        logger.info(.runtime, "Thread resumed.", metadata: ["thread_id": thread.id])
         return thread
     }
 
@@ -103,6 +118,14 @@ extension AgentRuntime {
         state.threads[index].updatedAt = Date()
         enqueueStoreOperation(.upsertThread(state.threads[index]))
         try await persistState()
+        logger.info(
+            .runtime,
+            "Updated thread title.",
+            metadata: [
+                "thread_id": threadID,
+                "has_title": "\(title?.isEmpty == false)"
+            ]
+        )
     }
 
     public func setPersonaStack(
@@ -210,9 +233,27 @@ extension AgentRuntime {
             )
         }
         try await persistState()
+        logger.debug(
+            .runtime,
+            "Thread status changed.",
+            metadata: [
+                "thread_id": threadID,
+                "status": status.rawValue
+            ]
+        )
     }
 
     func appendMessage(_ message: AgentMessage) async throws {
+        logger.debug(
+            .runtime,
+            "Appending message to thread.",
+            metadata: [
+                "thread_id": message.threadID,
+                "role": message.role.rawValue,
+                "text_length": "\(message.text.count)",
+                "image_count": "\(message.images.count)"
+            ]
+        )
         state.messagesByThread[message.threadID, default: []].append(message)
         appendEffectiveMessage(message)
         appendHistoryItem(

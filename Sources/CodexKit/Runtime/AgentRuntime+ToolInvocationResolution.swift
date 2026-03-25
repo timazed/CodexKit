@@ -48,6 +48,15 @@ extension AgentRuntime {
         yieldApprovalRequested: (ApprovalRequest) -> Void,
         yieldApprovalResolved: (ApprovalResolution) -> Void
     ) async throws -> ToolResultEnvelope {
+        logger.info(
+            .tools,
+            "Resolving tool invocation.",
+            metadata: [
+                "thread_id": invocation.threadID,
+                "turn_id": invocation.turnID,
+                "tool_name": invocation.toolName
+            ]
+        )
         if let definition = await toolRegistry.definition(named: invocation.toolName),
            definition.approvalPolicy == .requiresApproval {
             let approval = ApprovalRequest(
@@ -82,6 +91,15 @@ extension AgentRuntime {
             try await setThreadStatus(.waitingForApproval, for: invocation.threadID)
             yieldThreadStatusChanged(invocation.threadID, .waitingForApproval)
             yieldApprovalRequested(approval)
+            logger.info(
+                .approvals,
+                "Tool invocation requires approval.",
+                metadata: [
+                    "thread_id": invocation.threadID,
+                    "tool_name": invocation.toolName,
+                    "request_id": approval.id
+                ]
+            )
 
             let decision = try await approvalCoordinator.requestApproval(approval)
             let resolution = ApprovalResolution(
@@ -104,6 +122,15 @@ extension AgentRuntime {
             )
             try setPendingState(nil, for: invocation.threadID)
             yieldApprovalResolved(resolution)
+            logger.info(
+                .approvals,
+                "Tool approval resolved.",
+                metadata: [
+                    "thread_id": invocation.threadID,
+                    "tool_name": invocation.toolName,
+                    "decision": resolution.decision.rawValue
+                ]
+            )
 
             guard decision == .approved else {
                 let denied = ToolResultEnvelope.denied(invocation: invocation)
@@ -150,6 +177,16 @@ extension AgentRuntime {
 
         let result = await toolRegistry.execute(invocation, session: session)
         let resultDate = Date()
+        logger.info(
+            .tools,
+            "Tool invocation completed.",
+            metadata: [
+                "thread_id": invocation.threadID,
+                "turn_id": invocation.turnID,
+                "tool_name": invocation.toolName,
+                "success": "\(result.errorMessage == nil)"
+            ]
+        )
         try setLatestToolState(
             latestToolState(for: invocation, result: result, updatedAt: resultDate),
             for: invocation.threadID

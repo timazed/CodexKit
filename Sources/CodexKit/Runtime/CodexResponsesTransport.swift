@@ -73,10 +73,19 @@ struct CodexResponsesRequestFactory: Sendable {
 struct CodexResponsesEventStreamClient: Sendable {
     let urlSession: URLSession
     let decoder: JSONDecoder
+    let logger: AgentLogger
 
     func streamEvents(
         request: URLRequest
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
+        logger.debug(
+            .network,
+            "Opening responses event stream.",
+            metadata: [
+                "url": request.url?.absoluteString ?? "unknown",
+                "method": request.httpMethod ?? "POST"
+            ]
+        )
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
@@ -88,6 +97,14 @@ struct CodexResponsesEventStreamClient: Sendable {
         if !(200 ..< 300).contains(httpResponse.statusCode) {
             let bodyData = try await readAll(bytes)
             let body = String(data: bodyData, encoding: .utf8) ?? "Unknown error"
+            logger.error(
+                .network,
+                "Responses event stream failed with HTTP status.",
+                metadata: [
+                    "status": "\(httpResponse.statusCode)",
+                    "body_length": "\(body.count)"
+                ]
+            )
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
                 throw AgentRuntimeError.unauthorized(body)
             }
@@ -155,18 +172,45 @@ struct CodexResponsesEventStreamClient: Sendable {
                 return false
             }
             if let statusCode = httpStatusCode(from: runtimeError.code) {
-                return policy.retryableHTTPStatusCodes.contains(statusCode)
+                let shouldRetry = policy.retryableHTTPStatusCodes.contains(statusCode)
+                logger.debug(
+                    .retry,
+                    "Evaluated HTTP retry decision.",
+                    metadata: [
+                        "status": "\(statusCode)",
+                        "retry": "\(shouldRetry)"
+                    ]
+                )
+                return shouldRetry
             }
             return false
         }
 
         if let urlError = error as? URLError {
-            return policy.retryableURLErrorCodes.contains(urlError.errorCode)
+            let shouldRetry = policy.retryableURLErrorCodes.contains(urlError.errorCode)
+            logger.debug(
+                .retry,
+                "Evaluated URL error retry decision.",
+                metadata: [
+                    "code": "\(urlError.errorCode)",
+                    "retry": "\(shouldRetry)"
+                ]
+            )
+            return shouldRetry
         }
 
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain {
-            return policy.retryableURLErrorCodes.contains(nsError.code)
+            let shouldRetry = policy.retryableURLErrorCodes.contains(nsError.code)
+            logger.debug(
+                .retry,
+                "Evaluated NSError retry decision.",
+                metadata: [
+                    "code": "\(nsError.code)",
+                    "retry": "\(shouldRetry)"
+                ]
+            )
+            return shouldRetry
         }
 
         return false

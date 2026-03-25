@@ -23,6 +23,7 @@ public actor AgentRuntime {
         public let backend: any AgentBackend
         public let approvalPresenter: any ApprovalPresenting
         public let stateStore: any RuntimeStateStoring
+        public let logging: AgentLoggingConfiguration
         public let memory: AgentMemoryConfiguration?
         public let baseInstructions: String?
         public let tools: [ToolRegistration]
@@ -36,6 +37,7 @@ public actor AgentRuntime {
             backend: any AgentBackend,
             approvalPresenter: any ApprovalPresenting,
             stateStore: any RuntimeStateStoring,
+            logging: AgentLoggingConfiguration = .disabled,
             memory: AgentMemoryConfiguration? = nil,
             baseInstructions: String? = nil,
             tools: [ToolRegistration] = [],
@@ -48,6 +50,7 @@ public actor AgentRuntime {
             self.backend = backend
             self.approvalPresenter = approvalPresenter
             self.stateStore = stateStore
+            self.logging = logging
             self.memory = memory
             self.baseInstructions = baseInstructions
             self.tools = tools
@@ -60,6 +63,7 @@ public actor AgentRuntime {
     let backend: any AgentBackend
     let stateStore: any RuntimeStateStoring
     let sessionManager: ChatGPTSessionManager
+    let logger: AgentLogger
     let toolRegistry: ToolRegistry
     let approvalCoordinator: ApprovalCoordinator
     let memoryConfiguration: AgentMemoryConfiguration?
@@ -160,9 +164,11 @@ public actor AgentRuntime {
     public init(configuration: Configuration) throws {
         self.backend = configuration.backend
         self.stateStore = configuration.stateStore
+        self.logger = AgentLogger(configuration: configuration.logging)
         self.sessionManager = ChatGPTSessionManager(
             authProvider: configuration.authProvider,
-            secureStore: configuration.secureStore
+            secureStore: configuration.secureStore,
+            logging: configuration.logging
         )
         self.toolRegistry = try ToolRegistry(initialTools: configuration.tools)
         self.approvalCoordinator = ApprovalCoordinator(
@@ -182,17 +188,36 @@ public actor AgentRuntime {
 
     @discardableResult
     public func restore() async throws -> StoredRuntimeState {
+        logger.info(.runtime, "Restoring runtime state.")
         _ = try await sessionManager.restore()
         _ = try await stateStore.prepare()
         state = try await stateStore.loadState()
         pendingStoreOperations.removeAll()
         publishAllObservations()
+        logger.info(
+            .runtime,
+            "Runtime restore completed.",
+            metadata: [
+                "threads": "\(state.threads.count)",
+                "history_threads": "\(state.historyByThread.count)"
+            ]
+        )
         return state
     }
 
     @discardableResult
     public func signIn() async throws -> ChatGPTSession {
-        try await sessionManager.signIn()
+        logger.info(.auth, "Starting interactive sign-in.")
+        let session = try await sessionManager.signIn()
+        logger.info(
+            .auth,
+            "Interactive sign-in completed.",
+            metadata: [
+                "account_id": session.account.id,
+                "plan": session.account.plan.rawValue
+            ]
+        )
+        return session
     }
 
     public func currentSession() async -> ChatGPTSession? {
@@ -200,6 +225,7 @@ public actor AgentRuntime {
     }
 
     public func signOut() async throws {
+        logger.info(.auth, "Signing out current session.")
         try await sessionManager.signOut()
     }
 
@@ -234,12 +260,18 @@ public actor AgentRuntime {
     func persistState() async throws {
         state = state.normalized()
         guard !pendingStoreOperations.isEmpty else {
+            logger.debug(.persistence, "Persisting full runtime state snapshot.")
             try await stateStore.saveState(state)
             publishAllObservations()
             return
         }
 
         let operations = pendingStoreOperations
+        logger.debug(
+            .persistence,
+            "Applying incremental runtime store operations.",
+            metadata: ["count": "\(operations.count)"]
+        )
         try await stateStore.apply(operations)
         pendingStoreOperations.removeAll()
         publishObservations(for: operations)

@@ -156,6 +156,10 @@ struct DemoDiagnostics {
 #endif
     }
 
+    func developerLoggingEnabled(userDefaults: UserDefaults = .standard) -> Bool {
+        initialDeveloperLoggingEnabled(userDefaults: userDefaults)
+    }
+
     func persistDeveloperLoggingEnabled(
         _ enabled: Bool,
         userDefaults: UserDefaults = .standard
@@ -175,6 +179,46 @@ struct DemoDiagnostics {
     func error(_ message: String) {
         logger.error("\(message, privacy: .public)")
         print("[CodexKit Demo][Error] \(message)")
+    }
+
+    func sdkLoggingConfiguration() -> AgentLoggingConfiguration {
+        AgentLoggingConfiguration(
+            minimumLevel: .debug,
+            sink: DemoSDKLogSink(diagnostics: self)
+        )
+    }
+}
+
+struct DemoSDKLogSink: AgentLogSink {
+    let diagnostics: DemoDiagnostics
+
+    func log(_ entry: AgentLogEntry) {
+        guard diagnostics.developerLoggingEnabled() else {
+            return
+        }
+
+        let levelLabel: String
+        switch entry.level {
+        case .debug:
+            levelLabel = "DEBUG"
+        case .info:
+            levelLabel = "INFO"
+        case .warning:
+            levelLabel = "WARN"
+        case .error:
+            levelLabel = "ERROR"
+        }
+
+        var message = "[SDK][\(levelLabel)][\(entry.category.rawValue)] \(entry.message)"
+        if !entry.metadata.isEmpty {
+            let renderedMetadata = entry.metadata
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: " ")
+            message += " | \(renderedMetadata)"
+        }
+
+        diagnostics.log(message)
     }
 }
 

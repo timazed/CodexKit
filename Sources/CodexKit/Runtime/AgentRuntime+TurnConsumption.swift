@@ -23,6 +23,14 @@ extension AgentRuntime {
             for try await backendEvent in turnStream.events {
                 switch backendEvent {
                 case let .turnStarted(turn):
+                    logger.info(
+                        .runtime,
+                        "Turn started.",
+                        metadata: [
+                            "thread_id": threadID,
+                            "turn_id": turn.id
+                        ]
+                    )
                     currentTurnID = turn.id
                     appendHistoryItem(
                         .systemEvent(
@@ -55,6 +63,16 @@ extension AgentRuntime {
                     if message.role == .assistant {
                         assistantMessages.append(message)
                     }
+                    logger.debug(
+                        .runtime,
+                        "Assistant message committed.",
+                        metadata: [
+                            "thread_id": threadID,
+                            "turn_id": currentTurnID ?? "",
+                            "text_length": "\(message.text.count)",
+                            "image_count": "\(message.images.count)"
+                        ]
+                    )
                     continuation.yield(.messageCommitted(message))
 
                 case .structuredOutputPartial,
@@ -148,6 +166,15 @@ extension AgentRuntime {
                         userMessage: userMessage,
                         assistantMessages: assistantMessages
                     )
+                    logger.info(
+                        .runtime,
+                        "Turn completed.",
+                        metadata: [
+                            "thread_id": threadID,
+                            "turn_id": summary.turnID,
+                            "output_tokens": "\(summary.usage?.outputTokens ?? 0)"
+                        ]
+                    )
                     continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     continuation.yield(.turnCompleted(summary))
                 }
@@ -176,6 +203,15 @@ extension AgentRuntime {
             try? setLatestTurnStatus(.failed, for: threadID)
             try? setLatestPartialStructuredOutput(nil, for: threadID)
             try? await setThreadStatus(.failed, for: threadID)
+            logger.error(
+                .runtime,
+                "Turn failed.",
+                metadata: [
+                    "thread_id": threadID,
+                    "turn_id": currentTurnID ?? "",
+                    "error": runtimeError.message
+                ]
+            )
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
             continuation.yield(.turnFailed(runtimeError))
             continuation.finish(throwing: error)

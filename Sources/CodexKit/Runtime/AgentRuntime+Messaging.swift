@@ -55,6 +55,17 @@ extension AgentRuntime {
             images: request.images
         )
 
+        logger.info(
+            .runtime,
+            "Starting structured streamed message.",
+            metadata: [
+                "thread_id": threadID,
+                "text_length": "\(request.text.count)",
+                "image_count": "\(request.images.count)",
+                "response_format": responseFormat.name
+            ]
+        )
+
         try await appendMessage(userMessage)
         try await setThreadStatus(.streaming, for: threadID)
 
@@ -108,6 +119,14 @@ extension AgentRuntime {
                         continuation: continuation
                     )
                 } catch {
+                    self.logger.error(
+                        .runtime,
+                        "Structured streamed message failed during startup.",
+                        metadata: [
+                            "thread_id": threadID,
+                            "error": error.localizedDescription
+                        ]
+                    )
                     await self.handleStructuredTurnStartupFailure(
                         error,
                         for: threadID,
@@ -194,6 +213,17 @@ extension AgentRuntime {
             images: request.images
         )
 
+        logger.info(
+            .runtime,
+            "Starting streamed message.",
+            metadata: [
+                "thread_id": threadID,
+                "text_length": "\(request.text.count)",
+                "image_count": "\(request.images.count)",
+                "structured_response": "\(responseFormat != nil || streamedStructuredOutput != nil)"
+            ]
+        )
+
         try await appendMessage(userMessage)
         try await setThreadStatus(.streaming, for: threadID)
 
@@ -240,6 +270,14 @@ extension AgentRuntime {
                         continuation: continuation
                     )
                 } catch {
+                    self.logger.error(
+                        .runtime,
+                        "Streamed message failed during startup.",
+                        metadata: [
+                            "thread_id": threadID,
+                            "error": error.localizedDescription
+                        ]
+                    )
                     await self.handleTurnStartupFailure(
                         error,
                         for: threadID,

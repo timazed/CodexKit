@@ -10,6 +10,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let extraHeaders: [String: String]
     public let enableWebSearch: Bool
     public let requestRetryPolicy: RequestRetryPolicy
+    public let logging: AgentLoggingConfiguration
 
     public init(
         baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
@@ -22,7 +23,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
         enableWebSearch: Bool = false,
-        requestRetryPolicy: RequestRetryPolicy = .default
+        requestRetryPolicy: RequestRetryPolicy = .default,
+        logging: AgentLoggingConfiguration = .disabled
     ) {
         self.baseURL = baseURL
         self.model = model
@@ -33,6 +35,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.extraHeaders = extraHeaders
         self.enableWebSearch = enableWebSearch
         self.requestRetryPolicy = requestRetryPolicy
+        self.logging = logging
     }
 }
 
@@ -57,6 +60,7 @@ public actor CodexResponsesBackend: AgentBackend {
     public nonisolated let baseInstructions: String?
 
     let configuration: CodexResponsesBackendConfiguration
+    let logger: AgentLogger
     let urlSession: URLSession
     let encoder = JSONEncoder()
     let decoder = JSONDecoder()
@@ -66,6 +70,7 @@ public actor CodexResponsesBackend: AgentBackend {
         urlSession: URLSession = .shared
     ) {
         self.configuration = configuration
+        self.logger = AgentLogger(configuration: configuration.logging)
         self.urlSession = urlSession
         self.baseInstructions = configuration.instructions
     }
@@ -90,6 +95,7 @@ public actor CodexResponsesBackend: AgentBackend {
     ) async throws -> any AgentTurnStreaming {
         CodexResponsesTurnSession(
             configuration: configuration,
+            logger: logger,
             instructions: instructions,
             responseFormat: responseFormat,
             streamedStructuredOutput: streamedStructuredOutput,
@@ -140,10 +146,12 @@ extension CodexResponsesBackend {
 final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
     let events: AsyncThrowingStream<AgentBackendEvent, Error>
 
+    private let logger: AgentLogger
     private let pendingToolResults: PendingToolResults
 
     init(
         configuration: CodexResponsesBackendConfiguration,
+        logger: AgentLogger,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
@@ -156,6 +164,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) {
+        self.logger = logger
         let pendingToolResults = PendingToolResults()
         self.pendingToolResults = pendingToolResults
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
@@ -164,6 +173,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
             continuation.yield(.turnStarted(turn))
             let runner = CodexResponsesTurnRunner(
                 configuration: configuration,
+                logger: logger,
                 instructions: instructions,
                 responseFormat: responseFormat,
                 streamedStructuredOutput: streamedStructuredOutput,
@@ -185,6 +195,16 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                         newMessage: message
                     )
 
+                    logger.info(
+                        .network,
+                        "Backend turn completed.",
+                        metadata: [
+                            "thread_id": thread.id,
+                            "turn_id": turn.id,
+                            "output_tokens": "\(usage.outputTokens)"
+                        ]
+                    )
+
                     continuation.yield(
                         .turnCompleted(
                             AgentTurnSummary(
@@ -196,6 +216,15 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                     )
                     continuation.finish()
                 } catch {
+                    logger.error(
+                        .network,
+                        "Backend turn failed.",
+                        metadata: [
+                            "thread_id": thread.id,
+                            "turn_id": turn.id,
+                            "error": error.localizedDescription
+                        ]
+                    )
                     continuation.finish(throwing: error)
                 }
             }

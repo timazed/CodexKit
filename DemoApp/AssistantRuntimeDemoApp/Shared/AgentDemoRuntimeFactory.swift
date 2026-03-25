@@ -73,6 +73,8 @@ enum AgentDemoRuntimeFactory {
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator
     ) -> AgentRuntime {
+        let diagnostics = DemoDiagnostics()
+        let sdkLogging = diagnostics.sdkLoggingConfiguration()
         let authProvider: any ChatGPTAuthProviding
 
         switch authenticationMethod {
@@ -98,13 +100,21 @@ enum AgentDemoRuntimeFactory {
                 configuration: CodexResponsesBackendConfiguration(
                     model: model,
                     reasoningEffort: reasoningEffort,
-                    enableWebSearch: enableWebSearch
+                    enableWebSearch: enableWebSearch,
+                    logging: sdkLogging
                 )
             ),
             approvalPresenter: approvalInbox,
-            stateStore: try! GRDBRuntimeStateStore(url: stateURL ?? defaultStateURL()),
+            stateStore: try! GRDBRuntimeStateStore(
+                url: stateURL ?? defaultStateURL(),
+                logging: sdkLogging
+            ),
+            logging: sdkLogging,
             memory: .init(
-                store: try! SQLiteMemoryStore(url: defaultMemoryURL()),
+                store: try! SQLiteMemoryStore(
+                    url: defaultMemoryURL(),
+                    logging: sdkLogging
+                ),
                 automaticCapturePolicy: .init(
                     source: .lastTurn,
                     options: .init(
@@ -137,6 +147,8 @@ enum AgentDemoRuntimeFactory {
         reasoningEffort: ReasoningEffort = .medium,
         keychainAccount: String = defaultKeychainAccount
     ) -> AgentRuntime {
+        let diagnostics = DemoDiagnostics()
+        let sdkLogging = diagnostics.sdkLoggingConfiguration()
         let authProvider = try! ChatGPTAuthProvider(method: .oauth)
 
         return try! AgentRuntime(configuration: .init(
@@ -149,13 +161,21 @@ enum AgentDemoRuntimeFactory {
                 configuration: CodexResponsesBackendConfiguration(
                     model: model,
                     reasoningEffort: reasoningEffort,
-                    enableWebSearch: enableWebSearch
+                    enableWebSearch: enableWebSearch,
+                    logging: sdkLogging
                 )
             ),
             approvalPresenter: NonInteractiveApprovalPresenter(),
-            stateStore: try! GRDBRuntimeStateStore(url: defaultStateURL()),
+            stateStore: try! GRDBRuntimeStateStore(
+                url: defaultStateURL(),
+                logging: sdkLogging
+            ),
+            logging: sdkLogging,
             memory: .init(
-                store: try! SQLiteMemoryStore(url: defaultMemoryURL()),
+                store: try! SQLiteMemoryStore(
+                    url: defaultMemoryURL(),
+                    logging: sdkLogging
+                ),
                 automaticCapturePolicy: .init(
                     source: .lastTurn,
                     options: .init(

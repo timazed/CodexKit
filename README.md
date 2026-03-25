@@ -20,6 +20,7 @@ Use `CodexKit` if you are building a SwiftUI app for iOS or macOS and want:
 - host-defined tools with approval gates
 - persona- and skill-aware agent behavior
 - hidden runtime context compaction with preserved user-visible history
+- opt-in developer logging across runtime, auth, backend, and bundled stores
 - share/import-friendly message construction
 
 The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
@@ -227,12 +228,92 @@ let backend = CodexResponsesBackend(
 )
 ```
 
-Available values:
+## Developer Logging
 
-- `.low`
-- `.medium`
-- `.high`
-- `.extraHigh`
+`CodexKit` includes opt-in developer logging for the SDK itself. Logging is disabled by default and can be enabled independently on the runtime, built-in backend, and bundled stores.
+
+```swift
+let logging = AgentLoggingConfiguration.console(
+    minimumLevel: .debug
+)
+
+let backend = CodexResponsesBackend(
+    configuration: .init(
+        model: "gpt-5.4",
+        logging: logging
+    )
+)
+
+let stateStore = try GRDBRuntimeStateStore(
+    url: stateURL,
+    logging: logging
+)
+
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalInbox,
+    stateStore: stateStore,
+    logging: logging
+))
+```
+
+You can also filter by category:
+
+```swift
+let logging = AgentLoggingConfiguration.osLog(
+    minimumLevel: .debug,
+    categories: [.runtime, .persistence, .network, .tools],
+    subsystem: "com.example.myapp"
+)
+```
+
+Available logging categories include:
+
+- `auth`
+- `runtime`
+- `persistence`
+- `network`
+- `retry`
+- `compaction`
+- `tools`
+- `approvals`
+- `structuredOutput`
+- `memory`
+
+Use `AgentConsoleLogSink` for stderr-style console logs, `AgentOSLogSink` for unified Apple logging, or provide your own `AgentLogSink`.
+
+Custom sinks make it possible to bridge `CodexKit` logs into your own telemetry or logging pipeline:
+
+```swift
+struct RemoteTelemetrySink: AgentLogSink {
+    func log(_ entry: AgentLogEntry) {
+        Telemetry.shared.enqueue(
+            level: entry.level,
+            category: entry.category.rawValue,
+            message: entry.message,
+            metadata: entry.metadata,
+            timestamp: entry.timestamp
+        )
+    }
+}
+
+let logging = AgentLoggingConfiguration(
+    minimumLevel: .info,
+    sink: RemoteTelemetrySink()
+)
+```
+
+`AgentLogEntry` includes:
+
+- timestamp
+- level
+- category
+- message
+- metadata
+
+For remote telemetry or file-backed logging, prefer a sink that buffers or enqueues work quickly. `AgentLogSink.log(_:)` is called inline, so it should avoid blocking network I/O on the caller's execution path.
 
 ## Persistent State And Queries
 

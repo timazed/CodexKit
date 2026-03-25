@@ -54,6 +54,15 @@ extension AgentRuntime {
             pendingMessage: request,
             instructions: instructions
         )
+        logger.debug(
+            .compaction,
+            "Evaluated pre-turn compaction threshold.",
+            metadata: [
+                "thread_id": thread.id,
+                "estimated_tokens": "\(estimatedTokens)",
+                "threshold": "\(threshold)"
+            ]
+        )
         guard estimatedTokens > threshold else {
             return
         }
@@ -137,7 +146,7 @@ extension AgentRuntime {
         instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession
-    ) async throws -> AgentThreadContextState {
+        ) async throws -> AgentThreadContextState {
         guard shouldUseCompaction() else {
             throw AgentRuntimeError.contextCompactionDisabled()
         }
@@ -150,6 +159,15 @@ extension AgentRuntime {
                 threadID: threadID,
                 effectiveMessages: state.messagesByThread[threadID] ?? []
             )
+        logger.info(
+            .compaction,
+            "Compacting thread context.",
+            metadata: [
+                "thread_id": threadID,
+                "reason": reason.rawValue,
+                "effective_message_count": "\(current.effectiveMessages.count)"
+            ]
+        )
         let result = try await performCompaction(
             thread: thread,
             effectiveHistory: current.effectiveMessages,
@@ -195,6 +213,17 @@ extension AgentRuntime {
         state.nextHistorySequenceByThread[threadID] = nextGenerationSequence(afterAppendingTo: threadID)
         enqueueStoreOperation(.appendCompactionMarker(threadID: threadID, marker: markerRecord))
         try await persistState()
+        logger.info(
+            .compaction,
+            "Thread context compaction completed.",
+            metadata: [
+                "thread_id": threadID,
+                "reason": reason.rawValue,
+                "generation": "\(updated.generation)",
+                "effective_message_count_before": "\(current.effectiveMessages.count)",
+                "effective_message_count_after": "\(updated.effectiveMessages.count)"
+            ]
+        )
         return updated
     }
 

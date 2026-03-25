@@ -27,7 +27,10 @@ extension GRDBRuntimeStateStore {
             return
         }
 
-        let legacyStore = FileRuntimeStateStore(url: legacyStateURL)
+        let legacyStore = FileRuntimeStateStore(
+            url: legacyStateURL,
+            logging: logger.configuration
+        )
         let state = try await legacyStore.loadState().normalized()
         guard !state.threads.isEmpty || !state.historyByThread.isEmpty else {
             return
