@@ -39,6 +39,13 @@ extension GRDBRuntimeStateStore {
     func executeThreadQuery(_ query: ThreadMetadataQuery) async throws -> [AgentThread] {
         let persistence = self.persistence
         return try await dbQueue.read { db in
+            if let threadIDs = query.threadIDs, threadIDs.isEmpty {
+                return []
+            }
+            if let statuses = query.statuses, statuses.isEmpty {
+                return []
+            }
+
             var request = RuntimeThreadRow.all()
             if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
                 request = request.filter(threadIDs.contains(Column("threadID")))
@@ -73,6 +80,10 @@ extension GRDBRuntimeStateStore {
     func executeThreadContextStateQuery(_ query: ThreadContextStateQuery) async throws -> [AgentThreadContextState] {
         let persistence = self.persistence
         return try await dbQueue.read { db in
+            if let threadIDs = query.threadIDs, threadIDs.isEmpty {
+                return []
+            }
+
             var request = RuntimeContextStateRow.all()
             if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
                 request = request.filter(threadIDs.contains(Column("threadID")))
@@ -89,6 +100,13 @@ extension GRDBRuntimeStateStore {
     func executePendingStateQuery(_ query: PendingStateQuery) async throws -> [AgentPendingStateRecord] {
         let persistence = self.persistence
         return try await dbQueue.read { db in
+            if let threadIDs = query.threadIDs, threadIDs.isEmpty {
+                return []
+            }
+            if let kinds = query.kinds, kinds.isEmpty {
+                return []
+            }
+
             var request = RuntimeSummaryRow.filter(Column("pendingStateKind") != nil)
 
             if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
@@ -127,6 +145,13 @@ extension GRDBRuntimeStateStore {
     func executeStructuredOutputQuery(_ query: StructuredOutputQuery) async throws -> [AgentStructuredOutputRecord] {
         let persistence = self.persistence
         return try await dbQueue.read { db in
+            if let threadIDs = query.threadIDs, threadIDs.isEmpty {
+                return []
+            }
+            if let formatNames = query.formatNames, formatNames.isEmpty {
+                return []
+            }
+
             var request = RuntimeStructuredOutputRow.all()
             if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
                 request = request.filter(threadIDs.contains(Column("threadID")))
@@ -164,6 +189,10 @@ extension GRDBRuntimeStateStore {
     func executeThreadSnapshotQuery(_ query: ThreadSnapshotQuery) async throws -> [AgentThreadSnapshot] {
         let persistence = self.persistence
         return try await dbQueue.read { db in
+            if let threadIDs = query.threadIDs, threadIDs.isEmpty {
+                return []
+            }
+
             var request = RuntimeSummaryRow.all()
             if let threadIDs = query.threadIDs, !threadIDs.isEmpty {
                 request = request.filter(threadIDs.contains(Column("threadID")))
@@ -203,6 +232,10 @@ struct GRDBRuntimeStoreQueries: Sendable {
         includeCompactionEvents: Bool,
         in db: Database
     ) throws -> [AgentHistoryRecord] {
+        if let kinds, kinds.isEmpty {
+            return []
+        }
+
         var clauses = ["threadID = ?"]
         var arguments: [any DatabaseValueConvertible] = [threadID]
 
@@ -247,6 +280,17 @@ struct GRDBRuntimeStoreQueries: Sendable {
         let kinds = historyKinds(from: query.filter)
         let includeCompactionEvents = query.filter?.includeCompactionEvents ?? false
         let anchor = try decodeCursorSequence(query.cursor, expectedThreadID: threadID)
+
+        if let kinds, kinds.isEmpty {
+            return AgentThreadHistoryPage(
+                threadID: threadID,
+                items: [],
+                nextCursor: nil,
+                previousCursor: nil,
+                hasMoreBefore: false,
+                hasMoreAfter: false
+            )
+        }
 
         switch query.direction {
         case .backward:
