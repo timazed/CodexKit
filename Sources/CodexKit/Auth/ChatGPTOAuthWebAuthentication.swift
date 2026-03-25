@@ -44,28 +44,31 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
         }
 
         return try await withCheckedThrowingContinuation { continuation in
+            let completion: @Sendable (URL?, (any Error)?) -> Void = { [weak self] callbackURL, error in
+                runAuthenticationCallbackOnMainActor { [weak self] in
+                    self?.activeSession = nil
+                    self?.activePresentationContextProvider = nil
+
+                    if let callbackURL {
+                        continuation.resume(returning: callbackURL)
+                        return
+                    }
+
+                    continuation.resume(
+                        throwing: error ?? AgentRuntimeError(
+                            code: "oauth_authentication_cancelled",
+                            message: "The ChatGPT sign-in flow did not complete."
+                        )
+                    )
+                }
+            }
+
             Task { @MainActor [weak self] in
                 let session = ASWebAuthenticationSession(
                     url: authorizeURL,
-                    callbackURLScheme: callbackScheme
-                ) { callbackURL, error in
-                    runAuthenticationCallbackOnMainActor { [weak self] in
-                        self?.activeSession = nil
-                        self?.activePresentationContextProvider = nil
-
-                        if let callbackURL {
-                            continuation.resume(returning: callbackURL)
-                            return
-                        }
-
-                        continuation.resume(
-                            throwing: error ?? AgentRuntimeError(
-                                code: "oauth_authentication_cancelled",
-                                message: "The ChatGPT sign-in flow did not complete."
-                            )
-                        )
-                    }
-                }
+                    callbackURLScheme: callbackScheme,
+                    completionHandler: completion
+                )
                 let contextProvider = PresentationContextProvider(anchor: anchor)
                 session.presentationContextProvider = contextProvider
                 #if os(iOS)
