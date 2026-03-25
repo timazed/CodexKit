@@ -18,6 +18,7 @@ extension AgentRuntime {
         }
         var assistantMessages: [AgentMessage] = []
         var currentTurnID: String?
+        var currentTurnStartedAt: Date?
 
         do {
             for try await backendEvent in turnStream.events {
@@ -32,6 +33,7 @@ extension AgentRuntime {
                         ]
                     )
                     currentTurnID = turn.id
+                    currentTurnStartedAt = turn.startedAt
                     appendHistoryItem(
                         .systemEvent(
                             AgentSystemEventRecord(
@@ -172,7 +174,12 @@ extension AgentRuntime {
                         metadata: [
                             "thread_id": threadID,
                             "turn_id": summary.turnID,
+                            "assistant_messages": "\(assistantMessages.count)",
+                            "input_tokens": "\(summary.usage?.inputTokens ?? 0)",
+                            "cached_input_tokens": "\(summary.usage?.cachedInputTokens ?? 0)",
                             "output_tokens": "\(summary.usage?.outputTokens ?? 0)"
+                            ,
+                            "duration_ms": "\(currentTurnStartedAt.map { Int(summary.completedAt.timeIntervalSince($0) * 1000) } ?? 0)"
                         ]
                     )
                     continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
@@ -209,7 +216,8 @@ extension AgentRuntime {
                 metadata: [
                     "thread_id": threadID,
                     "turn_id": currentTurnID ?? "",
-                    "error": runtimeError.message
+                    "error": runtimeError.message,
+                    "duration_ms": "\(currentTurnStartedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0)"
                 ]
             )
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))

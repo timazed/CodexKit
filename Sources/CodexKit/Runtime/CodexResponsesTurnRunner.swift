@@ -56,6 +56,7 @@ struct CodexResponsesTurnRunner {
         history: [AgentMessage],
         newMessage: UserMessageRequest
     ) async throws -> AgentUsage {
+        let runStartedAt = Date()
         logger.debug(
             .network,
             "Starting backend turn runner.",
@@ -72,6 +73,18 @@ struct CodexResponsesTurnRunner {
 
         try await runTurnPasses(state: &state)
         emitPendingAssistantFallbackIfNeeded(state: &state)
+        logger.info(
+            .network,
+            "Backend turn runner finished.",
+            metadata: [
+                "thread_id": threadID,
+                "turn_id": turnID,
+                "duration_ms": "\(Int(Date().timeIntervalSince(runStartedAt) * 1000))",
+                "input_tokens": "\(state.aggregateUsage.inputTokens)",
+                "cached_input_tokens": "\(state.aggregateUsage.cachedInputTokens)",
+                "output_tokens": "\(state.aggregateUsage.outputTokens)"
+            ]
+        )
         return state.aggregateUsage
     }
 
@@ -122,12 +135,33 @@ struct CodexResponsesTurnRunner {
 
         for attempt in 1...retryPolicy.maxAttempts {
             var retryState = RetryAttemptState()
+            logger.debug(
+                .network,
+                "Starting backend turn pass attempt.",
+                metadata: [
+                    "thread_id": threadID,
+                    "turn_id": turnID,
+                    "attempt": "\(attempt)",
+                    "max_attempts": "\(retryPolicy.maxAttempts)"
+                ]
+            )
             do {
-                return try await consumeEventStream(
+                let disposition = try await consumeEventStream(
                     request: request,
                     state: &state,
                     retryState: &retryState
                 )
+                logger.debug(
+                    .network,
+                    "Backend turn pass attempt completed.",
+                    metadata: [
+                        "thread_id": threadID,
+                        "turn_id": turnID,
+                        "attempt": "\(attempt)",
+                        "needs_another_pass": "\(disposition == .needsAnotherPass)"
+                    ]
+                )
+                return disposition
             } catch {
                 guard shouldRetry(
                     error,
@@ -386,6 +420,16 @@ struct CodexResponsesTurnRunner {
         )
 
         continuation.yield(.toolCallRequested(invocation))
+        logger.debug(
+            .tools,
+            "Waiting for tool result submission.",
+            metadata: [
+                "thread_id": threadID,
+                "turn_id": turnID,
+                "invocation_id": invocation.id,
+                "tool_name": invocation.toolName
+            ]
+        )
         let toolResult = try await pendingToolResults.wait(for: invocation.id)
         let toolImages = await toolOutputAdapter.images(from: toolResult)
         state.pendingToolImages.append(contentsOf: toolImages)
@@ -402,6 +446,17 @@ struct CodexResponsesTurnRunner {
                 callID: invocation.id,
                 output: toolOutputAdapter.text(from: toolResult)
             )
+        )
+        logger.debug(
+            .tools,
+            "Recorded tool result for follow-up backend pass.",
+            metadata: [
+                "thread_id": threadID,
+                "turn_id": turnID,
+                "invocation_id": invocation.id,
+                "tool_name": invocation.toolName,
+                "success": "\(toolResult.success)"
+            ]
         )
     }
 

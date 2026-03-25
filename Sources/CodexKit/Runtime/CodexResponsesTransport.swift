@@ -83,7 +83,10 @@ struct CodexResponsesEventStreamClient: Sendable {
             "Opening responses event stream.",
             metadata: [
                 "url": request.url?.absoluteString ?? "unknown",
-                "method": request.httpMethod ?? "POST"
+                "method": request.httpMethod ?? "POST",
+                "request_id": request.value(forHTTPHeaderField: "x-client-request-id") ?? "",
+                "session_id": request.value(forHTTPHeaderField: "session_id") ?? "",
+                "body_length": "\(request.httpBody?.count ?? 0)"
             ]
         )
         let (bytes, response) = try await urlSession.bytes(for: request)
@@ -113,6 +116,16 @@ struct CodexResponsesEventStreamClient: Sendable {
                 message: "The ChatGPT responses request failed with status \(httpResponse.statusCode): \(body)"
             )
         }
+
+        logger.debug(
+            .network,
+            "Responses event stream opened.",
+            metadata: [
+                "status": "\(httpResponse.statusCode)",
+                "request_id": request.value(forHTTPHeaderField: "x-client-request-id") ?? "",
+                "session_id": request.value(forHTTPHeaderField: "session_id") ?? ""
+            ]
+        )
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -155,6 +168,14 @@ struct CodexResponsesEventStreamClient: Sendable {
                         continuation.yield(event)
                     }
 
+                    logger.debug(
+                        .network,
+                        "Responses event stream finished.",
+                        metadata: [
+                            "request_id": request.value(forHTTPHeaderField: "x-client-request-id") ?? "",
+                            "session_id": request.value(forHTTPHeaderField: "session_id") ?? ""
+                        ]
+                    )
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

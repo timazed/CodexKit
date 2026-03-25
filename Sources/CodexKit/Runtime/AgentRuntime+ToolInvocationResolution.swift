@@ -157,6 +157,16 @@ extension AgentRuntime {
         }
 
         let toolWaitStartedAt = Date()
+        logger.info(
+            .tools,
+            "Executing tool invocation.",
+            metadata: [
+                "thread_id": invocation.threadID,
+                "turn_id": invocation.turnID,
+                "invocation_id": invocation.id,
+                "tool_name": invocation.toolName
+            ]
+        )
         try setPendingState(
             .toolWait(
                 AgentPendingToolWaitState(
@@ -183,8 +193,11 @@ extension AgentRuntime {
             metadata: [
                 "thread_id": invocation.threadID,
                 "turn_id": invocation.turnID,
+                "invocation_id": invocation.id,
                 "tool_name": invocation.toolName,
-                "success": "\(result.errorMessage == nil)"
+                "success": "\(result.errorMessage == nil)",
+                "duration_ms": "\(Int(resultDate.timeIntervalSince(toolWaitStartedAt) * 1000))",
+                "has_follow_up_session": "\(result.session?.isTerminal == false)"
             ]
         )
         try setLatestToolState(

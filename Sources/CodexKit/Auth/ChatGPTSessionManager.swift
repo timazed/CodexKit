@@ -22,8 +22,11 @@ public actor ChatGPTSessionManager {
         session = restored
         logger.debug(
             .auth,
-            "Restored session from secure store.",
-            metadata: ["restored": "\(restored != nil)"]
+            "Secure-store session restore completed.",
+            metadata: [
+                "restored": "\(restored != nil)",
+                "requires_refresh": "\(restored?.requiresRefresh() ?? false)"
+            ]
         )
         return restored
     }
@@ -39,8 +42,11 @@ public actor ChatGPTSessionManager {
         session = signedInSession
         logger.info(
             .auth,
-            "Persisted signed-in session.",
-            metadata: ["account_id": signedInSession.account.id]
+            "Interactive sign-in completed and session persisted.",
+            metadata: [
+                "account_id": signedInSession.account.id,
+                "plan": signedInSession.account.plan.rawValue
+            ]
         )
         return signedInSession
     }
@@ -52,7 +58,7 @@ public actor ChatGPTSessionManager {
             .auth,
             "Refreshing session.",
             metadata: [
-                "reason": String(describing: reason),
+                "reason": refreshReasonLabel(reason),
                 "account_id": current.account.id
             ]
         )
@@ -75,7 +81,10 @@ public actor ChatGPTSessionManager {
         logger.info(
             .auth,
             "Session signed out.",
-            metadata: ["had_session": "\(current != nil)"]
+            metadata: [
+                "had_session": "\(current != nil)",
+                "account_id": current?.account.id ?? ""
+            ]
         )
     }
 
@@ -94,7 +103,8 @@ public actor ChatGPTSessionManager {
     ) async throws -> ChatGPTSession {
         logger.warning(
             .auth,
-            "Attempting unauthorized-session recovery."
+            "Attempting unauthorized-session recovery.",
+            metadata: ["had_previous_access_token": "\(previousAccessToken != nil)"]
         )
         if let restored = try secureStore.loadSession() {
             session = restored
@@ -118,5 +128,14 @@ public actor ChatGPTSessionManager {
             throw AgentRuntimeError.signedOut()
         }
         return session
+    }
+
+    private func refreshReasonLabel(
+        _ reason: ChatGPTAuthRefreshReason
+    ) -> String {
+        switch reason {
+        case .unauthorized:
+            return "unauthorized"
+        }
     }
 }
