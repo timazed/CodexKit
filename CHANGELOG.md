@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.5] - 2026-04-13
+
+### Added
+
+- Added typed, structured request APIs through `AgentMessageRequest<Input>` and structured section support for machine-context turns.
+- Added support for running runtime turns with mixed freeform text and structured input/section payloads in streaming and one-shot message paths.
+
+### Changed
+
+- Renamed `GRDBRuntimeStateStore` to `SQLiteRuntimeStateStore` and aligned documentation/examples with the new naming.
+- Improved runtime logging ergonomics to make request execution and turn lifecycle diagnostics easier to interpret.
+
 ## [2.0.0-alpha.1] - 2026-03-22
 
 ### Added
@@ -59,7 +71,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.1...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.5...HEAD
+[2.0.0-alpha.5]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.4...v2.0.0-alpha.5
 [2.0.0-alpha.1]: https://github.com/timazed/CodexKit/compare/v1.1.0...v2.0.0-alpha.1
 [1.1.0]: https://github.com/timazed/CodexKit/releases/tag/v1.1.0
 [1.0.0]: https://github.com/timazed/CodexKit/releases/tag/v1.0.0
