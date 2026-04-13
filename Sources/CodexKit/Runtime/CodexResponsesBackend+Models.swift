@@ -90,6 +90,7 @@ enum WorkingHistoryItem: Sendable {
     case visibleMessage(AgentMessage)
     case userMessage(AgentMessage)
     case assistantMessage(AgentMessage)
+    case developerContext(StructuredInputContextMessage)
     case functionCall(FunctionCallRecord)
     case functionCallOutput(callID: String, output: String)
 
@@ -101,6 +102,8 @@ enum WorkingHistoryItem: Sendable {
             Self.messageJSONValue(for: message)
         case let .assistantMessage(message):
             Self.messageJSONValue(for: message)
+        case let .developerContext(message):
+            Self.developerContextJSONValue(for: message)
         case let .functionCall(functionCall):
             .object([
                 "type": .string("function_call"),
@@ -169,6 +172,56 @@ enum WorkingHistoryItem: Sendable {
             "role": .string(roleValue),
             "content": .array(content),
         ])
+    }
+
+    private static func developerContextJSONValue(
+        for message: StructuredInputContextMessage
+    ) -> JSONValue {
+        .object([
+            "type": .string("message"),
+            "role": .string("developer"),
+            "content": .array([
+                .object([
+                    "type": .string("input_text"),
+                    "text": .string(message.formattedText),
+                ]),
+            ]),
+        ])
+    }
+}
+
+struct StructuredInputContextMessage: Hashable, Sendable {
+    let blocks: [StructuredInputContextBlock]
+
+    var formattedText: String {
+        blocks
+            .map(\.formattedText)
+            .joined(separator: "\n\n")
+    }
+}
+
+struct StructuredInputContextBlock: Hashable, Sendable {
+    let name: String
+    let schemaName: String?
+    let payload: JSONValue
+    let isPrimary: Bool
+
+    var formattedText: String {
+        let roleDescription = if isPrimary {
+            "Authoritative structured context for the current user request."
+        } else {
+            "Additional authoritative structured context for the current user request."
+        }
+        let schemaLine = schemaName.map { "\nSchema name: \($0)" } ?? ""
+
+        return """
+        \(roleDescription)
+        Section name: \(name)\(schemaLine)
+        Treat the JSON inside this block as machine-provided context. Prefer it over inferred assumptions when it conflicts with guesswork. Do not repeat the wrapper tags unless the user asks for them.
+        <codexkit-structured-input name="\(name)">
+        \(payload.prettyPrintedJSONString)
+        </codexkit-structured-input>
+        """
     }
 }
 

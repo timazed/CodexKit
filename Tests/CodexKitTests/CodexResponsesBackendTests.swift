@@ -462,4 +462,84 @@ final class CodexResponsesBackendTests: XCTestCase {
         XCTAssertEqual(assistantMessage?.images.first?.data, pngBytes)
     }
 
+    func testBackendSendsStructuredInputAsSeparateDeveloperContextBlock() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_structured_input","usage":{"input_tokens":8,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+
+                    let developerMessage = try XCTUnwrap(
+                        input.first(where: { $0["role"] as? String == "developer" })
+                    )
+                    let developerContent = try XCTUnwrap(developerMessage["content"] as? [[String: Any]])
+                    let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
+                    XCTAssertTrue(developerText.contains("Authoritative structured context"))
+                    XCTAssertTrue(developerText.contains("<codexkit-structured-input name=\"PlannerContext\">"))
+                    XCTAssertTrue(developerText.contains("\"objective\""))
+                    XCTAssertTrue(developerText.contains("\"customerTier\""))
+                    XCTAssertTrue(developerText.contains("<codexkit-structured-input name=\"browser_snapshot\">"))
+
+                    let userMessage = try XCTUnwrap(
+                        input.first(where: { $0["role"] as? String == "user" })
+                    )
+                    let userContent = try XCTUnwrap(userMessage["content"] as? [[String: Any]])
+                    XCTAssertEqual(userContent.count, 1)
+                    XCTAssertEqual(userContent.first?["text"] as? String, "Answer using the provided context.")
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-structured-input"),
+            history: [],
+            message: UserMessageRequest(
+                text: "Answer using the provided context.",
+                structuredInput: AgentStructuredInput(
+                    schemaName: "PlannerContext",
+                    payload: .object([
+                        "objective": .string("Resolve shipping issue"),
+                        "customerTier": .string("plus"),
+                    ])
+                ),
+                structuredSections: [
+                    AgentStructuredSection(
+                        name: "browser_snapshot",
+                        schemaName: "BrowserSnapshot",
+                        payload: .object([
+                            "pageTitle": .string("Order #1234"),
+                            "status": .string("In transit"),
+                        ])
+                    ),
+                ]
+            ),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
 }

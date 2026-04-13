@@ -47,10 +47,10 @@ The demo uses the new configuration-first surface:
 - `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
-- `GRDBRuntimeStateStore`
+- `SQLiteRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
-The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use. Runtime state is stored in `runtime-state.sqlite`, memory is stored in `memory.sqlite`, and the GRDB-backed runtime store will import an older sibling `runtime-state.json` file automatically on first launch if one exists.
+The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use. Runtime state is stored in `runtime-state.sqlite`, memory is stored in `memory.sqlite`, and the SQLite runtime store will import an older sibling `runtime-state.json` file automatically on first launch if one exists.
 
 The checked-in demo enables context compaction in automatic mode. In a thread detail screen, the `Context Compaction` card shows:
 

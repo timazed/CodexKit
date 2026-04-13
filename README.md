@@ -16,6 +16,7 @@ Use `CodexKit` if you are building a SwiftUI app for iOS or macOS and want:
 - resumable threaded conversations
 - structured local memory with optional prompt injection
 - streamed assistant output
+- typed structured input alongside freeform prompt text
 - typed one-shot text and structured completions
 - host-defined tools with approval gates
 - persona- and skill-aware agent behavior
@@ -33,6 +34,8 @@ The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
   A persistent conversation with its own status, title, persona stack, skill IDs, and optional memory context.
 - `UserMessageRequest`
   A single turn request. Can include text, images, imported content, persona override, skill override, and memory selection.
+- `AgentMessageRequest<Input>`
+  A typed turn request that carries freeform prompt text plus optional machine-readable structured input and named structured sections.
 - `CodexResponsesBackend`
   The built-in ChatGPT/Codex-style backend used for text/image/tool turns.
 - `ToolDefinition`
@@ -91,7 +94,7 @@ let runtime = try AgentRuntime(configuration: .init(
         )
     ),
     approvalPresenter: approvalInbox,
-    stateStore: try GRDBRuntimeStateStore(
+    stateStore: try SQLiteRuntimeStateStore(
         url: FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -106,6 +109,25 @@ let stream = try await runtime.streamMessage(
     UserMessageRequest(text: "Hello from Apple platforms."),
     in: thread.id
 )
+```
+
+## 2.0 Migration Notes
+
+If you are moving code forward from earlier 2.0 alpha snapshots, there are two important API changes to update:
+
+- `GRDBRuntimeStateStore` was renamed to `SQLiteRuntimeStateStore`
+  The public runtime-store surface now uses `SQLite` naming consistently alongside `SQLiteMemoryStore`.
+- structured machine context is now first-class
+  Use `AgentMessageRequest<Input>` when you want to send typed structured input separately from freeform prompt text.
+
+Example rename:
+
+```swift
+// Before
+let stateStore = try GRDBRuntimeStateStore(url: stateURL)
+
+// Now
+let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
 ```
 
 ## Feature Matrix
@@ -123,6 +145,7 @@ let stream = try await runtime.streamMessage(
 | Built-in request retry/backoff | Yes (configurable) |
 | Structured local memory layer | Yes |
 | Text + image input | Yes |
+| Typed structured input | Yes |
 | Typed structured output (`Decodable`) | Yes |
 | Mixed streamed text + typed structured output | Yes |
 | Share/import helper (`AgentImportedContent`) | Yes |
@@ -148,7 +171,7 @@ flowchart LR
     A["SwiftUI App"] --> B["AgentRuntime"]
     B --> C["ChatGPTAuthProvider"]
     B --> D["SessionSecureStore<br/>KeychainSessionSecureStore"]
-    B --> E["RuntimeStateStore<br/>GRDBRuntimeStateStore"]
+    B --> E["RuntimeStateStore<br/>SQLiteRuntimeStateStore"]
     B --> F["CodexResponsesBackend"]
     B --> G["ToolRegistry + Executors"]
     B --> H["ApprovalPresenter<br/>ApprovalInbox"]
@@ -162,12 +185,12 @@ The recommended production path for iOS and macOS is:
 - `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
-- `GRDBRuntimeStateStore`
+- `SQLiteRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
 Bundled runtime-state stores now include:
 
-- `GRDBRuntimeStateStore`
+- `SQLiteRuntimeStateStore`
   The recommended production store. Uses SQLite through GRDB, supports migrations, query pushdown, redaction, whole-thread deletion, paged history reads, and lightweight restore/inspection.
 - `FileRuntimeStateStore`
   A simple JSON-backed fallback for small apps, tests, or export/import-style workflows.
@@ -179,7 +202,7 @@ The bundled memory store is:
 - `SQLiteMemoryStore`
   Uses SQLite through GRDB for persisted memory records. Ordinary record reads/writes use GRDB requests directly; the remaining raw SQL is limited to SQLite-specific `PRAGMA` and FTS `MATCH` / `bm25()` paths.
 
-If you are migrating from the older file-backed store, `GRDBRuntimeStateStore(url:)` automatically imports a sibling `*.json` runtime state file on first open. For example, `runtime-state.sqlite` will import from `runtime-state.json` if it exists and the SQLite store is still empty.
+If you are migrating from the older file-backed store, `SQLiteRuntimeStateStore(url:)` automatically imports a sibling `*.json` runtime state file on first open. For example, `runtime-state.sqlite` will import from `runtime-state.json` if it exists and the SQLite store is still empty.
 
 `ChatGPTAuthProvider` supports:
 
@@ -244,7 +267,7 @@ let backend = CodexResponsesBackend(
     )
 )
 
-let stateStore = try GRDBRuntimeStateStore(
+let stateStore = try SQLiteRuntimeStateStore(
     url: stateURL,
     logging: logging
 )
@@ -319,13 +342,13 @@ For remote telemetry or file-backed logging, prefer a sink that buffers or enque
 
 `CodexKit` now treats runtime persistence as a queryable store instead of a single “load the whole thread” blob. For most apps, the main thing to know is:
 
-- use `GRDBRuntimeStateStore` for persisted production state
+- use `SQLiteRuntimeStateStore` for persisted production state
 - use `fetchThreadHistory(id:query:)` and `fetchLatestStructuredOutputMetadata(id:)` for common thread inspection
 - use the typed `execute(_:)` query surface when you need more control over filtering, sorting, paging, or cross-thread reads
 - use hidden context compaction when you want to optimize future turns without removing preserved thread history from UI or inspection APIs
 
 ```swift
-let stateStore = try GRDBRuntimeStateStore(
+let stateStore = try SQLiteRuntimeStateStore(
     url: FileManager.default.urls(
         for: .applicationSupportDirectory,
         in: .userDomainMask
@@ -456,6 +479,45 @@ For most apps, there are now three common send paths:
 - `sendMessage(..., expecting:)`
   Return a typed `Decodable` value from a structured response.
 
+If you need to send machine-readable turn context separately from human prompt text, use `AgentMessageRequest<Input>`. CodexKit preserves that typed input through the runtime and sends it to the model as a distinct authoritative machine-context block instead of forcing you to JSON-encode it into `text`.
+
+- `structuredInput`
+  The primary typed machine-context payload for the turn.
+- `structuredInputSchemaName`
+  An optional label for that primary structured input block when you want something more explicit than an unlabeled JSON object.
+- `structuredSections`
+  Additional named sibling machine-context blocks when your turn context comes from multiple subsystems and should stay separate instead of being merged into one wrapper type.
+
+```swift
+struct PlannerContext: Codable, Sendable {
+    let objective: String
+    let customerTier: String
+}
+
+let draft = try await runtime.sendMessage(
+    AgentMessageRequest(
+        text: "Draft a response for the delayed package.",
+        structuredInput: PlannerContext(
+            objective: "Resolve the shipping complaint quickly.",
+            customerTier: "plus"
+        ),
+        structuredInputSchemaName: "PlannerContext",
+        structuredSections: [
+            AgentStructuredSection(
+                name: "browser_snapshot",
+                schemaName: "BrowserSnapshot",
+                payload: .object([
+                    "pageTitle": .string("Order #1234"),
+                    "status": .string("In transit"),
+                ])
+            )
+        ]
+    ),
+    in: thread.id,
+    expecting: ShippingReplyDraft.self
+)
+```
+
 For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `sendMessage`:
 
 ```swift
@@ -574,7 +636,7 @@ let runtime = try AgentRuntime(configuration: .init(
         configuration: .init(model: "gpt-5.4")
     ),
     approvalPresenter: approvalPresenter,
-    stateStore: try GRDBRuntimeStateStore(url: stateURL),
+    stateStore: try SQLiteRuntimeStateStore(url: stateURL),
     memory: .init(
         store: try SQLiteMemoryStore(url: memoryURL),
         automaticCapturePolicy: .init(
@@ -688,7 +750,7 @@ let runtime = try AgentRuntime(configuration: .init(
     ),
     backend: CodexResponsesBackend(),
     approvalPresenter: approvalInbox,
-    stateStore: try GRDBRuntimeStateStore(
+    stateStore: try SQLiteRuntimeStateStore(
         url: FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -996,7 +1058,7 @@ print(preview)
 ## Production Checklist
 
 - Store sessions in keychain (`KeychainSessionSecureStore`)
-- Use persistent runtime state (`GRDBRuntimeStateStore`)
+- Use persistent runtime state (`SQLiteRuntimeStateStore`)
 - Gate impactful tools with approvals
 - Handle auth cancellation and sign-out resets cleanly
 - Tune retry/backoff policy for your app’s UX and latency targets
@@ -1027,6 +1089,7 @@ The 2.0 line standardizes runtime sends around:
 - `streamMessage(..., expecting:)` for mixed prose + typed structured stream events
 - `sendMessage(...)` for final text
 - `sendMessage(..., expecting:)` for typed structured replies
+- `AgentMessageRequest<Input>` for turns that combine freeform prompt text with typed structured machine context
 
 This is the shape new examples and docs target on `main`.
 

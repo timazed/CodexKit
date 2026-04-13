@@ -7,6 +7,7 @@ public actor InMemoryAgentBackend: AgentBackend {
     private var threads: [String: AgentThread] = [:]
     private var beginTurnInstructions: [String] = []
     private var beginTurnResponseFormats: [AgentStructuredOutputFormat?] = []
+    private var beginTurnMessages: [UserMessageRequest] = []
     private let structuredResponseText: String
 
     public init(
@@ -45,6 +46,7 @@ public actor InMemoryAgentBackend: AgentBackend {
     ) async throws -> any AgentTurnStreaming {
         beginTurnInstructions.append(instructions)
         beginTurnResponseFormats.append(responseFormat)
+        beginTurnMessages.append(message)
         let updatedThread = AgentThread(
             id: thread.id,
             title: thread.title,
@@ -80,6 +82,10 @@ public actor InMemoryAgentBackend: AgentBackend {
 
     public func receivedResponseFormats() -> [AgentStructuredOutputFormat?] {
         beginTurnResponseFormats
+    }
+
+    public func receivedMessages() -> [UserMessageRequest] {
+        beginTurnMessages
     }
 }
 

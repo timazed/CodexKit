@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-extension GRDBRuntimeStateStore {
+extension SQLiteRuntimeStateStore {
     func executeHistoryQuery(_ query: HistoryItemsQuery) async throws -> AgentHistoryQueryResult {
         let persistence = self.persistence
         let queries = self.queries
@@ -220,7 +220,7 @@ extension GRDBRuntimeStateStore {
     }
 }
 
-struct GRDBRuntimeStoreQueries: Sendable {
+struct SQLiteRuntimeStoreQueries: Sendable {
     let attachmentStore: RuntimeAttachmentStore
 
     func fetchHistoryRows(
@@ -492,7 +492,7 @@ struct GRDBRuntimeStoreQueries: Sendable {
     }
 
     private func decodeHistoryRecord(from row: RuntimeHistoryRow) throws -> AgentHistoryRecord {
-        let persistence = GRDBRuntimeStorePersistence(attachmentStore: attachmentStore)
+        let persistence = SQLiteRuntimeStorePersistence(attachmentStore: attachmentStore)
         return try persistence.decodeHistoryRecord(from: row)
     }
 
@@ -501,7 +501,7 @@ struct GRDBRuntimeStoreQueries: Sendable {
     }
 }
 
-extension GRDBRuntimeStateStore {
+extension SQLiteRuntimeStateStore {
     static func defaultLegacyImportURL(for url: URL) -> URL {
         url.deletingPathExtension().appendingPathExtension("json")
     }

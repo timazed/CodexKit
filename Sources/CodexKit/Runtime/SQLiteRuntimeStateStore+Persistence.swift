@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-extension GRDBRuntimeStateStore {
+extension SQLiteRuntimeStateStore {
     func shouldImportLegacyState() async throws -> Bool {
         guard let legacyStateURL else {
             return false
@@ -50,7 +50,7 @@ extension GRDBRuntimeStateStore {
     }
 }
 
-struct GRDBRuntimeStorePersistence: Sendable {
+struct SQLiteRuntimeStorePersistence: Sendable {
     let attachmentStore: RuntimeAttachmentStore
 
     func replaceDatabaseContents(
@@ -292,7 +292,7 @@ struct GRDBRuntimeStorePersistence: Sendable {
     }
 }
 
-struct GRDBRuntimeStoreSchema: Sendable {
+struct SQLiteRuntimeStoreSchema: Sendable {
     let currentStoreSchemaVersion: Int
 
     func makeMigrator() -> DatabaseMigrator {

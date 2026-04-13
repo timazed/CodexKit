@@ -79,4 +79,24 @@ public enum JSONValue: Codable, Hashable, Sendable {
         }
         return string
     }
+
+    public var prettyPrintedJSONString: String {
+        guard let data = try? JSONEncoder().encode(self),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let string = String(data: prettyData, encoding: .utf8)
+        else {
+            return prettyJSONString
+        }
+        return string
+    }
+
+    public static func encoding<Value: Encodable>(
+        _ value: Value,
+        encoder: JSONEncoder = JSONEncoder(),
+        decoder: JSONDecoder = JSONDecoder()
+    ) throws -> JSONValue {
+        let data = try encoder.encode(value)
+        return try decoder.decode(JSONValue.self, from: data)
+    }
 }
