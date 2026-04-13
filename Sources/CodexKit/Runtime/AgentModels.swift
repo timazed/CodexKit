@@ -38,7 +38,7 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
     public static func invalidMessageContent() -> AgentRuntimeError {
         AgentRuntimeError(
             code: "invalid_message_content",
-            message: "A user message must include text or at least one image attachment."
+            message: "A user message must include text, structured input, a structured section, or at least one image attachment."
         )
     }
 
@@ -274,6 +274,8 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
 public struct UserMessageRequest: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
+    public var structuredInput: AgentStructuredInput?
+    public var structuredSections: [AgentStructuredSection]
     public var personaOverride: AgentPersonaStack?
     public var skillOverrideIDs: [String]?
     public var memorySelection: MemorySelection?
@@ -281,12 +283,16 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
     public init(
         text: String,
         images: [AgentImageAttachment] = [],
+        structuredInput: AgentStructuredInput? = nil,
+        structuredSections: [AgentStructuredSection] = [],
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil
     ) {
         self.text = text
         self.images = images
+        self.structuredInput = structuredInput
+        self.structuredSections = structuredSections
         self.personaOverride = personaOverride
         self.skillOverrideIDs = skillOverrideIDs
         self.memorySelection = memorySelection
@@ -301,18 +307,26 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         self.init(
             text: importedContent.composedText(prompt: prompt),
             images: importedContent.images,
+            structuredInput: nil,
+            structuredSections: [],
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs
         )
     }
 
     public var hasContent: Bool {
+        hasVisibleContent || structuredInput != nil || !structuredSections.isEmpty
+    }
+
+    public var hasVisibleContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
     }
 
     enum CodingKeys: String, CodingKey {
         case text
         case images
+        case structuredInput
+        case structuredSections
         case personaOverride
         case skillOverrideIDs
         case memorySelection
@@ -322,6 +336,8 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        structuredInput = try container.decodeIfPresent(AgentStructuredInput.self, forKey: .structuredInput)
+        structuredSections = try container.decodeIfPresent([AgentStructuredSection].self, forKey: .structuredSections) ?? []
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
         skillOverrideIDs = try container.decodeIfPresent([String].self, forKey: .skillOverrideIDs)
         memorySelection = try container.decodeIfPresent(MemorySelection.self, forKey: .memorySelection)

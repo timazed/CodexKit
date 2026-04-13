@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
+public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
     static let currentStoreSchemaVersion = 2
 
     let url: URL
@@ -13,12 +13,12 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
     let migrator: DatabaseMigrator
     var isPrepared = false
 
-    var persistence: GRDBRuntimeStorePersistence {
-        GRDBRuntimeStorePersistence(attachmentStore: attachmentStore)
+    var persistence: SQLiteRuntimeStorePersistence {
+        SQLiteRuntimeStorePersistence(attachmentStore: attachmentStore)
     }
 
-    var queries: GRDBRuntimeStoreQueries {
-        GRDBRuntimeStoreQueries(attachmentStore: attachmentStore)
+    var queries: SQLiteRuntimeStoreQueries {
+        SQLiteRuntimeStoreQueries(attachmentStore: attachmentStore)
     }
 
     public init(
@@ -48,9 +48,9 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
 
         var configuration = Configuration()
         configuration.foreignKeysEnabled = true
-        configuration.label = "CodexKit.GRDBRuntimeStateStore"
+        configuration.label = "CodexKit.SQLiteRuntimeStateStore"
         dbQueue = try DatabaseQueue(path: url.path, configuration: configuration)
-        migrator = GRDBRuntimeStoreSchema(currentStoreSchemaVersion: Self.currentStoreSchemaVersion)
+        migrator = SQLiteRuntimeStoreSchema(currentStoreSchemaVersion: Self.currentStoreSchemaVersion)
             .makeMigrator()
     }
 
@@ -73,14 +73,14 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
                 supportsFiltering: true,
                 supportsMigrations: true
             ),
-            storeKind: "GRDBRuntimeStateStore"
+            storeKind: "SQLiteRuntimeStateStore"
         )
     }
 
     public func loadState() async throws -> StoredRuntimeState {
         try await ensurePrepared()
         let persistence = self.persistence
-        logger.debug(.persistence, "Loading GRDB runtime state.", metadata: ["url": url.path])
+        logger.debug(.persistence, "Loading SQLite runtime state.", metadata: ["url": url.path])
 
         let loadedState = try await dbQueue.read { db in
             let threadRows = try RuntimeThreadRow.fetchAll(db)
@@ -113,7 +113,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         }
         logger.debug(
             .persistence,
-            "Loaded GRDB runtime state.",
+            "Loaded SQLite runtime state.",
             metadata: [
                 "url": url.path,
                 "threads": "\(loadedState.threads.count)",
@@ -131,7 +131,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         let persistence = self.persistence
         logger.info(
             .persistence,
-            "Saving GRDB runtime state snapshot.",
+            "Saving SQLite runtime state snapshot.",
             metadata: [
                 "url": url.path,
                 "threads": "\(normalized.threads.count)",
@@ -161,7 +161,7 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         let persistence = self.persistence
         logger.debug(
             .persistence,
-            "Applying GRDB runtime state operations.",
+            "Applying SQLite runtime state operations.",
             metadata: [
                 "url": url.path,
                 "operation_count": "\(operations.count)",
@@ -275,11 +275,11 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
             return
         }
 
-        logger.info(.persistence, "Preparing GRDB runtime state store.", metadata: ["url": url.path])
+        logger.info(.persistence, "Preparing SQLite runtime state store.", metadata: ["url": url.path])
         let version = try await readUserVersion()
         guard version <= Self.currentStoreSchemaVersion else {
             throw AgentStoreError.migrationFailed(
-                "Unsupported future GRDB runtime store schema version \(version)."
+                "Unsupported future SQLite runtime store schema version \(version)."
             )
         }
 
@@ -287,13 +287,13 @@ public actor GRDBRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting,
         if try await shouldImportLegacyState() {
             logger.info(
                 .persistence,
-                "Importing legacy file runtime state into GRDB store.",
+                "Importing legacy file runtime state into SQLite store.",
                 metadata: ["legacy_url": legacyStateURL?.path ?? ""]
             )
             try await importLegacyState()
         }
         isPrepared = true
-        logger.info(.persistence, "GRDB runtime state store prepared.", metadata: ["url": url.path])
+        logger.info(.persistence, "SQLite runtime state store prepared.", metadata: ["url": url.path])
     }
 
     private func operationTypeSummary(

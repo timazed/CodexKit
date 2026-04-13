@@ -3,12 +3,12 @@ import CodexKitUI
 import XCTest
 
 extension AgentRuntimeTests {
-    func testGRDBRuntimeStateStorePersistsSummariesAndQueriesAcrossReload() async throws {
+    func testSQLiteRuntimeStateStorePersistsSummariesAndQueriesAcrossReload() async throws {
         let url = temporaryRuntimeSQLiteURL()
         defer { try? FileManager.default.removeItem(at: url) }
 
         let backend = InMemoryAgentBackend(structuredResponseText: #"{"reply":"The replacement is shipping today.","priority":"urgent"}"#)
-        let store = try GRDBRuntimeStateStore(url: url)
+        let store = try SQLiteRuntimeStateStore(url: url)
         let runtime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: store)
 
         _ = try await runtime.restore()
@@ -17,11 +17,11 @@ extension AgentRuntimeTests {
         let thread = try await runtime.createThread(title: "GRDB Thread")
         _ = try await runtime.sendMessage(UserMessageRequest(text: "Draft the shipping update."), in: thread.id, expecting: ShippingReplyDraft.self)
 
-        let reloadedStore = try GRDBRuntimeStateStore(url: url)
+        let reloadedStore = try SQLiteRuntimeStateStore(url: url)
         let reloadedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: reloadedStore)
 
         let metadata = try await reloadedRuntime.prepareStore()
-        XCTAssertEqual(metadata.storeKind, "GRDBRuntimeStateStore")
+        XCTAssertEqual(metadata.storeKind, "SQLiteRuntimeStateStore")
         XCTAssertEqual(metadata.storeSchemaVersion, 2)
 
         let summary = try await reloadedRuntime.fetchThreadSummary(id: thread.id)
@@ -39,11 +39,11 @@ extension AgentRuntimeTests {
         XCTAssertEqual(typed, ShippingReplyDraft(reply: "The replacement is shipping today.", priority: "urgent"))
     }
 
-    func testGRDBRuntimeStateStorePersistsRedactionAndDeletion() async throws {
+    func testSQLiteRuntimeStateStorePersistsRedactionAndDeletion() async throws {
         let url = temporaryRuntimeSQLiteURL()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let runtime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url))
+        let runtime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         _ = try await runtime.restore()
         _ = try await runtime.signIn()
 
@@ -55,7 +55,7 @@ extension AgentRuntimeTests {
 
         try await runtime.redactHistoryItems([firstMessage.id], in: thread.id)
 
-        let reloadedAfterRedaction = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url))
+        let reloadedAfterRedaction = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         let redactedHistory = try await reloadedAfterRedaction.execute(HistoryItemsQuery(threadID: thread.id, kinds: [.message]))
 
         guard let redactedRecord = redactedHistory.records.first(where: { $0.id == firstMessage.id }) else {
@@ -64,12 +64,12 @@ extension AgentRuntimeTests {
         XCTAssertNotNil(redactedRecord.redaction)
 
         try await reloadedAfterRedaction.deleteThread(id: thread.id)
-        let deletedRuntime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url))
+        let deletedRuntime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         let deletedThreads = try await deletedRuntime.execute(ThreadMetadataQuery(threadIDs: [thread.id]))
         XCTAssertTrue(deletedThreads.isEmpty)
     }
 
-    func testGRDBRuntimeStateStoreImportsLegacyFileStateOnFirstPrepare() async throws {
+    func testSQLiteRuntimeStateStoreImportsLegacyFileStateOnFirstPrepare() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -85,7 +85,7 @@ extension AgentRuntimeTests {
         let thread = try await legacyRuntime.createThread(title: "Legacy File Thread")
         _ = try await legacyRuntime.sendMessage(UserMessageRequest(text: "Create a legacy payload."), in: thread.id, expecting: ShippingReplyDraft.self)
 
-        let importedStore = try GRDBRuntimeStateStore(url: sqliteURL)
+        let importedStore = try SQLiteRuntimeStateStore(url: sqliteURL)
         let importedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: importedStore)
         _ = try await importedRuntime.prepareStore()
 
@@ -97,7 +97,7 @@ extension AgentRuntimeTests {
         XCTAssertFalse(importedHistory.records.isEmpty)
     }
 
-    func testGRDBRuntimeStateStoreExternalizesImageAttachments() async throws {
+    func testSQLiteRuntimeStateStoreExternalizesImageAttachments() async throws {
         let url = temporaryRuntimeSQLiteURL()
         let attachmentsDirectory = url.deletingLastPathComponent()
             .appendingPathComponent("\(url.deletingPathExtension().lastPathComponent).codexkit-state", isDirectory: true)
@@ -108,14 +108,14 @@ extension AgentRuntimeTests {
         }
 
         let imageData = Data([0x89, 0x50, 0x4E, 0x47, 0xDE, 0xAD, 0xBE, 0xEF])
-        let runtime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url))
+        let runtime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         _ = try await runtime.restore()
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Attachment Thread")
         _ = try await runtime.sendMessage(UserMessageRequest(text: "here is an image", images: [.png(imageData)]), in: thread.id)
 
-        let reloadedRuntime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url))
+        let reloadedRuntime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         let history = try await reloadedRuntime.execute(HistoryItemsQuery(threadID: thread.id, kinds: [.message]))
         guard let userMessage = history.records.compactMap({ record -> AgentMessage? in
             guard case let .message(message) = record.item, message.role == .user else { return nil }
@@ -134,7 +134,7 @@ extension AgentRuntimeTests {
         XCTAssertNil(try Data(contentsOf: url).range(of: imageData.base64EncodedData()))
     }
 
-    func testGRDBRuntimeStateStoreTreatsExplicitEmptyFiltersAsMatchNothing() async throws {
+    func testSQLiteRuntimeStateStoreTreatsExplicitEmptyFiltersAsMatchNothing() async throws {
         let url = temporaryRuntimeSQLiteURL()
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -142,7 +142,7 @@ extension AgentRuntimeTests {
         let runtime = try makeHistoryRuntime(
             backend: backend,
             approvalPresenter: AutoApprovalPresenter(),
-            stateStore: try GRDBRuntimeStateStore(url: url)
+            stateStore: try SQLiteRuntimeStateStore(url: url)
         )
 
         _ = try await runtime.restore()

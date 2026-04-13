@@ -3,6 +3,125 @@ import CodexKit
 import XCTest
 
 extension AgentRuntimeTests {
+    func testTypedStructuredInputRequestResolvesSeparatelyFromVisiblePrompt() async throws {
+        struct PlannerContext: Codable, Sendable {
+            let objective: String
+            let customerTier: String
+        }
+
+        let backend = InMemoryAgentBackend(
+            structuredResponseText: #"{"reply":"Your order is already in transit.","priority":"high"}"#
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Structured Input")
+        let reply = try await runtime.sendMessage(
+            AgentMessageRequest(
+                text: "Draft a shipping reply.",
+                structuredInput: PlannerContext(
+                    objective: "Resolve a delayed shipment complaint.",
+                    customerTier: "plus"
+                ),
+                structuredInputSchemaName: "PlannerContext",
+                structuredSections: [
+                    AgentStructuredSection(
+                        name: "browser_snapshot",
+                        schemaName: "BrowserSnapshot",
+                        payload: .object([
+                            "pageTitle": .string("Order #1234"),
+                            "status": .string("In transit"),
+                        ])
+                    ),
+                ]
+            ),
+            in: thread.id,
+            expecting: ShippingReplyDraft.self
+        )
+
+        XCTAssertEqual(
+            reply,
+            ShippingReplyDraft(
+                reply: "Your order is already in transit.",
+                priority: "high"
+            )
+        )
+
+        let receivedMessage = await backend.receivedMessages().last
+        XCTAssertEqual(receivedMessage?.text, "Draft a shipping reply.")
+        XCTAssertEqual(receivedMessage?.structuredInput?.schemaName, "PlannerContext")
+        XCTAssertEqual(receivedMessage?.structuredSections.count, 1)
+        XCTAssertEqual(
+            receivedMessage?.structuredInput?.payload,
+            .object([
+                "objective": .string("Resolve a delayed shipment complaint."),
+                "customerTier": .string("plus"),
+            ])
+        )
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.first?.role, .user)
+        XCTAssertEqual(messages.first?.text, "Draft a shipping reply.")
+        XCTAssertFalse(messages.first?.text.contains("Resolve a delayed shipment complaint.") ?? true)
+    }
+
+    func testStructuredInputOnlyRequestDoesNotCreateVisibleUserTranscriptMessage() async throws {
+        struct PlannerContext: Codable, Sendable {
+            let objective: String
+            let customerTier: String
+        }
+
+        let backend = InMemoryAgentBackend(
+            structuredResponseText: #"{"reply":"I can work from the machine context alone.","priority":"normal"}"#
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Structured Input Only")
+        let reply = try await runtime.sendMessage(
+            AgentMessageRequest(
+                text: "",
+                structuredInput: PlannerContext(
+                    objective: "Answer with a shipping status summary.",
+                    customerTier: "pro"
+                ),
+                structuredInputSchemaName: "PlannerContext"
+            ),
+            in: thread.id,
+            expecting: ShippingReplyDraft.self
+        )
+
+        XCTAssertEqual(
+            reply,
+            ShippingReplyDraft(
+                reply: "I can work from the machine context alone.",
+                priority: "normal"
+            )
+        )
+
+        let receivedMessage = await backend.receivedMessages().last
+        XCTAssertEqual(receivedMessage?.text, "")
+        XCTAssertEqual(receivedMessage?.structuredInput?.schemaName, "PlannerContext")
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages.first?.role, .assistant)
+    }
+
     func testImportedContentInitializerBuildsMessageWithSharedURLs() async throws {
         let importedContent = AgentImportedContent(textSnippets: ["Customer says the package arrived damaged."], urls: [URL(string: "https://example.com/delivery-update")!])
         let request = UserMessageRequest(prompt: "Summarize and draft a reply.", importedContent: importedContent)

@@ -6,7 +6,7 @@ extension AgentRuntime {
     func consumeTurnStream(
         _ turnStream: any AgentTurnStreaming,
         for threadID: String,
-        userMessage: AgentMessage,
+        userMessage: AgentMessage?,
         session: ChatGPTSession,
         resolvedTurnSkills: ResolvedTurnSkills,
         continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
@@ -163,11 +163,13 @@ extension AgentRuntime {
                     try setLatestTurnStatus(.completed, for: threadID)
                     try setLatestPartialStructuredOutput(nil, for: threadID)
                     try await setThreadStatus(.idle, for: threadID)
-                    await automaticallyCaptureMemoriesIfConfigured(
-                        for: threadID,
-                        userMessage: userMessage,
-                        assistantMessages: assistantMessages
-                    )
+                    if let userMessage {
+                        await automaticallyCaptureMemoriesIfConfigured(
+                            for: threadID,
+                            userMessage: userMessage,
+                            assistantMessages: assistantMessages
+                        )
+                    }
                     logger.info(
                         .runtime,
                         "Turn completed.",

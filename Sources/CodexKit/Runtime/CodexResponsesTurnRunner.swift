@@ -93,17 +93,56 @@ struct CodexResponsesTurnRunner {
         newMessage: UserMessageRequest
     ) -> [WorkingHistoryItem] {
         var workingHistory = history.map(WorkingHistoryItem.visibleMessage)
-        workingHistory.append(
-            .userMessage(
-                AgentMessage(
-                    threadID: threadID,
-                    role: .user,
-                    text: newMessage.text,
-                    images: newMessage.images
+        if let structuredContext = structuredInputContextMessage(for: newMessage) {
+            workingHistory.append(.developerContext(structuredContext))
+        }
+        if newMessage.hasVisibleContent {
+            workingHistory.append(
+                .userMessage(
+                    AgentMessage(
+                        threadID: threadID,
+                        role: .user,
+                        text: newMessage.text,
+                        images: newMessage.images
+                    )
                 )
             )
-        )
+        }
         return workingHistory
+    }
+
+    private func structuredInputContextMessage(
+        for message: UserMessageRequest
+    ) -> StructuredInputContextMessage? {
+        var blocks: [StructuredInputContextBlock] = []
+
+        if let structuredInput = message.structuredInput {
+            blocks.append(
+                StructuredInputContextBlock(
+                    name: structuredInput.schemaName ?? "structured_input",
+                    schemaName: structuredInput.schemaName,
+                    payload: structuredInput.payload,
+                    isPrimary: true
+                )
+            )
+        }
+
+        blocks.append(
+            contentsOf: message.structuredSections.map { section in
+                StructuredInputContextBlock(
+                    name: section.name,
+                    schemaName: section.schemaName,
+                    payload: section.payload,
+                    isPrimary: false
+                )
+            }
+        )
+
+        guard !blocks.isEmpty else {
+            return nil
+        }
+
+        return StructuredInputContextMessage(blocks: blocks)
     }
 
     private func runTurnPasses(

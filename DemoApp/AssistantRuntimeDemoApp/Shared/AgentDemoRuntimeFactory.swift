@@ -105,7 +105,7 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: approvalInbox,
-            stateStore: try! GRDBRuntimeStateStore(
+            stateStore: try! SQLiteRuntimeStateStore(
                 url: stateURL ?? defaultStateURL(),
                 logging: sdkLogging
             ),
@@ -166,7 +166,7 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: NonInteractiveApprovalPresenter(),
-            stateStore: try! GRDBRuntimeStateStore(
+            stateStore: try! SQLiteRuntimeStateStore(
                 url: defaultStateURL(),
                 logging: sdkLogging
             ),

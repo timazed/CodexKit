@@ -4,7 +4,7 @@ extension AgentRuntime {
     func consumeStructuredTurnStream<Output: Decodable & Sendable>(
         _ turnStream: any AgentTurnStreaming,
         for threadID: String,
-        userMessage: AgentMessage,
+        userMessage: AgentMessage?,
         session: ChatGPTSession,
         resolvedTurnSkills: ResolvedTurnSkills,
         responseFormat: AgentStructuredOutputFormat,
@@ -269,11 +269,13 @@ extension AgentRuntime {
                     try setLatestTurnStatus(.completed, for: threadID)
                     try setLatestPartialStructuredOutput(nil, for: threadID)
                     try await setThreadStatus(.idle, for: threadID)
-                    await automaticallyCaptureMemoriesIfConfigured(
-                        for: threadID,
-                        userMessage: userMessage,
-                        assistantMessages: assistantMessages
-                    )
+                    if let userMessage {
+                        await automaticallyCaptureMemoriesIfConfigured(
+                            for: threadID,
+                            userMessage: userMessage,
+                            assistantMessages: assistantMessages
+                        )
+                    }
                     continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     continuation.yield(.turnCompleted(summary))
                 }

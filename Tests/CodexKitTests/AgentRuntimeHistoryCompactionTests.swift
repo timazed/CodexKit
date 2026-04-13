@@ -71,7 +71,7 @@ extension AgentRuntimeTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let backend = CompactingTestBackend()
-        let runtime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
+        let runtime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
         _ = try await runtime.restore()
         _ = try await runtime.signIn()
 
@@ -80,7 +80,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.sendMessage(UserMessageRequest(text: "beta"), in: thread.id)
         _ = try await runtime.compactThreadContext(id: thread.id)
 
-        let reloadedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: try GRDBRuntimeStateStore(url: url), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
+        let reloadedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
         let restoredContext = try await reloadedRuntime.fetchThreadContextState(id: thread.id)
         XCTAssertEqual(restoredContext?.generation, 1)
         XCTAssertFalse(restoredContext?.effectiveMessages.isEmpty ?? true)

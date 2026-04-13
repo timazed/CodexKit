@@ -324,7 +324,14 @@ extension AgentRuntime {
         let historyCharacters = history.reduce(0) { partialResult, message in
             partialResult + message.text.count + (message.images.count * 512)
         }
-        let pendingCharacters = (pendingMessage?.text.count ?? 0) + ((pendingMessage?.images.count ?? 0) * 512)
+        let pendingStructuredCharacters = pendingMessage.map { message in
+            let primary = message.structuredInput?.payload.prettyJSONString.count ?? 0
+            let sections = message.structuredSections.reduce(0) { $0 + $1.payload.prettyJSONString.count }
+            return primary + sections
+        } ?? 0
+        let pendingCharacters = (pendingMessage?.text.count ?? 0)
+            + ((pendingMessage?.images.count ?? 0) * 512)
+            + pendingStructuredCharacters
         return max(1, (historyCharacters + pendingCharacters + instructions.count) / 4)
     }
 

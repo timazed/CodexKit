@@ -3,6 +3,17 @@ import Foundation
 extension AgentRuntime {
     // MARK: - Messaging
 
+    public func streamMessage<Input: Encodable & Sendable>(
+        _ request: AgentMessageRequest<Input>,
+        in threadID: String,
+        encoder: JSONEncoder = JSONEncoder()
+    ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
+        try await streamMessage(
+            request.resolved(encoder: encoder),
+            in: threadID
+        )
+    }
+
     public func streamMessage(
         _ request: UserMessageRequest,
         in threadID: String
@@ -32,6 +43,23 @@ extension AgentRuntime {
         )
     }
 
+    public func streamMessage<Input: Encodable & Sendable, Output: AgentStructuredOutput>(
+        _ request: AgentMessageRequest<Input>,
+        in threadID: String,
+        expecting outputType: Output.Type = Output.self,
+        options: AgentStructuredStreamingOptions = AgentStructuredStreamingOptions(),
+        decoder: JSONDecoder = JSONDecoder(),
+        encoder: JSONEncoder = JSONEncoder()
+    ) async throws -> AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error> {
+        try await streamMessage(
+            request.resolved(encoder: encoder),
+            in: threadID,
+            expecting: outputType,
+            options: options,
+            decoder: decoder
+        )
+    }
+
     public func streamMessage<Output: Decodable & Sendable>(
         _ request: UserMessageRequest,
         in threadID: String,
@@ -48,12 +76,7 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        let userMessage = AgentMessage(
-            threadID: threadID,
-            role: .user,
-            text: request.text,
-            images: request.images
-        )
+        let userMessage = makeVisibleUserMessage(for: request, in: threadID)
 
         logger.info(
             .runtime,
@@ -62,15 +85,21 @@ extension AgentRuntime {
                 "thread_id": threadID,
                 "text_length": "\(request.text.count)",
                 "image_count": "\(request.images.count)",
+                "has_structured_input": "\(request.structuredInput != nil)",
+                "structured_section_count": "\(request.structuredSections.count)",
                 "response_format": responseFormat.name
             ]
         )
 
-        try await appendMessage(userMessage)
+        if let userMessage {
+            try await appendMessage(userMessage)
+        }
         try await setThreadStatus(.streaming, for: threadID)
 
         return AsyncThrowingStream { continuation in
-            continuation.yield(.messageCommitted(userMessage))
+            if let userMessage {
+                continuation.yield(.messageCommitted(userMessage))
+            }
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
 
             Task {
@@ -151,6 +180,17 @@ extension AgentRuntime {
         return message.displayText
     }
 
+    public func sendMessage<Input: Encodable & Sendable>(
+        _ request: AgentMessageRequest<Input>,
+        in threadID: String,
+        encoder: JSONEncoder = JSONEncoder()
+    ) async throws -> String {
+        try await sendMessage(
+            request.resolved(encoder: encoder),
+            in: threadID
+        )
+    }
+
     public func sendMessage<Output: AgentStructuredOutput>(
         _ request: UserMessageRequest,
         in threadID: String,
@@ -162,6 +202,21 @@ extension AgentRuntime {
             in: threadID,
             expecting: outputType,
             responseFormat: outputType.responseFormat,
+            decoder: decoder
+        )
+    }
+
+    public func sendMessage<Input: Encodable & Sendable, Output: AgentStructuredOutput>(
+        _ request: AgentMessageRequest<Input>,
+        in threadID: String,
+        expecting outputType: Output.Type = Output.self,
+        decoder: JSONDecoder = JSONDecoder(),
+        encoder: JSONEncoder = JSONEncoder()
+    ) async throws -> Output {
+        try await sendMessage(
+            request.resolved(encoder: encoder),
+            in: threadID,
+            expecting: outputType,
             decoder: decoder
         )
     }
@@ -206,12 +261,7 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        let userMessage = AgentMessage(
-            threadID: threadID,
-            role: .user,
-            text: request.text,
-            images: request.images
-        )
+        let userMessage = makeVisibleUserMessage(for: request, in: threadID)
 
         logger.info(
             .runtime,
@@ -220,15 +270,21 @@ extension AgentRuntime {
                 "thread_id": threadID,
                 "text_length": "\(request.text.count)",
                 "image_count": "\(request.images.count)",
+                "has_structured_input": "\(request.structuredInput != nil)",
+                "structured_section_count": "\(request.structuredSections.count)",
                 "structured_response": "\(responseFormat != nil || streamedStructuredOutput != nil)"
             ]
         )
 
-        try await appendMessage(userMessage)
+        if let userMessage {
+            try await appendMessage(userMessage)
+        }
         try await setThreadStatus(.streaming, for: threadID)
 
         return AsyncThrowingStream { continuation in
-            continuation.yield(.messageCommitted(userMessage))
+            if let userMessage {
+                continuation.yield(.messageCommitted(userMessage))
+            }
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
 
             Task {
@@ -421,5 +477,21 @@ extension AgentRuntime {
         continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
         continuation.yield(.turnFailed(runtimeError))
         continuation.finish(throwing: error)
+    }
+
+    private func makeVisibleUserMessage(
+        for request: UserMessageRequest,
+        in threadID: String
+    ) -> AgentMessage? {
+        guard request.hasVisibleContent else {
+            return nil
+        }
+
+        return AgentMessage(
+            threadID: threadID,
+            role: .user,
+            text: request.text,
+            images: request.images
+        )
     }
 }
