@@ -176,6 +176,10 @@ struct DemoDiagnostics {
         print("[CodexKit Demo] \(message)")
     }
 
+    func sdkLog(_ message: String) {
+        print(message)
+    }
+
     func error(_ message: String) {
         logger.error("\(message, privacy: .public)")
         print("[CodexKit Demo][Error] \(message)")
@@ -218,7 +222,7 @@ struct DemoSDKLogSink: AgentLogSink {
             message += " | \(renderedMetadata)"
         }
 
-        diagnostics.log(message)
+        diagnostics.sdkLog(message)
     }
 }
 
