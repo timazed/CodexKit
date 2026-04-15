@@ -37,7 +37,7 @@ extension AgentRuntimeTests {
 }
 
 extension CodexResponsesBackendTests {
-    func testBackendLoggingEmitsRetryEntries() async throws {
+    func testBackendLoggingEmitsRetryAndPayloadEntries() async throws {
         let buffer = RuntimeLogBuffer()
         let logging = AgentLoggingConfiguration(
             minimumLevel: .debug,
@@ -98,6 +98,16 @@ extension CodexResponsesBackendTests {
         let entries = buffer.entries
         XCTAssertTrue(entries.contains { $0.category == .retry && $0.message.contains("Retrying backend turn pass") })
         XCTAssertTrue(entries.contains { $0.category == .network && $0.message.contains("Opening responses event stream") })
+        XCTAssertTrue(entries.contains {
+            $0.category == .network &&
+                $0.message.contains("Responses request payload") &&
+                ($0.metadata["payload"]?.contains("\"model\"") ?? false)
+        })
+        XCTAssertTrue(entries.contains {
+            $0.category == .network &&
+                $0.message.contains("Responses stream payload") &&
+                ($0.metadata["payload"]?.contains("\"type\":\"response.completed\"") ?? false)
+        })
     }
 }
 

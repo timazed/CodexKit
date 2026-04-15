@@ -78,6 +78,17 @@ struct CodexResponsesEventStreamClient: Sendable {
     func streamEvents(
         request: URLRequest
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
+        if logger.isVerboseEnabled(for: .network),
+           let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
+            logger.debug(
+                .network,
+                "Responses request payload.",
+                metadata: [
+                    "request_id": request.value(forHTTPHeaderField: "x-client-request-id") ?? "",
+                    "payload": body
+                ]
+            )
+        }
         logger.debug(
             .network,
             "Opening responses event stream.",
@@ -105,7 +116,8 @@ struct CodexResponsesEventStreamClient: Sendable {
                 "Responses event stream failed with HTTP status.",
                 metadata: [
                     "status": "\(httpResponse.statusCode)",
-                    "body_length": "\(body.count)"
+                    "body_length": "\(body.count)",
+                    "body": body
                 ]
             )
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
@@ -250,6 +262,14 @@ struct CodexResponsesEventStreamClient: Sendable {
     ) throws -> CodexResponsesStreamEvent? {
         guard !payload.data.isEmpty else {
             return nil
+        }
+
+        if logger.isVerboseEnabled(for: .network) {
+            logger.debug(
+                .network,
+                "Responses stream payload.",
+                metadata: ["payload": payload.data]
+            )
         }
 
         let envelope = try decoder.decode(

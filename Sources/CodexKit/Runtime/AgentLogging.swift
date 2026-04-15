@@ -206,6 +206,10 @@ struct AgentLogger: Sendable {
         log(.error, category, message, metadata: metadata)
     }
 
+    func isVerboseEnabled(for category: AgentLogCategory) -> Bool {
+        configuration.allows(level: .debug, category: category)
+    }
+
     private func log(
         _ level: AgentLogLevel,
         _ category: AgentLogCategory,

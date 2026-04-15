@@ -305,6 +305,15 @@ Available logging categories include:
 - `structuredOutput`
 - `memory`
 
+When `network` logging is enabled at `.debug`, `CodexKit` also emits raw request and response payloads for the built-in Codex backend:
+
+- outbound `/responses` request JSON bodies
+- inbound streaming SSE event payloads
+- outbound `/responses/compact` request JSON bodies
+- inbound `/responses/compact` response JSON bodies
+
+That is intentionally verbose and may include prompt text, structured input, tool arguments, and model output, so it should be treated as a developer-only debugging mode.
+
 Use `AgentConsoleLogSink` for stderr-style console logs, `AgentOSLogSink` for unified Apple logging, or provide your own `AgentLogSink`.
 
 Custom sinks make it possible to bridge `CodexKit` logs into your own telemetry or logging pipeline:

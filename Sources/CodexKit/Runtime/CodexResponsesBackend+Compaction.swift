@@ -48,6 +48,19 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
+        if logger.isVerboseEnabled(for: .network),
+           let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
+            logger.debug(
+                .network,
+                "Responses compact request payload.",
+                metadata: [
+                    "thread_id": thread.id,
+                    "request_id": thread.id,
+                    "payload": body
+                ]
+            )
+        }
+
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
@@ -58,17 +71,31 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
             logger.error(
-                .compaction,
+                .network,
                 "Remote context compaction failed.",
                 metadata: [
                     "thread_id": thread.id,
                     "status": "\(httpResponse.statusCode)",
-                    "body_length": "\(body.count)"
+                    "body_length": "\(body.count)",
+                    "body": body
                 ]
             )
             throw AgentRuntimeError(
                 code: "responses_compact_failed",
                 message: "The ChatGPT compact endpoint failed with status \(httpResponse.statusCode): \(body)"
+            )
+        }
+
+        if logger.isVerboseEnabled(for: .network),
+           let body = String(data: data, encoding: .utf8) {
+            logger.debug(
+                .network,
+                "Responses compact response payload.",
+                metadata: [
+                    "thread_id": thread.id,
+                    "status": "\(httpResponse.statusCode)",
+                    "payload": body
+                ]
             )
         }
 
