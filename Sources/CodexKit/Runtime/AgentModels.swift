@@ -38,7 +38,7 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
     public static func invalidMessageContent() -> AgentRuntimeError {
         AgentRuntimeError(
             code: "invalid_message_content",
-            message: "A user message must include text, structured input, a structured section, or at least one image attachment."
+            message: "A request must include text, context, or at least one image attachment."
         )
     }
 
@@ -271,11 +271,11 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct UserMessageRequest: Codable, Hashable, Sendable {
+public struct Request: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
-    public var structuredInput: AgentStructuredInput?
-    public var structuredSections: [AgentStructuredSection]
+    public var context: RequestContext?
+    public var options: RequestOptions?
     public var personaOverride: AgentPersonaStack?
     public var skillOverrideIDs: [String]?
     public var memorySelection: MemorySelection?
@@ -283,39 +283,128 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
     public init(
         text: String,
         images: [AgentImageAttachment] = [],
-        structuredInput: AgentStructuredInput? = nil,
-        structuredSections: [AgentStructuredSection] = [],
+        context: RequestContext? = nil,
+        options: RequestOptions? = nil,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil
     ) {
         self.text = text
         self.images = images
-        self.structuredInput = structuredInput
-        self.structuredSections = structuredSections
+        self.context = context
+        self.options = options
         self.personaOverride = personaOverride
         self.skillOverrideIDs = skillOverrideIDs
         self.memorySelection = memorySelection
     }
 
+    public init<Context: Encodable & Sendable, Options: RequestOptionsRepresentable>(
+        text: String,
+        images: [AgentImageAttachment] = [],
+        context: Context?,
+        options: Options? = nil,
+        contextSchemaName: String? = nil,
+        optionsSchemaName: String? = nil,
+        personaOverride: AgentPersonaStack? = nil,
+        skillOverrideIDs: [String]? = nil,
+        memorySelection: MemorySelection? = nil,
+        encoder: JSONEncoder = JSONEncoder()
+    ) throws {
+        self.init(
+            text: text,
+            images: images,
+            context: try context.map {
+                RequestContext(
+                    schemaName: contextSchemaName,
+                    payload: try JSONValue.encoding($0, encoder: encoder)
+                )
+            },
+            options: options.map { options in
+                RequestOptions(
+                    schemaName: optionsSchemaName ?? Options.schemaName,
+                    mode: options.mode.naturalLanguage,
+                    requirements: options.requirements.map(\.naturalLanguage)
+                )
+            },
+            personaOverride: personaOverride,
+            skillOverrideIDs: skillOverrideIDs,
+            memorySelection: memorySelection
+        )
+    }
+
+    public init<Context: Encodable & Sendable>(
+        text: String,
+        images: [AgentImageAttachment] = [],
+        context: Context?,
+        contextSchemaName: String? = nil,
+        personaOverride: AgentPersonaStack? = nil,
+        skillOverrideIDs: [String]? = nil,
+        memorySelection: MemorySelection? = nil,
+        encoder: JSONEncoder = JSONEncoder()
+    ) throws {
+        self.init(
+            text: text,
+            images: images,
+            context: try context.map {
+                RequestContext(
+                    schemaName: contextSchemaName,
+                    payload: try JSONValue.encoding($0, encoder: encoder)
+                )
+            },
+            options: nil,
+            personaOverride: personaOverride,
+            skillOverrideIDs: skillOverrideIDs,
+            memorySelection: memorySelection
+        )
+    }
+
+    public init<Options: RequestOptionsRepresentable>(
+        text: String,
+        images: [AgentImageAttachment] = [],
+        options: Options?,
+        optionsSchemaName: String? = nil,
+        personaOverride: AgentPersonaStack? = nil,
+        skillOverrideIDs: [String]? = nil,
+        memorySelection: MemorySelection? = nil,
+        encoder: JSONEncoder = JSONEncoder()
+    ) throws {
+        self.init(
+            text: text,
+            images: images,
+            context: nil,
+            options: options.map { options in
+                RequestOptions(
+                    schemaName: optionsSchemaName ?? Options.schemaName,
+                    mode: options.mode.naturalLanguage,
+                    requirements: options.requirements.map(\.naturalLanguage)
+                )
+            },
+            personaOverride: personaOverride,
+            skillOverrideIDs: skillOverrideIDs,
+            memorySelection: memorySelection
+        )
+    }
+
     public init(
         prompt: String? = nil,
         importedContent: AgentImportedContent,
+        context: RequestContext? = nil,
+        options: RequestOptions? = nil,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil
     ) {
         self.init(
             text: importedContent.composedText(prompt: prompt),
             images: importedContent.images,
-            structuredInput: nil,
-            structuredSections: [],
+            context: context,
+            options: options,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs
         )
     }
 
     public var hasContent: Bool {
-        hasVisibleContent || structuredInput != nil || !structuredSections.isEmpty
+        hasVisibleContent || context != nil
     }
 
     public var hasVisibleContent: Bool {
@@ -325,8 +414,8 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case text
         case images
-        case structuredInput
-        case structuredSections
+        case context
+        case options
         case personaOverride
         case skillOverrideIDs
         case memorySelection
@@ -336,8 +425,8 @@ public struct UserMessageRequest: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
-        structuredInput = try container.decodeIfPresent(AgentStructuredInput.self, forKey: .structuredInput)
-        structuredSections = try container.decodeIfPresent([AgentStructuredSection].self, forKey: .structuredSections) ?? []
+        context = try container.decodeIfPresent(RequestContext.self, forKey: .context)
+        options = try container.decodeIfPresent(RequestOptions.self, forKey: .options)
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
         skillOverrideIDs = try container.decodeIfPresent([String].self, forKey: .skillOverrideIDs)
         memorySelection = try container.decodeIfPresent(MemorySelection.self, forKey: .memorySelection)

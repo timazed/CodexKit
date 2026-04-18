@@ -18,7 +18,7 @@ enum DemoMemoryExamples {
     static let rawRecord = MemoryRecord(
         namespace: namespace,
         scope: travelPlannerScope,
-        kind: "preference",
+        category: "preference",
         summary: "Travel Planner should keep itineraries compact, walkable, and transit-aware.",
         evidence: ["The demo works best when travel plans stay practical for mobile users."],
         importance: 0.82,
@@ -39,7 +39,7 @@ enum DemoMemoryExamples {
     static let guidedDefaults = MemoryWriterDefaults(
         namespace: namespace,
         scope: healthCoachScope,
-        kind: "preference",
+        category: "preference",
         tags: ["demo", "guided"],
         relatedIDs: ["demo-memory"],
         status: .active

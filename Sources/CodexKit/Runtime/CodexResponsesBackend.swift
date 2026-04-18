@@ -86,19 +86,29 @@ public actor CodexResponsesBackend: AgentBackend {
     public func beginTurn(
         thread: AgentThread,
         history: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> any AgentTurnStreaming {
-        CodexResponsesTurnSession(
+        let responseContract: AgentResponseContract?
+        if let streamedStructuredOutput {
+            responseContract = AgentResponseContract(
+                format: streamedStructuredOutput.responseFormat,
+                deliveryMode: .streaming(options: streamedStructuredOutput.options)
+            )
+        } else if let responseFormat {
+            responseContract = AgentResponseContract(format: responseFormat, deliveryMode: .oneShot)
+        } else {
+            responseContract = nil
+        }
+        return CodexResponsesTurnSession(
             configuration: configuration,
             logger: logger,
             instructions: instructions,
-            responseFormat: responseFormat,
-            streamedStructuredOutput: streamedStructuredOutput,
+            responseContract: responseContract,
             urlSession: urlSession,
             encoder: encoder,
             decoder: decoder,
@@ -153,14 +163,13 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         configuration: CodexResponsesBackendConfiguration,
         logger: AgentLogger,
         instructions: String,
-        responseFormat: AgentStructuredOutputFormat?,
-        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        responseContract: AgentResponseContract?,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
         thread: AgentThread,
         history: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) {
@@ -175,8 +184,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 configuration: configuration,
                 logger: logger,
                 instructions: instructions,
-                responseFormat: responseFormat,
-                streamedStructuredOutput: streamedStructuredOutput,
+                responseContract: responseContract,
                 urlSession: urlSession,
                 encoder: encoder,
                 decoder: decoder,

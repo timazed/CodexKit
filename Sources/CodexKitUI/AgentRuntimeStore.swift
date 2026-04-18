@@ -88,7 +88,7 @@ public final class AgentRuntimeStore: @unchecked Sendable {
         streamingText = ""
     }
 
-    public func sendMessage(_ text: String) async {
+    public func send(_ text: String) async {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
@@ -105,8 +105,8 @@ public final class AgentRuntimeStore: @unchecked Sendable {
         streamingText = ""
 
         do {
-            let stream = try await runtime.streamMessage(
-                UserMessageRequest(text: text),
+            let stream = try await runtime.stream(
+                Request(text: text),
                 in: activeThreadID
             )
             messages = await runtime.messages(for: activeThreadID)

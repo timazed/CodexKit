@@ -90,7 +90,7 @@ enum WorkingHistoryItem: Sendable {
     case visibleMessage(AgentMessage)
     case userMessage(AgentMessage)
     case assistantMessage(AgentMessage)
-    case developerContext(StructuredInputContextMessage)
+    case developerMessage(String)
     case functionCall(FunctionCallRecord)
     case functionCallOutput(callID: String, output: String)
 
@@ -102,8 +102,8 @@ enum WorkingHistoryItem: Sendable {
             Self.messageJSONValue(for: message)
         case let .assistantMessage(message):
             Self.messageJSONValue(for: message)
-        case let .developerContext(message):
-            Self.developerContextJSONValue(for: message)
+        case let .developerMessage(text):
+            Self.developerMessageJSONValue(text: text)
         case let .functionCall(functionCall):
             .object([
                 "type": .string("function_call"),
@@ -174,53 +174,90 @@ enum WorkingHistoryItem: Sendable {
         ])
     }
 
-    private static func developerContextJSONValue(
-        for message: StructuredInputContextMessage
-    ) -> JSONValue {
+    private static func developerMessageJSONValue(text: String) -> JSONValue {
         .object([
             "type": .string("message"),
             "role": .string("developer"),
             "content": .array([
                 .object([
                     "type": .string("input_text"),
-                    "text": .string(message.formattedText),
+                    "text": .string(text),
                 ]),
             ]),
         ])
     }
 }
 
-struct StructuredInputContextMessage: Hashable, Sendable {
-    let blocks: [StructuredInputContextBlock]
-
-    var formattedText: String {
-        blocks
-            .map(\.formattedText)
-            .joined(separator: "\n\n")
-    }
-}
-
-struct StructuredInputContextBlock: Hashable, Sendable {
+struct RequestContextTransport: Hashable, Sendable {
     let name: String
     let schemaName: String?
     let payload: JSONValue
-    let isPrimary: Bool
 
     var formattedText: String {
-        let roleDescription = if isPrimary {
-            "Authoritative structured context for the current user request."
-        } else {
-            "Additional authoritative structured context for the current user request."
-        }
         let schemaLine = schemaName.map { "\nSchema name: \($0)" } ?? ""
+        return """
+        CodexKit request context:
+        Section name: \(name)\(schemaLine)
+        Treat the JSON below as authoritative host-app context for the current turn. Prefer it over inferred assumptions when they conflict.
+        <codexkit-context name="\(name)">
+        \(payload.prettyPrintedJSONString)
+        </codexkit-context>
+        """
+    }
+}
+
+struct RequestOptionsTransport: Hashable, Sendable {
+    let name: String
+    let schemaName: String?
+    let mode: String
+    let requirements: [String]
+
+    var formattedText: String {
+        let schemaLine = schemaName.map { "\nSchema name: \($0)" } ?? ""
+        let requirementsBlock: String
+        if requirements.isEmpty {
+            requirementsBlock = ""
+        } else {
+            requirementsBlock = "\nRequirements:\n" + requirements.map { "- \($0)" }.joined(separator: "\n")
+        }
 
         return """
-        \(roleDescription)
+        CodexKit request options:
         Section name: \(name)\(schemaLine)
-        Treat the JSON inside this block as machine-provided context. Prefer it over inferred assumptions when it conflicts with guesswork. Do not repeat the wrapper tags unless the user asks for them.
-        <codexkit-structured-input name="\(name)">
-        \(payload.prettyPrintedJSONString)
-        </codexkit-structured-input>
+        Treat the following as the fulfillment policy for this turn.
+        Mode:
+        - \(mode)\(requirementsBlock)
+        """
+    }
+}
+
+struct StreamedStructuredOutputTransport: Hashable, Sendable {
+    let responseFormat: AgentStructuredOutputFormat
+    let options: AgentStructuredStreamingOptions
+
+    var formattedText: String {
+        let schemaData = (try? JSONEncoder().encode(responseFormat.schema.jsonValue))
+            ?? Data("{}".utf8)
+        let schema = String(decoding: schemaData, as: UTF8.self)
+        let description = responseFormat.description
+            .map { "Description: \($0)\n" }
+            ?? ""
+        let requirementLine = options.required
+            ? "You must emit exactly one hidden structured output block."
+            : "Emit the hidden structured output block only when it is useful and you can satisfy the schema."
+
+        return """
+        CodexKit streamed response contract:
+        - Respond with normal user-facing assistant text first.
+        - Do not mention any hidden framing or transport markers in the visible text.
+        - After the visible text, optionally append one hidden structured output block using the exact tags below.
+        - Hidden block opening tag: \(CodexResponsesStructuredStreamParser.openTag)
+        - Hidden block closing tag: \(CodexResponsesStructuredStreamParser.closeTag)
+        - The hidden block contents must be valid JSON matching the declared schema.
+        - \(requirementLine)
+        \(description)Schema name: \(responseFormat.name)
+        Schema JSON:
+        \(schema)
         """
     }
 }

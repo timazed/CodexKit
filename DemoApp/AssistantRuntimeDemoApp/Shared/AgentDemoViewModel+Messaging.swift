@@ -58,7 +58,7 @@ extension AgentDemoViewModel {
             return
         }
 
-        let request = UserMessageRequest(
+        let request = Request(
             text: trimmedText,
             images: images,
             personaOverride: personaOverride
@@ -111,14 +111,14 @@ extension AgentDemoViewModel {
             threads = await runtime.threads()
 
             let normalDiagnostics = try await sendRequest(
-                UserMessageRequest(text: probePrompt),
+                Request(text: probePrompt),
                 in: normalThread.id,
                 captureResolvedInstructions: true,
                 renderInActiveTranscript: false
             )
 
             let skillDiagnostics = try await sendRequest(
-                UserMessageRequest(text: probePrompt),
+                Request(text: probePrompt),
                 in: skillThread.id,
                 captureResolvedInstructions: true,
                 renderInActiveTranscript: false
@@ -180,7 +180,7 @@ extension AgentDemoViewModel {
     }
 
     private func sendRequest(
-        _ request: UserMessageRequest,
+        _ request: Request,
         in threadID: String,
         captureResolvedInstructions: Bool,
         renderInActiveTranscript: Bool
@@ -217,7 +217,7 @@ extension AgentDemoViewModel {
             "Starting streamed turn. threadID=\(threadID) textLength=\(request.text.count) imageCount=\(request.images.count)"
         )
 
-        let stream = try await runtime.streamMessage(
+        let stream = try await runtime.stream(
             request,
             in: threadID
         )

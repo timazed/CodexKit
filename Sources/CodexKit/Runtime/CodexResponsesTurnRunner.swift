@@ -4,8 +4,7 @@ struct CodexResponsesTurnRunner {
     let configuration: CodexResponsesBackendConfiguration
     let logger: AgentLogger
     let instructions: String
-    let responseFormat: AgentStructuredOutputFormat?
-    let streamedStructuredOutput: AgentStreamedStructuredOutputRequest?
+    let responseContract: AgentResponseContract?
     let requestFactory: CodexResponsesRequestFactory
     let streamClient: CodexResponsesEventStreamClient
     let toolOutputAdapter: CodexResponsesToolOutputAdapter
@@ -20,8 +19,7 @@ struct CodexResponsesTurnRunner {
         configuration: CodexResponsesBackendConfiguration,
         logger: AgentLogger,
         instructions: String,
-        responseFormat: AgentStructuredOutputFormat?,
-        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        responseContract: AgentResponseContract?,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -35,8 +33,7 @@ struct CodexResponsesTurnRunner {
         self.configuration = configuration
         self.logger = logger
         self.instructions = instructions
-        self.responseFormat = responseFormat
-        self.streamedStructuredOutput = streamedStructuredOutput
+        self.responseContract = responseContract
         self.requestFactory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder)
         self.streamClient = CodexResponsesEventStreamClient(
             urlSession: urlSession,
@@ -54,7 +51,7 @@ struct CodexResponsesTurnRunner {
 
     func run(
         history: [AgentMessage],
-        newMessage: UserMessageRequest
+        newMessage: Request
     ) async throws -> AgentUsage {
         let runStartedAt = Date()
         logger.debug(
@@ -90,12 +87,10 @@ struct CodexResponsesTurnRunner {
 
     private func initialWorkingHistory(
         history: [AgentMessage],
-        newMessage: UserMessageRequest
+        newMessage: Request
     ) -> [WorkingHistoryItem] {
         var workingHistory = history.map(WorkingHistoryItem.visibleMessage)
-        if let structuredContext = structuredInputContextMessage(for: newMessage) {
-            workingHistory.append(.developerContext(structuredContext))
-        }
+        workingHistory.append(contentsOf: developerMessages(for: newMessage))
         if newMessage.hasVisibleContent {
             workingHistory.append(
                 .userMessage(
@@ -111,38 +106,48 @@ struct CodexResponsesTurnRunner {
         return workingHistory
     }
 
-    private func structuredInputContextMessage(
-        for message: UserMessageRequest
-    ) -> StructuredInputContextMessage? {
-        var blocks: [StructuredInputContextBlock] = []
+    private func developerMessages(
+        for message: Request
+    ) -> [WorkingHistoryItem] {
+        var items: [WorkingHistoryItem] = []
 
-        if let structuredInput = message.structuredInput {
-            blocks.append(
-                StructuredInputContextBlock(
-                    name: structuredInput.schemaName ?? "structured_input",
-                    schemaName: structuredInput.schemaName,
-                    payload: structuredInput.payload,
-                    isPrimary: true
+        if let context = message.context {
+            items.append(
+                .developerMessage(
+                    RequestContextTransport(
+                        name: context.schemaName ?? "context",
+                        schemaName: context.schemaName,
+                        payload: context.payload
+                    ).formattedText
                 )
             )
         }
 
-        blocks.append(
-            contentsOf: message.structuredSections.map { section in
-                StructuredInputContextBlock(
-                    name: section.name,
-                    schemaName: section.schemaName,
-                    payload: section.payload,
-                    isPrimary: false
+        if let options = message.options {
+            items.append(
+                .developerMessage(
+                    RequestOptionsTransport(
+                        name: options.schemaName ?? "options",
+                        schemaName: options.schemaName,
+                        mode: options.mode,
+                        requirements: options.requirements
+                    ).formattedText
                 )
-            }
-        )
-
-        guard !blocks.isEmpty else {
-            return nil
+            )
         }
 
-        return StructuredInputContextMessage(blocks: blocks)
+        if let streamedStructuredOutput = responseContract?.streamedRequest {
+            items.append(
+                .developerMessage(
+                    StreamedStructuredOutputTransport(
+                        responseFormat: streamedStructuredOutput.responseFormat,
+                        options: streamedStructuredOutput.options
+                    ).formattedText
+                )
+            )
+        }
+
+        return items
     }
 
     private func runTurnPasses(
@@ -243,8 +248,7 @@ struct CodexResponsesTurnRunner {
     ) throws -> URLRequest {
         try requestFactory.buildURLRequest(
             instructions: instructions,
-            responseFormat: responseFormat,
-            streamedStructuredOutput: streamedStructuredOutput,
+            responseContract: responseContract,
             threadID: threadID,
             items: state.workingHistory,
             tools: tools,
@@ -329,7 +333,7 @@ struct CodexResponsesTurnRunner {
         _ delta: String,
         state: inout TurnRunState
     ) throws {
-        guard streamedStructuredOutput != nil else {
+        guard responseContract?.streamedRequest != nil else {
             continuation.yield(
                 .assistantMessageDelta(
                     threadID: threadID,
@@ -382,7 +386,7 @@ struct CodexResponsesTurnRunner {
             structuredOutput: state.pendingStructuredOutputMetadata
                 ?? CodexResponsesBackend.structuredMetadata(
                     from: assistantText,
-                    responseFormat: responseFormat
+                    responseFormat: responseContract?.textFormat
                 )
         )
 
@@ -397,7 +401,7 @@ struct CodexResponsesTurnRunner {
         from messageTemplate: AgentMessage,
         state: inout TurnRunState
     ) throws -> AgentMessage {
-        guard let streamedStructuredOutput else {
+        guard let streamedStructuredOutput = responseContract?.streamedRequest else {
             return AgentMessage(
                 threadID: threadID,
                 role: .assistant,

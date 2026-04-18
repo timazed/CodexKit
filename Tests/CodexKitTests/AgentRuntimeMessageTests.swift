@@ -20,8 +20,8 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Complete")
-        let reply = try await runtime.sendMessage(
-            UserMessageRequest(text: "Hello there"),
+        let reply = try await runtime.send(
+            Request(text: "Hello there"),
             in: thread.id
         )
 
@@ -47,10 +47,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured")
-        let reply = try await runtime.sendMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let reply = try await runtime.send(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         XCTAssertEqual(
@@ -96,10 +96,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Stream")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let stream = try await runtime.stream(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         var visibleText = ""
@@ -169,10 +169,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Stream Restore")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let stream = try await runtime.stream(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
         try await drainStructuredStream(stream)
 
@@ -217,10 +217,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Required")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let stream = try await runtime.stream(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self,
+            response: ShippingReplyDraft.self,
             options: .init(required: true)
         )
 
@@ -248,10 +248,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Optional")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let stream = try await runtime.stream(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         var sawCommitted = false
@@ -292,10 +292,10 @@ extension AgentRuntimeTests {
         let thread = try await runtime.createThread(title: "Structured Failure")
 
         await XCTAssertThrowsErrorAsync(
-            try await runtime.sendMessage(
-                UserMessageRequest(text: "Draft a shipping reply."),
+            try await runtime.send(
+                Request(text: "Draft a shipping reply."),
                 in: thread.id,
-                expecting: ShippingReplyDraft.self
+                response: ShippingReplyDraft.self
             )
         ) { error in
             let runtimeError = error as? AgentRuntimeError
@@ -322,10 +322,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Stream Failure")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let stream = try await runtime.stream(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         var validationFailures: [AgentStructuredOutputValidationFailure] = []

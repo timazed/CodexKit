@@ -16,7 +16,7 @@ extension AgentRuntimeTests {
             String(repeating: "third message context ", count: 30),
         ]
         for message in longMessages {
-            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+            _ = try await runtime.send(Request(text: message), in: thread.id)
         }
 
         let visibleBefore = await runtime.messages(for: thread.id)
@@ -54,10 +54,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Retry Compact")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
-        let reply = try await runtime.sendMessage(UserMessageRequest(text: "four"), in: thread.id)
+        _ = try await runtime.send(Request(text: "one"), in: thread.id)
+        _ = try await runtime.send(Request(text: "two"), in: thread.id)
+        _ = try await runtime.send(Request(text: "three"), in: thread.id)
+        let reply = try await runtime.send(Request(text: "four"), in: thread.id)
         let compactCallCount = await backend.compactCallCount()
         let historyCounts = await backend.beginTurnHistoryCounts()
 
@@ -76,8 +76,8 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Persisted Context")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "alpha"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "beta"), in: thread.id)
+        _ = try await runtime.send(Request(text: "alpha"), in: thread.id)
+        _ = try await runtime.send(Request(text: "beta"), in: thread.id)
         _ = try await runtime.compactThreadContext(id: thread.id)
 
         let reloadedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
@@ -108,7 +108,7 @@ extension AgentRuntimeTests {
             String(repeating: "third message context ", count: 30),
         ]
         for message in longMessages {
-            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+            _ = try await runtime.send(Request(text: message), in: thread.id)
         }
 
         let usageBefore = try await runtime.fetchThreadContextUsage(id: thread.id)

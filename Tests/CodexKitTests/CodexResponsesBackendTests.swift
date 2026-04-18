@@ -54,7 +54,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-1"),
             history: [],
-            message: UserMessageRequest(text: "Hi there"),
+            message: Request(text: "Hi there"),
             instructions: "Resolved instructions",
             responseFormat: nil,
             streamedStructuredOutput: nil,
@@ -125,7 +125,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-effort"),
             history: [],
-            message: UserMessageRequest(text: "Think hard"),
+            message: Request(text: "Think hard"),
             instructions: "Resolved instructions",
             responseFormat: nil,
             streamedStructuredOutput: nil,
@@ -211,7 +211,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-1"),
             history: [],
-            message: UserMessageRequest(text: "Find the profile"),
+            message: Request(text: "Find the profile"),
             instructions: "Resolved instructions",
             responseFormat: nil,
             streamedStructuredOutput: nil,
@@ -280,7 +280,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-search"),
             history: [],
-            message: UserMessageRequest(text: "Search the web"),
+            message: Request(text: "Search the web"),
             instructions: "Resolved instructions",
             responseFormat: nil,
             streamedStructuredOutput: nil,
@@ -340,7 +340,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-image"),
             history: [],
-            message: UserMessageRequest(
+            message: Request(
                 text: "Describe this image",
                 images: [image]
             ),
@@ -424,7 +424,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-tool-image"),
             history: [],
-            message: UserMessageRequest(text: "Make me an image"),
+            message: Request(text: "Make me an image"),
             instructions: "Resolved instructions",
             responseFormat: nil,
             streamedStructuredOutput: nil,
@@ -462,7 +462,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         XCTAssertEqual(assistantMessage?.images.first?.data, pngBytes)
     }
 
-    func testBackendSendsStructuredInputAsSeparateDeveloperContextBlock() async throws {
+    func testBackendSendsStructuredInputAsSeparateMachineReadableItems() async throws {
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         let session = ChatGPTSession(
             accessToken: "access-token",
@@ -493,11 +493,10 @@ final class CodexResponsesBackendTests: XCTestCase {
                     )
                     let developerContent = try XCTUnwrap(developerMessage["content"] as? [[String: Any]])
                     let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
-                    XCTAssertTrue(developerText.contains("Authoritative structured context"))
-                    XCTAssertTrue(developerText.contains("<codexkit-structured-input name=\"PlannerContext\">"))
-                    XCTAssertTrue(developerText.contains("\"objective\""))
-                    XCTAssertTrue(developerText.contains("\"customerTier\""))
-                    XCTAssertTrue(developerText.contains("<codexkit-structured-input name=\"browser_snapshot\">"))
+                    XCTAssertTrue(developerText.contains("CodexKit request context"))
+                    XCTAssertTrue(developerText.contains("Schema name: PlannerContext"))
+                    XCTAssertTrue(developerText.contains("Resolve shipping issue"))
+                    XCTAssertTrue(developerText.contains("customerTier"))
 
                     let userMessage = try XCTUnwrap(
                         input.first(where: { $0["role"] as? String == "user" })
@@ -512,25 +511,162 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-structured-input"),
             history: [],
-            message: UserMessageRequest(
+            message: Request(
                 text: "Answer using the provided context.",
-                structuredInput: AgentStructuredInput(
+                context: RequestContext(
                     schemaName: "PlannerContext",
                     payload: .object([
                         "objective": .string("Resolve shipping issue"),
                         "customerTier": .string("plus"),
                     ])
+                )
+            ),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
+    func testBackendSendsOptionsAsSeparateDeveloperMessage() async throws {
+        enum LookupMode: RequestMode {
+            case research
+
+            var naturalLanguage: String {
+                "Research the request and gather grounded information."
+            }
+        }
+
+        enum LookupRequirement: RequestRequirement {
+            case address
+            case image
+
+            var naturalLanguage: String {
+                switch self {
+                case .address:
+                    "Find the venue address using Google."
+                case .image:
+                    "Retrieve one venue-relevant image using Google."
+                }
+            }
+        }
+
+        struct LookupOptions: Sendable, RequestOptionsRepresentable {
+            let mode: LookupMode
+            let requirements: [LookupRequirement]
+        }
+
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_options","usage":{"input_tokens":8,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
                 ),
-                structuredSections: [
-                    AgentStructuredSection(
-                        name: "browser_snapshot",
-                        schemaName: "BrowserSnapshot",
-                        payload: .object([
-                            "pageTitle": .string("Order #1234"),
-                            "status": .string("In transit"),
-                        ])
-                    ),
-                ]
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    XCTAssertEqual(json?["instructions"] as? String, "Resolved instructions")
+                    let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+
+                    let developerMessages = input.filter { $0["role"] as? String == "developer" }
+                    XCTAssertEqual(developerMessages.count, 1)
+
+                    let developerContent = try XCTUnwrap(developerMessages.first?["content"] as? [[String: Any]])
+                    let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
+                    XCTAssertTrue(developerText.contains("CodexKit request options"))
+                    XCTAssertTrue(developerText.contains("Schema name: LookupOptions"))
+                    XCTAssertTrue(developerText.contains("Mode:"))
+                    XCTAssertTrue(developerText.contains("Research the request and gather grounded information."))
+                    XCTAssertTrue(developerText.contains("Requirements:"))
+                    XCTAssertTrue(developerText.contains("Find the venue address using Google."))
+                    XCTAssertTrue(developerText.contains("Retrieve one venue-relevant image using Google."))
+                    XCTAssertFalse(developerText.contains("<codexkit-options"))
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-options"),
+            history: [],
+            message: try Request(
+                text: "Find the venue",
+                options: LookupOptions(mode: .research, requirements: [.address, .image])
+            ),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
+    func testBackendSendsOptionsWithoutSchemaNameUsingGenericLabel() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_options_generic","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    XCTAssertEqual(json?["instructions"] as? String, "Resolved instructions")
+                    let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+                    let developerMessage = try XCTUnwrap(
+                        input.first(where: { $0["role"] as? String == "developer" })
+                    )
+                    let developerContent = try XCTUnwrap(developerMessage["content"] as? [[String: Any]])
+                    let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
+                    XCTAssertTrue(developerText.contains("Section name: options"))
+                    XCTAssertFalse(developerText.contains("Schema name:"))
+                    XCTAssertTrue(developerText.contains("Enrich the known result with additional grounded details."))
+                    XCTAssertTrue(developerText.contains("Find the venue address using Google."))
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-options-generic"),
+            history: [],
+            message: Request(
+                text: "Find the venue",
+                options: RequestOptions(
+                    mode: "Enrich the known result with additional grounded details.",
+                    requirements: ["Find the venue address using Google."]
+                )
             ),
             instructions: "Resolved instructions",
             responseFormat: nil,

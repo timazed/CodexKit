@@ -9,7 +9,7 @@ extension AgentRuntimeTests {
 
         try await runtime.registerTool(ToolDefinition(name: "demo_lookup_profile", description: "Lookup profile", inputSchema: .object([:]), approvalPolicy: .automatic), executor: AnyToolExecutor { invocation, _ in .success(invocation: invocation, text: "profile-ok") })
         let thread = try await runtime.createThread(title: "Strict Tool Policy", skillIDs: ["strict_support"])
-        let stream = try await runtime.streamMessage(UserMessageRequest(text: "please use the tool"), in: thread.id)
+        let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id)
         for try await _ in stream {}
 
         let assistantText = await runtime.messages(for: thread.id)
@@ -25,7 +25,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Required Tool", skillIDs: ["requires_tool"])
-        let stream = try await runtime.streamMessage(UserMessageRequest(text: "hello without tool"), in: thread.id)
+        let stream = try await runtime.stream(Request(text: "hello without tool"), in: thread.id)
 
         var sawTurnFailed = false
         var failureError: AgentRuntimeError?
@@ -60,7 +60,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Preview", personaStack: AgentPersonaStack(layers: [.init(name: "planner", instructions: "Act as a planning specialist.")]), skillIDs: ["health_coach"])
-        let preview = try await runtime.resolvedInstructionsPreview(for: thread.id, request: UserMessageRequest(text: "Give me a plan."))
+        let preview = try await runtime.resolvedInstructionsPreview(for: thread.id, request: Request(text: "Give me a plan."))
 
         XCTAssertTrue(preview.contains("Base host instructions."))
         XCTAssertTrue(preview.contains("Thread Persona Layers:"))
@@ -100,7 +100,7 @@ extension AgentRuntimeTests {
         let skillFile = try temporaryFile(with: skillJSON, pathExtension: "json")
         _ = try await runtime.registerSkill(from: .file(skillFile))
         let thread = try await runtime.createThread(title: "Travel", skillIDs: ["travel_planner"])
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "Plan my day"), in: thread.id)
+        _ = try await runtime.send(Request(text: "Plan my day"), in: thread.id)
 
         let receivedInstructions = await backend.receivedInstructions()
         let resolved = try XCTUnwrap(receivedInstructions.last)

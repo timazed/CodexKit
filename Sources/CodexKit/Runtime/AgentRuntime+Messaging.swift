@@ -3,68 +3,42 @@ import Foundation
 extension AgentRuntime {
     // MARK: - Messaging
 
-    public func streamMessage<Input: Encodable & Sendable>(
-        _ request: AgentMessageRequest<Input>,
-        in threadID: String,
-        encoder: JSONEncoder = JSONEncoder()
-    ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
-        try await streamMessage(
-            request.resolved(encoder: encoder),
-            in: threadID
-        )
-    }
-
-    public func streamMessage(
-        _ request: UserMessageRequest,
+    public func stream(
+        _ request: Request,
         in threadID: String
     ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
-        try await streamMessage(
+        try await streamRequest(
             request,
             in: threadID,
-            responseFormat: nil,
-            streamedStructuredOutput: nil
+            responseContract: nil
         )
     }
 
-    public func streamMessage<Output: AgentStructuredOutput>(
-        _ request: UserMessageRequest,
+    public func stream<Output: AgentStructuredOutput>(
+        _ request: Request,
         in threadID: String,
-        expecting outputType: Output.Type = Output.self,
+        response outputType: Output.Type = Output.self,
         options: AgentStructuredStreamingOptions = AgentStructuredStreamingOptions(),
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error> {
-        try await streamMessage(
+        try await stream(
             request,
             in: threadID,
-            expecting: outputType,
-            responseFormat: outputType.responseFormat,
+            response: outputType,
+            responseContract: AgentResponseContract(
+                format: outputType.responseFormat,
+                deliveryMode: .streaming(options: options)
+            ),
             options: options,
             decoder: decoder
         )
     }
 
-    public func streamMessage<Input: Encodable & Sendable, Output: AgentStructuredOutput>(
-        _ request: AgentMessageRequest<Input>,
+    func stream<Output: Decodable & Sendable>(
+        _ request: Request,
         in threadID: String,
-        expecting outputType: Output.Type = Output.self,
-        options: AgentStructuredStreamingOptions = AgentStructuredStreamingOptions(),
-        decoder: JSONDecoder = JSONDecoder(),
-        encoder: JSONEncoder = JSONEncoder()
-    ) async throws -> AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error> {
-        try await streamMessage(
-            request.resolved(encoder: encoder),
-            in: threadID,
-            expecting: outputType,
-            options: options,
-            decoder: decoder
-        )
-    }
-
-    public func streamMessage<Output: Decodable & Sendable>(
-        _ request: UserMessageRequest,
-        in threadID: String,
-        expecting outputType: Output.Type,
-        responseFormat: AgentStructuredOutputFormat,
+        response outputType: Output.Type,
+        responseContract: AgentResponseContract,
         options: AgentStructuredStreamingOptions = AgentStructuredStreamingOptions(),
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error> {
@@ -85,9 +59,9 @@ extension AgentRuntime {
                 "thread_id": threadID,
                 "text_length": "\(request.text.count)",
                 "image_count": "\(request.images.count)",
-                "has_structured_input": "\(request.structuredInput != nil)",
-                "structured_section_count": "\(request.structuredSections.count)",
-                "response_format": responseFormat.name
+                "has_context": "\(request.context != nil)",
+                "has_options": "\(request.options != nil)",
+                "response_format": responseContract.format.name
             ]
         )
 
@@ -127,11 +101,7 @@ extension AgentRuntime {
                         history: self.effectiveHistory(for: threadID),
                         message: request,
                         instructions: resolvedInstructions,
-                        responseFormat: nil,
-                        streamedStructuredOutput: AgentStreamedStructuredOutputRequest(
-                            responseFormat: responseFormat,
-                            options: options
-                        ),
+                        responseContract: responseContract,
                         tools: tools,
                         session: session
                     )
@@ -141,7 +111,7 @@ extension AgentRuntime {
                         userMessage: userMessage,
                         session: turnStart.session,
                         resolvedTurnSkills: resolvedTurnSkills,
-                        responseFormat: responseFormat,
+                        responseFormat: responseContract.format,
                         options: options,
                         decoder: decoder,
                         outputType: outputType,
@@ -166,73 +136,48 @@ extension AgentRuntime {
         }
     }
 
-    public func sendMessage(
-        _ request: UserMessageRequest,
+    public func send(
+        _ request: Request,
         in threadID: String
     ) async throws -> String {
-        let stream = try await streamMessage(
+        let stream = try await streamRequest(
             request,
             in: threadID,
-            responseFormat: nil,
-            streamedStructuredOutput: nil
+            responseContract: nil
         )
         let message = try await collectFinalAssistantMessage(from: stream)
         return message.displayText
     }
 
-    public func sendMessage<Input: Encodable & Sendable>(
-        _ request: AgentMessageRequest<Input>,
+    public func send<Output: AgentStructuredOutput>(
+        _ request: Request,
         in threadID: String,
-        encoder: JSONEncoder = JSONEncoder()
-    ) async throws -> String {
-        try await sendMessage(
-            request.resolved(encoder: encoder),
-            in: threadID
-        )
-    }
-
-    public func sendMessage<Output: AgentStructuredOutput>(
-        _ request: UserMessageRequest,
-        in threadID: String,
-        expecting outputType: Output.Type = Output.self,
+        response outputType: Output.Type = Output.self,
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> Output {
-        try await sendMessage(
+        try await send(
             request,
             in: threadID,
-            expecting: outputType,
-            responseFormat: outputType.responseFormat,
+            response: outputType,
+            responseContract: AgentResponseContract(
+                format: outputType.responseFormat,
+                deliveryMode: .oneShot
+            ),
             decoder: decoder
         )
     }
 
-    public func sendMessage<Input: Encodable & Sendable, Output: AgentStructuredOutput>(
-        _ request: AgentMessageRequest<Input>,
+    func send<Output: Decodable & Sendable>(
+        _ request: Request,
         in threadID: String,
-        expecting outputType: Output.Type = Output.self,
-        decoder: JSONDecoder = JSONDecoder(),
-        encoder: JSONEncoder = JSONEncoder()
-    ) async throws -> Output {
-        try await sendMessage(
-            request.resolved(encoder: encoder),
-            in: threadID,
-            expecting: outputType,
-            decoder: decoder
-        )
-    }
-
-    public func sendMessage<Output: Decodable & Sendable>(
-        _ request: UserMessageRequest,
-        in threadID: String,
-        expecting outputType: Output.Type,
-        responseFormat: AgentStructuredOutputFormat,
+        response outputType: Output.Type,
+        responseContract: AgentResponseContract,
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> Output {
-        let stream = try await streamMessage(
+        let stream = try await streamRequest(
             request,
             in: threadID,
-            responseFormat: responseFormat,
-            streamedStructuredOutput: nil
+            responseContract: responseContract
         )
         let message = try await collectFinalAssistantMessage(from: stream)
         let payload = Data(message.text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
@@ -247,11 +192,10 @@ extension AgentRuntime {
         }
     }
 
-    func streamMessage(
-        _ request: UserMessageRequest,
+    func streamRequest(
+        _ request: Request,
         in threadID: String,
-        responseFormat: AgentStructuredOutputFormat?,
-        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?
+        responseContract: AgentResponseContract?
     ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
         guard request.hasContent else {
             throw AgentRuntimeError.invalidMessageContent()
@@ -270,9 +214,9 @@ extension AgentRuntime {
                 "thread_id": threadID,
                 "text_length": "\(request.text.count)",
                 "image_count": "\(request.images.count)",
-                "has_structured_input": "\(request.structuredInput != nil)",
-                "structured_section_count": "\(request.structuredSections.count)",
-                "structured_response": "\(responseFormat != nil || streamedStructuredOutput != nil)"
+                "has_context": "\(request.context != nil)",
+                "has_options": "\(request.options != nil)",
+                "structured_response": "\(responseContract != nil)"
             ]
         )
 
@@ -312,8 +256,7 @@ extension AgentRuntime {
                         history: self.effectiveHistory(for: threadID),
                         message: request,
                         instructions: resolvedInstructions,
-                        responseFormat: responseFormat,
-                        streamedStructuredOutput: streamedStructuredOutput,
+                        responseContract: responseContract,
                         tools: tools,
                         session: session
                     )
@@ -347,10 +290,9 @@ extension AgentRuntime {
     func beginTurnWithUnauthorizedRecovery(
         thread: AgentThread,
         history: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions: String,
-        responseFormat: AgentStructuredOutputFormat?,
-        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        responseContract: AgentResponseContract?,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> (
@@ -366,8 +308,8 @@ extension AgentRuntime {
                     history: history,
                     message: message,
                     instructions: instructions,
-                    responseFormat: responseFormat,
-                    streamedStructuredOutput: streamedStructuredOutput,
+                    responseFormat: responseContract?.textFormat,
+                    streamedStructuredOutput: responseContract?.streamedRequest,
                     tools: tools,
                     session: session
                 )
@@ -394,8 +336,8 @@ extension AgentRuntime {
                     history: self.effectiveHistory(for: thread.id),
                     message: message,
                     instructions: instructions,
-                    responseFormat: responseFormat,
-                    streamedStructuredOutput: streamedStructuredOutput,
+                    responseFormat: responseContract?.textFormat,
+                    streamedStructuredOutput: responseContract?.streamedRequest,
                     tools: tools,
                     session: session
                 )
@@ -408,7 +350,7 @@ extension AgentRuntime {
 
     public func resolvedInstructionsPreview(
         for threadID: String,
-        request: UserMessageRequest
+        request: Request
     ) async throws -> String {
         guard let thread = thread(for: threadID) else {
             throw AgentRuntimeError.threadNotFound(threadID)
@@ -480,7 +422,7 @@ extension AgentRuntime {
     }
 
     private func makeVisibleUserMessage(
-        for request: UserMessageRequest,
+        for request: Request,
         in threadID: String
     ) -> AgentMessage? {
         guard request.hasVisibleContent else {

@@ -135,7 +135,7 @@ actor UnauthorizedThenSuccessBackend: AgentBackend {
     func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
@@ -183,7 +183,7 @@ actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
     func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message _: UserMessageRequest,
+        message _: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
@@ -216,7 +216,7 @@ actor ImageReplyAgentBackend: AgentBackend {
     func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message _: UserMessageRequest,
+        message _: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
@@ -239,7 +239,7 @@ actor OptionalStructuredMissingBackend: AgentBackend {
     func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
@@ -326,7 +326,7 @@ actor ThrowingMemoryStore: MemoryStoring {
             activeRecords: 0,
             archivedRecords: 0,
             countsByScope: [:],
-            countsByKind: [:]
+            countsByCategory: [:]
         )
     }
 

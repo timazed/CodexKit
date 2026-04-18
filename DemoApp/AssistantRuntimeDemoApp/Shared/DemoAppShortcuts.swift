@@ -10,8 +10,8 @@ enum DemoShareImportExamples {
         excerpt: String,
         url: URL?,
         image: AgentImageAttachment? = nil
-    ) -> UserMessageRequest {
-        UserMessageRequest(
+    ) -> Request {
+        Request(
             prompt: "Summarize the imported content in three short bullet points and call out one follow-up action.",
             importedContent: AgentImportedContent(
                 textSnippets: [excerpt],
@@ -69,7 +69,7 @@ struct SummarizeImportedContentIntent: AppIntent {
             excerpt: text,
             url: link
         )
-        let summary = try await runtime.sendMessage(request, in: thread.id)
+        let summary = try await runtime.send(request, in: thread.id)
         return .result(dialog: IntentDialog(stringLiteral: summary))
     }
 }
@@ -97,8 +97,8 @@ struct DraftShippingSupportReplyIntent: AppIntent {
             title: "Shortcut Support",
             personaStack: shortcutCatalog.supportPersona
         )
-        let draft = try await runtime.sendMessage(
-            UserMessageRequest(
+        let draft = try await runtime.send(
+            Request(
                 text: """
                 Draft a shipping support reply for this customer message.
 
@@ -107,7 +107,7 @@ struct DraftShippingSupportReplyIntent: AppIntent {
                 """
             ),
             in: thread.id,
-            expecting: ShippingSupportReplyDraft.self
+            response: ShippingSupportReplyDraft.self
         )
 
         let renderedDraft = """

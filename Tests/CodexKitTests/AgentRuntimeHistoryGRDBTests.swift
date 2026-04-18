@@ -15,7 +15,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "GRDB Thread")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "Draft the shipping update."), in: thread.id, expecting: ShippingReplyDraft.self)
+        _ = try await runtime.send(Request(text: "Draft the shipping update."), in: thread.id, response: ShippingReplyDraft.self)
 
         let reloadedStore = try SQLiteRuntimeStateStore(url: url)
         let reloadedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: reloadedStore)
@@ -48,7 +48,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "GRDB Mutations")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "please redact me"), in: thread.id)
+        _ = try await runtime.send(Request(text: "please redact me"), in: thread.id)
 
         let messageHistory = try await runtime.execute(HistoryItemsQuery(threadID: thread.id, kinds: [.message]))
         guard let firstMessage = messageHistory.records.first else { return XCTFail("Expected a persisted message record.") }
@@ -83,7 +83,7 @@ extension AgentRuntimeTests {
         _ = try await legacyRuntime.signIn()
 
         let thread = try await legacyRuntime.createThread(title: "Legacy File Thread")
-        _ = try await legacyRuntime.sendMessage(UserMessageRequest(text: "Create a legacy payload."), in: thread.id, expecting: ShippingReplyDraft.self)
+        _ = try await legacyRuntime.send(Request(text: "Create a legacy payload."), in: thread.id, response: ShippingReplyDraft.self)
 
         let importedStore = try SQLiteRuntimeStateStore(url: sqliteURL)
         let importedRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: importedStore)
@@ -113,7 +113,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Attachment Thread")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "here is an image", images: [.png(imageData)]), in: thread.id)
+        _ = try await runtime.send(Request(text: "here is an image", images: [.png(imageData)]), in: thread.id)
 
         let reloadedRuntime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         let history = try await reloadedRuntime.execute(HistoryItemsQuery(threadID: thread.id, kinds: [.message]))
@@ -149,10 +149,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Explicit Empty Filters")
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Draft the shipping update."),
+        _ = try await runtime.send(
+            Request(text: "Draft the shipping update."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         let threads = try await runtime.execute(ThreadMetadataQuery(threadIDs: []))

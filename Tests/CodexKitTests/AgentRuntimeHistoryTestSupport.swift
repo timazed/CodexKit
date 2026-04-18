@@ -193,7 +193,7 @@ actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting, AgentB
     func beginTurn(
         thread: AgentThread,
         history: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
@@ -244,7 +244,7 @@ actor DelayedBeginTurnBackend: AgentBackend {
     func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
@@ -285,7 +285,7 @@ actor BlockingStructuredPartialBackend: AgentBackend {
     func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message _: UserMessageRequest,
+        message _: Request,
         instructions _: String,
         responseFormat _: AgentStructuredOutputFormat?,
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,

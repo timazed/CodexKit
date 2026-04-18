@@ -141,7 +141,7 @@ public actor SQLiteMemoryStore: MemoryStoring {
                     if !query.scopes.isEmpty, !query.scopes.contains(record.scope) {
                         return false
                     }
-                    if !query.kinds.isEmpty, !query.kinds.contains(record.kind) {
+                    if !query.categories.isEmpty, !query.categories.contains(record.category) {
                         return false
                     }
                     return true
@@ -173,7 +173,7 @@ public actor SQLiteMemoryStore: MemoryStoring {
             activeRecords: records.filter { $0.status == MemoryRecordStatus.active }.count,
             archivedRecords: records.filter { $0.status == MemoryRecordStatus.archived }.count,
             countsByScope: Dictionary(grouping: records, by: { $0.scope }).mapValues { $0.count },
-            countsByKind: Dictionary(grouping: records, by: { $0.kind }).mapValues { $0.count }
+            countsByCategory: Dictionary(grouping: records, by: { $0.category }).mapValues { $0.count }
         )
     }
 

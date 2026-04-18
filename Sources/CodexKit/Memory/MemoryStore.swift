@@ -23,7 +23,7 @@ public extension MemoryStoring {
     func list(
         namespace: String,
         scopes: [MemoryScope] = [],
-        kinds: [String] = [],
+        categories: [String] = [],
         includeArchived: Bool = false,
         limit: Int? = nil
     ) async throws -> [MemoryRecord] {
@@ -31,7 +31,7 @@ public extension MemoryStoring {
             MemoryRecordListQuery(
                 namespace: namespace,
                 scopes: scopes,
-                kinds: kinds,
+                categories: categories,
                 includeArchived: includeArchived,
                 limit: limit
             )

@@ -3,7 +3,7 @@ import Foundation
 public enum MemoryAuthoringError: Error, LocalizedError, Equatable, Sendable {
     case missingNamespace
     case missingScope
-    case missingKind
+    case missingCategory
     case missingDedupeKey
 
     public var errorDescription: String? {
@@ -12,8 +12,8 @@ public enum MemoryAuthoringError: Error, LocalizedError, Equatable, Sendable {
             return "A memory namespace is required before writing memory."
         case .missingScope:
             return "A memory scope is required before writing memory."
-        case .missingKind:
-            return "A memory kind is required before writing memory."
+        case .missingCategory:
+            return "A memory category is required before writing memory."
         case .missingDedupeKey:
             return "A dedupe key is required for memory upserts."
         }
@@ -24,7 +24,7 @@ public struct MemoryDraft: Codable, Hashable, Sendable {
     public var id: String?
     public var namespace: String?
     public var scope: MemoryScope?
-    public var kind: String?
+    public var category: String?
     public var summary: String
     public var evidence: [String]
     public var importance: Double?
@@ -43,7 +43,7 @@ public struct MemoryDraft: Codable, Hashable, Sendable {
         id: String? = nil,
         namespace: String? = nil,
         scope: MemoryScope? = nil,
-        kind: String? = nil,
+        category: String? = nil,
         summary: String,
         evidence: [String] = [],
         importance: Double? = nil,
@@ -61,7 +61,7 @@ public struct MemoryDraft: Codable, Hashable, Sendable {
         self.id = id
         self.namespace = namespace
         self.scope = scope
-        self.kind = kind
+        self.category = category
         self.summary = summary
         self.evidence = evidence
         self.importance = importance
@@ -81,7 +81,7 @@ public struct MemoryDraft: Codable, Hashable, Sendable {
 public struct MemoryWriterDefaults: Codable, Hashable, Sendable {
     public var namespace: String?
     public var scope: MemoryScope?
-    public var kind: String?
+    public var category: String?
     public var importance: Double
     public var tags: [String]
     public var relatedIDs: [String]
@@ -91,7 +91,7 @@ public struct MemoryWriterDefaults: Codable, Hashable, Sendable {
     public init(
         namespace: String? = nil,
         scope: MemoryScope? = nil,
-        kind: String? = nil,
+        category: String? = nil,
         importance: Double = 0,
         tags: [String] = [],
         relatedIDs: [String] = [],
@@ -100,7 +100,7 @@ public struct MemoryWriterDefaults: Codable, Hashable, Sendable {
     ) {
         self.namespace = namespace
         self.scope = scope
-        self.kind = kind
+        self.category = category
         self.importance = importance
         self.tags = tags
         self.relatedIDs = relatedIDs
@@ -112,7 +112,7 @@ public struct MemoryWriterDefaults: Codable, Hashable, Sendable {
         MemoryWriterDefaults(
             namespace: namespace ?? inherited.namespace,
             scope: scope ?? inherited.scope,
-            kind: kind ?? inherited.kind,
+            category: category ?? inherited.category,
             importance: importance,
             tags: Self.uniqueMerged(values: inherited.tags, with: tags),
             relatedIDs: Self.uniqueMerged(values: inherited.relatedIDs, with: relatedIDs),
@@ -154,7 +154,7 @@ public actor MemoryWriter {
     ) throws -> MemoryRecord {
         let namespace = try resolvedNamespace(for: draft)
         let scope = try resolvedScope(for: draft)
-        let kind = try resolvedKind(for: draft)
+        let category = try resolvedCategory(for: draft)
         let createdAt = draft.createdAt ?? now
         let baseExpiryDate = draft.observedAt ?? createdAt
         let expiresAt = draft.expiresAt ?? draft.expiresIn.map { baseExpiryDate.addingTimeInterval($0) }
@@ -163,7 +163,7 @@ public actor MemoryWriter {
             id: draft.id ?? UUID().uuidString,
             namespace: namespace,
             scope: scope,
-            kind: kind,
+            category: category,
             summary: draft.summary,
             evidence: draft.evidence,
             importance: draft.importance ?? defaults.importance,
@@ -240,14 +240,14 @@ public actor MemoryWriter {
     public func list(
         namespace: String? = nil,
         scopes: [MemoryScope] = [],
-        kinds: [String] = [],
+        categories: [String] = [],
         includeArchived: Bool = false,
         limit: Int? = nil
     ) async throws -> [MemoryRecord] {
         try await store.list(
             namespace: try resolvedNamespace(namespace),
             scopes: scopes,
-            kinds: kinds,
+            categories: categories,
             includeArchived: includeArchived,
             limit: limit
         )
@@ -299,13 +299,13 @@ public actor MemoryWriter {
         return scope
     }
 
-    private nonisolated func resolvedKind(for draft: MemoryDraft) throws -> String {
-        guard let kind = (draft.kind ?? defaults.kind)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !kind.isEmpty
+    private nonisolated func resolvedCategory(for draft: MemoryDraft) throws -> String {
+        guard let category = (draft.category ?? defaults.category)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !category.isEmpty
         else {
-            throw MemoryAuthoringError.missingKind
+            throw MemoryAuthoringError.missingCategory
         }
 
-        return kind
+        return category
     }
 }

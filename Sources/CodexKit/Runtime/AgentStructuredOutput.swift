@@ -121,6 +121,37 @@ public protocol AgentStructuredOutput: Decodable, Sendable {
     static var responseFormat: AgentStructuredOutputFormat { get }
 }
 
+struct AgentResponseContract: Sendable {
+    enum DeliveryMode: Sendable {
+        case oneShot
+        case streaming(options: AgentStructuredStreamingOptions)
+    }
+
+    let format: AgentStructuredOutputFormat
+    let deliveryMode: DeliveryMode
+
+    var textFormat: AgentStructuredOutputFormat? {
+        switch deliveryMode {
+        case .oneShot:
+            return format
+        case .streaming:
+            return nil
+        }
+    }
+
+    var streamedRequest: AgentStreamedStructuredOutputRequest? {
+        switch deliveryMode {
+        case .oneShot:
+            return nil
+        case let .streaming(options):
+            return AgentStreamedStructuredOutputRequest(
+                responseFormat: format,
+                options: options
+            )
+        }
+    }
+}
+
 public struct AgentImportedContent: Codable, Hashable, Sendable {
     public var textSnippets: [String]
     public var urls: [URL]

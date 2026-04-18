@@ -24,7 +24,7 @@ final class AgentRuntimeStoreTests: XCTestCase {
         await store.signIn()
         XCTAssertEqual(store.session?.account.email, "demo@example.com")
 
-        await store.sendMessage("hello")
+        await store.send("hello")
 
         XCTAssertEqual(store.messages.filter { $0.role == .user }.count, 1)
         XCTAssertEqual(store.messages.filter { $0.role == .assistant }.count, 1)

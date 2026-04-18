@@ -89,7 +89,7 @@ extension AgentRuntime {
 
     func resolveTurnSkills(
         thread: AgentThread,
-        message: UserMessageRequest
+        message: Request
     ) throws -> ResolvedTurnSkills {
         if let skillOverrideIDs = message.skillOverrideIDs {
             try assertSkillsExist(skillOverrideIDs)

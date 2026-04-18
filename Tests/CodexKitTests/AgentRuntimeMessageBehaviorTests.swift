@@ -3,6 +3,94 @@ import CodexKit
 import XCTest
 
 extension AgentRuntimeTests {
+    func testRequestEncodesTypedOptionsSeparatelyFromContext() async throws {
+        struct PlannerContext: Codable, Sendable {
+            let objective: String
+        }
+
+        enum LookupMode: RequestMode {
+            case research
+
+            var naturalLanguage: String {
+                "Research the request and gather grounded information."
+            }
+        }
+
+        enum LookupRequirement: RequestRequirement {
+            case address
+            case image
+
+            var naturalLanguage: String {
+                switch self {
+                case .address:
+                    "Find the venue address."
+                case .image:
+                    "Retrieve one venue-relevant image."
+                }
+            }
+        }
+
+        struct LookupOptions: Sendable, RequestOptionsRepresentable {
+            let mode: LookupMode
+            let requirements: [LookupRequirement]
+        }
+
+        let request = try Request(
+            text: "Find Mr Wong's",
+            context: PlannerContext(objective: "Lookup a venue."),
+            options: LookupOptions(mode: .research, requirements: [.address, .image]),
+            contextSchemaName: "PlannerContext"
+        )
+
+        XCTAssertEqual(request.context?.schemaName, "PlannerContext")
+        XCTAssertEqual(
+            request.context?.payload,
+            .object([
+                "objective": .string("Lookup a venue."),
+            ])
+        )
+        XCTAssertEqual(request.options?.schemaName, "LookupOptions")
+        XCTAssertEqual(request.options?.mode, "Research the request and gather grounded information.")
+        XCTAssertEqual(
+            request.options?.requirements,
+            [
+                "Find the venue address.",
+                "Retrieve one venue-relevant image.",
+            ]
+        )
+    }
+
+    func testOptionsOnlyRequestDoesNotCreateValidContent() async throws {
+        enum LookupMode: RequestMode {
+            case enrichment
+
+            var naturalLanguage: String {
+                "Enrich the known result with additional grounded details."
+            }
+        }
+
+        enum LookupRequirement: RequestRequirement {
+            case address
+
+            var naturalLanguage: String {
+                "Find the venue address."
+            }
+        }
+
+        struct LookupOptions: Sendable, RequestOptionsRepresentable {
+            let mode: LookupMode
+            let requirements: [LookupRequirement]
+        }
+
+        let request = try Request(
+            text: "",
+            options: LookupOptions(mode: .enrichment, requirements: [.address])
+        )
+
+        XCTAssertFalse(request.hasContent)
+        XCTAssertFalse(request.hasVisibleContent)
+    }
+
     func testTypedStructuredInputRequestResolvesSeparatelyFromVisiblePrompt() async throws {
         struct PlannerContext: Codable, Sendable {
             let objective: String
@@ -23,27 +111,17 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Input")
-        let reply = try await runtime.sendMessage(
-            AgentMessageRequest(
+        let reply = try await runtime.send(
+            try Request(
                 text: "Draft a shipping reply.",
-                structuredInput: PlannerContext(
+                context: PlannerContext(
                     objective: "Resolve a delayed shipment complaint.",
                     customerTier: "plus"
                 ),
-                structuredInputSchemaName: "PlannerContext",
-                structuredSections: [
-                    AgentStructuredSection(
-                        name: "browser_snapshot",
-                        schemaName: "BrowserSnapshot",
-                        payload: .object([
-                            "pageTitle": .string("Order #1234"),
-                            "status": .string("In transit"),
-                        ])
-                    ),
-                ]
+                contextSchemaName: "PlannerContext"
             ),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         XCTAssertEqual(
@@ -56,10 +134,9 @@ extension AgentRuntimeTests {
 
         let receivedMessage = await backend.receivedMessages().last
         XCTAssertEqual(receivedMessage?.text, "Draft a shipping reply.")
-        XCTAssertEqual(receivedMessage?.structuredInput?.schemaName, "PlannerContext")
-        XCTAssertEqual(receivedMessage?.structuredSections.count, 1)
+        XCTAssertEqual(receivedMessage?.context?.schemaName, "PlannerContext")
         XCTAssertEqual(
-            receivedMessage?.structuredInput?.payload,
+            receivedMessage?.context?.payload,
             .object([
                 "objective": .string("Resolve a delayed shipment complaint."),
                 "customerTier": .string("plus"),
@@ -92,17 +169,17 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Structured Input Only")
-        let reply = try await runtime.sendMessage(
-            AgentMessageRequest(
+        let reply = try await runtime.send(
+            try Request(
                 text: "",
-                structuredInput: PlannerContext(
+                context: PlannerContext(
                     objective: "Answer with a shipping status summary.",
                     customerTier: "pro"
                 ),
-                structuredInputSchemaName: "PlannerContext"
+                contextSchemaName: "PlannerContext"
             ),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         XCTAssertEqual(
@@ -115,16 +192,95 @@ extension AgentRuntimeTests {
 
         let receivedMessage = await backend.receivedMessages().last
         XCTAssertEqual(receivedMessage?.text, "")
-        XCTAssertEqual(receivedMessage?.structuredInput?.schemaName, "PlannerContext")
+        XCTAssertEqual(receivedMessage?.context?.schemaName, "PlannerContext")
 
         let messages = await runtime.messages(for: thread.id)
         XCTAssertEqual(messages.count, 1)
         XCTAssertEqual(messages.first?.role, .assistant)
     }
 
+    func testRequestOptionsTravelSeparatelyFromVisiblePrompt() async throws {
+        struct PlannerContext: Codable, Sendable {
+            let objective: String
+        }
+
+        enum LookupMode: RequestMode {
+            case research
+
+            var naturalLanguage: String {
+                "Research the request and gather grounded information."
+            }
+        }
+
+        enum LookupRequirement: RequestRequirement {
+            case address
+            case image
+
+            var naturalLanguage: String {
+                switch self {
+                case .address:
+                    "Find the venue address."
+                case .image:
+                    "Retrieve one venue-relevant image."
+                }
+            }
+        }
+
+        struct LookupOptions: Sendable, RequestOptionsRepresentable {
+            let mode: LookupMode
+            let requirements: [LookupRequirement]
+        }
+
+        let backend = InMemoryAgentBackend(
+            structuredResponseText: #"{"reply":"Here are the venue details.","priority":"normal"}"#
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Options")
+        _ = try await runtime.send(
+            try Request(
+                text: "Find Mr Wong's in Sydney.",
+                context: PlannerContext(objective: "Lookup a venue."),
+                options: LookupOptions(
+                    mode: .research,
+                    requirements: [.address, .image]
+                ),
+                contextSchemaName: "PlannerContext"
+            ),
+            in: thread.id,
+            response: ShippingReplyDraft.self
+        )
+
+        let receivedMessage = await backend.receivedMessages().last
+        XCTAssertEqual(receivedMessage?.text, "Find Mr Wong's in Sydney.")
+        XCTAssertEqual(receivedMessage?.context?.schemaName, "PlannerContext")
+        XCTAssertEqual(receivedMessage?.options?.schemaName, "LookupOptions")
+        XCTAssertEqual(receivedMessage?.options?.mode, "Research the request and gather grounded information.")
+        XCTAssertEqual(
+            receivedMessage?.options?.requirements,
+            [
+                "Find the venue address.",
+                "Retrieve one venue-relevant image.",
+            ]
+        )
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.first?.role, .user)
+        XCTAssertEqual(messages.first?.text, "Find Mr Wong's in Sydney.")
+        XCTAssertFalse(messages.first?.text.contains("requested venue fields") ?? true)
+    }
+
     func testImportedContentInitializerBuildsMessageWithSharedURLs() async throws {
         let importedContent = AgentImportedContent(textSnippets: ["Customer says the package arrived damaged."], urls: [URL(string: "https://example.com/delivery-update")!])
-        let request = UserMessageRequest(prompt: "Summarize and draft a reply.", importedContent: importedContent)
+        let request = Request(prompt: "Summarize and draft a reply.", importedContent: importedContent)
         XCTAssertTrue(request.text.contains("Summarize and draft a reply."))
         XCTAssertTrue(request.text.contains("https://example.com/delivery-update"))
         XCTAssertTrue(request.text.contains("Customer says the package arrived damaged."))
@@ -137,7 +293,7 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(title: "Images")
         let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "", images: [image]), in: thread.id)
+        _ = try await runtime.send(Request(text: "", images: [image]), in: thread.id)
 
         let messages = await runtime.messages(for: thread.id)
         XCTAssertEqual(messages.first?.images.count, 1)
@@ -150,7 +306,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Assistant Images")
-        let reply = try await runtime.sendMessage(UserMessageRequest(text: "show me an image"), in: thread.id)
+        let reply = try await runtime.send(Request(text: "show me an image"), in: thread.id)
 
         XCTAssertEqual(reply, "Attached 1 image")
         let messages = await runtime.messages(for: thread.id)
@@ -164,7 +320,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread()
-        let stream = try await runtime.streamMessage(UserMessageRequest(text: "please use the tool"), in: thread.id)
+        let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id)
 
         var sawApproval = false
         var sawToolResult = false
@@ -190,7 +346,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread()
-        let stream = try await runtime.streamMessage(UserMessageRequest(text: "please use the tool"), in: thread.id, expecting: ShippingReplyDraft.self)
+        let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id, response: ShippingReplyDraft.self)
 
         var sawToolResult = false
         var sawCommitted = false
@@ -217,7 +373,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Recovered Thread")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "Hello after refresh"), in: thread.id)
+        _ = try await runtime.send(Request(text: "Hello after refresh"), in: thread.id)
 
         let refreshCount = await authProvider.refreshCount()
         let attemptedTokens = await backend.attemptedAccessTokens()
@@ -255,7 +411,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread()
-        let stream = try await runtime.streamMessage(UserMessageRequest(text: "please use the tool"), in: thread.id)
+        let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id)
 
         var sawToolResult = false
         for try await event in stream {
@@ -282,7 +438,7 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(title: "Immediate Stream")
         let streamTask = Task {
-            try await runtime.streamMessage(UserMessageRequest(text: "Hello there"), in: thread.id)
+            try await runtime.stream(Request(text: "Hello there"), in: thread.id)
         }
 
         await backend.waitForBeginTurnStart()
@@ -349,7 +505,7 @@ extension AgentRuntimeTests {
             .store(in: &cancellables)
 
         let sendTask = Task {
-            try await runtime.sendMessage(UserMessageRequest(text: "Observe me"), in: thread.id)
+            try await runtime.send(Request(text: "Observe me"), in: thread.id)
         }
 
         await backend.waitForBeginTurnStart()
@@ -400,7 +556,7 @@ extension AgentRuntimeTests {
         await fulfillment(of: [observedInitialState], timeout: 0.5)
 
         let sendTask = Task {
-            try await runtime.sendMessage(UserMessageRequest(text: "Observe messages"), in: thread.id)
+            try await runtime.send(Request(text: "Observe messages"), in: thread.id)
         }
 
         await backend.waitForBeginTurnStart()
@@ -435,7 +591,7 @@ extension AgentRuntimeTests {
             String(repeating: "third message context ", count: 30),
         ]
         for message in longMessages {
-            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+            _ = try await runtime.send(Request(text: message), in: thread.id)
         }
 
         let observedInitialState = expectation(description: "Observed the initial context state")
@@ -491,7 +647,7 @@ extension AgentRuntimeTests {
             String(repeating: "third message context ", count: 30),
         ]
         for message in longMessages {
-            _ = try await runtime.sendMessage(UserMessageRequest(text: message), in: thread.id)
+            _ = try await runtime.send(Request(text: message), in: thread.id)
         }
 
         let observedInitialUsage = expectation(description: "Observed the initial context usage")

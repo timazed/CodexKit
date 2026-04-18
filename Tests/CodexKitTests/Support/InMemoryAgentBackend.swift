@@ -7,7 +7,7 @@ public actor InMemoryAgentBackend: AgentBackend {
     private var threads: [String: AgentThread] = [:]
     private var beginTurnInstructions: [String] = []
     private var beginTurnResponseFormats: [AgentStructuredOutputFormat?] = []
-    private var beginTurnMessages: [UserMessageRequest] = []
+    private var beginTurnMessages: [Request] = []
     private let structuredResponseText: String
 
     public init(
@@ -37,7 +37,7 @@ public actor InMemoryAgentBackend: AgentBackend {
     public func beginTurn(
         thread: AgentThread,
         history _: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
@@ -84,7 +84,7 @@ public actor InMemoryAgentBackend: AgentBackend {
         beginTurnResponseFormats
     }
 
-    public func receivedMessages() -> [UserMessageRequest] {
+    public func receivedMessages() -> [Request] {
         beginTurnMessages
     }
 }
@@ -95,12 +95,13 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
 
     public init(
         thread: AgentThread,
-        message: UserMessageRequest,
+        message: Request,
         selectedTool: ToolDefinition?,
         structuredResponseText: String?,
         responseFormat: AgentStructuredOutputFormat? = nil,
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?
     ) {
+        let hasStreamingStructuredOutput = streamedStructuredOutput != nil
         let pendingResults = PendingToolResults()
         self.pendingResults = pendingResults
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
@@ -175,7 +176,7 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
                     continuation.yield(.assistantMessageCompleted(fullMessage))
                 } else {
                     let visibleText = "Echo: \(message.text)"
-                    let response = streamedStructuredOutput == nil
+                    let response = !hasStreamingStructuredOutput
                         ? (structuredResponseText ?? visibleText)
                         : visibleText
                     for chunk in MockAgentTurnSession.chunks(for: response) {

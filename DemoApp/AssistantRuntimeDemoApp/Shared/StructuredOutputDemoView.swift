@@ -36,6 +36,10 @@ private extension StructuredOutputDemoView {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            Text("The shipping example also shows host-provided `context` plus declarative `options`, so the app can separate user intent from fulfillment policy while still decoding a typed result.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
             Text("The streamed demo goes one step further: it shows live assistant narration, best-effort typed partials, and the final persisted payload metadata without asking the app to parse hidden text markers.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -73,7 +77,7 @@ private extension StructuredOutputDemoView {
 
             DemoActionTile(
                 title: viewModel.isRunningStructuredStreamingDemo ? "Streaming Structured Turn..." : "Run Streamed Structured Demo",
-                subtitle: "Uses `streamMessage(..., expecting:)` to yield prose deltas, typed partials, and a committed payload.",
+                subtitle: "Uses `stream(..., response:)` to yield prose deltas, typed partials, and a committed payload.",
                 systemImage: "bubble.left.and.text.bubble.right.fill",
                 isProminent: true,
                 isDisabled: viewModel.session == nil || viewModel.isRunningStructuredStreamingDemo
@@ -241,9 +245,19 @@ private extension StructuredOutputDemoView {
                 body: DemoStructuredOutputExamples.shippingCustomerMessage
             )
 
+            sampleInputCard(
+                title: "Host app context",
+                body: DemoStructuredOutputExamples.shippingContextPreview
+            )
+
+            sampleInputCard(
+                title: "Fulfillment policy",
+                body: DemoStructuredOutputExamples.shippingFulfillmentPolicyPreview
+            )
+
             DemoActionTile(
                 title: viewModel.isRunningStructuredOutputDemo ? "Generating Draft..." : "Generate Shipping Draft",
-                subtitle: "Runs `sendMessage(..., expecting:)` and decodes into `StructuredShippingReplyDraft`.",
+                subtitle: "Builds `Request(text: context: options:)`, then runs `send(..., response:)` into `StructuredShippingReplyDraft`.",
                 systemImage: "shippingbox",
                 isProminent: true,
                 isDisabled: viewModel.session == nil || viewModel.isRunningStructuredOutputDemo
@@ -303,7 +317,7 @@ private extension StructuredOutputDemoView {
 
             DemoActionTile(
                 title: viewModel.isRunningStructuredOutputDemo ? "Summarizing Content..." : "Summarize Imported Content",
-                subtitle: "Packages text and a source URL, then decodes with `sendMessage(..., expecting:)`.",
+                subtitle: "Packages text and a source URL into `Request`, then decodes with `send(..., response:)`.",
                 systemImage: "doc.text.magnifyingglass",
                 isDisabled: viewModel.session == nil || viewModel.isRunningStructuredOutputDemo
             ) {

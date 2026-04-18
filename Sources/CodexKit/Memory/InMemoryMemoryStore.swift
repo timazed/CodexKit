@@ -103,7 +103,7 @@ public actor InMemoryMemoryStore: MemoryStoring {
                 if !query.scopes.isEmpty, !query.scopes.contains(record.scope) {
                     return false
                 }
-                if !query.kinds.isEmpty, !query.kinds.contains(record.kind) {
+                if !query.categories.isEmpty, !query.categories.contains(record.category) {
                     return false
                 }
                 return true
@@ -208,11 +208,11 @@ public actor InMemoryMemoryStore: MemoryStoring {
         records: [MemoryRecord]
     ) -> MemoryStoreDiagnostics {
         var countsByScope: [MemoryScope: Int] = [:]
-        var countsByKind: [String: Int] = [:]
+        var countsByCategory: [String: Int] = [:]
 
         for record in records {
             countsByScope[record.scope, default: 0] += 1
-            countsByKind[record.kind, default: 0] += 1
+            countsByCategory[record.category, default: 0] += 1
         }
 
         let activeRecords = records.filter { $0.status == .active }.count
@@ -226,7 +226,7 @@ public actor InMemoryMemoryStore: MemoryStoring {
             activeRecords: activeRecords,
             archivedRecords: archivedRecords,
             countsByScope: countsByScope,
-            countsByKind: countsByKind
+            countsByCategory: countsByCategory
         )
     }
 }

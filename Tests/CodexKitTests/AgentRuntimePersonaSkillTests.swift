@@ -34,8 +34,8 @@ extension AgentRuntimeTests {
             skillIDs: ["health_coach"]
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Give me a plan."),
+        _ = try await runtime.send(
+            Request(text: "Give me a plan."),
             in: thread.id
         )
 
@@ -73,16 +73,16 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(title: "Turn Skills")
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(
+        _ = try await runtime.send(
+            Request(
                 text: "First turn",
                 skillOverrideIDs: ["health_coach"]
             ),
             in: thread.id
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Second turn"),
+        _ = try await runtime.send(
+            Request(text: "Second turn"),
             in: thread.id
         )
 
@@ -119,15 +119,15 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(title: "Skill IDs")
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Before"),
+        _ = try await runtime.send(
+            Request(text: "Before"),
             in: thread.id
         )
 
         try await runtime.setSkillIDs(["health_coach"], for: thread.id)
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "After"),
+        _ = try await runtime.send(
+            Request(text: "After"),
             in: thread.id
         )
 
@@ -160,8 +160,8 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Need help"),
+        _ = try await runtime.send(
+            Request(text: "Need help"),
             in: thread.id
         )
 
@@ -197,16 +197,16 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(
+        _ = try await runtime.send(
+            Request(
                 text: "First",
                 personaOverride: reviewerOverride
             ),
             in: thread.id
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Second"),
+        _ = try await runtime.send(
+            Request(text: "Second"),
             in: thread.id
         )
 
@@ -243,15 +243,15 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Before"),
+        _ = try await runtime.send(
+            Request(text: "Before"),
             in: thread.id
         )
 
         try await runtime.setPersonaStack(plannerPersona, for: thread.id)
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "After"),
+        _ = try await runtime.send(
+            Request(text: "After"),
             in: thread.id
         )
 

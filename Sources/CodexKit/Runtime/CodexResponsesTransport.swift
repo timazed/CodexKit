@@ -6,25 +6,19 @@ struct CodexResponsesRequestFactory: Sendable {
 
     func buildURLRequest(
         instructions: String,
-        responseFormat: AgentStructuredOutputFormat?,
-        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        responseContract: AgentResponseContract?,
         threadID: String,
         items: [WorkingHistoryItem],
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) throws -> URLRequest {
-        let resolvedInstructions = if let streamedStructuredOutput {
-            instructions + "\n\n" + CodexResponsesTurnSession.streamedStructuredOutputInstructions(for: streamedStructuredOutput)
-        } else {
-            instructions
-        }
         let requestBody = ResponsesRequestBody(
             model: configuration.model,
             reasoning: .init(effort: configuration.reasoningEffort),
-            instructions: resolvedInstructions,
+            instructions: instructions,
             text: .init(
                 format: .init(
-                    responseFormat: streamedStructuredOutput == nil ? responseFormat : nil
+                    responseFormat: responseContract?.textFormat
                 )
             ),
             input: items.map(\.jsonValue),

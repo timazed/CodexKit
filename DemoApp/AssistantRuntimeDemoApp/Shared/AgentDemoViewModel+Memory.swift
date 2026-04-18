@@ -24,11 +24,11 @@ extension AgentDemoViewModel {
                 memoryContext: AgentMemoryContext(
                     namespace: DemoMemoryExamples.namespace,
                     scopes: [DemoMemoryExamples.healthCoachScope],
-                    kinds: ["preference"]
+                    categories: ["preference"]
                 )
             )
-            _ = try await runtime.sendMessage(
-                UserMessageRequest(text: DemoMemoryExamples.automaticPolicyPrompt),
+            _ = try await runtime.send(
+                Request(text: DemoMemoryExamples.automaticPolicyPrompt),
                 in: thread.id
             )
 
@@ -172,7 +172,7 @@ extension AgentDemoViewModel {
                 previewThreadTitle = thread.title
                 result = try await runtime.memoryQueryPreview(
                     for: thread.id,
-                    request: UserMessageRequest(text: DemoMemoryExamples.previewRequestText)
+                    request: Request(text: DemoMemoryExamples.previewRequestText)
                 ) ?? MemoryQueryResult(matches: [], truncated: false)
                 threads = await runtime.threads()
             } else {

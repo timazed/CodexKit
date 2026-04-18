@@ -38,14 +38,14 @@ internal enum MemoryQueryEngine {
                 now: now
             )
             let importanceScore = clamp(candidate.record.importance)
-            let kindBoost = query.kinds.contains(candidate.record.kind) ? query.ranking.kindBoost : 0
+            let categoryBoost = query.categories.contains(candidate.record.category) ? query.ranking.categoryBoost : 0
             let tagBoost = candidate.record.tags.contains(where: query.tags.contains) ? query.ranking.tagBoost : 0
             let relatedBoost = candidate.record.relatedIDs.contains(where: query.relatedIDs.contains) ? query.ranking.relatedIDBoost : 0
             let totalScore =
                 (textScore * query.ranking.textWeight) +
                 (importanceScore * query.ranking.importanceWeight) +
                 (recencyScore * query.ranking.recencyWeight) +
-                kindBoost +
+                categoryBoost +
                 tagBoost +
                 relatedBoost
 
@@ -54,7 +54,7 @@ internal enum MemoryQueryEngine {
                 textScore: textScore,
                 recencyScore: recencyScore,
                 importanceScore: importanceScore,
-                kindBoost: kindBoost,
+                categoryBoost: categoryBoost,
                 tagBoost: tagBoost,
                 relatedIDBoost: relatedBoost
             )
@@ -148,7 +148,7 @@ internal enum MemoryQueryEngine {
         }
 
         let haystack = tokenize(
-            ([record.summary] + record.evidence + record.tags + [record.kind]).joined(separator: " ")
+            ([record.summary] + record.evidence + record.tags + [record.category]).joined(separator: " ")
         )
         guard !haystack.isEmpty else {
             return 0
@@ -199,7 +199,7 @@ internal enum MemoryQueryEngine {
             return false
         }
 
-        if !query.kinds.isEmpty, !query.kinds.contains(record.kind) {
+        if !query.categories.isEmpty, !query.categories.contains(record.category) {
             return false
         }
 
@@ -270,7 +270,7 @@ internal enum MemoryQueryEngine {
 
     private static func renderMatch(_ match: MemoryQueryMatch) -> String {
         var components: [String] = [
-            "- [\(match.record.scope.rawValue)] [\(match.record.kind)] \(match.record.summary)"
+            "- [\(match.record.scope.rawValue)] [\(match.record.category)] \(match.record.summary)"
         ]
 
         if let evidence = match.record.evidence.first,

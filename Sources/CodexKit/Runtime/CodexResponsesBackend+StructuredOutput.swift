@@ -231,34 +231,3 @@ struct CodexResponsesStructuredStreamParser {
         }
     }
 }
-
-extension CodexResponsesTurnSession {
-    static func streamedStructuredOutputInstructions(
-        for request: AgentStreamedStructuredOutputRequest
-    ) -> String {
-        let schemaData = (try? JSONEncoder().encode(request.responseFormat.schema.jsonValue))
-            ?? Data("{}".utf8)
-        let schema = String(decoding: schemaData, as: UTF8.self)
-        let description = request.responseFormat.description
-            .map { "Description: \($0)\n" }
-            ?? ""
-
-        let requirementLine = request.options.required
-            ? "You must emit exactly one hidden structured output block."
-            : "Emit the hidden structured output block only when it is useful and you can satisfy the schema."
-
-        return """
-        CodexKit private streaming contract:
-        - Respond with normal user-facing assistant text first.
-        - Do not mention any hidden framing or transport markers in the visible text.
-        - After the visible text, optionally append one hidden structured output block using the exact tags below.
-        - Hidden block opening tag: \(CodexResponsesStructuredStreamParser.openTag)
-        - Hidden block closing tag: \(CodexResponsesStructuredStreamParser.closeTag)
-        - The hidden block contents must be valid JSON matching the declared schema.
-        - \(requirementLine)
-        \(description)Schema name: \(request.responseFormat.name)
-        Schema JSON:
-        \(schema)
-        """
-    }
-}

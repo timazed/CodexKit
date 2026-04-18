@@ -41,7 +41,7 @@ public struct MemoryRecord: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var namespace: String
     public var scope: MemoryScope
-    public var kind: String
+    public var category: String
     public var summary: String
     public var evidence: [String]
     public var importance: Double
@@ -59,7 +59,7 @@ public struct MemoryRecord: Identifiable, Codable, Hashable, Sendable {
         id: String = UUID().uuidString,
         namespace: String,
         scope: MemoryScope,
-        kind: String,
+        category: String,
         summary: String,
         evidence: [String] = [],
         importance: Double = 0,
@@ -76,7 +76,7 @@ public struct MemoryRecord: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.namespace = namespace
         self.scope = scope
-        self.kind = kind
+        self.category = category
         self.summary = summary
         self.evidence = evidence
         self.importance = importance
@@ -100,7 +100,7 @@ public struct MemoryRankingWeights: Codable, Hashable, Sendable {
     public var textWeight: Double
     public var importanceWeight: Double
     public var recencyWeight: Double
-    public var kindBoost: Double
+    public var categoryBoost: Double
     public var tagBoost: Double
     public var relatedIDBoost: Double
 
@@ -108,14 +108,14 @@ public struct MemoryRankingWeights: Codable, Hashable, Sendable {
         textWeight: Double,
         importanceWeight: Double,
         recencyWeight: Double,
-        kindBoost: Double,
+        categoryBoost: Double,
         tagBoost: Double,
         relatedIDBoost: Double
     ) {
         self.textWeight = textWeight
         self.importanceWeight = importanceWeight
         self.recencyWeight = recencyWeight
-        self.kindBoost = kindBoost
+        self.categoryBoost = categoryBoost
         self.tagBoost = tagBoost
         self.relatedIDBoost = relatedIDBoost
     }
@@ -124,7 +124,7 @@ public struct MemoryRankingWeights: Codable, Hashable, Sendable {
         textWeight: 0.50,
         importanceWeight: 0.25,
         recencyWeight: 0.15,
-        kindBoost: 0.05,
+        categoryBoost: 0.05,
         tagBoost: 0.03,
         relatedIDBoost: 0.02
     )
@@ -152,7 +152,7 @@ public struct MemoryQuery: Codable, Hashable, Sendable {
     public var namespace: String
     public var scopes: [MemoryScope]
     public var text: String?
-    public var kinds: [String]
+    public var categories: [String]
     public var tags: [String]
     public var relatedIDs: [String]
     public var recencyWindow: TimeInterval?
@@ -166,7 +166,7 @@ public struct MemoryQuery: Codable, Hashable, Sendable {
         namespace: String,
         scopes: [MemoryScope] = [],
         text: String? = nil,
-        kinds: [String] = [],
+        categories: [String] = [],
         tags: [String] = [],
         relatedIDs: [String] = [],
         recencyWindow: TimeInterval? = nil,
@@ -179,7 +179,7 @@ public struct MemoryQuery: Codable, Hashable, Sendable {
         self.namespace = namespace
         self.scopes = scopes
         self.text = text
-        self.kinds = kinds
+        self.categories = categories
         self.tags = tags
         self.relatedIDs = relatedIDs
         self.recencyWindow = recencyWindow
@@ -196,7 +196,7 @@ public struct MemoryMatchExplanation: Codable, Hashable, Sendable {
     public var textScore: Double
     public var recencyScore: Double
     public var importanceScore: Double
-    public var kindBoost: Double
+    public var categoryBoost: Double
     public var tagBoost: Double
     public var relatedIDBoost: Double
 
@@ -205,7 +205,7 @@ public struct MemoryMatchExplanation: Codable, Hashable, Sendable {
         textScore: Double,
         recencyScore: Double,
         importanceScore: Double,
-        kindBoost: Double,
+        categoryBoost: Double,
         tagBoost: Double,
         relatedIDBoost: Double
     ) {
@@ -213,7 +213,7 @@ public struct MemoryMatchExplanation: Codable, Hashable, Sendable {
         self.textScore = textScore
         self.recencyScore = recencyScore
         self.importanceScore = importanceScore
-        self.kindBoost = kindBoost
+        self.categoryBoost = categoryBoost
         self.tagBoost = tagBoost
         self.relatedIDBoost = relatedIDBoost
     }
@@ -261,20 +261,20 @@ public struct MemoryCompactionRequest: Codable, Hashable, Sendable {
 public struct MemoryRecordListQuery: Codable, Hashable, Sendable {
     public var namespace: String
     public var scopes: [MemoryScope]
-    public var kinds: [String]
+    public var categories: [String]
     public var includeArchived: Bool
     public var limit: Int?
 
     public init(
         namespace: String,
         scopes: [MemoryScope] = [],
-        kinds: [String] = [],
+        categories: [String] = [],
         includeArchived: Bool = false,
         limit: Int? = nil
     ) {
         self.namespace = namespace
         self.scopes = scopes
-        self.kinds = kinds
+        self.categories = categories
         self.includeArchived = includeArchived
         self.limit = limit
     }
@@ -288,7 +288,7 @@ public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
     public var activeRecords: Int
     public var archivedRecords: Int
     public var countsByScope: [MemoryScope: Int]
-    public var countsByKind: [String: Int]
+    public var countsByCategory: [String: Int]
 
     public init(
         namespace: String,
@@ -298,7 +298,7 @@ public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
         activeRecords: Int,
         archivedRecords: Int,
         countsByScope: [MemoryScope: Int],
-        countsByKind: [String: Int]
+        countsByCategory: [String: Int]
     ) {
         self.namespace = namespace
         self.implementation = implementation
@@ -307,14 +307,14 @@ public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
         self.activeRecords = activeRecords
         self.archivedRecords = archivedRecords
         self.countsByScope = countsByScope
-        self.countsByKind = countsByKind
+        self.countsByCategory = countsByCategory
     }
 }
 
 public struct AgentMemoryContext: Codable, Hashable, Sendable {
     public var namespace: String
     public var scopes: [MemoryScope]
-    public var kinds: [String]
+    public var categories: [String]
     public var tags: [String]
     public var relatedIDs: [String]
     public var recencyWindow: TimeInterval?
@@ -325,7 +325,7 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
     public init(
         namespace: String,
         scopes: [MemoryScope] = [],
-        kinds: [String] = [],
+        categories: [String] = [],
         tags: [String] = [],
         relatedIDs: [String] = [],
         recencyWindow: TimeInterval? = nil,
@@ -335,13 +335,55 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
     ) {
         self.namespace = namespace
         self.scopes = scopes
-        self.kinds = kinds
+        self.categories = categories
         self.tags = tags
         self.relatedIDs = relatedIDs
         self.recencyWindow = recencyWindow
         self.minImportance = minImportance
         self.ranking = ranking
         self.readBudget = readBudget
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case namespace
+        case scopes
+        case categories
+        case legacyKinds = "kinds"
+        case tags
+        case relatedIDs
+        case recencyWindow
+        case minImportance
+        case ranking
+        case readBudget
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        namespace = try container.decode(String.self, forKey: .namespace)
+        scopes = try container.decodeIfPresent([MemoryScope].self, forKey: .scopes) ?? []
+        categories =
+            try container.decodeIfPresent([String].self, forKey: .categories) ??
+            container.decodeIfPresent([String].self, forKey: .legacyKinds) ??
+            []
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        relatedIDs = try container.decodeIfPresent([String].self, forKey: .relatedIDs) ?? []
+        recencyWindow = try container.decodeIfPresent(TimeInterval.self, forKey: .recencyWindow)
+        minImportance = try container.decodeIfPresent(Double.self, forKey: .minImportance)
+        ranking = try container.decodeIfPresent(MemoryRankingWeights.self, forKey: .ranking)
+        readBudget = try container.decodeIfPresent(MemoryReadBudget.self, forKey: .readBudget)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(namespace, forKey: .namespace)
+        try container.encode(scopes, forKey: .scopes)
+        try container.encode(categories, forKey: .categories)
+        try container.encode(tags, forKey: .tags)
+        try container.encode(relatedIDs, forKey: .relatedIDs)
+        try container.encodeIfPresent(recencyWindow, forKey: .recencyWindow)
+        try container.encodeIfPresent(minImportance, forKey: .minImportance)
+        try container.encodeIfPresent(ranking, forKey: .ranking)
+        try container.encodeIfPresent(readBudget, forKey: .readBudget)
     }
 }
 
@@ -356,7 +398,7 @@ public struct MemorySelection: Codable, Hashable, Sendable {
     public var mode: MemorySelectionMode
     public var namespace: String?
     public var scopes: [MemoryScope]
-    public var kinds: [String]
+    public var categories: [String]
     public var tags: [String]
     public var relatedIDs: [String]
     public var recencyWindow: TimeInterval?
@@ -369,7 +411,7 @@ public struct MemorySelection: Codable, Hashable, Sendable {
         mode: MemorySelectionMode = .inherit,
         namespace: String? = nil,
         scopes: [MemoryScope] = [],
-        kinds: [String] = [],
+        categories: [String] = [],
         tags: [String] = [],
         relatedIDs: [String] = [],
         recencyWindow: TimeInterval? = nil,
@@ -381,7 +423,7 @@ public struct MemorySelection: Codable, Hashable, Sendable {
         self.mode = mode
         self.namespace = namespace
         self.scopes = scopes
-        self.kinds = kinds
+        self.categories = categories
         self.tags = tags
         self.relatedIDs = relatedIDs
         self.recencyWindow = recencyWindow

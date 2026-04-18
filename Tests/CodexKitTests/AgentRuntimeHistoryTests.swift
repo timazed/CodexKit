@@ -18,10 +18,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "History Summary")
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        _ = try await runtime.send(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         let restoredRuntime = try makeHistoryRuntime(
@@ -62,9 +62,9 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Paged Messages")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "one"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "two"), in: thread.id)
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "three"), in: thread.id)
+        _ = try await runtime.send(Request(text: "one"), in: thread.id)
+        _ = try await runtime.send(Request(text: "two"), in: thread.id)
+        _ = try await runtime.send(Request(text: "three"), in: thread.id)
 
         let filter = AgentHistoryFilter(
             includeMessages: true,
@@ -125,8 +125,8 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Pending Approval")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "please use the tool"),
+        let stream = try await runtime.stream(
+            Request(text: "please use the tool"),
             in: thread.id
         )
 
@@ -187,8 +187,8 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Pending Tool")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "please use the tool"),
+        let stream = try await runtime.stream(
+            Request(text: "please use the tool"),
             in: thread.id
         )
 
@@ -239,10 +239,10 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Partial Structured")
-        let stream = try await runtime.streamMessage(
-            UserMessageRequest(text: "Draft a shipping reply."),
+        let stream = try await runtime.stream(
+            Request(text: "Draft a shipping reply."),
             in: thread.id,
-            expecting: ShippingReplyDraft.self
+            response: ShippingReplyDraft.self
         )
 
         let drainTask = Task {
@@ -337,7 +337,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Queryable")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "hello"), in: thread.id)
+        _ = try await runtime.send(Request(text: "hello"), in: thread.id)
 
         let threads = try await runtime.execute(
             ThreadMetadataQuery(
@@ -375,7 +375,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Redactions")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "top secret"), in: thread.id)
+        _ = try await runtime.send(Request(text: "top secret"), in: thread.id)
 
         let history = try await runtime.execute(
             HistoryItemsQuery(
@@ -428,7 +428,7 @@ extension AgentRuntimeTests {
         _ = try await runtime.signIn()
 
         let thread = try await runtime.createThread(title: "Delete Me")
-        _ = try await runtime.sendMessage(UserMessageRequest(text: "bye"), in: thread.id)
+        _ = try await runtime.send(Request(text: "bye"), in: thread.id)
 
         try await runtime.deleteThread(id: thread.id)
 

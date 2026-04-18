@@ -12,7 +12,7 @@ extension AgentRuntimeTests {
             MemoryRecord(
                 namespace: "demo-assistant",
                 scope: "feature:health-coach",
-                kind: "preference",
+                category: "preference",
                 summary: "Health Coach should use direct accountability when the user is behind on steps.",
                 evidence: ["The user responds better to blunt coaching than soft encouragement."],
                 importance: 0.9,
@@ -21,7 +21,7 @@ extension AgentRuntimeTests {
             MemoryRecord(
                 namespace: "demo-assistant",
                 scope: "feature:travel-planner",
-                kind: "preference",
+                category: "preference",
                 summary: "Travel Planner should keep itineraries compact and transit-aware.",
                 importance: 0.8
             ),
@@ -51,12 +51,12 @@ extension AgentRuntimeTests {
 
         let preview = try await runtime.memoryQueryPreview(
             for: thread.id,
-            request: UserMessageRequest(text: "How should the health coach respond when the user is behind on steps?")
+            request: Request(text: "How should the health coach respond when the user is behind on steps?")
         )
         XCTAssertEqual(preview?.matches.map(\.record.scope.rawValue), ["feature:health-coach"])
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "How should the health coach respond when the user is behind on steps?"),
+        _ = try await runtime.send(
+            Request(text: "How should the health coach respond when the user is behind on steps?"),
             in: thread.id
         )
 
@@ -75,13 +75,13 @@ extension AgentRuntimeTests {
             MemoryRecord(
                 namespace: "demo-assistant",
                 scope: "feature:health-coach",
-                kind: "preference",
+                category: "preference",
                 summary: "Health Coach preference."
             ),
             MemoryRecord(
                 namespace: "demo-assistant",
                 scope: "feature:travel-planner",
-                kind: "preference",
+                category: "preference",
                 summary: "Travel Planner preference."
             ),
         ])
@@ -108,8 +108,8 @@ extension AgentRuntimeTests {
             )
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(
+        _ = try await runtime.send(
+            Request(
                 text: "Use travel planner memory instead.",
                 memorySelection: MemorySelection(
                     mode: .replace,
@@ -119,8 +119,8 @@ extension AgentRuntimeTests {
             in: thread.id
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(
+        _ = try await runtime.send(
+            Request(
                 text: "Now disable memory.",
                 memorySelection: MemorySelection(mode: .disable)
             ),
@@ -137,7 +137,7 @@ extension AgentRuntimeTests {
     func testRuntimeCanAutomaticallyCaptureMemoriesFromTranscript() async throws {
         let backend = InMemoryAgentBackend(
             structuredResponseText: """
-            {"memories":[{"summary":"Health Coach should use direct accountability when step pace is low.","scope":"feature:health-coach","kind":"preference","evidence":["The user asked for blunt reminders when behind on steps."],"importance":0.92,"tags":["steps","tone"],"relatedIDs":["goal-10000"],"dedupeKey":"health-coach-direct-accountability"},{"summary":"Travel Planner should keep itineraries compact and transit-aware.","scope":"feature:travel-planner","kind":"preference","evidence":["The user dislikes sprawling travel plans."],"importance":0.81,"tags":["travel"],"relatedIDs":["travel-style-compact"],"dedupeKey":"travel-planner-compact-itinerary"}]}
+            {"memories":[{"summary":"Health Coach should use direct accountability when step pace is low.","scope":"feature:health-coach","category":"preference","evidence":["The user asked for blunt reminders when behind on steps."],"importance":0.92,"tags":["steps","tone"],"relatedIDs":["goal-10000"],"dedupeKey":"health-coach-direct-accountability"},{"summary":"Travel Planner should keep itineraries compact and transit-aware.","scope":"feature:travel-planner","category":"preference","evidence":["The user dislikes sprawling travel plans."],"importance":0.81,"tags":["travel"],"relatedIDs":["travel-style-compact"],"dedupeKey":"travel-planner-compact-itinerary"}]}
             """
         )
         let store = InMemoryMemoryStore()
@@ -197,7 +197,7 @@ extension AgentRuntimeTests {
     func testRuntimeCanAutomaticallyCaptureMemoryAfterSuccessfulTurn() async throws {
         let backend = InMemoryAgentBackend(
             structuredResponseText: """
-            {"memories":[{"summary":"Health Coach should use direct accountability when the user falls behind on steps.","scope":"feature:health-coach","kind":"preference","evidence":["The user said blunt reminders work better than soft encouragement."],"importance":0.94,"tags":["steps","tone"],"relatedIDs":["goal-10000"],"dedupeKey":"health-coach-auto-capture"}]}
+            {"memories":[{"summary":"Health Coach should use direct accountability when the user falls behind on steps.","scope":"feature:health-coach","category":"preference","evidence":["The user said blunt reminders work better than soft encouragement."],"importance":0.94,"tags":["steps","tone"],"relatedIDs":["goal-10000"],"dedupeKey":"health-coach-auto-capture"}]}
             """
         )
         let store = InMemoryMemoryStore()
@@ -235,8 +235,8 @@ extension AgentRuntimeTests {
             )
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "If I am behind on steps, be direct and blunt with me."),
+        _ = try await runtime.send(
+            Request(text: "If I am behind on steps, be direct and blunt with me."),
             in: thread.id
         )
 
@@ -303,8 +303,8 @@ extension AgentRuntimeTests {
             )
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "This should still work."),
+        _ = try await runtime.send(
+            Request(text: "This should still work."),
             in: thread.id
         )
 
@@ -321,7 +321,7 @@ extension AgentRuntimeTests {
             MemoryRecord(
                 namespace: "demo-assistant",
                 scope: "feature:health-coach",
-                kind: "preference",
+                category: "preference",
                 summary: "Observed memory."
             ),
         ])
@@ -352,8 +352,8 @@ extension AgentRuntimeTests {
             )
         )
 
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Use memory."),
+        _ = try await runtime.send(
+            Request(text: "Use memory."),
             in: thread.id
         )
 
@@ -391,7 +391,7 @@ extension AgentRuntimeTests {
             memoryContext: AgentMemoryContext(
                 namespace: "demo-assistant",
                 scopes: ["feature:health-coach"],
-                kinds: ["preference"],
+                categories: ["preference"],
                 tags: ["steps"],
                 relatedIDs: ["goal-10000"]
             )
@@ -406,7 +406,7 @@ extension AgentRuntimeTests {
 
         XCTAssertEqual(record.namespace, "demo-assistant")
         XCTAssertEqual(record.scope, "feature:health-coach")
-        XCTAssertEqual(record.kind, "preference")
+        XCTAssertEqual(record.category, "preference")
         XCTAssertEqual(record.tags, ["steps"])
         XCTAssertEqual(record.relatedIDs, ["goal-10000"])
     }
@@ -447,7 +447,7 @@ extension AgentRuntimeTests {
         await XCTAssertThrowsErrorAsync(
             try await runtime.resolvedInstructionsPreview(
                 for: "missing-thread",
-                request: UserMessageRequest(text: "hello")
+                request: Request(text: "hello")
             )
         ) { error in
             XCTAssertEqual(error as? AgentRuntimeError, .threadNotFound("missing-thread"))
@@ -459,7 +459,7 @@ extension AgentRuntimeTests {
         let memoryContext = AgentMemoryContext(
             namespace: "demo-assistant",
             scopes: ["feature:health-coach"],
-            kinds: ["preference"],
+            categories: ["preference"],
             tags: ["steps"],
             relatedIDs: ["goal-10000"],
             readBudget: .init(maxItems: 3, maxCharacters: 500)

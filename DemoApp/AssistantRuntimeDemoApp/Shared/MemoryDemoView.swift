@@ -93,7 +93,7 @@ private extension MemoryDemoView {
                                 activeRecords: result.records.count,
                                 archivedRecords: 0,
                                 countsByScope: [:],
-                                countsByKind: [:]
+                                countsByCategory: [:]
                             )
                         )
                     }
@@ -120,7 +120,7 @@ private extension MemoryDemoView {
             Text("Guided Authoring")
                 .font(.headline)
 
-            Text("Uses `MemoryWriter` defaults so the app only supplies the memory payload. Namespace, scope, kind, and tags are resolved automatically.")
+            Text("Uses `MemoryWriter` defaults so the app only supplies the memory payload. Namespace, scope, category, and tags are resolved automatically.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -198,7 +198,7 @@ private extension MemoryDemoView {
                                 activeRecords: result.capture.records.count,
                                 archivedRecords: 0,
                                 countsByScope: [:],
-                                countsByKind: [:]
+                                countsByCategory: [:]
                             )
                         )
                     }
@@ -234,7 +234,7 @@ private extension MemoryDemoView {
                 body: """
                 namespace: \(DemoMemoryExamples.rawRecord.namespace)
                 scope: \(DemoMemoryExamples.rawRecord.scope.rawValue)
-                kind: \(DemoMemoryExamples.rawRecord.kind)
+                category: \(DemoMemoryExamples.rawRecord.category)
                 summary: \(DemoMemoryExamples.rawRecord.summary)
                 """
             )
@@ -299,7 +299,7 @@ private extension MemoryDemoView {
                     } else {
                         ForEach(Array(result.result.matches.enumerated()), id: \.offset) { _, match in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("\(match.record.scope.rawValue) • \(match.record.kind)")
+                                Text("\(match.record.scope.rawValue) • \(match.record.category)")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                                 Text(match.record.summary)
@@ -366,7 +366,7 @@ private extension MemoryDemoView {
             Group {
                 detailRow(label: "Namespace", value: record.namespace)
                 detailRow(label: "Scope", value: record.scope.rawValue)
-                detailRow(label: "Kind", value: record.kind)
+                detailRow(label: "Category", value: record.category)
                 detailRow(label: "Summary", value: record.summary)
                 detailRow(label: "Tags", value: record.tags.joined(separator: ", "))
                 detailRow(label: "Dedupe Key", value: record.dedupeKey ?? "none")

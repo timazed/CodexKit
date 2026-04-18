@@ -120,7 +120,7 @@ enum AgentDemoRuntimeFactory {
                     options: .init(
                         defaults: .init(
                             namespace: DemoMemoryExamples.namespace,
-                            kind: "preference",
+                            category: "preference",
                             tags: ["demo", "auto-capture"]
                         ),
                         maxMemories: 2
@@ -181,7 +181,7 @@ enum AgentDemoRuntimeFactory {
                     options: .init(
                         defaults: .init(
                             namespace: DemoMemoryExamples.namespace,
-                            kind: "preference",
+                            category: "preference",
                             tags: ["demo", "auto-capture"]
                         ),
                         maxMemories: 2

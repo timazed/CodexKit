@@ -27,7 +27,7 @@ extension CodexResponsesBackendTests {
             XCTAssertEqual(schema["type"] as? String, "object")
         }))
 
-        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-structured"), history: [], message: UserMessageRequest(text: "Draft a reply."), instructions: "Resolved instructions", responseFormat: responseFormat, streamedStructuredOutput: nil, tools: [], session: session)
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-structured"), history: [], message: Request(text: "Draft a reply."), instructions: "Resolved instructions", responseFormat: responseFormat, streamedStructuredOutput: nil, tools: [], session: session)
         for try await _ in turnStream.events {}
     }
 
@@ -60,13 +60,24 @@ extension CodexResponsesBackendTests {
             let body = try XCTUnwrap(requestBodyData(for: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
             let instructions = try XCTUnwrap(json?["instructions"] as? String)
-            XCTAssertTrue(instructions.contains("CodexKit private streaming contract"))
+            XCTAssertEqual(instructions, "Resolved instructions")
             let text = json?["text"] as? [String: Any]
             let format = try XCTUnwrap(text?["format"] as? [String: Any])
             XCTAssertEqual(format["type"] as? String, "text")
+            let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+            let streamedOutputItem = try XCTUnwrap(
+                input.first(where: {
+                    ($0["role"] as? String) == "developer"
+                })
+            )
+            let developerContent = try XCTUnwrap(streamedOutputItem["content"] as? [[String: Any]])
+            let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
+            XCTAssertTrue(developerText.contains("CodexKit streamed response contract"))
+            XCTAssertTrue(developerText.contains("Schema name: shipping_reply_draft"))
+            XCTAssertTrue(developerText.contains("<codexkit-structured-output>"))
         }))
 
-        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-streamed-structured"), history: [], message: UserMessageRequest(text: "Draft a reply."), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: streamedStructuredOutput, tools: [], session: session)
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-streamed-structured"), history: [], message: Request(text: "Draft a reply."), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: streamedStructuredOutput, tools: [], session: session)
 
         var deltas: [String] = []
         var finalAssistantMessage: AgentMessage?

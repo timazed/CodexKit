@@ -190,7 +190,7 @@ struct SQLiteMemoryStoreRepository: Sendable {
             ).insert(db)
         }
 
-        let ftsContent = ([record.summary] + record.evidence + record.tags + [record.kind])
+        let ftsContent = ([record.summary] + record.evidence + record.tags + [record.category])
             .joined(separator: " ")
         try MemoryFTSRow(
             namespace: record.namespace,
@@ -204,7 +204,7 @@ struct SQLiteMemoryStoreRepository: Sendable {
             namespace: record.namespace,
             id: record.id,
             scope: record.scope.rawValue,
-            kind: record.kind,
+            kind: record.category,
             summary: record.summary,
             evidenceJSON: codec.encode(record.evidence),
             importance: record.importance,
@@ -228,7 +228,7 @@ struct SQLiteMemoryStoreRepository: Sendable {
             id: row.id,
             namespace: namespace,
             scope: MemoryScope(rawValue: row.scope),
-            kind: row.kind,
+            category: row.kind,
             summary: row.summary,
             evidence: try codec.decode([String].self, from: row.evidenceJSON),
             importance: row.importance,

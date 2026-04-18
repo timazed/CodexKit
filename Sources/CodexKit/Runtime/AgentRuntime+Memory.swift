@@ -5,7 +5,7 @@ extension AgentRuntime {
 
     public func memoryQueryPreview(
         for threadID: String,
-        request: UserMessageRequest
+        request: Request
     ) async throws -> MemoryQueryResult? {
         guard let thread = thread(for: threadID) else {
             throw AgentRuntimeError.threadNotFound(threadID)
@@ -122,7 +122,7 @@ extension AgentRuntime {
             inheritedDefaults = MemoryWriterDefaults(
                 namespace: memoryContext.namespace,
                 scope: memoryContext.scopes.count == 1 ? memoryContext.scopes[0] : nil,
-                kind: memoryContext.kinds.count == 1 ? memoryContext.kinds[0] : nil,
+                category: memoryContext.categories.count == 1 ? memoryContext.categories[0] : nil,
                 tags: memoryContext.tags,
                 relatedIDs: memoryContext.relatedIDs
             )
@@ -163,7 +163,7 @@ extension AgentRuntime {
             for: threadID,
             defaults: options.defaults
         )
-        let request = UserMessageRequest(
+        let request = Request(
             text: MemoryExtractionDraftResponse.prompt(
                 sourceText: sourceText,
                 maxMemories: max(1, options.maxMemories)
@@ -175,10 +175,12 @@ extension AgentRuntime {
             history: [],
             message: request,
             instructions: options.instructions ?? MemoryExtractionDraftResponse.instructions,
-            responseFormat: MemoryExtractionDraftResponse.responseFormat(
-                maxMemories: max(1, options.maxMemories)
+            responseContract: AgentResponseContract(
+                format: MemoryExtractionDraftResponse.responseFormat(
+                    maxMemories: max(1, options.maxMemories)
+                ),
+                deliveryMode: .oneShot
             ),
-            streamedStructuredOutput: nil,
             tools: [],
             session: session
         )
@@ -253,7 +255,7 @@ extension AgentRuntime {
 
     func resolvedMemoryQuery(
         thread: AgentThread,
-        message: UserMessageRequest
+        message: Request
     ) async -> MemoryQueryResult? {
         guard let memoryConfiguration else {
             return nil
@@ -293,7 +295,7 @@ extension AgentRuntime {
 
     func resolvedMemoryQuery(
         thread: AgentThread,
-        message: UserMessageRequest,
+        message: Request,
         fallbackRanking: MemoryRankingWeights,
         fallbackBudget: MemoryReadBudget
     ) -> MemoryQuery? {
@@ -327,10 +329,10 @@ extension AgentRuntime {
             }
         }
 
-        let kinds = resolvedValues(
+        let categories = resolvedValues(
             mode: selection?.mode ?? .inherit,
-            threadValues: threadContext?.kinds ?? [],
-            selectionValues: selection?.kinds ?? []
+            threadValues: threadContext?.categories ?? [],
+            selectionValues: selection?.categories ?? []
         )
         let tags = resolvedValues(
             mode: selection?.mode ?? .inherit,
@@ -361,7 +363,7 @@ extension AgentRuntime {
             namespace: namespace,
             scopes: scopes,
             text: text,
-            kinds: kinds,
+            categories: categories,
             tags: tags,
             relatedIDs: relatedIDs,
             recencyWindow: recencyWindow,
@@ -375,7 +377,7 @@ extension AgentRuntime {
 
     func resolvedMemoryBudget(
         thread: AgentThread,
-        message: UserMessageRequest,
+        message: Request,
         fallback: MemoryReadBudget
     ) -> MemoryReadBudget {
         message.memorySelection?.readBudget

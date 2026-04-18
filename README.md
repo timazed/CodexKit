@@ -16,7 +16,8 @@ Use `CodexKit` if you are building a SwiftUI app for iOS or macOS and want:
 - resumable threaded conversations
 - structured local memory with optional prompt injection
 - streamed assistant output
-- typed structured input alongside freeform prompt text
+- typed request context alongside freeform prompt text
+- declarative request fulfillment policy via typed options
 - typed one-shot text and structured completions
 - host-defined tools with approval gates
 - persona- and skill-aware agent behavior
@@ -32,10 +33,12 @@ The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
   The main entry point. Owns auth state, threads, tool execution, personas, skills, and optional memory.
 - `AgentThread`
   A persistent conversation with its own status, title, persona stack, skill IDs, and optional memory context.
-- `UserMessageRequest`
-  A single turn request. Can include text, images, imported content, persona override, skill override, and memory selection.
-- `AgentMessageRequest<Input>`
-  A typed turn request that carries freeform prompt text plus optional machine-readable structured input and named structured sections.
+- `Request`
+  A single turn request. Can include text, images, imported content, optional app-provided context, optional fulfillment-policy options, persona override, skill override, and memory selection.
+- `RequestContext`
+  Optional authoritative machine context supplied by the host app for a turn.
+- `RequestOptionsRepresentable`
+  A typed, app-owned way to describe fulfillment policy for a turn through a mode plus natural-language requirements.
 - `CodexResponsesBackend`
   The built-in ChatGPT/Codex-style backend used for text/image/tool turns.
 - `ToolDefinition`
@@ -52,9 +55,11 @@ The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
 ## Choose Your Level
 
 - Simple chat
-  Sign in, create a thread, and call `streamMessage(...)` or `sendMessage(...)`.
+  Sign in, create a thread, and call `stream(...)` or `send(...)`.
 - Typed app flows
-  Use `sendMessage(..., expecting:)` to get a `Decodable` value back.
+  Use `send(..., response:)` to get a `Decodable` value back.
+- Guided retrieval/enrichment
+  Use `Request.options` to tell the model how to fulfill the turn so the typed response contract can be satisfied.
 - Tool-driven agents
   Register host tools and optionally gate them with approvals.
 - Rich behavior
@@ -105,8 +110,8 @@ let runtime = try AgentRuntime(configuration: .init(
 
 let _ = try await runtime.signIn()
 let thread = try await runtime.createThread(title: "First Chat")
-let stream = try await runtime.streamMessage(
-    UserMessageRequest(text: "Hello from Apple platforms."),
+let stream = try await runtime.stream(
+    Request(text: "Hello from Apple platforms."),
     in: thread.id
 )
 ```
@@ -117,8 +122,10 @@ If you are moving code forward from earlier 2.0 alpha snapshots, there are two i
 
 - `GRDBRuntimeStateStore` was renamed to `SQLiteRuntimeStateStore`
   The public runtime-store surface now uses `SQLite` naming consistently alongside `SQLiteMemoryStore`.
-- structured machine context is now first-class
-  Use `AgentMessageRequest<Input>` when you want to send typed structured input separately from freeform prompt text.
+- request context is now first-class
+  Use `Request` with `context:` when you want to attach host-app context separately from freeform prompt text.
+- fulfillment policy is request-side
+  Use `Request.options` when the app needs to guide how lookup or enrichment work should be performed without putting that policy into user-visible text.
 
 Example rename:
 
@@ -145,7 +152,8 @@ let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
 | Built-in request retry/backoff | Yes (configurable) |
 | Structured local memory layer | Yes |
 | Text + image input | Yes |
-| Typed structured input | Yes |
+| Typed request context | Yes |
+| Declarative request fulfillment policy | Yes |
 | Typed structured output (`Decodable`) | Yes |
 | Mixed streamed text + typed structured output | Yes |
 | Share/import helper (`AgentImportedContent`) | Yes |
@@ -312,7 +320,7 @@ When `network` logging is enabled at `.debug`, `CodexKit` also emits raw request
 - outbound `/responses/compact` request JSON bodies
 - inbound `/responses/compact` response JSON bodies
 
-That is intentionally verbose and may include prompt text, structured input, tool arguments, and model output, so it should be treated as a developer-only debugging mode.
+That is intentionally verbose and may include prompt text, request context, tool arguments, and model output, so it should be treated as a developer-only debugging mode.
 
 Use `AgentConsoleLogSink` for stderr-style console logs, `AgentOSLogSink` for unified Apple logging, or provide your own `AgentLogSink`.
 
@@ -479,23 +487,23 @@ let contexts = try await runtime.execute(
 
 For most apps, there are now three common send paths:
 
-- `streamMessage(...)`
+- `stream(...)`
   Stream deltas, tool events, approvals, and final turn completion.
-- `streamMessage(..., expecting:)`
+- `stream(..., response:)`
   Stream normal turn events plus typed structured-output events in the same turn.
-- `sendMessage(...)`
+- `send(...)`
   Return the assistant's final text as a `String`.
-- `sendMessage(..., expecting:)`
+- `send(..., response:)`
   Return a typed `Decodable` value from a structured response.
 
-If you need to send machine-readable turn context separately from human prompt text, use `AgentMessageRequest<Input>`. CodexKit preserves that typed input through the runtime and sends it to the model as a distinct authoritative machine-context block instead of forcing you to JSON-encode it into `text`.
+If you need to send host-app context or fulfillment policy separately from human prompt text, use `Request` with `context` and `options`. CodexKit keeps both in developer-message space so the model can see them without pretending they are user-authored text.
 
-- `structuredInput`
-  The primary typed machine-context payload for the turn.
-- `structuredInputSchemaName`
-  An optional label for that primary structured input block when you want something more explicit than an unlabeled JSON object.
-- `structuredSections`
-  Additional named sibling machine-context blocks when your turn context comes from multiple subsystems and should stay separate instead of being merged into one wrapper type.
+- `context`
+  Optional authoritative machine context for the turn.
+- `options`
+  Optional fulfillment policy for the turn. Use this to describe how lookup, retrieval, or enrichment work should be performed.
+- `response:`
+  The typed response contract CodexKit transmits, validates, and decodes.
 
 ```swift
 struct PlannerContext: Codable, Sendable {
@@ -503,35 +511,100 @@ struct PlannerContext: Codable, Sendable {
     let customerTier: String
 }
 
-let draft = try await runtime.sendMessage(
-    AgentMessageRequest(
+let draft = try await runtime.send(
+    try Request(
         text: "Draft a response for the delayed package.",
-        structuredInput: PlannerContext(
+        context: PlannerContext(
             objective: "Resolve the shipping complaint quickly.",
             customerTier: "plus"
         ),
-        structuredInputSchemaName: "PlannerContext",
-        structuredSections: [
-            AgentStructuredSection(
-                name: "browser_snapshot",
-                schemaName: "BrowserSnapshot",
-                payload: .object([
-                    "pageTitle": .string("Order #1234"),
-                    "status": .string("In transit"),
-                ])
-            )
-        ]
+        contextSchemaName: "PlannerContext"
     ),
     in: thread.id,
-    expecting: ShippingReplyDraft.self
+    response: ShippingReplyDraft.self
 )
 ```
 
-For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `sendMessage`:
+For retrieval-style workflows, `options` can carry app-owned declarative requirements that render into fulfillment instructions:
 
 ```swift
-let summary = try await runtime.sendMessage(
-    UserMessageRequest(text: "Summarize the latest thread activity."),
+protocol NaturalLanguageRenderable {
+    var naturalLanguage: String { get }
+}
+
+protocol RequestMode: NaturalLanguageRenderable, Sendable { }
+protocol RequestRequirement: NaturalLanguageRenderable, Sendable { }
+
+struct KnownVenue: Codable, Sendable {
+    let id: String
+}
+
+enum ResearchMode: RequestMode {
+    case enrichment
+
+    var naturalLanguage: String {
+        "Enrich the known result with additional grounded details."
+    }
+}
+
+enum VenueRequirement: RequestRequirement {
+    case rating
+    case availability
+
+    var naturalLanguage: String {
+        switch self {
+        case .rating:
+            "Find the venue rating and review count using Google."
+        case .availability:
+            "Find availability information using OpenTable."
+        }
+    }
+}
+
+struct VenueLookupOptions: RequestOptionsRepresentable {
+    let mode: ResearchMode
+    let requirements: [VenueRequirement]
+}
+
+let venue = try await runtime.send(
+    Request(
+        text: "Mr Wong's",
+        context: try RequestContext(KnownVenue(id: "venue_123")),
+        options: VenueLookupOptions(
+            mode: .enrichment,
+            requirements: [.rating, .availability]
+        )
+    ),
+    in: thread.id,
+    response: ShippingReplyDraft.self
+)
+```
+
+That request is sent conceptually as:
+
+```text
+Developer message: request context
+- known venue id: venue_123
+
+Developer message: request options
+Mode:
+- Enrich the known result with additional grounded details.
+Requirements:
+- Find the venue rating and review count using Google.
+- Find availability information using OpenTable.
+
+User message
+Mr Wong's
+
+Response contract
+Return the final result serialized as the declared response schema.
+```
+
+For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `send`:
+
+```swift
+let summary = try await runtime.send(
+    Request(text: "Summarize the latest thread activity."),
     in: thread.id
 )
 ```
@@ -559,20 +632,20 @@ struct ShippingReplyDraft: AgentStructuredOutput {
     )
 }
 
-let draft = try await runtime.sendMessage(
-    UserMessageRequest(text: "Draft a response for the delayed package."),
+let draft = try await runtime.send(
+    Request(text: "Draft a response for the delayed package."),
     in: thread.id,
-    expecting: ShippingReplyDraft.self
+    response: ShippingReplyDraft.self
 )
 ```
 
 If you want streamed prose and typed machine output in the same turn, use the streaming overload:
 
 ```swift
-let stream = try await runtime.streamMessage(
-    UserMessageRequest(text: "Draft a response for the delayed package."),
+let stream = try await runtime.stream(
+    Request(text: "Draft a response for the delayed package."),
     in: thread.id,
-    expecting: ShippingReplyDraft.self,
+    response: ShippingReplyDraft.self,
     options: .init(required: true)
 )
 
@@ -590,7 +663,7 @@ for try await event in stream {
 }
 ```
 
-The structured payload is delivered out-of-band from assistant prose. CodexKit strips its internal framing before emitting text deltas or committed assistant messages, and persists the final committed payload metadata with the assistant message for later restore/inspection.
+The structured payload is delivered out-of-band from assistant prose. CodexKit keeps request-time structured metadata separate from runtime instructions, strips its internal framing before emitting text deltas or committed assistant messages, and persists the final committed payload metadata with the assistant message for later restore/inspection.
 
 `CodexKit` sends that through the OpenAI Responses structured-output path and stores the assistant's final JSON reply in thread history like any other assistant turn.
 
@@ -608,8 +681,8 @@ If you need something more specialized, `AgentStructuredOutputFormat` still supp
 ```swift
 let imageData: Data = ...
 
-let stream = try await runtime.streamMessage(
-    UserMessageRequest(
+let stream = try await runtime.stream(
+    Request(
         text: "Describe this image",
         images: [.jpeg(imageData)]
     ),
@@ -653,7 +726,7 @@ let runtime = try AgentRuntime(configuration: .init(
             options: .init(
                 defaults: .init(
                     namespace: "demo-assistant",
-                    kind: "preference"
+                    category: "preference"
                 ),
                 maxMemories: 2
             )
@@ -669,8 +742,8 @@ let thread = try await runtime.createThread(
     )
 )
 
-_ = try await runtime.sendMessage(
-    UserMessageRequest(text: "Be direct with me when I fall behind on steps."),
+_ = try await runtime.send(
+    Request(text: "Be direct with me when I fall behind on steps."),
     in: thread.id
 )
 ```
@@ -682,7 +755,7 @@ let writer = try await runtime.memoryWriter(
     defaults: .init(
         namespace: "demo-assistant",
         scope: "feature:health-coach",
-        kind: "preference",
+        category: "preference",
         tags: ["steps", "tone"]
     )
 )
@@ -715,7 +788,7 @@ let result = try await runtime.captureMemories(
         defaults: .init(
             namespace: "demo-assistant",
             scope: "feature:health-coach",
-            kind: "preference"
+            category: "preference"
         ),
         maxMemories: 3
     )
@@ -739,7 +812,7 @@ try await memoryStore.upsert(
     MemoryRecord(
         namespace: "demo-assistant",
         scope: "feature:health-coach",
-        kind: "preference",
+        category: "preference",
         summary: "Health Coach should use direct accountability when the user is behind on steps.",
         evidence: ["The user responds better to blunt coaching than soft encouragement."],
         importance: 0.9,
@@ -781,8 +854,8 @@ let thread = try await runtime.createThread(
 Per-turn memory can be narrowed, expanded, replaced, or disabled with `MemorySelection`:
 
 ```swift
-let reply = try await runtime.sendMessage(
-    UserMessageRequest(
+let reply = try await runtime.send(
+    Request(
         text: "How should the health coach respond when the user is behind on steps?",
         memorySelection: MemorySelection(
             mode: .append,
@@ -843,8 +916,8 @@ let reviewerOverride = AgentPersonaStack(layers: [
     .init(name: "reviewer", instructions: "For this reply only, act as a strict reviewer and call out risks first.")
 ])
 
-let stream = try await runtime.streamMessage(
-    UserMessageRequest(
+let stream = try await runtime.stream(
+    Request(
         text: "Review this architecture and point out the risks.",
         personaOverride: reviewerOverride
     ),
@@ -863,12 +936,12 @@ let imported = AgentImportedContent(
     images: sharedImages
 )
 
-let request = UserMessageRequest(
+let request = Request(
     prompt: "Summarize this shared content and call out the next action.",
     importedContent: imported
 )
 
-let summary = try await runtime.sendMessage(
+let summary = try await runtime.send(
     request,
     in: thread.id
 )
@@ -881,7 +954,7 @@ That keeps the SDK focused on runtime capability while letting your app own the 
 App Intents also stay app-owned, but the demo app now includes working source examples for:
 
 - summarizing imported text/links through `AgentImportedContent`
-- generating a typed shipping support draft through `sendMessage(..., expecting:)`
+- generating a typed shipping support draft through `send(..., response:)`
 
 The source lives in:
 
@@ -910,7 +983,7 @@ struct SummarizeImportedContentIntent: AppIntent {
         }
 
         let thread = try await runtime.createThread(title: "Shortcut Summary")
-        let request = UserMessageRequest(
+        let request = Request(
             prompt: "Summarize this imported content in three short bullet points.",
             importedContent: .init(
                 textSnippets: [text],
@@ -918,7 +991,7 @@ struct SummarizeImportedContentIntent: AppIntent {
             )
         )
 
-        let summary = try await runtime.sendMessage(
+        let summary = try await runtime.send(
             request,
             in: thread.id
         )
@@ -1010,8 +1083,8 @@ let tripThread = try await runtime.createThread(
     skillIDs: ["travel_planner"]
 )
 
-let stream = try await runtime.streamMessage(
-    UserMessageRequest(
+let stream = try await runtime.stream(
+    Request(
         text: "Review this plan with extra travel rigor.",
         skillOverrideIDs: ["travel_planner"]
     ),
@@ -1057,7 +1130,7 @@ You can preview the exact compiled instructions for a specific send before start
 ```swift
 let preview = try await runtime.resolvedInstructionsPreview(
     for: thread.id,
-    request: UserMessageRequest(
+    request: Request(
         text: "Give me a strict step plan."
     )
 )
@@ -1094,11 +1167,11 @@ print(preview)
 
 The 2.0 line standardizes runtime sends around:
 
-- `streamMessage(...)` for streaming turn events
-- `streamMessage(..., expecting:)` for mixed prose + typed structured stream events
-- `sendMessage(...)` for final text
-- `sendMessage(..., expecting:)` for typed structured replies
-- `AgentMessageRequest<Input>` for turns that combine freeform prompt text with typed structured machine context
+- `stream(...)` for streaming turn events
+- `stream(..., response:)` for mixed prose + typed structured stream events
+- `send(...)` for final text
+- `send(..., response:)` for typed structured replies
+- `Request` for turns that combine freeform prompt text with typed host-app context and declarative fulfillment policy
 
 This is the shape new examples and docs target on `main`.
 

@@ -30,7 +30,7 @@ extension CodexResponsesBackendTests {
 
         """.utf8)))
 
-        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-retry"), history: [], message: UserMessageRequest(text: "Hi"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-retry"), history: [], message: Request(text: "Hi"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
 
         var assistantMessage: AgentMessage?
         for try await event in turnStream.events {
@@ -54,7 +54,7 @@ extension CodexResponsesBackendTests {
         await TestURLProtocol.enqueue(.init(statusCode: 400, headers: ["Content-Type": "application/json"], body: Data(#"{"error":"bad request"}"#.utf8)))
         await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "text/event-stream"], body: Data(), inspect: { _ in XCTFail("Non-retryable 400 should not trigger a retry.") }))
 
-        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-no-retry"), history: [], message: UserMessageRequest(text: "Hi"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-no-retry"), history: [], message: Request(text: "Hi"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
 
         await XCTAssertThrowsErrorAsync(try await drainEvents(turnStream.events)) { error in
             XCTAssertEqual(error as? AgentRuntimeError, AgentRuntimeError(code: "responses_http_status_400", message: "The ChatGPT responses request failed with status 400: {\"error\":\"bad request\"}"))
@@ -80,7 +80,7 @@ extension CodexResponsesBackendTests {
 
         """.utf8)))
 
-        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-network-retry"), history: [], message: UserMessageRequest(text: "Retry me"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-network-retry"), history: [], message: Request(text: "Retry me"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
 
         var assistantMessage: AgentMessage?
         for try await event in turnStream.events {

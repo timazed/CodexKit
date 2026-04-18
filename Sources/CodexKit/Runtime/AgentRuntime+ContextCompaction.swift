@@ -37,7 +37,7 @@ extension AgentRuntime {
 
     func maybeCompactThreadContextBeforeTurn(
         thread: AgentThread,
-        request: UserMessageRequest,
+        request: Request,
         instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession
@@ -78,7 +78,7 @@ extension AgentRuntime {
 
     func maybeCompactThreadContextAfterContextFailure(
         thread: AgentThread,
-        request: UserMessageRequest,
+        request: Request,
         instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession,
@@ -118,7 +118,7 @@ extension AgentRuntime {
         let tools = await toolRegistry.allDefinitions()
         let resolvedInstructions = await resolveInstructions(
             thread: thread,
-            message: UserMessageRequest(text: "", images: []),
+            message: Request(text: "", images: []),
             resolvedTurnSkills: ResolvedTurnSkills(
                 threadSkills: [],
                 turnSkills: [],
@@ -318,16 +318,19 @@ extension AgentRuntime {
 
     func approximateTokenCount(
         for history: [AgentMessage],
-        pendingMessage: UserMessageRequest?,
+        pendingMessage: Request?,
         instructions: String
     ) -> Int {
         let historyCharacters = history.reduce(0) { partialResult, message in
             partialResult + message.text.count + (message.images.count * 512)
         }
         let pendingStructuredCharacters = pendingMessage.map { message in
-            let primary = message.structuredInput?.payload.prettyJSONString.count ?? 0
-            let sections = message.structuredSections.reduce(0) { $0 + $1.payload.prettyJSONString.count }
-            return primary + sections
+            let contextCharacters = message.context?.payload.prettyJSONString.count ?? 0
+            let optionsModeCharacters = message.options?.mode.count ?? 0
+            let optionRequirementCharacters = message.options?.requirements.reduce(0) { partialResult, requirement in
+                partialResult + requirement.count
+            } ?? 0
+            return contextCharacters + optionsModeCharacters + optionRequirementCharacters
         } ?? 0
         let pendingCharacters = (pendingMessage?.text.count ?? 0)
             + ((pendingMessage?.images.count ?? 0) * 512)

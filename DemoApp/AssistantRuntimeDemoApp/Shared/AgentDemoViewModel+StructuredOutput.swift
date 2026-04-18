@@ -33,10 +33,10 @@ extension AgentDemoViewModel {
                 lastResolvedInstructionsThreadTitle = thread.title ?? "Structured Output: Shipping Draft"
             }
 
-            let draft = try await runtime.sendMessage(
+            let draft = try await runtime.send(
                 request,
                 in: thread.id,
-                expecting: StructuredShippingReplyDraft.self
+                response: StructuredShippingReplyDraft.self
             )
 
             structuredShippingReplyResult = StructuredOutputDemoDraftResult(
@@ -83,10 +83,10 @@ extension AgentDemoViewModel {
                 lastResolvedInstructionsThreadTitle = thread.title ?? "Structured Output: Imported Summary"
             }
 
-            let summary = try await runtime.sendMessage(
+            let summary = try await runtime.send(
                 request,
                 in: thread.id,
-                expecting: StructuredImportedContentSummary.self
+                response: StructuredImportedContentSummary.self
             )
 
             structuredImportedSummaryResult = StructuredOutputDemoImportResult(
@@ -136,10 +136,10 @@ extension AgentDemoViewModel {
                 lastResolvedInstructionsThreadTitle = thread.title ?? "Structured Output: Streamed Delivery Update"
             }
 
-            let stream = try await runtime.streamMessage(
+            let stream = try await runtime.stream(
                 request,
                 in: thread.id,
-                expecting: StreamedStructuredDeliveryUpdate.self
+                response: StreamedStructuredDeliveryUpdate.self
             )
 
             var visibleText = ""

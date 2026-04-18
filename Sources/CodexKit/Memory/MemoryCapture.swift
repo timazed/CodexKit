@@ -52,7 +52,7 @@ struct MemoryExtractionDraftResponse: Decodable, Sendable {
                             properties: [
                                 "summary": .string(),
                                 "scope": .nullable(.string()),
-                                "kind": .nullable(.string()),
+                                "category": .nullable(.string()),
                                 "evidence": .array(items: .string()),
                                 "importance": .number,
                                 "tags": .array(items: .string()),
@@ -106,7 +106,7 @@ struct MemoryExtractionDraftResponse: Decodable, Sendable {
 struct MemoryExtractionDraft: Decodable, Sendable {
     let summary: String
     let scope: String?
-    let kind: String?
+    let category: String?
     let evidence: [String]
     let importance: Double
     let tags: [String]
@@ -116,7 +116,7 @@ struct MemoryExtractionDraft: Decodable, Sendable {
     var memoryDraft: MemoryDraft {
         MemoryDraft(
             scope: scope.map(MemoryScope.init(rawValue:)),
-            kind: kind,
+            category: category,
             summary: summary,
             evidence: evidence,
             importance: importance,

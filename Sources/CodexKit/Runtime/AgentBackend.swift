@@ -23,7 +23,7 @@ public protocol AgentBackend: Sendable {
     func beginTurn(
         thread: AgentThread,
         history: [AgentMessage],
-        message: UserMessageRequest,
+        message: Request,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,

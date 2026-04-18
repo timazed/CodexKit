@@ -23,8 +23,8 @@ extension AgentRuntimeTests {
         _ = try await runtime.restore()
         _ = try await runtime.signIn()
         let thread = try await runtime.createThread(title: "Logging")
-        _ = try await runtime.sendMessage(
-            UserMessageRequest(text: "Log this turn"),
+        _ = try await runtime.send(
+            Request(text: "Log this turn"),
             in: thread.id
         )
 
@@ -85,7 +85,7 @@ extension CodexResponsesBackendTests {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-retry"),
             history: [],
-            message: UserMessageRequest(text: "Hi"),
+            message: Request(text: "Hi"),
             instructions: "Resolved instructions",
             responseFormat: nil,
             streamedStructuredOutput: nil,

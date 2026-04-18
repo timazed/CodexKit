@@ -339,7 +339,7 @@ public actor AgentRuntime {
 
     func resolveInstructions(
         thread: AgentThread,
-        message: UserMessageRequest,
+        message: Request,
         resolvedTurnSkills: ResolvedTurnSkills
     ) async -> String {
         let compiled = AgentInstructionCompiler.compile(
