@@ -35,8 +35,6 @@ The SDK stays tool-agnostic. Your app defines the tool surface and runtime UX.
   A persistent conversation with its own status, title, persona stack, skill IDs, and optional memory context.
 - `Request`
   A single turn request. Can include text, images, imported content, optional app-provided context, optional fulfillment-policy options, persona override, skill override, and memory selection.
-- `RequestContext`
-  Optional authoritative machine context supplied by the host app for a turn.
 - `RequestOptionsRepresentable`
   A typed, app-owned way to describe fulfillment policy for a turn through a mode plus natural-language requirements.
 - `CodexResponsesBackend`

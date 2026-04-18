@@ -274,25 +274,23 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
 public struct Request: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
-    public var context: RequestContext?
-    public var options: RequestOptions?
     public var personaOverride: AgentPersonaStack?
     public var skillOverrideIDs: [String]?
     public var memorySelection: MemorySelection?
+    var context: CompiledRequestContext?
+    var options: CompiledRequestOptions?
 
     public init(
         text: String,
         images: [AgentImageAttachment] = [],
-        context: RequestContext? = nil,
-        options: RequestOptions? = nil,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil
     ) {
         self.text = text
         self.images = images
-        self.context = context
-        self.options = options
+        context = nil
+        options = nil
         self.personaOverride = personaOverride
         self.skillOverrideIDs = skillOverrideIDs
         self.memorySelection = memorySelection
@@ -313,23 +311,23 @@ public struct Request: Codable, Hashable, Sendable {
         self.init(
             text: text,
             images: images,
-            context: try context.map {
-                RequestContext(
-                    schemaName: contextSchemaName,
-                    payload: try JSONValue.encoding($0, encoder: encoder)
-                )
-            },
-            options: options.map { options in
-                RequestOptions(
-                    schemaName: optionsSchemaName ?? Options.schemaName,
-                    mode: options.mode.naturalLanguage,
-                    requirements: options.requirements.map(\.naturalLanguage)
-                )
-            },
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs,
             memorySelection: memorySelection
         )
+        self.context = try context.map {
+                CompiledRequestContext(
+                    schemaName: contextSchemaName,
+                    payload: try JSONValue.encoding($0, encoder: encoder)
+                )
+            }
+        self.options = options.map { options in
+            CompiledRequestOptions(
+                schemaName: optionsSchemaName ?? Options.schemaName,
+                mode: options.mode.naturalLanguage,
+                requirements: options.requirements.map(\.naturalLanguage)
+            )
+        }
     }
 
     public init<Context: Encodable & Sendable>(
@@ -345,17 +343,16 @@ public struct Request: Codable, Hashable, Sendable {
         self.init(
             text: text,
             images: images,
-            context: try context.map {
-                RequestContext(
-                    schemaName: contextSchemaName,
-                    payload: try JSONValue.encoding($0, encoder: encoder)
-                )
-            },
-            options: nil,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs,
             memorySelection: memorySelection
         )
+        self.context = try context.map {
+            CompiledRequestContext(
+                schemaName: contextSchemaName,
+                payload: try JSONValue.encoding($0, encoder: encoder)
+            )
+        }
     }
 
     public init<Options: RequestOptionsRepresentable>(
@@ -371,36 +368,51 @@ public struct Request: Codable, Hashable, Sendable {
         self.init(
             text: text,
             images: images,
-            context: nil,
-            options: options.map { options in
-                RequestOptions(
-                    schemaName: optionsSchemaName ?? Options.schemaName,
-                    mode: options.mode.naturalLanguage,
-                    requirements: options.requirements.map(\.naturalLanguage)
-                )
-            },
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs,
             memorySelection: memorySelection
         )
+        self.options = options.map { options in
+            CompiledRequestOptions(
+                schemaName: optionsSchemaName ?? Options.schemaName,
+                mode: options.mode.naturalLanguage,
+                requirements: options.requirements.map(\.naturalLanguage)
+            )
+        }
     }
 
     public init(
         prompt: String? = nil,
         importedContent: AgentImportedContent,
-        context: RequestContext? = nil,
-        options: RequestOptions? = nil,
+        personaOverride: AgentPersonaStack? = nil,
+        skillOverrideIDs: [String]? = nil
+    ) {
+        self.init(
+            prompt: prompt,
+            importedContent: importedContent,
+            compiledContext: nil,
+            compiledOptions: nil,
+            personaOverride: personaOverride,
+            skillOverrideIDs: skillOverrideIDs
+        )
+    }
+
+    init(
+        prompt: String? = nil,
+        importedContent: AgentImportedContent,
+        compiledContext: CompiledRequestContext? = nil,
+        compiledOptions: CompiledRequestOptions? = nil,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil
     ) {
         self.init(
             text: importedContent.composedText(prompt: prompt),
             images: importedContent.images,
-            context: context,
-            options: options,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs
         )
+        context = compiledContext
+        options = compiledOptions
     }
 
     public var hasContent: Bool {
@@ -425,8 +437,8 @@ public struct Request: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
-        context = try container.decodeIfPresent(RequestContext.self, forKey: .context)
-        options = try container.decodeIfPresent(RequestOptions.self, forKey: .options)
+        context = try container.decodeIfPresent(CompiledRequestContext.self, forKey: .context)
+        options = try container.decodeIfPresent(CompiledRequestOptions.self, forKey: .options)
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
         skillOverrideIDs = try container.decodeIfPresent([String].self, forKey: .skillOverrideIDs)
         memorySelection = try container.decodeIfPresent(MemorySelection.self, forKey: .memorySelection)

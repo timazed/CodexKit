@@ -463,6 +463,11 @@ final class CodexResponsesBackendTests: XCTestCase {
     }
 
     func testBackendSendsStructuredInputAsSeparateMachineReadableItems() async throws {
+        struct PlannerContext: Codable, Sendable {
+            let objective: String
+            let customerTier: String
+        }
+
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         let session = ChatGPTSession(
             accessToken: "access-token",
@@ -511,15 +516,13 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-structured-input"),
             history: [],
-            message: Request(
+            message: try Request(
                 text: "Answer using the provided context.",
-                context: RequestContext(
-                    schemaName: "PlannerContext",
-                    payload: .object([
-                        "objective": .string("Resolve shipping issue"),
-                        "customerTier": .string("plus"),
-                    ])
-                )
+                context: PlannerContext(
+                    objective: "Resolve shipping issue",
+                    customerTier: "plus"
+                ),
+                contextSchemaName: "PlannerContext"
             ),
             instructions: "Resolved instructions",
             responseFormat: nil,
@@ -620,6 +623,29 @@ final class CodexResponsesBackendTests: XCTestCase {
     }
 
     func testBackendSendsOptionsWithoutSchemaNameUsingGenericLabel() async throws {
+        enum LookupMode: RequestMode {
+            case enrichment
+
+            var naturalLanguage: String {
+                "Enrich the known result with additional grounded details."
+            }
+        }
+
+        enum LookupRequirement: RequestRequirement {
+            case address
+
+            var naturalLanguage: String {
+                "Find the venue address using Google."
+            }
+        }
+
+        struct GenericLookupOptions: Sendable, RequestOptionsRepresentable {
+            static var schemaName: String? { nil }
+
+            let mode: LookupMode
+            let requirements: [LookupRequirement]
+        }
+
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         let session = ChatGPTSession(
             accessToken: "access-token",
@@ -661,11 +687,11 @@ final class CodexResponsesBackendTests: XCTestCase {
         let turnStream = try await backend.beginTurn(
             thread: AgentThread(id: "thread-options-generic"),
             history: [],
-            message: Request(
+            message: try Request(
                 text: "Find the venue",
-                options: RequestOptions(
-                    mode: "Enrich the known result with additional grounded details.",
-                    requirements: ["Find the venue address using Google."]
+                options: GenericLookupOptions(
+                    mode: .enrichment,
+                    requirements: [.address]
                 )
             ),
             instructions: "Resolved instructions",

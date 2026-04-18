@@ -1,5 +1,5 @@
 import Combine
-import CodexKit
+@testable import CodexKit
 import XCTest
 
 extension AgentRuntimeTests {
