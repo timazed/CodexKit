@@ -535,48 +535,77 @@ protocol NaturalLanguageRenderable {
 protocol RequestMode: NaturalLanguageRenderable, Sendable { }
 protocol RequestRequirement: NaturalLanguageRenderable, Sendable { }
 
-struct KnownVenue: Codable, Sendable {
-    let id: String
+struct NutritionProfile: Codable, Sendable {
+    let dietaryGoal: String
+    let allergies: [String]
 }
 
-enum ResearchMode: RequestMode {
-    case enrichment
+enum DietPlanningMode: RequestMode {
+    case planning
 
     var naturalLanguage: String {
-        "Enrich the known result with additional grounded details."
+        "Plan a healthy diet recommendation tailored to the known nutrition profile."
     }
 }
 
-enum VenueRequirement: RequestRequirement {
-    case rating
-    case availability
+enum DietRequirement: RequestRequirement {
+    case proteinTarget
+    case fiberTarget
+    case mealIdeas
 
     var naturalLanguage: String {
         switch self {
-        case .rating:
-            "Find the venue rating and review count using Google."
-        case .availability:
-            "Find availability information using OpenTable."
+        case .proteinTarget:
+            "Recommend meals that support a high-protein diet."
+        case .fiberTarget:
+            "Include foods that help increase daily fiber intake."
+        case .mealIdeas:
+            "Suggest practical breakfast, lunch, and dinner ideas."
         }
     }
 }
 
-struct VenueLookupOptions: RequestOptionsRepresentable {
-    let mode: ResearchMode
-    let requirements: [VenueRequirement]
+struct DietPlanningOptions: RequestOptionsRepresentable {
+    let mode: DietPlanningMode
+    let requirements: [DietRequirement]
 }
 
-let venue = try await runtime.send(
-    Request(
-        text: "Mr Wong's",
-        context: try RequestContext(KnownVenue(id: "venue_123")),
-        options: VenueLookupOptions(
-            mode: .enrichment,
-            requirements: [.rating, .availability]
+struct HealthyDietPlan: AgentStructuredOutput {
+    let summary: String
+    let breakfast: String
+    let lunch: String
+    let dinner: String
+
+    static let responseFormat = AgentStructuredOutputFormat(
+        name: "healthy_diet_plan",
+        description: "A healthy diet recommendation tailored to the user's needs.",
+        schema: .object(
+            properties: [
+                "summary": .string(),
+                "breakfast": .string(),
+                "lunch": .string(),
+                "dinner": .string(),
+            ],
+            required: ["summary", "breakfast", "lunch", "dinner"],
+            additionalProperties: false
+        )
+    )
+}
+
+let dietPlan = try await runtime.send(
+    try Request(
+        text: "Create a healthy diet plan for this week.",
+        context: NutritionProfile(
+            dietaryGoal: "Lose weight while maintaining energy",
+            allergies: ["peanuts"]
+        ),
+        options: DietPlanningOptions(
+            mode: .planning,
+            requirements: [.proteinTarget, .fiberTarget, .mealIdeas]
         )
     ),
     in: thread.id,
-    response: ShippingReplyDraft.self
+    response: HealthyDietPlan.self
 )
 ```
 
@@ -584,20 +613,22 @@ That request is sent conceptually as:
 
 ```text
 Developer message: request context
-- known venue id: venue_123
+- dietary goal: Lose weight while maintaining energy
+- allergies: peanuts
 
 Developer message: request options
 Mode:
-- Enrich the known result with additional grounded details.
+- Plan a healthy diet recommendation tailored to the known nutrition profile.
 Requirements:
-- Find the venue rating and review count using Google.
-- Find availability information using OpenTable.
+- Recommend meals that support a high-protein diet.
+- Include foods that help increase daily fiber intake.
+- Suggest practical breakfast, lunch, and dinner ideas.
 
 User message
-Mr Wong's
+Create a healthy diet plan for this week.
 
 Response contract
-Return the final result serialized as the declared response schema.
+Return the final result serialized as `HealthyDietPlan`.
 ```
 
 For App Intents, share flows, widgets, or other non-chat surfaces, `CodexKit` can return a typed value directly from `send`:
