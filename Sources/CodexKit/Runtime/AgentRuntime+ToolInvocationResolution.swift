@@ -4,11 +4,13 @@ extension AgentRuntime {
     func resolveToolInvocation(
         _ invocation: ToolInvocation,
         session: ChatGPTSession,
+        storesTurnState: Bool = true,
         continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     ) async throws -> ToolResultEnvelope {
         try await resolveToolInvocationImpl(
             invocation,
             session: session,
+            storesTurnState: storesTurnState,
             yieldThreadStatusChanged: { threadID, status in
                 continuation.yield(.threadStatusChanged(threadID: threadID, status: status))
             },
@@ -24,11 +26,13 @@ extension AgentRuntime {
     func resolveToolInvocation<Output: Sendable>(
         _ invocation: ToolInvocation,
         session: ChatGPTSession,
+        storesTurnState: Bool = true,
         continuation: AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error>.Continuation
     ) async throws -> ToolResultEnvelope {
         try await resolveToolInvocationImpl(
             invocation,
             session: session,
+            storesTurnState: storesTurnState,
             yieldThreadStatusChanged: { threadID, status in
                 continuation.yield(.threadStatusChanged(threadID: threadID, status: status))
             },
@@ -44,6 +48,7 @@ extension AgentRuntime {
     private func resolveToolInvocationImpl(
         _ invocation: ToolInvocation,
         session: ChatGPTSession,
+        storesTurnState: Bool,
         yieldThreadStatusChanged: (String, AgentThreadStatus) -> Void,
         yieldApprovalRequested: (ApprovalRequest) -> Void,
         yieldApprovalResolved: (ApprovalResolution) -> Void
@@ -68,28 +73,30 @@ extension AgentRuntime {
                     ?? "This tool requires explicit approval before it can run."
             )
 
-            appendHistoryItem(
-                .approval(
-                    AgentApprovalRecord(
-                        kind: .requested,
-                        request: approval,
-                        occurredAt: Date()
-                    )
-                ),
-                threadID: invocation.threadID,
-                createdAt: Date()
-            )
-            try setPendingState(
-                .approval(
-                    AgentPendingApprovalState(
-                        request: approval,
-                        requestedAt: Date()
-                    )
-                ),
-                for: invocation.threadID
-            )
-            try await setThreadStatus(.waitingForApproval, for: invocation.threadID)
-            yieldThreadStatusChanged(invocation.threadID, .waitingForApproval)
+            if storesTurnState {
+                appendHistoryItem(
+                    .approval(
+                        AgentApprovalRecord(
+                            kind: .requested,
+                            request: approval,
+                            occurredAt: Date()
+                        )
+                    ),
+                    threadID: invocation.threadID,
+                    createdAt: Date()
+                )
+                try setPendingState(
+                    .approval(
+                        AgentPendingApprovalState(
+                            request: approval,
+                            requestedAt: Date()
+                        )
+                    ),
+                    for: invocation.threadID
+                )
+                try await setThreadStatus(.waitingForApproval, for: invocation.threadID)
+                yieldThreadStatusChanged(invocation.threadID, .waitingForApproval)
+            }
             yieldApprovalRequested(approval)
             logger.info(
                 .approvals,
@@ -108,19 +115,21 @@ extension AgentRuntime {
                 turnID: approval.turnID,
                 decision: decision
             )
-            appendHistoryItem(
-                .approval(
-                    AgentApprovalRecord(
-                        kind: .resolved,
-                        request: approval,
-                        resolution: resolution,
-                        occurredAt: resolution.decidedAt
-                    )
-                ),
-                threadID: invocation.threadID,
-                createdAt: resolution.decidedAt
-            )
-            try setPendingState(nil, for: invocation.threadID)
+            if storesTurnState {
+                appendHistoryItem(
+                    .approval(
+                        AgentApprovalRecord(
+                            kind: .resolved,
+                            request: approval,
+                            resolution: resolution,
+                            occurredAt: resolution.decidedAt
+                        )
+                    ),
+                    threadID: invocation.threadID,
+                    createdAt: resolution.decidedAt
+                )
+                try setPendingState(nil, for: invocation.threadID)
+            }
             yieldApprovalResolved(resolution)
             logger.info(
                 .approvals,
@@ -134,24 +143,26 @@ extension AgentRuntime {
 
             guard decision == .approved else {
                 let denied = ToolResultEnvelope.denied(invocation: invocation)
-                try setLatestToolState(
-                    latestToolState(for: invocation, result: denied, updatedAt: resolution.decidedAt),
-                    for: invocation.threadID
-                )
-                appendHistoryItem(
-                    .toolResult(
-                        AgentToolResultRecord(
-                            threadID: invocation.threadID,
-                            turnID: invocation.turnID,
-                            result: denied,
-                            completedAt: resolution.decidedAt
-                        )
-                    ),
-                    threadID: invocation.threadID,
-                    createdAt: resolution.decidedAt
-                )
-                updateThreadTimestamp(resolution.decidedAt, for: invocation.threadID)
-                try await persistState()
+                if storesTurnState {
+                    try setLatestToolState(
+                        latestToolState(for: invocation, result: denied, updatedAt: resolution.decidedAt),
+                        for: invocation.threadID
+                    )
+                    appendHistoryItem(
+                        .toolResult(
+                            AgentToolResultRecord(
+                                threadID: invocation.threadID,
+                                turnID: invocation.turnID,
+                                result: denied,
+                                completedAt: resolution.decidedAt
+                            )
+                        ),
+                        threadID: invocation.threadID,
+                        createdAt: resolution.decidedAt
+                    )
+                    updateThreadTimestamp(resolution.decidedAt, for: invocation.threadID)
+                    try await persistState()
+                }
                 return denied
             }
         }
@@ -167,23 +178,25 @@ extension AgentRuntime {
                 "tool_name": invocation.toolName
             ]
         )
-        try setPendingState(
-            .toolWait(
-                AgentPendingToolWaitState(
-                    invocationID: invocation.id,
-                    turnID: invocation.turnID,
-                    toolName: invocation.toolName,
-                    startedAt: toolWaitStartedAt
-                )
-            ),
-            for: invocation.threadID
-        )
-        try setLatestToolState(
-            latestToolState(for: invocation, result: nil, updatedAt: toolWaitStartedAt),
-            for: invocation.threadID
-        )
-        try await setThreadStatus(.waitingForToolResult, for: invocation.threadID)
-        yieldThreadStatusChanged(invocation.threadID, .waitingForToolResult)
+        if storesTurnState {
+            try setPendingState(
+                .toolWait(
+                    AgentPendingToolWaitState(
+                        invocationID: invocation.id,
+                        turnID: invocation.turnID,
+                        toolName: invocation.toolName,
+                        startedAt: toolWaitStartedAt
+                    )
+                ),
+                for: invocation.threadID
+            )
+            try setLatestToolState(
+                latestToolState(for: invocation, result: nil, updatedAt: toolWaitStartedAt),
+                for: invocation.threadID
+            )
+            try await setThreadStatus(.waitingForToolResult, for: invocation.threadID)
+            yieldThreadStatusChanged(invocation.threadID, .waitingForToolResult)
+        }
 
         let result = await toolRegistry.execute(invocation, session: session)
         let resultDate = Date()
@@ -200,43 +213,45 @@ extension AgentRuntime {
                 "has_follow_up_session": "\(result.session?.isTerminal == false)"
             ]
         )
-        try setLatestToolState(
-            latestToolState(for: invocation, result: result, updatedAt: resultDate),
-            for: invocation.threadID
-        )
-        if let session = result.session, !session.isTerminal {
-            try setPendingState(
-                .toolWait(
-                    AgentPendingToolWaitState(
-                        invocationID: invocation.id,
-                        turnID: invocation.turnID,
-                        toolName: invocation.toolName,
-                        startedAt: toolWaitStartedAt,
-                        sessionID: session.sessionID,
-                        sessionStatus: session.status,
-                        metadata: session.metadata,
-                        resumable: session.resumable
-                    )
-                ),
+        if storesTurnState {
+            try setLatestToolState(
+                latestToolState(for: invocation, result: result, updatedAt: resultDate),
                 for: invocation.threadID
             )
-        } else {
-            try setPendingState(nil, for: invocation.threadID)
-            appendHistoryItem(
-                .toolResult(
-                    AgentToolResultRecord(
-                        threadID: invocation.threadID,
-                        turnID: invocation.turnID,
-                        result: result,
-                        completedAt: resultDate
-                    )
-                ),
-                threadID: invocation.threadID,
-                createdAt: resultDate
-            )
+            if let session = result.session, !session.isTerminal {
+                try setPendingState(
+                    .toolWait(
+                        AgentPendingToolWaitState(
+                            invocationID: invocation.id,
+                            turnID: invocation.turnID,
+                            toolName: invocation.toolName,
+                            startedAt: toolWaitStartedAt,
+                            sessionID: session.sessionID,
+                            sessionStatus: session.status,
+                            metadata: session.metadata,
+                            resumable: session.resumable
+                        )
+                    ),
+                    for: invocation.threadID
+                )
+            } else {
+                try setPendingState(nil, for: invocation.threadID)
+                appendHistoryItem(
+                    .toolResult(
+                        AgentToolResultRecord(
+                            threadID: invocation.threadID,
+                            turnID: invocation.turnID,
+                            result: result,
+                            completedAt: resultDate
+                        )
+                    ),
+                    threadID: invocation.threadID,
+                    createdAt: resultDate
+                )
+            }
+            updateThreadTimestamp(resultDate, for: invocation.threadID)
+            try await persistState()
         }
-        updateThreadTimestamp(resultDate, for: invocation.threadID)
-        try await persistState()
         return result
     }
 }

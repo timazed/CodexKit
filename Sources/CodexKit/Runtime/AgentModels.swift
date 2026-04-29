@@ -284,9 +284,15 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+public enum RequestExecutionMode: String, Codable, Hashable, Sendable {
+    case threaded
+    case ephemeral
+}
+
 public struct Request: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
+    public var executionMode: RequestExecutionMode
     public var personaOverride: AgentPersonaStack?
     public var skillOverrideIDs: [String]?
     public var memorySelection: MemorySelection?
@@ -296,12 +302,14 @@ public struct Request: Codable, Hashable, Sendable {
     public init(
         text: String,
         images: [AgentImageAttachment] = [],
+        executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil
     ) {
         self.text = text
         self.images = images
+        self.executionMode = executionMode
         context = nil
         options = nil
         self.personaOverride = personaOverride
@@ -316,6 +324,7 @@ public struct Request: Codable, Hashable, Sendable {
         options: Options? = nil,
         contextSchemaName: String? = nil,
         optionsSchemaName: String? = nil,
+        executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil,
@@ -324,6 +333,7 @@ public struct Request: Codable, Hashable, Sendable {
         self.init(
             text: text,
             images: images,
+            executionMode: executionMode,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs,
             memorySelection: memorySelection
@@ -348,6 +358,7 @@ public struct Request: Codable, Hashable, Sendable {
         images: [AgentImageAttachment] = [],
         context: Context?,
         contextSchemaName: String? = nil,
+        executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil,
@@ -356,6 +367,7 @@ public struct Request: Codable, Hashable, Sendable {
         self.init(
             text: text,
             images: images,
+            executionMode: executionMode,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs,
             memorySelection: memorySelection
@@ -373,6 +385,7 @@ public struct Request: Codable, Hashable, Sendable {
         images: [AgentImageAttachment] = [],
         options: Options?,
         optionsSchemaName: String? = nil,
+        executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil,
         memorySelection: MemorySelection? = nil,
@@ -381,6 +394,7 @@ public struct Request: Codable, Hashable, Sendable {
         self.init(
             text: text,
             images: images,
+            executionMode: executionMode,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs,
             memorySelection: memorySelection
@@ -397,6 +411,7 @@ public struct Request: Codable, Hashable, Sendable {
     public init(
         prompt: String? = nil,
         importedContent: AgentImportedContent,
+        executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil
     ) {
@@ -405,6 +420,7 @@ public struct Request: Codable, Hashable, Sendable {
             importedContent: importedContent,
             compiledContext: nil,
             compiledOptions: nil,
+            executionMode: executionMode,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs
         )
@@ -415,12 +431,14 @@ public struct Request: Codable, Hashable, Sendable {
         importedContent: AgentImportedContent,
         compiledContext: CompiledRequestContext? = nil,
         compiledOptions: CompiledRequestOptions? = nil,
+        executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillOverrideIDs: [String]? = nil
     ) {
         self.init(
             text: importedContent.composedText(prompt: prompt),
             images: importedContent.images,
+            executionMode: executionMode,
             personaOverride: personaOverride,
             skillOverrideIDs: skillOverrideIDs
         )
@@ -436,9 +454,14 @@ public struct Request: Codable, Hashable, Sendable {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
     }
 
+    public var isEphemeral: Bool {
+        executionMode == .ephemeral
+    }
+
     enum CodingKeys: String, CodingKey {
         case text
         case images
+        case executionMode
         case context
         case options
         case personaOverride
@@ -450,6 +473,7 @@ public struct Request: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        executionMode = try container.decodeIfPresent(RequestExecutionMode.self, forKey: .executionMode) ?? .threaded
         context = try container.decodeIfPresent(CompiledRequestContext.self, forKey: .context)
         options = try container.decodeIfPresent(CompiledRequestOptions.self, forKey: .options)
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)

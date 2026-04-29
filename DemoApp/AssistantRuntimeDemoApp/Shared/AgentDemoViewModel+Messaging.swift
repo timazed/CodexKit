@@ -162,6 +162,69 @@ extension AgentDemoViewModel {
         }
     }
 
+    func runEphemeralTurnDemo() async {
+        guard session != nil else {
+            lastError = "Sign in before sending an ephemeral turn."
+            return
+        }
+        guard !isRunningEphemeralTurnDemo else {
+            return
+        }
+
+        if activeThreadID == nil {
+            await createThread()
+        }
+
+        guard let activeThreadID else {
+            lastError = "No active thread is available."
+            return
+        }
+
+        isRunningEphemeralTurnDemo = true
+        lastError = nil
+        ephemeralTurnResult = nil
+        defer {
+            isRunningEphemeralTurnDemo = false
+        }
+
+        let prompt = """
+        Give a one-sentence status note for a transient notification preview. Do not rely on previous chat history.
+        """
+        let messageCountBefore = await runtime.messages(for: activeThreadID).count
+        let request = Request(
+            text: prompt,
+            executionMode: .ephemeral
+        )
+
+        do {
+            developerLog(
+                "Sending ephemeral turn. threadID=\(activeThreadID) textLength=\(prompt.count) messageCountBefore=\(messageCountBefore)"
+            )
+            let diagnostics = try await sendRequest(
+                request,
+                in: activeThreadID,
+                captureResolvedInstructions: showResolvedInstructionsDebug,
+                renderInActiveTranscript: false
+            )
+            let messageCountAfter = await runtime.messages(for: activeThreadID).count
+            let threadTitle = threads.first(where: { $0.id == activeThreadID })?.title ?? "Untitled Thread"
+            ephemeralTurnResult = EphemeralTurnDemoResult(
+                threadID: activeThreadID,
+                threadTitle: threadTitle,
+                prompt: prompt,
+                assistantReply: diagnostics.assistantReply ?? "No assistant text was committed.",
+                messageCountBefore: messageCountBefore,
+                messageCountAfter: messageCountAfter
+            )
+            setMessages(await runtime.messages(for: activeThreadID))
+            developerLog(
+                "Ephemeral turn completed. threadID=\(activeThreadID) messageCountAfter=\(messageCountAfter)"
+            )
+        } catch {
+            reportError(error)
+        }
+    }
+
     private func diagnosticsSummary(
         _ diagnostics: SendDiagnostics,
         fallback: String
@@ -217,7 +280,7 @@ extension AgentDemoViewModel {
         var lastStreamingFlushAt = Date.distantPast
 
         developerLog(
-            "Starting streamed turn. threadID=\(threadID) textLength=\(request.text.count) imageCount=\(request.images.count)"
+            "Starting streamed turn. threadID=\(threadID) textLength=\(request.text.count) imageCount=\(request.images.count) ephemeral=\(request.isEphemeral)"
         )
 
         let stream = try await runtime.stream(

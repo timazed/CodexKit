@@ -26,6 +26,19 @@ struct SkillPolicyProbeResult: Sendable {
     }
 }
 
+struct EphemeralTurnDemoResult: Sendable {
+    let threadID: String
+    let threadTitle: String
+    let prompt: String
+    let assistantReply: String
+    let messageCountBefore: Int
+    let messageCountAfter: Int
+
+    var preservedTranscript: Bool {
+        messageCountBefore == messageCountAfter
+    }
+}
+
 struct StructuredOutputDemoDraftResult: Sendable {
     let threadID: String
     let threadTitle: String
@@ -247,6 +260,8 @@ final class AgentDemoViewModel: @unchecked Sendable {
     }
     var lastResolvedInstructions: String?
     var lastResolvedInstructionsThreadTitle: String?
+    var isRunningEphemeralTurnDemo = false
+    var ephemeralTurnResult: EphemeralTurnDemoResult?
     var isRunningSkillPolicyProbe = false
     var skillPolicyProbeResult: SkillPolicyProbeResult?
     var isAuthenticating = false

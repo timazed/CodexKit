@@ -11,6 +11,7 @@ extension AgentRuntime {
         options: AgentStructuredStreamingOptions,
         decoder: JSONDecoder,
         outputType: Output.Type,
+        storesTurnState: Bool = true,
         continuation: AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error>.Continuation
     ) async {
         let policyTracker: TurnSkillPolicyTracker? = if resolvedTurnSkills.compiledToolPolicy.hasConstraints {
@@ -27,21 +28,23 @@ extension AgentRuntime {
                 switch backendEvent {
                 case let .turnStarted(turn):
                     currentTurnID = turn.id
-                    appendHistoryItem(
-                        .systemEvent(
-                            AgentSystemEventRecord(
-                                type: .turnStarted,
-                                threadID: threadID,
-                                turnID: turn.id,
-                                occurredAt: turn.startedAt
-                            )
-                        ),
-                        threadID: threadID,
-                        createdAt: turn.startedAt
-                    )
-                    try setLatestTurnStatus(.running, for: threadID)
-                    updateThreadTimestamp(turn.startedAt, for: threadID)
-                    try await persistState()
+                    if storesTurnState {
+                        appendHistoryItem(
+                            .systemEvent(
+                                AgentSystemEventRecord(
+                                    type: .turnStarted,
+                                    threadID: threadID,
+                                    turnID: turn.id,
+                                    occurredAt: turn.startedAt
+                                )
+                            ),
+                            threadID: threadID,
+                            createdAt: turn.startedAt
+                        )
+                        try setLatestTurnStatus(.running, for: threadID)
+                        updateThreadTimestamp(turn.startedAt, for: threadID)
+                        try await persistState()
+                    }
                     continuation.yield(.turnStarted(turn))
 
                 case let .assistantMessageDelta(threadID, turnID, delta):
@@ -54,9 +57,11 @@ extension AgentRuntime {
                     )
 
                 case let .assistantMessageCompleted(message):
-                    try await appendMessage(message)
-                    if message.role == .assistant {
-                        assistantMessages.append(message)
+                    if storesTurnState {
+                        try await appendMessage(message)
+                        if message.role == .assistant {
+                            assistantMessages.append(message)
+                        }
                     }
                     continuation.yield(.messageCommitted(message))
 
@@ -67,7 +72,7 @@ extension AgentRuntime {
                             as: outputType,
                             decoder: decoder
                         )
-                        if let currentTurnID {
+                        if storesTurnState, let currentTurnID {
                             try setLatestPartialStructuredOutput(
                                 AgentPartialStructuredOutputSnapshot(
                                     turnID: currentTurnID,
@@ -107,22 +112,24 @@ extension AgentRuntime {
                             formatName: responseFormat.name,
                             payload: value
                         )
-                        try setLatestStructuredOutputMetadata(metadata, for: threadID)
-                        try setLatestPartialStructuredOutput(nil, for: threadID)
-                        appendHistoryItem(
-                            .structuredOutput(
-                                AgentStructuredOutputRecord(
-                                    threadID: threadID,
-                                    turnID: currentTurnID ?? "",
-                                    metadata: metadata,
-                                    committedAt: Date()
-                                )
-                            ),
-                            threadID: threadID,
-                            createdAt: Date()
-                        )
-                        updateThreadTimestamp(Date(), for: threadID)
-                        try await persistState()
+                        if storesTurnState {
+                            try setLatestStructuredOutputMetadata(metadata, for: threadID)
+                            try setLatestPartialStructuredOutput(nil, for: threadID)
+                            appendHistoryItem(
+                                .structuredOutput(
+                                    AgentStructuredOutputRecord(
+                                        threadID: threadID,
+                                        turnID: currentTurnID ?? "",
+                                        metadata: metadata,
+                                        committedAt: Date()
+                                    )
+                                ),
+                                threadID: threadID,
+                                createdAt: Date()
+                            )
+                            updateThreadTimestamp(Date(), for: threadID)
+                            try await persistState()
+                        }
                         continuation.yield(.structuredOutputCommitted(decoded))
                     } catch {
                         let validationFailure = AgentStructuredOutputValidationFailure(
@@ -134,23 +141,25 @@ extension AgentRuntime {
                             stage: validationFailure.stage,
                             underlyingMessage: validationFailure.message
                         )
-                        try? setLatestPartialStructuredOutput(nil, for: threadID)
-                        appendHistoryItem(
-                            .systemEvent(
-                                AgentSystemEventRecord(
-                                    type: .turnFailed,
-                                    threadID: threadID,
-                                    turnID: currentTurnID,
-                                    error: runtimeError,
-                                    occurredAt: Date()
-                                )
-                            ),
-                            threadID: threadID,
-                            createdAt: Date()
-                        )
-                        try? setLatestTurnStatus(.failed, for: threadID)
-                        try await setThreadStatus(.failed, for: threadID)
-                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        if storesTurnState {
+                            try? setLatestPartialStructuredOutput(nil, for: threadID)
+                            appendHistoryItem(
+                                .systemEvent(
+                                    AgentSystemEventRecord(
+                                        type: .turnFailed,
+                                        threadID: threadID,
+                                        turnID: currentTurnID,
+                                        error: runtimeError,
+                                        occurredAt: Date()
+                                    )
+                                ),
+                                threadID: threadID,
+                                createdAt: Date()
+                            )
+                            try? setLatestTurnStatus(.failed, for: threadID)
+                            try await setThreadStatus(.failed, for: threadID)
+                            continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        }
                         continuation.yield(.structuredOutputValidationFailed(validationFailure))
                         continuation.yield(.turnFailed(runtimeError))
                         continuation.finish(throwing: runtimeError)
@@ -158,27 +167,31 @@ extension AgentRuntime {
                     }
 
                 case let .structuredOutputValidationFailed(validationFailure):
-                    try? setLatestPartialStructuredOutput(nil, for: threadID)
-                    try? await persistState()
+                    if storesTurnState {
+                        try? setLatestPartialStructuredOutput(nil, for: threadID)
+                        try? await persistState()
+                    }
                     continuation.yield(.structuredOutputValidationFailed(validationFailure))
 
                 case let .toolCallRequested(invocation):
-                    appendHistoryItem(
-                        .toolCall(
-                            AgentToolCallRecord(
-                                invocation: invocation,
-                                requestedAt: Date()
-                            )
-                        ),
-                        threadID: invocation.threadID,
-                        createdAt: Date()
-                    )
-                    try setLatestToolState(
-                        latestToolState(for: invocation, result: nil, updatedAt: Date()),
-                        for: invocation.threadID
-                    )
-                    updateThreadTimestamp(Date(), for: invocation.threadID)
-                    try await persistState()
+                    if storesTurnState {
+                        appendHistoryItem(
+                            .toolCall(
+                                AgentToolCallRecord(
+                                    invocation: invocation,
+                                    requestedAt: Date()
+                                )
+                            ),
+                            threadID: invocation.threadID,
+                            createdAt: Date()
+                        )
+                        try setLatestToolState(
+                            latestToolState(for: invocation, result: nil, updatedAt: Date()),
+                            for: invocation.threadID
+                        )
+                        updateThreadTimestamp(Date(), for: invocation.threadID)
+                        try await persistState()
+                    }
                     continuation.yield(.toolCallStarted(invocation))
 
                     let result: ToolResultEnvelope
@@ -192,6 +205,7 @@ extension AgentRuntime {
                         let resolvedResult = try await resolveToolInvocation(
                             invocation,
                             session: session,
+                            storesTurnState: storesTurnState,
                             continuation: continuation
                         )
                         result = resolvedResult
@@ -200,28 +214,32 @@ extension AgentRuntime {
 
                     try await turnStream.submitToolResult(result, for: invocation.id)
                     continuation.yield(.toolCallFinished(result))
-                    try await setThreadStatus(.streaming, for: threadID)
-                    continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
+                    if storesTurnState {
+                        try await setThreadStatus(.streaming, for: threadID)
+                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
+                    }
 
                 case let .turnCompleted(summary):
                     if let completionError = policyTracker?.completionError() {
-                        appendHistoryItem(
-                            .systemEvent(
-                                AgentSystemEventRecord(
-                                    type: .turnFailed,
-                                    threadID: threadID,
-                                    turnID: currentTurnID,
-                                    error: completionError,
-                                    occurredAt: Date()
-                                )
-                            ),
-                            threadID: threadID,
-                            createdAt: Date()
-                        )
-                        try setLatestTurnStatus(.failed, for: threadID)
-                        try setLatestPartialStructuredOutput(nil, for: threadID)
-                        try await setThreadStatus(.failed, for: threadID)
-                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        if storesTurnState {
+                            appendHistoryItem(
+                                .systemEvent(
+                                    AgentSystemEventRecord(
+                                        type: .turnFailed,
+                                        threadID: threadID,
+                                        turnID: currentTurnID,
+                                        error: completionError,
+                                        occurredAt: Date()
+                                    )
+                                ),
+                                threadID: threadID,
+                                createdAt: Date()
+                            )
+                            try setLatestTurnStatus(.failed, for: threadID)
+                            try setLatestPartialStructuredOutput(nil, for: threadID)
+                            try await setThreadStatus(.failed, for: threadID)
+                            continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        }
                         continuation.yield(.turnFailed(completionError))
                         continuation.finish(throwing: completionError)
                         return
@@ -231,52 +249,56 @@ extension AgentRuntime {
                         let runtimeError = AgentRuntimeError.structuredOutputMissing(
                             formatName: responseFormat.name
                         )
-                        appendHistoryItem(
-                            .systemEvent(
-                                AgentSystemEventRecord(
-                                    type: .turnFailed,
-                                    threadID: threadID,
-                                    turnID: currentTurnID,
-                                    error: runtimeError,
-                                    occurredAt: Date()
-                                )
-                            ),
-                            threadID: threadID,
-                            createdAt: Date()
-                        )
-                        try setLatestTurnStatus(.failed, for: threadID)
-                        try setLatestPartialStructuredOutput(nil, for: threadID)
-                        try await setThreadStatus(.failed, for: threadID)
-                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        if storesTurnState {
+                            appendHistoryItem(
+                                .systemEvent(
+                                    AgentSystemEventRecord(
+                                        type: .turnFailed,
+                                        threadID: threadID,
+                                        turnID: currentTurnID,
+                                        error: runtimeError,
+                                        occurredAt: Date()
+                                    )
+                                ),
+                                threadID: threadID,
+                                createdAt: Date()
+                            )
+                            try setLatestTurnStatus(.failed, for: threadID)
+                            try setLatestPartialStructuredOutput(nil, for: threadID)
+                            try await setThreadStatus(.failed, for: threadID)
+                            continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+                        }
                         continuation.yield(.turnFailed(runtimeError))
                         continuation.finish(throwing: runtimeError)
                         return
                     }
 
-                    appendHistoryItem(
-                        .systemEvent(
-                            AgentSystemEventRecord(
-                                type: .turnCompleted,
-                                threadID: threadID,
-                                turnID: summary.turnID,
-                                turnSummary: summary,
-                                occurredAt: summary.completedAt
-                            )
-                        ),
-                        threadID: threadID,
-                        createdAt: summary.completedAt
-                    )
-                    try setLatestTurnStatus(.completed, for: threadID)
-                    try setLatestPartialStructuredOutput(nil, for: threadID)
-                    try await setThreadStatus(.idle, for: threadID)
-                    if let userMessage {
-                        await automaticallyCaptureMemoriesIfConfigured(
-                            for: threadID,
-                            userMessage: userMessage,
-                            assistantMessages: assistantMessages
+                    if storesTurnState {
+                        appendHistoryItem(
+                            .systemEvent(
+                                AgentSystemEventRecord(
+                                    type: .turnCompleted,
+                                    threadID: threadID,
+                                    turnID: summary.turnID,
+                                    turnSummary: summary,
+                                    occurredAt: summary.completedAt
+                                )
+                            ),
+                            threadID: threadID,
+                            createdAt: summary.completedAt
                         )
+                        try setLatestTurnStatus(.completed, for: threadID)
+                        try setLatestPartialStructuredOutput(nil, for: threadID)
+                        try await setThreadStatus(.idle, for: threadID)
+                        if let userMessage {
+                            await automaticallyCaptureMemoriesIfConfigured(
+                                for: threadID,
+                                userMessage: userMessage,
+                                assistantMessages: assistantMessages
+                            )
+                        }
+                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     }
-                    continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     continuation.yield(.turnCompleted(summary))
                 }
             }
@@ -288,23 +310,25 @@ extension AgentRuntime {
                     code: "turn_failed",
                     message: error.localizedDescription
                 )
-            appendHistoryItem(
-                .systemEvent(
-                    AgentSystemEventRecord(
-                        type: .turnFailed,
-                        threadID: threadID,
-                        turnID: currentTurnID,
-                        error: runtimeError,
-                        occurredAt: Date()
-                    )
-                ),
-                threadID: threadID,
-                createdAt: Date()
-            )
-            try? setLatestTurnStatus(.failed, for: threadID)
-            try? setLatestPartialStructuredOutput(nil, for: threadID)
-            try? await setThreadStatus(.failed, for: threadID)
-            continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+            if storesTurnState {
+                appendHistoryItem(
+                    .systemEvent(
+                        AgentSystemEventRecord(
+                            type: .turnFailed,
+                            threadID: threadID,
+                            turnID: currentTurnID,
+                            error: runtimeError,
+                            occurredAt: Date()
+                        )
+                    ),
+                    threadID: threadID,
+                    createdAt: Date()
+                )
+                try? setLatestTurnStatus(.failed, for: threadID)
+                try? setLatestPartialStructuredOutput(nil, for: threadID)
+                try? await setThreadStatus(.failed, for: threadID)
+                continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
+            }
             continuation.yield(.turnFailed(runtimeError))
             continuation.finish(throwing: error)
         }

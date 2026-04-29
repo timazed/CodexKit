@@ -30,6 +30,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - includes first-class framework skill examples for `health_coach` and `travel_planner`
 - demonstrates skill execution policy with skill-specific tool constraints
 - includes a one-tap `Run Skill Policy Probe` action that runs the same tool-focused prompt in normal vs skill threads
+- includes a `Send Ephemeral Turn` action that runs a transient request without replaying or writing thread history
 - showcases runtime APIs that can load persona/skill definitions from local or remote files
 - includes a `Show Resolved Instructions` debug toggle so you can inspect per-turn compiled instructions
 - enables Responses web search in the checked-in demo configuration

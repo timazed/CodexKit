@@ -209,6 +209,17 @@ extension AgentDemoView {
                 }
 
                 DemoActionTile(
+                    title: viewModel.isRunningEphemeralTurnDemo ? "Sending Ephemeral..." : "Send Ephemeral Turn",
+                    subtitle: "Runs a transient request without replaying or writing the active transcript.",
+                    systemImage: "timer",
+                    isDisabled: viewModel.isRunningEphemeralTurnDemo
+                ) {
+                    Task {
+                        await viewModel.runEphemeralTurnDemo()
+                    }
+                }
+
+                DemoActionTile(
                     title: "Pin Planner Persona",
                     subtitle: "Swaps the active thread into a planning-focused persona stack.",
                     systemImage: "list.bullet.clipboard",
@@ -228,6 +239,39 @@ extension AgentDemoView {
                         await viewModel.sendReviewerOverrideExample()
                     }
                 }
+            }
+
+            if let ephemeralTurnResult = viewModel.ephemeralTurnResult {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: ephemeralTurnResult.preservedTranscript ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(ephemeralTurnResult.preservedTranscript ? .green : .orange)
+
+                        Text(
+                            ephemeralTurnResult.preservedTranscript
+                                ? "Ephemeral turn preserved transcript"
+                                : "Ephemeral turn changed transcript"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                    }
+
+                    Text(ephemeralTurnResult.threadTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(ephemeralTurnResult.assistantReply)
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Messages: \(ephemeralTurnResult.messageCountBefore) before, \(ephemeralTurnResult.messageCountAfter) after")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                )
             }
 
             if let skillPolicyProbeResult = viewModel.skillPolicyProbeResult {

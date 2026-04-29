@@ -149,6 +149,81 @@ extension AgentRuntimeTests {
         XCTAssertFalse(messages.first?.text.contains("Resolve a delayed shipment complaint.") ?? true)
     }
 
+    func testEphemeralRequestSkipsThreadHistoryAndPersistence() async throws {
+        let backend = InMemoryAgentBackend()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Ephemeral")
+        _ = try await runtime.send(Request(text: "Remember this normal turn."), in: thread.id)
+
+        let reply = try await runtime.send(
+            Request(
+                text: "Answer without using stored thread history.",
+                executionMode: .ephemeral
+            ),
+            in: thread.id
+        )
+
+        XCTAssertEqual(reply, "Echo: Answer without using stored thread history.")
+        let receivedHistoryCounts = await backend.receivedHistoryCounts()
+        XCTAssertEqual(receivedHistoryCounts, [1, 0])
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.map(\.text), [
+            "Remember this normal turn.",
+            "Echo: Remember this normal turn.",
+        ])
+    }
+
+    func testEphemeralStructuredRequestReturnsPayloadWithoutPersistingMetadata() async throws {
+        let backend = InMemoryAgentBackend(
+            structuredResponseText: #"{"reply":"Computed without transcript writes.","priority":"normal"}"#
+        )
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "Ephemeral Structured")
+        let reply = try await runtime.send(
+            Request(
+                text: "Draft a transient shipping reply.",
+                executionMode: .ephemeral
+            ),
+            in: thread.id,
+            response: ShippingReplyDraft.self
+        )
+
+        XCTAssertEqual(
+            reply,
+            ShippingReplyDraft(
+                reply: "Computed without transcript writes.",
+                priority: "normal"
+            )
+        )
+        let receivedHistoryCounts = await backend.receivedHistoryCounts()
+        XCTAssertEqual(receivedHistoryCounts, [0])
+
+        let messages = await runtime.messages(for: thread.id)
+        XCTAssertTrue(messages.isEmpty)
+
+        let summary = try await runtime.fetchThreadSummary(id: thread.id)
+        XCTAssertNil(summary.latestStructuredOutputMetadata)
+    }
+
     func testStructuredInputOnlyRequestDoesNotCreateVisibleUserTranscriptMessage() async throws {
         struct PlannerContext: Codable, Sendable {
             let objective: String

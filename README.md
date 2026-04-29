@@ -669,6 +669,18 @@ let summary = try await runtime.send(
 )
 ```
 
+Use `executionMode: .ephemeral` when a turn should be fast and transient. Ephemeral turns still stream events, run tools, and decode structured output, but they do not replay prior thread history, compact context, write transcript/history records, update thread pending state, or capture memories:
+
+```swift
+let quickSummary = try await runtime.send(
+    Request(
+        text: "Summarize this notification payload.",
+        executionMode: .ephemeral
+    ),
+    in: thread.id
+)
+```
+
 Structured output is schema-driven and decoded into your `Decodable` type:
 
 ```swift

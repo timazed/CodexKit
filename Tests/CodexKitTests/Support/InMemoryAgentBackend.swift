@@ -8,6 +8,7 @@ public actor InMemoryAgentBackend: AgentBackend {
     private var beginTurnInstructions: [String] = []
     private var beginTurnResponseFormats: [AgentStructuredOutputFormat?] = []
     private var beginTurnMessages: [Request] = []
+    private var beginTurnHistoryCounts: [Int] = []
     private let structuredResponseText: String
 
     public init(
@@ -36,7 +37,7 @@ public actor InMemoryAgentBackend: AgentBackend {
 
     public func beginTurn(
         thread: AgentThread,
-        history _: [AgentMessage],
+        history: [AgentMessage],
         message: Request,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,
@@ -47,6 +48,7 @@ public actor InMemoryAgentBackend: AgentBackend {
         beginTurnInstructions.append(instructions)
         beginTurnResponseFormats.append(responseFormat)
         beginTurnMessages.append(message)
+        beginTurnHistoryCounts.append(history.count)
         let updatedThread = AgentThread(
             id: thread.id,
             title: thread.title,
@@ -88,6 +90,10 @@ public actor InMemoryAgentBackend: AgentBackend {
 
     public func receivedMessages() -> [Request] {
         beginTurnMessages
+    }
+
+    public func receivedHistoryCounts() -> [Int] {
+        beginTurnHistoryCounts
     }
 }
 
