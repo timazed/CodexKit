@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.11] - 2026-04-29
+
+### Fixed
+
+- Hardened ephemeral request tests for GitHub Actions runner differences.
+
 ## [2.0.0-alpha.10] - 2026-04-29
 
 ### Added
@@ -91,7 +97,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.10...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.11...HEAD
+[2.0.0-alpha.11]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.10...v2.0.0-alpha.11
 [2.0.0-alpha.10]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.9...v2.0.0-alpha.10
 [2.0.0-alpha.9]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.8...v2.0.0-alpha.9
 [2.0.0-alpha.5]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.4...v2.0.0-alpha.5
