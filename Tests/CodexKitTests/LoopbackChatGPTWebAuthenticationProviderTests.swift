@@ -35,11 +35,8 @@ final class LoopbackChatGPTWebAuthenticationProviderTests: XCTestCase {
     }
 
     func testLoopbackServerCapturesCallbackURL() async throws {
-        let port = try Self.findAvailablePort()
-        let redirectURL = URL(string: "http://localhost:\(port)/auth/callback")!
-        let server = try LoopbackCallbackServer(redirectURL: redirectURL)
-
-        try await server.start()
+        let (server, port) = try await Self.makeStartedServer()
+        defer { server.stop() }
 
         async let callbackURL = server.waitForCallback()
         let requestURL = URL(string: "http://127.0.0.1:\(port)/auth/callback?code=test-code&state=test-state")!
@@ -65,16 +62,10 @@ final class LoopbackChatGPTWebAuthenticationProviderTests: XCTestCase {
             components?.queryItems?.first(where: { $0.name == "state" })?.value,
             "test-state"
         )
-
-        server.stop()
     }
 
     func testLoopbackServerWaitsForCompleteHTTPHeadersBeforeCompletingCallback() async throws {
-        let port = try Self.findAvailablePort()
-        let redirectURL = URL(string: "http://localhost:\(port)/auth/callback")!
-        let server = try LoopbackCallbackServer(redirectURL: redirectURL)
-
-        try await server.start()
+        let (server, port) = try await Self.makeStartedServer()
         defer { server.stop() }
 
         let callbackReceived = expectation(description: "callback received")
@@ -100,8 +91,9 @@ final class LoopbackChatGPTWebAuthenticationProviderTests: XCTestCase {
         await fulfillment(of: [callbackReceived], timeout: 1.0)
         let capturedURL = await capture.get()
         XCTAssertEqual(capturedURL?.host, "localhost")
+        let callbackURL = try XCTUnwrap(capturedURL)
         XCTAssertEqual(
-            URLComponents(url: capturedURL ?? redirectURL, resolvingAgainstBaseURL: false)?
+            URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
                 .queryItems?
                 .first(where: { $0.name == "code" })?
                 .value,
@@ -118,6 +110,30 @@ final class LoopbackChatGPTWebAuthenticationProviderTests: XCTestCase {
             let runtimeError = error as? AgentRuntimeError
             XCTAssertEqual(runtimeError?.code, "oauth_loopback_redirect_invalid")
         }
+    }
+
+    private static func makeStartedServer() async throws -> (server: LoopbackCallbackServer, port: Int) {
+        var lastError: Error?
+
+        for _ in 0..<10 {
+            let port = try findAvailablePort()
+            let redirectURL = URL(string: "http://localhost:\(port)/auth/callback")!
+            let server = try LoopbackCallbackServer(redirectURL: redirectURL)
+
+            do {
+                try await server.start()
+                return (server, port)
+            } catch let error as AgentRuntimeError where error.code == "oauth_loopback_listener_failed" {
+                server.stop()
+                lastError = error
+                continue
+            } catch {
+                server.stop()
+                throw error
+            }
+        }
+
+        throw lastError ?? POSIXError(.EADDRINUSE)
     }
 
     private static func findAvailablePort() throws -> Int {
