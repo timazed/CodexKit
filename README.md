@@ -107,7 +107,13 @@ let runtime = try AgentRuntime(configuration: .init(
 ))
 
 let _ = try await runtime.signIn()
-let thread = try await runtime.createThread(title: "First Chat")
+let thread = try await runtime.createThread(
+    title: "First Chat",
+    configuration: AgentThreadConfiguration(
+        model: "gpt-5.4",
+        reasoningEffort: .medium
+    )
+)
 let stream = try await runtime.stream(
     Request(text: "Hello from Apple platforms."),
     in: thread.id
@@ -145,7 +151,7 @@ let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
 | Threaded runtime state + restore | Yes |
 | Streamed assistant output | Yes |
 | Host-defined tools + approval flow | Yes |
-| Configurable thinking level | Yes |
+| Per-thread model + thinking level | Yes |
 | Web search toggle (`enableWebSearch`) | Yes |
 | Built-in request retry/backoff | Yes (configurable) |
 | Structured local memory layer | Yes |
@@ -246,7 +252,7 @@ let backend = CodexResponsesBackend(
 )
 ```
 
-`CodexResponsesBackendConfiguration` also lets you control the model thinking level:
+`CodexResponsesBackendConfiguration` also sets the default model and thinking level for new Codex-backed threads:
 
 ```swift
 let backend = CodexResponsesBackend(
@@ -254,6 +260,31 @@ let backend = CodexResponsesBackend(
         model: "gpt-5.4",
         reasoningEffort: .high
     )
+)
+```
+
+Threads can override those defaults with `AgentThreadConfiguration`, and future turns in that thread use the thread configuration:
+
+```swift
+let thread = try await runtime.createThread(
+    title: "Planning",
+    configuration: AgentThreadConfiguration(
+        model: "gpt-5.4",
+        reasoningEffort: .high
+    )
+)
+
+try await runtime.updateThreadConfiguration(
+    AgentThreadConfiguration(
+        model: "gpt-5.4",
+        reasoningEffort: .extraHigh
+    ),
+    for: thread.id
+)
+
+try await runtime.updateThreadConfiguration(
+    for: thread.id,
+    reasoningEffort: .medium
 )
 ```
 

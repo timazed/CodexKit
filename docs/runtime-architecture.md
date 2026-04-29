@@ -22,7 +22,7 @@ Owns the core runtime:
 - `AgentRuntime`
 - `AgentRuntime.Configuration`
 - `AgentEvent`
-- `AgentThread`, `AgentTurn`, `AgentMessage`
+- `AgentThread`, `AgentThreadConfiguration`, `AgentTurn`, `AgentMessage`
 - ChatGPT auth/session primitives
 - backend transport protocols and `CodexResponsesBackend`
 - tool types and approval types
@@ -56,6 +56,7 @@ Test-only mock auth and backend fixtures live under `Tests/` support code rather
 It owns:
 
 - thread creation and resume
+- per-thread model and reasoning defaults
 - message send
 - event streaming
 - tool invocation routing
@@ -72,6 +73,8 @@ It is initialized from `AgentRuntime.Configuration`, which contains:
 - optional `tools`
 
 The old dependency-bag setup is intentionally replaced by this single configuration object.
+
+Backend configuration supplies default execution settings, while `AgentThreadConfiguration` lets a thread carry its own model and reasoning effort. Future turns resolve those values from the thread first, then fall back to backend defaults.
 
 ### Internal runtime plumbing
 

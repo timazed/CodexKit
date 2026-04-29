@@ -136,6 +136,63 @@ final class CodexResponsesBackendTests: XCTestCase {
         for try await _ in turnStream.events {}
     }
 
+    func testBackendUsesThreadConfigurationForModelAndReasoningEffort() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(
+                model: "gpt-5",
+                reasoningEffort: .medium
+            ),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Ready"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_thread_config","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    XCTAssertEqual(json?["model"] as? String, "gpt-5.4")
+                    let reasoning = try XCTUnwrap(json?["reasoning"] as? [String: Any])
+                    XCTAssertEqual(reasoning["effort"] as? String, "high")
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(
+                id: "thread-config",
+                configuration: AgentThreadConfiguration(
+                    model: "gpt-5.4",
+                    reasoningEffort: .high
+                )
+            ),
+            history: [],
+            message: Request(text: "Use thread config"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
     func testBackendContinuesTurnAfterToolOutput() async throws {
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         let session = ChatGPTSession(

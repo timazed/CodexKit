@@ -93,16 +93,16 @@ extension AgentDemoView {
     var modelCard: some View {
         DemoSectionCard {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Model And Reasoning")
+                Text("Thread Model And Reasoning")
                     .font(.headline)
 
                 HStack(spacing: 10) {
-                    modelBadge(title: "Model", value: viewModel.model)
+                    modelBadge(title: viewModel.activeThreadID == nil ? "Default Model" : "Thread Model", value: viewModel.activeThreadConfiguration.model)
                     modelBadge(title: "Search", value: viewModel.enableWebSearch ? "On" : "Off")
                 }
             }
 
-            Text("Pick a thinking level for future requests. Existing threads stay intact; only new turns use the updated effort.")
+            Text(viewModel.activeThreadID == nil ? "Pick a thinking level for new threads." : "Pick a thinking level for future turns in the active thread and new threads.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             LazyVGrid(columns: tileColumns, spacing: 12) {
@@ -398,7 +398,7 @@ extension AgentDemoView {
             title: effort.demoTitle,
             subtitle: effort.summary,
             systemImage: effort.systemImage,
-            isProminent: effort == viewModel.reasoningEffort,
+            isProminent: effort == viewModel.activeThreadConfiguration.reasoningEffort,
             isDisabled: !viewModel.canReconfigureRuntime
         ) {
             Task {

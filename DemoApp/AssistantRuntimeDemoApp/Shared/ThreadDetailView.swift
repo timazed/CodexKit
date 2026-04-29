@@ -116,7 +116,7 @@ private extension ThreadDetailView {
             }
 
             HStack(spacing: 10) {
-                Label(viewModel.model, systemImage: "cpu")
+                Label(threadConfiguration.model, systemImage: "cpu")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -355,7 +355,7 @@ private extension ThreadDetailView {
     }
 
     var reasoningEffortTitle: String {
-        switch viewModel.reasoningEffort {
+        switch threadConfiguration.reasoningEffort {
         case .low:
             "Think Low"
         case .medium:
@@ -368,7 +368,7 @@ private extension ThreadDetailView {
     }
 
     var reasoningEffortSymbol: String {
-        switch viewModel.reasoningEffort {
+        switch threadConfiguration.reasoningEffort {
         case .low:
             "hare"
         case .medium:
@@ -378,6 +378,10 @@ private extension ThreadDetailView {
         case .extraHigh:
             "sparkles"
         }
+    }
+
+    var threadConfiguration: AgentThreadConfiguration {
+        observedThread?.configuration ?? viewModel.defaultThreadConfiguration
     }
 
     func importPhoto(from item: PhotosPickerItem) async {

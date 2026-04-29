@@ -351,6 +351,17 @@ final class AgentDemoViewModel: @unchecked Sendable {
         personaSummary(for: activeThread)
     }
 
+    var defaultThreadConfiguration: AgentThreadConfiguration {
+        AgentThreadConfiguration(
+            model: model,
+            reasoningEffort: reasoningEffort
+        )
+    }
+
+    var activeThreadConfiguration: AgentThreadConfiguration {
+        activeThread?.configuration ?? defaultThreadConfiguration
+    }
+
     var resolvedStateURL: URL {
         stateURL ?? AgentDemoRuntimeFactory.defaultStateURL()
     }

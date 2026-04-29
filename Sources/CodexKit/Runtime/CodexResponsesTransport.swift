@@ -5,6 +5,7 @@ struct CodexResponsesRequestFactory: Sendable {
     let encoder: JSONEncoder
 
     func buildURLRequest(
+        threadConfiguration: AgentThreadConfiguration,
         instructions: String,
         responseContract: AgentResponseContract?,
         threadID: String,
@@ -13,8 +14,8 @@ struct CodexResponsesRequestFactory: Sendable {
         session: ChatGPTSession
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
-            model: configuration.model,
-            reasoning: .init(effort: configuration.reasoningEffort),
+            model: threadConfiguration.model,
+            reasoning: .init(effort: threadConfiguration.reasoningEffort),
             instructions: instructions,
             text: .init(
                 format: .init(

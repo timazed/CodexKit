@@ -21,6 +21,7 @@ extension AgentDemoViewModel {
         do {
             let thread = try await runtime.createThread(
                 title: "Memory Demo: Automatic Policy",
+                configuration: defaultThreadConfiguration,
                 memoryContext: AgentMemoryContext(
                     namespace: DemoMemoryExamples.namespace,
                     scopes: [DemoMemoryExamples.healthCoachScope],
@@ -73,6 +74,7 @@ extension AgentDemoViewModel {
         do {
             let thread = try await runtime.createThread(
                 title: "Memory Demo: Automatic Capture",
+                configuration: defaultThreadConfiguration,
                 memoryContext: DemoMemoryExamples.previewContext
             )
             let capture = try await runtime.captureMemories(
@@ -166,6 +168,7 @@ extension AgentDemoViewModel {
             if session != nil {
                 let thread = try await runtime.createThread(
                     title: "Memory Demo: Prompt Injection",
+                    configuration: defaultThreadConfiguration,
                     memoryContext: DemoMemoryExamples.previewContext
                 )
                 previewThreadID = thread.id

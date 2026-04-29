@@ -6,6 +6,7 @@ extension AgentRuntime {
     @discardableResult
     public func createThread(
         title: String? = nil,
+        configuration: AgentThreadConfiguration? = nil,
         personaStack: AgentPersonaStack? = nil,
         personaSource: AgentDefinitionSource? = nil,
         skillIDs: [String] = [],
@@ -39,6 +40,7 @@ extension AgentRuntime {
         if let title {
             thread.title = title
         }
+        thread.configuration = configuration ?? thread.configuration ?? backend.defaultThreadConfiguration
         thread.personaStack = resolvedPersonaStack
         thread.skillIDs = skillIDs
         thread.memoryContext = memoryContext
@@ -73,7 +75,10 @@ extension AgentRuntime {
         ) { session in
             try await backend.resumeThread(id: id, session: session)
         }
-        let thread = resume.result
+        var thread = resume.result
+        if thread.configuration == nil {
+            thread.configuration = backend.defaultThreadConfiguration
+        }
         try await upsertThread(thread, persist: false)
         appendHistoryItem(
             .systemEvent(
@@ -128,6 +133,55 @@ extension AgentRuntime {
         )
     }
 
+    public func updateThreadConfiguration(
+        _ configuration: AgentThreadConfiguration,
+        for threadID: String
+    ) async throws {
+        guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        state.threads[index].configuration = configuration
+        state.threads[index].updatedAt = Date()
+        enqueueStoreOperation(.upsertThread(state.threads[index]))
+        try await persistState()
+        logger.info(
+            .runtime,
+            "Updated thread configuration.",
+            metadata: [
+                "thread_id": threadID,
+                "model": configuration.model,
+                "reasoning_effort": configuration.reasoningEffort.rawValue
+            ]
+        )
+    }
+
+    @discardableResult
+    public func updateThreadConfiguration(
+        for threadID: String,
+        model: String? = nil,
+        reasoningEffort: ReasoningEffort? = nil
+    ) async throws -> AgentThreadConfiguration {
+        guard let thread = thread(for: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+
+        let existing = thread.configuration ?? backend.defaultThreadConfiguration
+        guard existing != nil || model != nil || reasoningEffort != nil else {
+            throw AgentRuntimeError(
+                code: "thread_configuration_unavailable",
+                message: "No thread configuration is available to update."
+            )
+        }
+
+        let resolved = AgentThreadConfiguration(
+            model: model ?? existing?.model ?? "",
+            reasoningEffort: reasoningEffort ?? existing?.reasoningEffort ?? .medium
+        )
+        try await updateThreadConfiguration(resolved, for: threadID)
+        return resolved
+    }
+
     public func setPersonaStack(
         _ personaStack: AgentPersonaStack?,
         for threadID: String
@@ -180,6 +234,9 @@ extension AgentRuntime {
             var mergedThread = thread
             if mergedThread.title == nil {
                 mergedThread.title = state.threads[index].title
+            }
+            if mergedThread.configuration == nil {
+                mergedThread.configuration = state.threads[index].configuration
             }
             if mergedThread.personaStack == nil {
                 mergedThread.personaStack = state.threads[index].personaStack

@@ -18,6 +18,7 @@ public protocol AgentTurnStreaming: Sendable {
 
 public protocol AgentBackend: Sendable {
     var baseInstructions: String? { get }
+    var defaultThreadConfiguration: AgentThreadConfiguration? { get }
     func createThread(session: ChatGPTSession) async throws -> AgentThread
     func resumeThread(id: String, session: ChatGPTSession) async throws -> AgentThread
     func beginTurn(
@@ -34,4 +35,5 @@ public protocol AgentBackend: Sendable {
 
 public extension AgentBackend {
     var baseInstructions: String? { nil }
+    var defaultThreadConfiguration: AgentThreadConfiguration? { nil }
 }

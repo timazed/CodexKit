@@ -191,6 +191,19 @@ public enum AgentTurnStatus: String, Codable, Hashable, Sendable {
     case failed
 }
 
+public struct AgentThreadConfiguration: Codable, Hashable, Sendable {
+    public var model: String
+    public var reasoningEffort: ReasoningEffort
+
+    public init(
+        model: String,
+        reasoningEffort: ReasoningEffort
+    ) {
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+    }
+}
+
 public struct AgentUsage: Codable, Hashable, Sendable {
     public var inputTokens: Int
     public var cachedInputTokens: Int
@@ -448,6 +461,7 @@ public struct Request: Codable, Hashable, Sendable {
 public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String?
+    public var configuration: AgentThreadConfiguration?
     public var personaStack: AgentPersonaStack?
     public var skillIDs: [String]
     public var memoryContext: AgentMemoryContext?
@@ -458,6 +472,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public init(
         id: String,
         title: String? = nil,
+        configuration: AgentThreadConfiguration? = nil,
         personaStack: AgentPersonaStack? = nil,
         skillIDs: [String] = [],
         memoryContext: AgentMemoryContext? = nil,
@@ -467,6 +482,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     ) {
         self.id = id
         self.title = title
+        self.configuration = configuration
         self.personaStack = personaStack
         self.skillIDs = skillIDs
         self.memoryContext = memoryContext
@@ -478,6 +494,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case title
+        case configuration
         case personaStack
         case skillIDs
         case memoryContext
@@ -490,6 +507,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decodeIfPresent(String.self, forKey: .title)
+        configuration = try container.decodeIfPresent(AgentThreadConfiguration.self, forKey: .configuration)
         personaStack = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaStack)
         skillIDs = try container.decodeIfPresent([String].self, forKey: .skillIDs) ?? []
         memoryContext = try container.decodeIfPresent(AgentMemoryContext.self, forKey: .memoryContext)

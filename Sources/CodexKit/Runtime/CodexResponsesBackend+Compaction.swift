@@ -20,9 +20,10 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             configuration: configuration,
             encoder: encoder
         )
+        let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
         let requestBody = ResponsesCompactRequestBody(
-            model: configuration.model,
-            reasoning: .init(effort: configuration.reasoningEffort),
+            model: threadConfiguration.model,
+            reasoning: .init(effort: threadConfiguration.reasoningEffort),
             instructions: instructions,
             text: .init(format: .init(responseFormat: nil)),
             input: effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue },

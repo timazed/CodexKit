@@ -22,6 +22,7 @@ extension AgentDemoViewModel {
             developerLog("Running structured shipping reply demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Shipping Draft",
+                configuration: defaultThreadConfiguration,
                 personaStack: catalog.supportPersona
             )
             let request = DemoStructuredOutputExamples.shippingReplyRequest()
@@ -72,7 +73,8 @@ extension AgentDemoViewModel {
         do {
             developerLog("Running structured imported summary demo.")
             let thread = try await runtime.createThread(
-                title: "Structured Output: Imported Summary"
+                title: "Structured Output: Imported Summary",
+                configuration: defaultThreadConfiguration
             )
             let request = DemoStructuredOutputExamples.importedSummaryRequest()
             if showResolvedInstructionsDebug {
@@ -125,6 +127,7 @@ extension AgentDemoViewModel {
             developerLog("Running streamed structured output demo.")
             let thread = try await runtime.createThread(
                 title: "Structured Output: Streamed Delivery Update",
+                configuration: defaultThreadConfiguration,
                 personaStack: catalog.supportPersona
             )
             let request = DemoStructuredOutputExamples.streamedStructuredRequest()

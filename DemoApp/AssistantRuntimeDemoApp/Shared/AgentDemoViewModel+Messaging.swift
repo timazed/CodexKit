@@ -23,6 +23,7 @@ extension AgentDemoViewModel {
             )
             let thread = try await runtime.createThread(
                 title: title,
+                configuration: defaultThreadConfiguration,
                 personaStack: personaStack,
                 skillIDs: skillIDs
             )
@@ -102,10 +103,12 @@ extension AgentDemoViewModel {
 
         do {
             let normalThread = try await runtime.createThread(
-                title: "Skill Policy Probe: Normal"
+                title: "Skill Policy Probe: Normal",
+                configuration: defaultThreadConfiguration
             )
             let skillThread = try await runtime.createThread(
                 title: "Skill Policy Probe: Health Coach",
+                configuration: defaultThreadConfiguration,
                 skillIDs: [catalog.healthCoachSkill.id]
             )
             threads = await runtime.threads()

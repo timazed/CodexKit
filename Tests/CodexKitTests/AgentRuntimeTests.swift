@@ -64,9 +64,52 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(state.threads.count, 1)
         XCTAssertEqual(state.threads.first?.personaStack, nil)
         XCTAssertEqual(state.threads.first?.memoryContext, nil)
+        XCTAssertEqual(state.threads.first?.configuration, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.images, [])
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.structuredOutput, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.text, "Hello from legacy state")
+    }
+
+    func testThreadConfigurationCanBeUpdatedAndRestored() async throws {
+        let stateStore = InMemoryRuntimeStateStore()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(
+            title: "Configurable",
+            configuration: AgentThreadConfiguration(
+                model: "gpt-5",
+                reasoningEffort: .medium
+            )
+        )
+        let updated = try await runtime.updateThreadConfiguration(
+            for: thread.id,
+            reasoningEffort: .high
+        )
+
+        XCTAssertEqual(updated.model, "gpt-5")
+        XCTAssertEqual(updated.reasoningEffort, .high)
+
+        let restoredRuntime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: stateStore
+        ))
+        _ = try await restoredRuntime.restore()
+
+        let restoredThreads = await restoredRuntime.threads()
+        let restoredThread = try XCTUnwrap(restoredThreads.first(where: { $0.id == thread.id }))
+        XCTAssertEqual(restoredThread.configuration?.model, "gpt-5")
+        XCTAssertEqual(restoredThread.configuration?.reasoningEffort, .high)
     }
 
     func temporaryFile(

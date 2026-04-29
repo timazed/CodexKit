@@ -5,6 +5,7 @@ struct CodexResponsesTurnRunner {
     let logger: AgentLogger
     let instructions: String
     let responseContract: AgentResponseContract?
+    let threadConfiguration: AgentThreadConfiguration
     let requestFactory: CodexResponsesRequestFactory
     let streamClient: CodexResponsesEventStreamClient
     let toolOutputAdapter: CodexResponsesToolOutputAdapter
@@ -20,6 +21,7 @@ struct CodexResponsesTurnRunner {
         logger: AgentLogger,
         instructions: String,
         responseContract: AgentResponseContract?,
+        threadConfiguration: AgentThreadConfiguration,
         urlSession: URLSession,
         encoder: JSONEncoder,
         decoder: JSONDecoder,
@@ -34,6 +36,7 @@ struct CodexResponsesTurnRunner {
         self.logger = logger
         self.instructions = instructions
         self.responseContract = responseContract
+        self.threadConfiguration = threadConfiguration
         self.requestFactory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder)
         self.streamClient = CodexResponsesEventStreamClient(
             urlSession: urlSession,
@@ -247,6 +250,7 @@ struct CodexResponsesTurnRunner {
         for state: TurnRunState
     ) throws -> URLRequest {
         try requestFactory.buildURLRequest(
+            threadConfiguration: threadConfiguration,
             instructions: instructions,
             responseContract: responseContract,
             threadID: threadID,

@@ -50,8 +50,10 @@ public actor InMemoryAgentBackend: AgentBackend {
         let updatedThread = AgentThread(
             id: thread.id,
             title: thread.title,
+            configuration: thread.configuration,
             personaStack: thread.personaStack,
             skillIDs: thread.skillIDs,
+            memoryContext: thread.memoryContext,
             createdAt: thread.createdAt,
             updatedAt: Date(),
             status: .streaming

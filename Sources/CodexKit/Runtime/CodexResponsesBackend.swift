@@ -40,6 +40,13 @@ public struct CodexResponsesBackendConfiguration: Sendable {
 }
 
 extension CodexResponsesBackendConfiguration {
+    var defaultThreadConfiguration: AgentThreadConfiguration {
+        AgentThreadConfiguration(
+            model: model,
+            reasoningEffort: reasoningEffort
+        )
+    }
+
     var modelContextWindowTokenCount: Int? {
         let normalizedModel = model.lowercased()
         if normalizedModel.hasPrefix("gpt-5") {
@@ -58,6 +65,7 @@ extension CodexResponsesBackendConfiguration {
 
 public actor CodexResponsesBackend: AgentBackend {
     public nonisolated let baseInstructions: String?
+    public nonisolated let defaultThreadConfiguration: AgentThreadConfiguration?
 
     let configuration: CodexResponsesBackendConfiguration
     let logger: AgentLogger
@@ -73,14 +81,21 @@ public actor CodexResponsesBackend: AgentBackend {
         self.logger = AgentLogger(configuration: configuration.logging)
         self.urlSession = urlSession
         self.baseInstructions = configuration.instructions
+        self.defaultThreadConfiguration = configuration.defaultThreadConfiguration
     }
 
     public func createThread(session _: ChatGPTSession) async throws -> AgentThread {
-        AgentThread(id: UUID().uuidString)
+        AgentThread(
+            id: UUID().uuidString,
+            configuration: configuration.defaultThreadConfiguration
+        )
     }
 
     public func resumeThread(id: String, session _: ChatGPTSession) async throws -> AgentThread {
-        AgentThread(id: id)
+        AgentThread(
+            id: id,
+            configuration: configuration.defaultThreadConfiguration
+        )
     }
 
     public func beginTurn(
@@ -177,6 +192,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         let pendingToolResults = PendingToolResults()
         self.pendingToolResults = pendingToolResults
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
+        let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
 
         events = AsyncThrowingStream { continuation in
             continuation.yield(.turnStarted(turn))
@@ -185,6 +201,7 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 logger: logger,
                 instructions: instructions,
                 responseContract: responseContract,
+                threadConfiguration: threadConfiguration,
                 urlSession: urlSession,
                 encoder: encoder,
                 decoder: decoder,

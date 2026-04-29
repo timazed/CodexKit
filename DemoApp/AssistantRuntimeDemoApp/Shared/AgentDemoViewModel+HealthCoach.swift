@@ -332,6 +332,7 @@ extension AgentDemoViewModel {
 
         let thread = try await runtime.createThread(
             title: healthCoachDesign.threadTitle,
+            configuration: defaultThreadConfiguration,
             personaStack: persona
         )
         healthCoachThreadID = thread.id

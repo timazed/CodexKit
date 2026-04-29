@@ -65,52 +65,41 @@ extension AgentDemoViewModel {
     }
 
     func updateReasoningEffort(_ reasoningEffort: ReasoningEffort) async {
-        guard self.reasoningEffort != reasoningEffort else {
-            return
-        }
-
         guard canReconfigureRuntime else {
             lastError = "Wait for the current turn to finish before switching thinking level."
             return
         }
 
-        self.reasoningEffort = reasoningEffort
-        developerLog("Reconfiguring runtime. reasoningEffort=\(reasoningEffort.rawValue)")
-        let preservedActiveThreadID = activeThreadID
-        let preservedHealthCoachThreadID = healthCoachThreadID
-
-        runtime = AgentDemoRuntimeFactory.makeRuntime(
-            authenticationMethod: currentAuthenticationMethod,
-            model: model,
-            enableWebSearch: enableWebSearch,
-            reasoningEffort: reasoningEffort,
-            stateURL: stateURL,
-            keychainAccount: keychainAccount,
-            approvalInbox: approvalInbox,
-            deviceCodePromptCoordinator: deviceCodePromptCoordinator
-        )
-        configureRuntimeObservationBindings()
-
-        do {
-            _ = try await runtime.restore()
-            await registerDemoTool()
-            await refreshSnapshot()
-
-            if let preservedActiveThreadID,
-               threads.contains(where: { $0.id == preservedActiveThreadID }) {
-                activeThreadID = preservedActiveThreadID
-                messages = await runtime.messages(for: preservedActiveThreadID)
+        if let activeThreadID {
+            let current = activeThread?.configuration ?? defaultThreadConfiguration
+            let shouldUpdateDefault = self.reasoningEffort != reasoningEffort
+            let shouldUpdateThread = current.reasoningEffort != reasoningEffort
+            guard shouldUpdateDefault || shouldUpdateThread else {
+                return
             }
-
-            if let preservedHealthCoachThreadID,
-               threads.contains(where: { $0.id == preservedHealthCoachThreadID }) {
-                healthCoachThreadID = preservedHealthCoachThreadID
+            do {
+                let updated = AgentThreadConfiguration(
+                    model: current.model,
+                    reasoningEffort: reasoningEffort
+                )
+                try await runtime.updateThreadConfiguration(updated, for: activeThreadID)
+                self.reasoningEffort = reasoningEffort
+                threads = await runtime.threads()
+                observedThread = threads.first { $0.id == activeThreadID }
+                developerLog(
+                    "Updated thread configuration. threadID=\(activeThreadID) model=\(updated.model) reasoningEffort=\(updated.reasoningEffort.rawValue)"
+                )
+            } catch {
+                reportError(error)
             }
+        } else {
+            guard self.reasoningEffort != reasoningEffort else {
+                return
+            }
+            self.reasoningEffort = reasoningEffort
             developerLog(
-                "Runtime reconfigured. reasoningEffort=\(reasoningEffort.rawValue) threadCount=\(threads.count)"
+                "Updated default thread configuration. model=\(model) reasoningEffort=\(reasoningEffort.rawValue)"
             )
-        } catch {
-            reportError(error)
         }
     }
 
