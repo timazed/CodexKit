@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.9] - 2026-04-29
+
+### Added
+
+- Added `AgentThreadConfiguration` so threads can carry their own model and reasoning effort.
+- Added runtime APIs for updating thread configuration after thread creation.
+
+### Changed
+
+- Routed Codex responses requests and context compaction through thread-level model and reasoning configuration, with backend defaults as fallback.
+- Updated the demo app and docs to create threads with model configuration and adjust reasoning per active thread.
+- Restored the demo app's Xcode workspace metadata so local `CodexKit` and `CodexKitUI` package products resolve consistently.
+
 ## [2.0.0-alpha.5] - 2026-04-13
 
 ### Added
@@ -71,7 +84,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.5...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.9...HEAD
+[2.0.0-alpha.9]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.8...v2.0.0-alpha.9
 [2.0.0-alpha.5]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.4...v2.0.0-alpha.5
 [2.0.0-alpha.1]: https://github.com/timazed/CodexKit/compare/v1.1.0...v2.0.0-alpha.1
 [1.1.0]: https://github.com/timazed/CodexKit/releases/tag/v1.1.0
