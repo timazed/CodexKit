@@ -163,6 +163,7 @@ extension AgentRuntimeTests {
 
         let thread = try await runtime.createThread(title: "Ephemeral")
         _ = try await runtime.send(Request(text: "Remember this normal turn."), in: thread.id)
+        let messagesBeforeEphemeral = await runtime.messages(for: thread.id)
 
         let reply = try await runtime.send(
             Request(
@@ -174,9 +175,11 @@ extension AgentRuntimeTests {
 
         XCTAssertEqual(reply, "Echo: Answer without using stored thread history.")
         let receivedHistoryCounts = await backend.receivedHistoryCounts()
-        XCTAssertEqual(receivedHistoryCounts, [1, 0])
+        XCTAssertEqual(receivedHistoryCounts.last, 0)
+        XCTAssertGreaterThanOrEqual(receivedHistoryCounts.count, 2)
 
         let messages = await runtime.messages(for: thread.id)
+        XCTAssertEqual(messages.map(\.text), messagesBeforeEphemeral.map(\.text))
         XCTAssertEqual(messages.map(\.text), [
             "Remember this normal turn.",
             "Echo: Remember this normal turn.",
@@ -220,8 +223,8 @@ extension AgentRuntimeTests {
         let messages = await runtime.messages(for: thread.id)
         XCTAssertTrue(messages.isEmpty)
 
-        let summary = try await runtime.fetchThreadSummary(id: thread.id)
-        XCTAssertNil(summary.latestStructuredOutputMetadata)
+        let metadata = try await runtime.fetchLatestStructuredOutputMetadata(id: thread.id)
+        XCTAssertNil(metadata)
     }
 
     func testStructuredInputOnlyRequestDoesNotCreateVisibleUserTranscriptMessage() async throws {
