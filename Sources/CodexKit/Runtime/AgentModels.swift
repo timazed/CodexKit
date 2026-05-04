@@ -289,12 +289,18 @@ public enum RequestExecutionMode: String, Codable, Hashable, Sendable {
     case ephemeral
 }
 
+public enum AgentSkillSelection: Codable, Hashable, Sendable {
+    case none
+    case replace([String])
+    case append([String])
+}
+
 public struct Request: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
     public var executionMode: RequestExecutionMode
     public var personaOverride: AgentPersonaStack?
-    public var skillOverrideIDs: [String]?
+    public var skillSelection: AgentSkillSelection
     public var memorySelection: MemorySelection?
     var context: CompiledRequestContext?
     var options: CompiledRequestOptions?
@@ -304,7 +310,7 @@ public struct Request: Codable, Hashable, Sendable {
         images: [AgentImageAttachment] = [],
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil,
+        skillSelection: AgentSkillSelection = .none,
         memorySelection: MemorySelection? = nil
     ) {
         self.text = text
@@ -313,7 +319,7 @@ public struct Request: Codable, Hashable, Sendable {
         context = nil
         options = nil
         self.personaOverride = personaOverride
-        self.skillOverrideIDs = skillOverrideIDs
+        self.skillSelection = skillSelection
         self.memorySelection = memorySelection
     }
 
@@ -326,7 +332,7 @@ public struct Request: Codable, Hashable, Sendable {
         optionsSchemaName: String? = nil,
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil,
+        skillSelection: AgentSkillSelection = .none,
         memorySelection: MemorySelection? = nil,
         encoder: JSONEncoder = JSONEncoder()
     ) throws {
@@ -335,7 +341,7 @@ public struct Request: Codable, Hashable, Sendable {
             images: images,
             executionMode: executionMode,
             personaOverride: personaOverride,
-            skillOverrideIDs: skillOverrideIDs,
+            skillSelection: skillSelection,
             memorySelection: memorySelection
         )
         self.context = try context.map {
@@ -360,7 +366,7 @@ public struct Request: Codable, Hashable, Sendable {
         contextSchemaName: String? = nil,
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil,
+        skillSelection: AgentSkillSelection = .none,
         memorySelection: MemorySelection? = nil,
         encoder: JSONEncoder = JSONEncoder()
     ) throws {
@@ -369,7 +375,7 @@ public struct Request: Codable, Hashable, Sendable {
             images: images,
             executionMode: executionMode,
             personaOverride: personaOverride,
-            skillOverrideIDs: skillOverrideIDs,
+            skillSelection: skillSelection,
             memorySelection: memorySelection
         )
         self.context = try context.map {
@@ -387,7 +393,7 @@ public struct Request: Codable, Hashable, Sendable {
         optionsSchemaName: String? = nil,
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil,
+        skillSelection: AgentSkillSelection = .none,
         memorySelection: MemorySelection? = nil,
         encoder: JSONEncoder = JSONEncoder()
     ) throws {
@@ -396,7 +402,7 @@ public struct Request: Codable, Hashable, Sendable {
             images: images,
             executionMode: executionMode,
             personaOverride: personaOverride,
-            skillOverrideIDs: skillOverrideIDs,
+            skillSelection: skillSelection,
             memorySelection: memorySelection
         )
         self.options = options.map { options in
@@ -413,7 +419,7 @@ public struct Request: Codable, Hashable, Sendable {
         importedContent: AgentImportedContent,
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil
+        skillSelection: AgentSkillSelection = .none
     ) {
         self.init(
             prompt: prompt,
@@ -422,7 +428,7 @@ public struct Request: Codable, Hashable, Sendable {
             compiledOptions: nil,
             executionMode: executionMode,
             personaOverride: personaOverride,
-            skillOverrideIDs: skillOverrideIDs
+            skillSelection: skillSelection
         )
     }
 
@@ -433,14 +439,14 @@ public struct Request: Codable, Hashable, Sendable {
         compiledOptions: CompiledRequestOptions? = nil,
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
-        skillOverrideIDs: [String]? = nil
+        skillSelection: AgentSkillSelection = .none
     ) {
         self.init(
             text: importedContent.composedText(prompt: prompt),
             images: importedContent.images,
             executionMode: executionMode,
             personaOverride: personaOverride,
-            skillOverrideIDs: skillOverrideIDs
+            skillSelection: skillSelection
         )
         context = compiledContext
         options = compiledOptions
@@ -465,7 +471,7 @@ public struct Request: Codable, Hashable, Sendable {
         case context
         case options
         case personaOverride
-        case skillOverrideIDs
+        case skillSelection
         case memorySelection
     }
 
@@ -477,7 +483,7 @@ public struct Request: Codable, Hashable, Sendable {
         context = try container.decodeIfPresent(CompiledRequestContext.self, forKey: .context)
         options = try container.decodeIfPresent(CompiledRequestOptions.self, forKey: .options)
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
-        skillOverrideIDs = try container.decodeIfPresent([String].self, forKey: .skillOverrideIDs)
+        skillSelection = try container.decodeIfPresent(AgentSkillSelection.self, forKey: .skillSelection) ?? .none
         memorySelection = try container.decodeIfPresent(MemorySelection.self, forKey: .memorySelection)
     }
 }

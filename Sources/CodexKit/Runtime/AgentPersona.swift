@@ -31,13 +31,16 @@ enum AgentInstructionCompiler {
         turnSkills: [AgentSkill]
     ) -> String {
         var sections: [String] = []
+        let usesPersonaOverride = turnPersonaOverride?.isEmpty == false
+        let usesThreadPersona = threadPersonaStack?.isEmpty == false
 
         let trimmedBase = baseInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedBase.isEmpty {
+        if !usesPersonaOverride, !usesThreadPersona, !trimmedBase.isEmpty {
             sections.append(trimmedBase)
         }
 
-        if let threadPersonaStack,
+        if !usesPersonaOverride,
+           let threadPersonaStack,
            let compiledThreadLayers = compile(
                title: "Thread Persona Layers",
                stack: threadPersonaStack
@@ -61,7 +64,7 @@ enum AgentInstructionCompiler {
         }
 
         if let compiledTurnSkills = compile(
-            title: "Turn Skill Override",
+            title: "Request Skills",
             skills: turnSkills
         ) {
             sections.append(compiledTurnSkills)

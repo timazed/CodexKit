@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.13] - 2026-04-30
+
+### Changed
+
+- Changed persona precedence so thread personas replace runtime/backend personality and request-level persona overrides replace inherited thread/runtime behavior for that turn instead of appending to it.
+- Replaced request skill overrides with `AgentSkillSelection` so turns can explicitly use thread skills, replace them, or append request-local skills.
+
 ## [2.0.0-alpha.12] - 2026-04-29
 
 ### Fixed
@@ -103,7 +110,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.12...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.13...HEAD
+[2.0.0-alpha.13]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.12...v2.0.0-alpha.13
 [2.0.0-alpha.12]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.11...v2.0.0-alpha.12
 [2.0.0-alpha.11]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.10...v2.0.0-alpha.11
 [2.0.0-alpha.10]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.9...v2.0.0-alpha.10

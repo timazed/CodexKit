@@ -62,7 +62,7 @@ extension AgentRuntimeTests {
         let thread = try await runtime.createThread(title: "Preview", personaStack: AgentPersonaStack(layers: [.init(name: "planner", instructions: "Act as a planning specialist.")]), skillIDs: ["health_coach"])
         let preview = try await runtime.resolvedInstructionsPreview(for: thread.id, request: Request(text: "Give me a plan."))
 
-        XCTAssertTrue(preview.contains("Base host instructions."))
+        XCTAssertFalse(preview.contains("Base host instructions."))
         XCTAssertTrue(preview.contains("Thread Persona Layers:"))
         XCTAssertTrue(preview.contains("[planner]"))
         XCTAssertTrue(preview.contains("Thread Skills:"))

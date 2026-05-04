@@ -91,12 +91,28 @@ extension AgentRuntime {
         thread: AgentThread,
         message: Request
     ) throws -> ResolvedTurnSkills {
-        if let skillOverrideIDs = message.skillOverrideIDs {
-            try assertSkillsExist(skillOverrideIDs)
+        let selectedSkillIDs = switch message.skillSelection {
+        case .none:
+            thread.skillIDs
+        case let .replace(skillIDs):
+            skillIDs
+        case let .append(skillIDs):
+            thread.skillIDs + skillIDs
         }
+        try assertSkillsExist(selectedSkillIDs)
 
-        let threadSkills = resolveSkills(for: thread.skillIDs)
-        let turnSkills = resolveSkills(for: message.skillOverrideIDs ?? [])
+        let threadSkills: [AgentSkill] = switch message.skillSelection {
+        case .none, .append:
+            resolveSkills(for: thread.skillIDs)
+        case .replace:
+            []
+        }
+        let turnSkills: [AgentSkill] = switch message.skillSelection {
+        case .none:
+            []
+        case let .replace(skillIDs), let .append(skillIDs):
+            resolveSkills(for: skillIDs)
+        }
         let allSkills = threadSkills + turnSkills
 
         return ResolvedTurnSkills(

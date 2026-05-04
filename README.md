@@ -681,6 +681,31 @@ let quickSummary = try await runtime.send(
 )
 ```
 
+More specific personas replace less specific ones: a thread persona replaces the runtime/backend personality, and `personaOverride` replaces both for one request.
+
+Provide `personaOverride` when a transient execution agent should use a request-local personality:
+
+```swift
+let browserPersona = AgentPersonaStack(layers: [
+    .init(
+        name: "reservation_browser_automation_loop",
+        instructions: "Complete the browser task deterministically. Return only the structured outcome."
+    )
+])
+
+let decision = try await runtime.send(
+    Request(
+        text: "Inspect the current reservation page and choose the next action.",
+        executionMode: .ephemeral,
+        personaOverride: browserPersona
+    ),
+    in: thread.id,
+    response: ReservationPageDecision.self
+)
+```
+
+Request overrides replace inherited behavior for that turn: `personaOverride` replaces the runtime/thread persona, and `skillSelection: .replace(...)` replaces thread skills. Use `skillSelection: .append(...)` to keep thread skills and add request-local skills.
+
 Structured output is schema-driven and decoded into your `Decodable` type:
 
 ```swift
@@ -997,6 +1022,8 @@ let stream = try await runtime.stream(
 )
 ```
 
+Personas follow runtime → thread → turn precedence. A thread persona replaces the runtime/backend personality, and a request persona override replaces the thread persona for that turn. The next request falls back to the thread's normal persona.
+
 ## Share Extensions And Imported Content
 
 Share extensions stay app-owned, but `CodexKit` now includes `AgentImportedContent` to normalize the content you extract from a share sheet before sending it into the runtime.
@@ -1158,7 +1185,7 @@ let tripThread = try await runtime.createThread(
 let stream = try await runtime.stream(
     Request(
         text: "Review this plan with extra travel rigor.",
-        skillOverrideIDs: ["travel_planner"]
+        skillSelection: .append(["travel_planner"])
     ),
     in: healthThread.id
 )
