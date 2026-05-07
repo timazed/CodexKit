@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Changed
+
+- Removed prompt-only section labels from compiled persona and skill instructions to avoid sending debug metadata to the backend.
+- Shortened request-visible context, options, and streamed structured-output helper prompts to reduce input token overhead.
+
 ## [2.0.0-alpha.13] - 2026-05-04
 
 ### Changed

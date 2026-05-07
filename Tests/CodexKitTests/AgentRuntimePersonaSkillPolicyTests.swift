@@ -63,10 +63,8 @@ extension AgentRuntimeTests {
         let preview = try await runtime.resolvedInstructionsPreview(for: thread.id, request: Request(text: "Give me a plan."))
 
         XCTAssertFalse(preview.contains("Base host instructions."))
-        XCTAssertTrue(preview.contains("Thread Persona Layers:"))
-        XCTAssertTrue(preview.contains("[planner]"))
-        XCTAssertTrue(preview.contains("Thread Skills:"))
-        XCTAssertTrue(preview.contains("[health_coach: Health Coach]"))
+        XCTAssertTrue(preview.contains("Act as a planning specialist."))
+        XCTAssertTrue(preview.contains("Coach users toward their daily step goals."))
     }
 
     func testCreateThreadLoadsPersonaFromFileSource() async throws {
@@ -104,6 +102,6 @@ extension AgentRuntimeTests {
 
         let receivedInstructions = await backend.receivedInstructions()
         let resolved = try XCTUnwrap(receivedInstructions.last)
-        XCTAssertTrue(resolved.contains("[travel_planner: Travel Planner]"))
+        XCTAssertTrue(resolved.contains("Keep itineraries compact and transit-aware."))
     }
 }

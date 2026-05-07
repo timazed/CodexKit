@@ -641,13 +641,11 @@ let dietPlan = try await runtime.send(
 That request is sent conceptually as:
 
 ```text
-Developer message: request context
-- dietary goal: Lose weight while maintaining energy
-- allergies: peanuts
+Developer message: context
+{"dietaryGoal":"Lose weight while maintaining energy","allergies":["peanuts"]}
 
-Developer message: request options
-Mode:
-- Plan a healthy diet recommendation tailored to the known nutrition profile.
+Developer message: turn policy
+Mode: Plan a healthy diet recommendation tailored to the known nutrition profile.
 Requirements:
 - Recommend meals that support a high-protein diet.
 - Include foods that help increase daily fiber intake.

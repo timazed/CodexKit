@@ -42,8 +42,7 @@ extension AgentRuntimeTests {
         let instructions = await backend.receivedInstructions()
         let resolved = try XCTUnwrap(instructions.last)
         XCTAssertTrue(resolved.contains("Base host instructions."))
-        XCTAssertTrue(resolved.contains("Thread Skills:"))
-        XCTAssertTrue(resolved.contains("[health_coach: Health Coach]"))
+        XCTAssertTrue(resolved.contains("Coach users toward their daily step goals."))
     }
 
     func testTurnSkillSelectionReplaceAppliesOnlyToCurrentTurn() async throws {
@@ -88,8 +87,8 @@ extension AgentRuntimeTests {
 
         let instructions = await backend.receivedInstructions()
         XCTAssertEqual(instructions.count, 2)
-        XCTAssertTrue(instructions[0].contains("[health_coach: Health Coach]"))
-        XCTAssertFalse(instructions[1].contains("[health_coach: Health Coach]"))
+        XCTAssertTrue(instructions[0].contains("Coach users toward their daily step goals."))
+        XCTAssertFalse(instructions[1].contains("Coach users toward their daily step goals."))
     }
 
     func testTurnSkillSelectionAppendKeepsThreadSkillsForCurrentTurn() async throws {
@@ -142,10 +141,10 @@ extension AgentRuntimeTests {
 
         let instructions = await backend.receivedInstructions()
         XCTAssertEqual(instructions.count, 2)
-        XCTAssertTrue(instructions[0].contains("[health_coach: Health Coach]"))
-        XCTAssertTrue(instructions[0].contains("[travel_planner: Travel Planner]"))
-        XCTAssertTrue(instructions[1].contains("[health_coach: Health Coach]"))
-        XCTAssertFalse(instructions[1].contains("[travel_planner: Travel Planner]"))
+        XCTAssertTrue(instructions[0].contains("Coach users toward their daily step goals."))
+        XCTAssertTrue(instructions[0].contains("Plan compact itineraries."))
+        XCTAssertTrue(instructions[1].contains("Coach users toward their daily step goals."))
+        XCTAssertFalse(instructions[1].contains("Plan compact itineraries."))
     }
 
     func testSetSkillIDsAffectsFutureTurnsOnly() async throws {
@@ -189,8 +188,8 @@ extension AgentRuntimeTests {
 
         let instructions = await backend.receivedInstructions()
         XCTAssertEqual(instructions.count, 2)
-        XCTAssertFalse(instructions[0].contains("[health_coach: Health Coach]"))
-        XCTAssertTrue(instructions[1].contains("[health_coach: Health Coach]"))
+        XCTAssertFalse(instructions[0].contains("Coach users toward their daily step goals."))
+        XCTAssertTrue(instructions[1].contains("Coach users toward their daily step goals."))
     }
 
     func testThreadPersonaReplacesBackendBaseInstructions() async throws {
@@ -224,7 +223,7 @@ extension AgentRuntimeTests {
         let instructions = await backend.receivedInstructions()
         let resolved = try XCTUnwrap(instructions.last)
         XCTAssertFalse(resolved.contains("Base host instructions."))
-        XCTAssertTrue(resolved.contains("[support]"))
+        XCTAssertTrue(resolved.contains("Act as a support specialist."))
     }
 
     func testTurnPersonaOverrideAppliesOnlyToCurrentTurn() async throws {
@@ -269,11 +268,11 @@ extension AgentRuntimeTests {
         let instructions = await backend.receivedInstructions()
         XCTAssertEqual(instructions.count, 2)
         XCTAssertFalse(instructions[0].contains("Base host instructions."))
-        XCTAssertFalse(instructions[0].contains("[support]"))
-        XCTAssertTrue(instructions[0].contains("[reviewer]"))
+        XCTAssertFalse(instructions[0].contains("Act as a support specialist."))
+        XCTAssertTrue(instructions[0].contains("Call out risks first."))
         XCTAssertFalse(instructions[1].contains("Base host instructions."))
-        XCTAssertTrue(instructions[1].contains("[support]"))
-        XCTAssertFalse(instructions[1].contains("[reviewer]"))
+        XCTAssertTrue(instructions[1].contains("Act as a support specialist."))
+        XCTAssertFalse(instructions[1].contains("Call out risks first."))
     }
 
     func testTurnOverridesReplaceInheritedInstructions() async throws {
@@ -330,10 +329,10 @@ extension AgentRuntimeTests {
         let instructions = await backend.receivedInstructions()
         let resolved = try XCTUnwrap(instructions.last)
         XCTAssertFalse(resolved.contains("Base host instructions."))
-        XCTAssertFalse(resolved.contains("[support]"))
-        XCTAssertFalse(resolved.contains("[thread_skill: Thread Skill]"))
-        XCTAssertTrue(resolved.contains("[browser_agent]"))
-        XCTAssertTrue(resolved.contains("[turn_skill: Turn Skill]"))
+        XCTAssertFalse(resolved.contains("Act as a support specialist."))
+        XCTAssertFalse(resolved.contains("Use thread-level behavior."))
+        XCTAssertTrue(resolved.contains("Complete browser tasks deterministically."))
+        XCTAssertTrue(resolved.contains("Use request-level behavior."))
     }
 
     func testSetPersonaStackAffectsFutureTurnsOnly() async throws {
@@ -376,9 +375,9 @@ extension AgentRuntimeTests {
 
         let instructions = await backend.receivedInstructions()
         XCTAssertEqual(instructions.count, 2)
-        XCTAssertTrue(instructions[0].contains("[support]"))
-        XCTAssertTrue(instructions[1].contains("[planner]"))
-        XCTAssertFalse(instructions[1].contains("[support]"))
+        XCTAssertTrue(instructions[0].contains("Act as a support specialist."))
+        XCTAssertTrue(instructions[1].contains("Focus on sequencing and tradeoffs."))
+        XCTAssertFalse(instructions[1].contains("Act as a support specialist."))
     }
 
     func testThreadPersonaStackPersistsAcrossRestore() async throws {

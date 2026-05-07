@@ -41,68 +41,44 @@ enum AgentInstructionCompiler {
 
         if !usesPersonaOverride,
            let threadPersonaStack,
-           let compiledThreadLayers = compile(
-               title: "Thread Persona Layers",
-               stack: threadPersonaStack
-           ) {
+           let compiledThreadLayers = compile(stack: threadPersonaStack) {
             sections.append(compiledThreadLayers)
         }
 
-        if let compiledThreadSkills = compile(
-            title: "Thread Skills",
-            skills: threadSkills
-        ) {
+        if let compiledThreadSkills = compile(skills: threadSkills) {
             sections.append(compiledThreadSkills)
         }
 
         if let turnPersonaOverride,
-           let compiledOverrideLayers = compile(
-               title: "Turn Persona Override",
-               stack: turnPersonaOverride
-           ) {
+           let compiledOverrideLayers = compile(stack: turnPersonaOverride) {
             sections.append(compiledOverrideLayers)
         }
 
-        if let compiledTurnSkills = compile(
-            title: "Request Skills",
-            skills: turnSkills
-        ) {
+        if let compiledTurnSkills = compile(skills: turnSkills) {
             sections.append(compiledTurnSkills)
         }
 
         return sections.joined(separator: "\n\n")
     }
 
-    private static func compile(
-        title: String,
-        stack: AgentPersonaStack
-    ) -> String? {
+    private static func compile(stack: AgentPersonaStack) -> String? {
         let renderedLayers = stack.layers.compactMap { layer -> String? in
             let trimmedInstructions = layer.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedInstructions.isEmpty else {
                 return nil
             }
 
-            return """
-            [\(layer.name)]
-            \(trimmedInstructions)
-            """
+            return trimmedInstructions
         }
 
         guard !renderedLayers.isEmpty else {
             return nil
         }
 
-        return """
-        \(title):
-        \(renderedLayers.joined(separator: "\n\n"))
-        """
+        return renderedLayers.joined(separator: "\n\n")
     }
 
-    private static func compile(
-        title: String,
-        skills: [AgentSkill]
-    ) -> String? {
+    private static func compile(skills: [AgentSkill]) -> String? {
         let renderedSkills = skills.compactMap { skill -> String? in
             let trimmedInstructions = skill.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
             let policyLines = compilePolicyLines(skill.executionPolicy)
@@ -123,20 +99,14 @@ enum AgentInstructionCompiler {
                 )
             }
 
-            return """
-            [\(skill.id): \(skill.name)]
-            \(sections.joined(separator: "\n\n"))
-            """
+            return sections.joined(separator: "\n\n")
         }
 
         guard !renderedSkills.isEmpty else {
             return nil
         }
 
-        return """
-        \(title):
-        \(renderedSkills.joined(separator: "\n\n"))
-        """
+        return renderedSkills.joined(separator: "\n\n")
     }
 
     private static func compilePolicyLines(

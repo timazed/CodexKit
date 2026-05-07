@@ -555,10 +555,11 @@ final class CodexResponsesBackendTests: XCTestCase {
                     )
                     let developerContent = try XCTUnwrap(developerMessage["content"] as? [[String: Any]])
                     let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
-                    XCTAssertTrue(developerText.contains("CodexKit request context"))
-                    XCTAssertTrue(developerText.contains("Schema name: PlannerContext"))
+                    XCTAssertTrue(developerText.contains("Context (PlannerContext): source of truth for this turn; prefer over assumptions."))
                     XCTAssertTrue(developerText.contains("Resolve shipping issue"))
                     XCTAssertTrue(developerText.contains("customerTier"))
+                    XCTAssertFalse(developerText.contains("CodexKit request context"))
+                    XCTAssertFalse(developerText.contains("<codexkit-context"))
 
                     let userMessage = try XCTUnwrap(
                         input.first(where: { $0["role"] as? String == "user" })
@@ -650,13 +651,14 @@ final class CodexResponsesBackendTests: XCTestCase {
 
                     let developerContent = try XCTUnwrap(developerMessages.first?["content"] as? [[String: Any]])
                     let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
-                    XCTAssertTrue(developerText.contains("CodexKit request options"))
-                    XCTAssertTrue(developerText.contains("Schema name: LookupOptions"))
-                    XCTAssertTrue(developerText.contains("Mode:"))
+                    XCTAssertTrue(developerText.contains("Turn policy:"))
+                    XCTAssertTrue(developerText.contains("Mode: Research the request and gather grounded information."))
                     XCTAssertTrue(developerText.contains("Research the request and gather grounded information."))
                     XCTAssertTrue(developerText.contains("Requirements:"))
                     XCTAssertTrue(developerText.contains("Find the venue address using Google."))
                     XCTAssertTrue(developerText.contains("Retrieve one venue-relevant image using Google."))
+                    XCTAssertFalse(developerText.contains("CodexKit request options"))
+                    XCTAssertFalse(developerText.contains("Schema name:"))
                     XCTAssertFalse(developerText.contains("<codexkit-options"))
                 }
             )
@@ -733,8 +735,9 @@ final class CodexResponsesBackendTests: XCTestCase {
                     )
                     let developerContent = try XCTUnwrap(developerMessage["content"] as? [[String: Any]])
                     let developerText = try XCTUnwrap(developerContent.first?["text"] as? String)
-                    XCTAssertTrue(developerText.contains("Section name: options"))
+                    XCTAssertTrue(developerText.contains("Turn policy:"))
                     XCTAssertFalse(developerText.contains("Schema name:"))
+                    XCTAssertFalse(developerText.contains("Section name:"))
                     XCTAssertTrue(developerText.contains("Enrich the known result with additional grounded details."))
                     XCTAssertTrue(developerText.contains("Find the venue address using Google."))
                 }

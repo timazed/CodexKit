@@ -194,14 +194,10 @@ struct RequestContextTransport: Hashable, Sendable {
     let payload: JSONValue
 
     var formattedText: String {
-        let schemaLine = schemaName.map { "\nSchema name: \($0)" } ?? ""
+        let label = schemaName ?? name
         return """
-        CodexKit request context:
-        Section name: \(name)\(schemaLine)
-        Treat the JSON below as authoritative host-app context for the current turn. Prefer it over inferred assumptions when they conflict.
-        <codexkit-context name="\(name)">
-        \(payload.prettyPrintedJSONString)
-        </codexkit-context>
+        Context (\(label)): source of truth for this turn; prefer over assumptions.
+        \(payload.prettyJSONString)
         """
     }
 }
@@ -213,7 +209,6 @@ struct RequestOptionsTransport: Hashable, Sendable {
     let requirements: [String]
 
     var formattedText: String {
-        let schemaLine = schemaName.map { "\nSchema name: \($0)" } ?? ""
         let requirementsBlock: String
         if requirements.isEmpty {
             requirementsBlock = ""
@@ -222,11 +217,8 @@ struct RequestOptionsTransport: Hashable, Sendable {
         }
 
         return """
-        CodexKit request options:
-        Section name: \(name)\(schemaLine)
-        Treat the following as the fulfillment policy for this turn.
-        Mode:
-        - \(mode)\(requirementsBlock)
+        Turn policy:
+        Mode: \(mode)\(requirementsBlock)
         """
     }
 }
@@ -243,20 +235,15 @@ struct StreamedStructuredOutputTransport: Hashable, Sendable {
             .map { "Description: \($0)\n" }
             ?? ""
         let requirementLine = options.required
-            ? "You must emit exactly one hidden structured output block."
-            : "Emit the hidden structured output block only when it is useful and you can satisfy the schema."
+            ? "Append exactly one hidden JSON block after the visible reply."
+            : "Append a hidden JSON block after the visible reply only if useful."
 
         return """
-        CodexKit streamed response contract:
-        - Respond with normal user-facing assistant text first.
-        - Do not mention any hidden framing or transport markers in the visible text.
-        - After the visible text, optionally append one hidden structured output block using the exact tags below.
-        - Hidden block opening tag: \(CodexResponsesStructuredStreamParser.openTag)
-        - Hidden block closing tag: \(CodexResponsesStructuredStreamParser.closeTag)
-        - The hidden block contents must be valid JSON matching the declared schema.
-        - \(requirementLine)
-        \(description)Schema name: \(responseFormat.name)
-        Schema JSON:
+        \(requirementLine)
+        Visible text first. Do not mention hidden tags or hidden JSON in visible text.
+        Hidden block: \(CodexResponsesStructuredStreamParser.openTag){json}\(CodexResponsesStructuredStreamParser.closeTag)
+        JSON must match schema.
+        \(description)Schema \(responseFormat.name):
         \(schema)
         """
     }
