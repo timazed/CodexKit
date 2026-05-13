@@ -266,11 +266,14 @@ public actor AgentRuntime {
             return
         }
 
-        let operations = pendingStoreOperations
+        let operations = coalescedStoreOperations(pendingStoreOperations)
         logger.debug(
             .persistence,
             "Applying incremental runtime store operations.",
-            metadata: ["count": "\(operations.count)"]
+            metadata: [
+                "count": "\(operations.count)",
+                "original_count": "\(pendingStoreOperations.count)"
+            ]
         )
         try await stateStore.apply(operations)
         pendingStoreOperations.removeAll()
@@ -279,6 +282,29 @@ public actor AgentRuntime {
 
     func enqueueStoreOperation(_ operation: AgentStoreWriteOperation) {
         pendingStoreOperations.append(operation)
+    }
+
+    func coalescedStoreOperations(
+        _ operations: [AgentStoreWriteOperation]
+    ) -> [AgentStoreWriteOperation] {
+        var coalesced: [AgentStoreWriteOperation] = []
+
+        for operation in operations {
+            if case let .deleteThread(threadID) = operation {
+                coalesced.removeAll { $0.affectedThreadID == threadID }
+                coalesced.append(operation)
+                continue
+            }
+
+            if let key = operation.coalescingKey,
+               let existingIndex = coalesced.lastIndex(where: { $0.coalescingKey == key }) {
+                coalesced.remove(at: existingIndex)
+            }
+
+            coalesced.append(operation)
+        }
+
+        return coalesced
     }
 
     func publishAllObservations() {

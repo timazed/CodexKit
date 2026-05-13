@@ -73,8 +73,7 @@ struct CodexResponsesEventStreamClient: Sendable {
     func streamEvents(
         request: URLRequest
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
-        if logger.isVerboseEnabled(for: .network),
-           let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
+        if let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
             logger.debug(
                 .network,
                 "Responses request payload.",
@@ -260,7 +259,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         }
 
         if logger.isVerboseEnabled(for: .network) {
-            logger.debug(
+            logger.verbose(
                 .network,
                 "Responses stream payload.",
                 metadata: ["payload": payload.data]
@@ -271,6 +270,16 @@ struct CodexResponsesEventStreamClient: Sendable {
             StreamEnvelope.self,
             from: Data(payload.data.utf8)
         )
+        if shouldLogResponsePayload(for: envelope.type) {
+            logger.debug(
+                .network,
+                "Responses response payload.",
+                metadata: [
+                    "type": envelope.type,
+                    "payload": payload.data
+                ]
+            )
+        }
 
         switch envelope.type {
         case "response.output_text.delta":
@@ -323,6 +332,20 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
         default:
             return nil
+        }
+    }
+
+    private func shouldLogResponsePayload(
+        for eventType: String
+    ) -> Bool {
+        switch eventType {
+        case "response.output_item.done",
+             "response.completed",
+             "response.failed",
+             "response.incomplete":
+            true
+        default:
+            false
         }
     }
 

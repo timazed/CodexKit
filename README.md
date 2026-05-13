@@ -342,14 +342,12 @@ Available logging categories include:
 - `structuredOutput`
 - `memory`
 
-When `network` logging is enabled at `.debug`, `CodexKit` also emits raw request and response payloads for the built-in Codex backend:
+Network logging is split between `.debug` and `.verbose` so day-to-day diagnostics stay readable:
 
-- outbound `/responses` request JSON bodies
-- inbound streaming SSE event payloads
-- outbound `/responses/compact` request JSON bodies
-- inbound `/responses/compact` response JSON bodies
+- `.debug` includes lifecycle/status breadcrumbs plus the outbound `/responses` request JSON body, important received `/responses` payloads such as final output items and completion/failure events, and `/responses/compact` request/response JSON bodies.
+- `.verbose` additionally includes every raw streaming SSE event payload, including token-by-token deltas.
 
-That is intentionally verbose and may include prompt text, request context, tool arguments, and model output, so it should be treated as a developer-only debugging mode.
+Payload logs may include prompt text, request context, tool arguments, and model output, so use them only for developer diagnostics. Prefer `.debug` when you need request/response visibility without the streaming firehose, and `.verbose` when you need complete wire-level traces.
 
 Use `AgentConsoleLogSink` for stderr-style console logs, `AgentOSLogSink` for unified Apple logging, or provide your own `AgentLogSink`.
 

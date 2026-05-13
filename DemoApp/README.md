@@ -33,6 +33,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - includes a `Send Ephemeral Turn` action that runs a transient request without replaying or writing thread history
 - showcases runtime APIs that can load persona/skill definitions from local or remote files
 - includes a `Show Resolved Instructions` debug toggle so you can inspect per-turn compiled instructions
+- includes an `Off` / `Debug` / `Verbose` developer logging control; `Debug` shows SDK lifecycle, request, response, retry, persistence, compaction, and tool activity, while `Verbose` also prints every raw streaming payload
 - enables Responses web search in the checked-in demo configuration
 - reads HealthKit step totals (with permission), tracks a daily goal, and schedules local reminder notifications
 - supports switchable coaching tone (`Hardcore Personal` or `Firm Coach`)

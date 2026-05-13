@@ -189,22 +189,19 @@ enum WorkingHistoryItem: Sendable {
 }
 
 struct RequestContextTransport: Hashable, Sendable {
-    let name: String
     let schemaName: String?
     let payload: JSONValue
 
     var formattedText: String {
-        let label = schemaName ?? name
+        let label = schemaName.map { " \($0)" } ?? ""
         return """
-        Context (\(label)): source of truth for this turn; prefer over assumptions.
+        Context\(label):
         \(payload.prettyJSONString)
         """
     }
 }
 
 struct RequestOptionsTransport: Hashable, Sendable {
-    let name: String
-    let schemaName: String?
     let mode: String
     let requirements: [String]
 
@@ -213,12 +210,11 @@ struct RequestOptionsTransport: Hashable, Sendable {
         if requirements.isEmpty {
             requirementsBlock = ""
         } else {
-            requirementsBlock = "\nRequirements:\n" + requirements.map { "- \($0)" }.joined(separator: "\n")
+            requirementsBlock = "\nReq:\n" + requirements.map { "- \($0)" }.joined(separator: "\n")
         }
 
         return """
-        Turn policy:
-        Mode: \(mode)\(requirementsBlock)
+        Policy: \(mode)\(requirementsBlock)
         """
     }
 }
@@ -232,18 +228,18 @@ struct StreamedStructuredOutputTransport: Hashable, Sendable {
             ?? Data("{}".utf8)
         let schema = String(decoding: schemaData, as: UTF8.self)
         let description = responseFormat.description
-            .map { "Description: \($0)\n" }
+            .map { "Desc: \($0)\n" }
             ?? ""
         let requirementLine = options.required
-            ? "Append exactly one hidden JSON block after the visible reply."
-            : "Append a hidden JSON block after the visible reply only if useful."
+            ? "Append exactly one hidden JSON block after visible text."
+            : "Append a hidden JSON block after visible text only if useful."
 
         return """
         \(requirementLine)
-        Visible text first. Do not mention hidden tags or hidden JSON in visible text.
-        Hidden block: \(CodexResponsesStructuredStreamParser.openTag){json}\(CodexResponsesStructuredStreamParser.closeTag)
-        JSON must match schema.
-        \(description)Schema \(responseFormat.name):
+        Do not mention hidden tags/JSON visibly.
+        Block: \(CodexResponsesStructuredStreamParser.openTag){json}\(CodexResponsesStructuredStreamParser.closeTag)
+        Match schema \(responseFormat.name):
+        \(description)
         \(schema)
         """
     }

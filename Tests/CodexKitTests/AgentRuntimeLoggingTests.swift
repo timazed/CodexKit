@@ -37,7 +37,7 @@ extension AgentRuntimeTests {
 }
 
 extension CodexResponsesBackendTests {
-    func testBackendLoggingEmitsRetryAndPayloadEntries() async throws {
+    func testBackendDebugLoggingEmitsRequestAndResponsePayloadsWithoutStreamNoise() async throws {
         let buffer = RuntimeLogBuffer()
         let logging = AgentLoggingConfiguration(
             minimumLevel: .debug,
@@ -105,6 +105,74 @@ extension CodexResponsesBackendTests {
         })
         XCTAssertTrue(entries.contains {
             $0.category == .network &&
+                $0.message.contains("Responses response payload") &&
+                $0.metadata["type"] == "response.completed" &&
+                ($0.metadata["payload"]?.contains("\"id\":\"resp_retry\"") ?? false)
+        })
+        XCTAssertFalse(entries.contains {
+            $0.category == .network &&
+                $0.message.contains("Responses stream payload")
+        })
+    }
+
+    func testBackendVerboseLoggingEmitsPayloadEntries() async throws {
+        let buffer = RuntimeLogBuffer()
+        let logging = AgentLoggingConfiguration(
+            minimumLevel: .verbose,
+            sink: RuntimeTestLogSink(buffer: buffer)
+        )
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(
+                logging: logging
+            ),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(
+                id: "workspace-123",
+                email: "taylor@example.com",
+                plan: .plus
+            )
+        )
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_verbose","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+            """.utf8)
+        ))
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-verbose"),
+            history: [],
+            message: Request(text: "Hi"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+
+        let entries = buffer.entries
+        XCTAssertTrue(entries.contains {
+            $0.level == .debug &&
+                $0.category == .network &&
+                $0.message.contains("Responses response payload") &&
+                $0.metadata["type"] == "response.completed" &&
+                ($0.metadata["payload"]?.contains("\"id\":\"resp_verbose\"") ?? false)
+        })
+        XCTAssertTrue(entries.contains {
+            $0.level == .verbose &&
+                $0.category == .network &&
                 $0.message.contains("Responses stream payload") &&
                 ($0.metadata["payload"]?.contains("\"type\":\"response.completed\"") ?? false)
         })

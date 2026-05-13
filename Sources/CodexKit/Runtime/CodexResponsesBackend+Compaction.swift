@@ -49,8 +49,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
-        if logger.isVerboseEnabled(for: .network),
-           let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
+        if let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
             logger.debug(
                 .network,
                 "Responses compact request payload.",
@@ -87,8 +86,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             )
         }
 
-        if logger.isVerboseEnabled(for: .network),
-           let body = String(data: data, encoding: .utf8) {
+        if let body = String(data: data, encoding: .utf8) {
             logger.debug(
                 .network,
                 "Responses compact response payload.",

@@ -62,14 +62,14 @@ extension AgentDemoViewModel {
     }
 
     func developerLog(_ message: String) {
-        guard developerLoggingEnabled else {
+        guard developerLogLevel != .off else {
             return
         }
         diagnostics.log(message)
     }
 
     func developerErrorLog(_ message: String) {
-        guard developerLoggingEnabled else {
+        guard developerLogLevel != .off else {
             return
         }
         diagnostics.error(message)

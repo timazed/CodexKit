@@ -112,45 +112,40 @@ struct CodexResponsesTurnRunner {
     private func developerMessages(
         for message: Request
     ) -> [WorkingHistoryItem] {
-        var items: [WorkingHistoryItem] = []
+        var sections: [String] = []
 
         if let context = message.context {
-            items.append(
-                .developerMessage(
-                    RequestContextTransport(
-                        name: context.schemaName ?? "context",
-                        schemaName: context.schemaName,
-                        payload: context.payload
-                    ).formattedText
-                )
+            sections.append(
+                RequestContextTransport(
+                    schemaName: context.schemaName,
+                    payload: context.payload
+                ).formattedText
             )
         }
 
         if let options = message.options {
-            items.append(
-                .developerMessage(
-                    RequestOptionsTransport(
-                        name: options.schemaName ?? "options",
-                        schemaName: options.schemaName,
-                        mode: options.mode,
-                        requirements: options.requirements
-                    ).formattedText
-                )
+            sections.append(
+                RequestOptionsTransport(
+                    mode: options.mode,
+                    requirements: options.requirements
+                ).formattedText
             )
         }
 
         if let streamedStructuredOutput = responseContract?.streamedRequest {
-            items.append(
-                .developerMessage(
-                    StreamedStructuredOutputTransport(
-                        responseFormat: streamedStructuredOutput.responseFormat,
-                        options: streamedStructuredOutput.options
-                    ).formattedText
-                )
+            sections.append(
+                StreamedStructuredOutputTransport(
+                    responseFormat: streamedStructuredOutput.responseFormat,
+                    options: streamedStructuredOutput.options
+                ).formattedText
             )
         }
 
-        return items
+        guard !sections.isEmpty else {
+            return []
+        }
+
+        return [.developerMessage(sections.joined(separator: "\n\n"))]
     }
 
     private func runTurnPasses(

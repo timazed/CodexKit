@@ -10,6 +10,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - Removed prompt-only section labels from compiled persona and skill instructions to avoid sending debug metadata to the backend.
 - Shortened request-visible context, options, and streamed structured-output helper prompts to reduce input token overhead.
+- Coalesced redundant pending runtime store writes before persistence while preserving append/delete semantics.
+- Added `.verbose` SDK logging for wire-level streaming payloads, keeping `.debug` focused on readable request/response and lifecycle diagnostics.
+- Replaced the demo app's developer logging toggle with an `Off` / `Debug` / `Verbose` log-level picker.
 
 ## [2.0.0-alpha.13] - 2026-05-04
 

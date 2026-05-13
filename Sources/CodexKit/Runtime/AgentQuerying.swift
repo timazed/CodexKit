@@ -425,6 +425,15 @@ public extension AgentRuntimeQueryableStore {
 }
 
 extension AgentStoreWriteOperation {
+    enum CoalescingKey: Hashable {
+        case thread(String)
+        case summary(String)
+        case contextState(String)
+        case pendingState(String)
+        case partialStructuredSnapshot(String)
+        case toolSession(threadID: String, invocationID: String)
+    }
+
     var affectedThreadID: String {
         switch self {
         case let .upsertThread(thread):
@@ -449,6 +458,33 @@ extension AgentStoreWriteOperation {
             threadID
         case let .deleteThread(threadID):
             threadID
+        }
+    }
+
+    var coalescingKey: CoalescingKey? {
+        switch self {
+        case let .upsertThread(thread):
+            .thread(thread.id)
+        case let .upsertSummary(threadID, _):
+            .summary(threadID)
+        case .appendHistoryItems:
+            nil
+        case .appendCompactionMarker:
+            nil
+        case let .upsertThreadContextState(threadID, _):
+            .contextState(threadID)
+        case let .deleteThreadContextState(threadID):
+            .contextState(threadID)
+        case let .setPendingState(threadID, _):
+            .pendingState(threadID)
+        case let .setPartialStructuredSnapshot(threadID, _):
+            .partialStructuredSnapshot(threadID)
+        case let .upsertToolSession(threadID, session):
+            .toolSession(threadID: threadID, invocationID: session.invocationID)
+        case .redactHistoryItems:
+            nil
+        case .deleteThread:
+            nil
         }
     }
 }

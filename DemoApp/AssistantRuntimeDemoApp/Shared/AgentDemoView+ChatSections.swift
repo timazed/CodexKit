@@ -41,16 +41,20 @@ extension AgentDemoView {
                     .foregroundStyle(.secondary)
             }
 
-            Toggle(
+            Picker(
                 "Developer Logging",
-                isOn: Binding(
-                    get: { viewModel.developerLoggingEnabled },
-                    set: { viewModel.developerLoggingEnabled = $0 }
+                selection: Binding(
+                    get: { viewModel.developerLogLevel },
+                    set: { viewModel.developerLogLevel = $0 }
                 )
-            )
-            .toggleStyle(.switch)
+            ) {
+                ForEach(DemoDeveloperLogLevel.allCases) { level in
+                    Text(level.label).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
 
-            Text("Debug builds start with logging enabled. Logs print to the Xcode console for both demo actions and SDK internals like history writes, thread creation, network calls, retries, compaction, and tool activity.")
+            Text("Debug builds start at Debug. Debug logs lifecycle, network status, retries, persistence, compaction, and tools. Verbose also prints full request and streaming payloads.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

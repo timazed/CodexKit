@@ -2,6 +2,7 @@ import Foundation
 import OSLog
 
 public enum AgentLogLevel: Int, Sendable, Codable, CaseIterable {
+    case verbose = -1
     case debug = 0
     case info = 1
     case warning = 2
@@ -90,6 +91,8 @@ public struct AgentOSLogSink: AgentLogSink, Sendable {
         let logger = Logger(subsystem: subsystem, category: entry.category.rawValue)
         let renderedLine = entry.renderedLine
         switch entry.level {
+        case .verbose:
+            logger.trace("\(renderedLine, privacy: .private)")
         case .debug:
             logger.debug("\(renderedLine, privacy: .private)")
         case .info:
@@ -182,6 +185,14 @@ struct AgentLogger: Sendable {
         log(.debug, category, message, metadata: metadata)
     }
 
+    func verbose(
+        _ category: AgentLogCategory,
+        _ message: String,
+        metadata: [String: String] = [:]
+    ) {
+        log(.verbose, category, message, metadata: metadata)
+    }
+
     func info(
         _ category: AgentLogCategory,
         _ message: String,
@@ -207,7 +218,7 @@ struct AgentLogger: Sendable {
     }
 
     func isVerboseEnabled(for category: AgentLogCategory) -> Bool {
-        configuration.allows(level: .debug, category: category)
+        configuration.allows(level: .verbose, category: category)
     }
 
     private func log(
@@ -251,6 +262,8 @@ private extension AgentLogEntry {
 private extension AgentLogLevel {
     var renderedName: String {
         switch self {
+        case .verbose:
+            return "VERBOSE"
         case .debug:
             return "DEBUG"
         case .info:

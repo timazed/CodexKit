@@ -152,32 +152,37 @@ struct DemoCatalog {
 }
 
 struct DemoDiagnostics {
-    private let developerLoggingDefaultsKey = "AssistantRuntimeDemoApp.developerLoggingEnabled"
+    private let developerLogLevelDefaultsKey = "AssistantRuntimeDemoApp.developerLogLevel"
+    private let legacyDeveloperLoggingDefaultsKey = "AssistantRuntimeDemoApp.developerLoggingEnabled"
     private let logger = Logger(
         subsystem: "ai.assistantruntime.demoapp",
         category: "DemoTool"
     )
 
-    func initialDeveloperLoggingEnabled(userDefaults: UserDefaults = .standard) -> Bool {
-        if userDefaults.object(forKey: developerLoggingDefaultsKey) != nil {
-            return userDefaults.bool(forKey: developerLoggingDefaultsKey)
+    func initialDeveloperLogLevel(userDefaults: UserDefaults = .standard) -> DemoDeveloperLogLevel {
+        if let rawValue = userDefaults.string(forKey: developerLogLevelDefaultsKey),
+           let level = DemoDeveloperLogLevel(rawValue: rawValue) {
+            return level
+        }
+        if userDefaults.object(forKey: legacyDeveloperLoggingDefaultsKey) != nil {
+            return userDefaults.bool(forKey: legacyDeveloperLoggingDefaultsKey) ? .debug : .off
         }
 #if DEBUG
-        return true
+        return .debug
 #else
-        return false
+        return .off
 #endif
     }
 
-    func developerLoggingEnabled(userDefaults: UserDefaults = .standard) -> Bool {
-        initialDeveloperLoggingEnabled(userDefaults: userDefaults)
+    func developerLogLevel(userDefaults: UserDefaults = .standard) -> DemoDeveloperLogLevel {
+        initialDeveloperLogLevel(userDefaults: userDefaults)
     }
 
-    func persistDeveloperLoggingEnabled(
-        _ enabled: Bool,
+    func persistDeveloperLogLevel(
+        _ level: DemoDeveloperLogLevel,
         userDefaults: UserDefaults = .standard
     ) {
-        userDefaults.set(enabled, forKey: developerLoggingDefaultsKey)
+        userDefaults.set(level.rawValue, forKey: developerLogLevelDefaultsKey)
     }
 
     func isCancellationError(_ error: Error) -> Bool {
@@ -200,9 +205,39 @@ struct DemoDiagnostics {
 
     func sdkLoggingConfiguration() -> AgentLoggingConfiguration {
         AgentLoggingConfiguration(
-            minimumLevel: .debug,
+            minimumLevel: .verbose,
             sink: DemoSDKLogSink(diagnostics: self)
         )
+    }
+}
+
+enum DemoDeveloperLogLevel: String, CaseIterable, Identifiable {
+    case off
+    case debug
+    case verbose
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .off:
+            "Off"
+        case .debug:
+            "Debug"
+        case .verbose:
+            "Verbose"
+        }
+    }
+
+    var minimumSDKLevel: AgentLogLevel? {
+        switch self {
+        case .off:
+            nil
+        case .debug:
+            .debug
+        case .verbose:
+            .verbose
+        }
     }
 }
 
@@ -210,12 +245,16 @@ struct DemoSDKLogSink: AgentLogSink {
     let diagnostics: DemoDiagnostics
 
     func log(_ entry: AgentLogEntry) {
-        guard diagnostics.developerLoggingEnabled() else {
+        guard let minimumLevel = diagnostics.developerLogLevel().minimumSDKLevel,
+              entry.level >= minimumLevel
+        else {
             return
         }
 
         let levelLabel: String
         switch entry.level {
+        case .verbose:
+            levelLabel = "VERBOSE"
         case .debug:
             levelLabel = "DEBUG"
         case .info:
@@ -248,13 +287,11 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var streamingText = ""
     var lastError: String?
     var showResolvedInstructionsDebug = false
-    var developerLoggingEnabled: Bool {
+    var developerLogLevel: DemoDeveloperLogLevel {
         didSet {
-            diagnostics.persistDeveloperLoggingEnabled(developerLoggingEnabled)
+            diagnostics.persistDeveloperLogLevel(developerLogLevel)
             developerLog(
-                developerLoggingEnabled
-                    ? "Developer logging enabled."
-                    : "Developer logging disabled."
+                "Developer logging set to \(developerLogLevel.label)."
             )
         }
     }
@@ -347,7 +384,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         self.model = model
         self.enableWebSearch = enableWebSearch
         self.reasoningEffort = reasoningEffort
-        self.developerLoggingEnabled = diagnostics.initialDeveloperLoggingEnabled()
+        self.developerLogLevel = diagnostics.initialDeveloperLogLevel()
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
