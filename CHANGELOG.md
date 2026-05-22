@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.15] - 2026-05-22
+
 ### Changed
 
 - Updated the demo app's default Codex model to `gpt-5.5`.
@@ -125,7 +127,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.14...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.15...HEAD
+[2.0.0-alpha.15]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.14...v2.0.0-alpha.15
 [2.0.0-alpha.14]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.13...v2.0.0-alpha.14
 [2.0.0-alpha.13]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.12...v2.0.0-alpha.13
 [2.0.0-alpha.12]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.11...v2.0.0-alpha.12
