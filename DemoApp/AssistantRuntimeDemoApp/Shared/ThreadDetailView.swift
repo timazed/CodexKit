@@ -550,14 +550,73 @@ private struct ThreadAttachmentGallery: View {
     let images: [AgentImageAttachment]
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+        if images.contains(where: { $0.generationMetadata != nil }) {
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(images) { image in
-                    ThreadAttachmentThumbnail(image: image)
+                    if image.generationMetadata != nil {
+                        ThreadGeneratedImageView(image: image)
+                    } else {
+                        ThreadAttachmentThumbnail(image: image)
+                    }
                 }
             }
             .padding(.top, 4)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(images) { image in
+                        ThreadAttachmentThumbnail(image: image)
+                    }
+                }
+                .padding(.top, 4)
+            }
         }
+    }
+}
+
+private struct ThreadGeneratedImageView: View {
+    let image: AgentImageAttachment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let platformImage = ThreadAttachmentImageCache.image(for: image) {
+                Image(platformImage: platformImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(maxHeight: 360)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            if let metadata = image.generationMetadata {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let revisedPrompt = metadata.revisedPrompt,
+                       !revisedPrompt.isEmpty {
+                        Text(revisedPrompt)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(generatedImageDetailText(for: metadata))
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func generatedImageDetailText(
+        for metadata: AgentImageGenerationMetadata
+    ) -> String {
+        [
+            metadata.outputFormat,
+            metadata.size,
+            metadata.quality,
+            metadata.status,
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
     }
 }
 

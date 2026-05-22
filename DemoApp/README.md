@@ -35,13 +35,16 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - includes a `Show Resolved Instructions` debug toggle so you can inspect per-turn compiled instructions
 - includes an `Off` / `Debug` / `Verbose` developer logging control; `Debug` shows SDK lifecycle, request, response, retry, persistence, compaction, and tool activity, while `Verbose` also prints every raw streaming payload
 - enables Responses web search in the checked-in demo configuration
+- enables hosted Responses image generation in the checked-in demo configuration, with a `Generate Image` quick start
 - reads HealthKit step totals (with permission), tracks a daily goal, and schedules local reminder notifications
 - supports switchable coaching tone (`Hardcore Personal` or `Firm Coach`)
 - proactively generates AI coach feedback in a dedicated persona-pinned thread as steps, goal, or tone change
 
 The checked-in demo registers deterministic skill-specific tools (`health_coach_fetch_progress` and `travel_planner_build_day_plan`), and the Xcode console logs when each tool is requested, executed, and completed so you can verify tool usage during a run.
 
-The demo currently focuses on text plus photo input flows. Built-in image generation is not enabled in the checked-in app configuration.
+The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, size, quality, format, and status come from `AgentImageAttachment.generationMetadata`.
+
+Generated image bytes are persisted the same way as other runtime image attachments: the image data is written to flat files, while the runtime SQLite store keeps the relative attachment pointer and metadata.
 
 The demo uses the new configuration-first surface:
 

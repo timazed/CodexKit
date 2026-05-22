@@ -163,8 +163,8 @@ let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
 | Share/import helper (`AgentImportedContent`) | Yes |
 | App Intents / Shortcuts example | Yes |
 | Assistant image attachment rendering | Yes |
+| Hosted image generation (`enableImageGeneration`) | Yes |
 | Video/audio input attachments | Not yet |
-| Built-in image generation API surface | Not yet (tool-based approach supported) |
 
 ## Package Products
 
@@ -770,6 +770,7 @@ If you need something more specialized, `AgentStructuredOutputFormat` still supp
 - image-only messages
 - persisted image attachments in runtime state
 - assistant image attachments returned by backend content
+- hosted Responses image generation results
 
 ```swift
 let imageData: Data = ...
@@ -784,6 +785,39 @@ let stream = try await runtime.stream(
 ```
 
 Custom tools can also return image URLs via `ToolResultContent.image(URL)`, and `CodexKit` attempts to hydrate those into assistant image attachments for chat rendering.
+
+Image bytes are externalized from runtime state. Attachments are written to flat files under the runtime attachment directory, while SQLite stores the attachment id, MIME type, relative storage key, and any generation metadata. On restore, `CodexKit` follows that storage key and reloads the bytes into `AgentImageAttachment`.
+
+For hosted image generation, enable the Responses image generation tool on the backend:
+
+```swift
+let backend = CodexResponsesBackend(
+    configuration: CodexResponsesBackendConfiguration(
+        enableImageGeneration: true
+    )
+)
+```
+
+Generated `image_generation_call` items with a base64 `result` are converted into assistant `AgentImageAttachment` values so existing transcript rendering and persistence paths work without app-defined tool plumbing. The result can arrive while the item status is still `"generating"`, so apps should use the presence of `images` rather than status text to decide whether there is something renderable.
+
+When the backend includes generation details, they are available on `AgentImageAttachment.generationMetadata`:
+
+```swift
+if let image = message.images.first,
+   let metadata = image.generationMetadata {
+    print(metadata.revisedPrompt ?? "")
+    print(metadata.size ?? "")
+    print(metadata.quality ?? "")
+}
+```
+
+The attachment remains the stable app-facing shape:
+
+```swift
+for image in message.images {
+    render(data: image.data, mimeType: image.mimeType)
+}
+```
 
 ## Memory Layer
 

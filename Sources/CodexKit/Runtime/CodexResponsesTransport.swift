@@ -25,7 +25,9 @@ struct CodexResponsesRequestFactory: Sendable {
             input: items.map(\.jsonValue),
             tools: responsesTools(
                 from: tools,
-                enableWebSearch: configuration.enableWebSearch
+                enableWebSearch: configuration.enableWebSearch,
+                enableImageGeneration: configuration.enableImageGeneration,
+                imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ),
             toolChoice: "auto",
             parallelToolCalls: false,
@@ -55,11 +57,19 @@ struct CodexResponsesRequestFactory: Sendable {
 
     func responsesTools(
         from tools: [ToolDefinition],
-        enableWebSearch: Bool
+        enableWebSearch: Bool,
+        enableImageGeneration: Bool,
+        imageGenerationOutputFormat: String
     ) -> [JSONValue] {
         var responsesTools = tools.map(\.responsesJSONValue)
         if enableWebSearch {
             responsesTools.append(.object(["type": .string("web_search")]))
+        }
+        if enableImageGeneration {
+            responsesTools.append(.object([
+                "type": .string("image_generation"),
+                "output_format": .string(imageGenerationOutputFormat),
+            ]))
         }
         return responsesTools
     }
@@ -266,10 +276,23 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
         }
 
-        let envelope = try decoder.decode(
-            StreamEnvelope.self,
-            from: Data(payload.data.utf8)
-        )
+        let envelope: StreamEnvelope
+        do {
+            envelope = try decoder.decode(
+                StreamEnvelope.self,
+                from: Data(payload.data.utf8)
+            )
+        } catch {
+            logger.error(
+                .network,
+                "Failed to decode responses stream payload.",
+                metadata: [
+                    "error": error.localizedDescription,
+                    "payload": payload.data
+                ]
+            )
+            throw error
+        }
         if shouldLogResponsePayload(for: envelope.type) {
             logger.debug(
                 .network,
@@ -313,6 +336,18 @@ struct CodexResponsesEventStreamClient: Sendable {
                         name: functionCall.name,
                         callID: functionCall.callID,
                         argumentsRaw: functionCall.arguments
+                    )
+                )
+            case let .imageGenerationCall(imageGenerationCall):
+                guard let image = imageGenerationCall.imageAttachment else {
+                    return nil
+                }
+                return .assistantMessage(
+                    AgentMessage(
+                        threadID: "",
+                        role: .assistant,
+                        text: imageGenerationCall.assistantText,
+                        images: [image]
                     )
                 )
             case .other:

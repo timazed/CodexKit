@@ -29,7 +29,9 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             input: effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue },
             tools: requestFactory.responsesTools(
                 from: tools,
-                enableWebSearch: configuration.enableWebSearch
+                enableWebSearch: configuration.enableWebSearch,
+                enableImageGeneration: configuration.enableImageGeneration,
+                imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ),
             parallelToolCalls: false
         )

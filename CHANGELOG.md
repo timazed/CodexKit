@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the demo app's default Codex model to `gpt-5.5`.
+- Added hosted Responses image generation support, generated-image metadata, flat-file attachment persistence, and demo rendering.
+
 ## [2.0.0-alpha.14] - 2026-05-13
 
 ### Changed

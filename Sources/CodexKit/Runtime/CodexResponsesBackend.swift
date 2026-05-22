@@ -9,6 +9,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let streamIdleTimeout: TimeInterval
     public let extraHeaders: [String: String]
     public let enableWebSearch: Bool
+    public let enableImageGeneration: Bool
+    public let imageGenerationOutputFormat: String
     public let requestRetryPolicy: RequestRetryPolicy
     public let logging: AgentLoggingConfiguration
 
@@ -23,6 +25,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
         enableWebSearch: Bool = false,
+        enableImageGeneration: Bool = false,
+        imageGenerationOutputFormat: String = "png",
         requestRetryPolicy: RequestRetryPolicy = .default,
         logging: AgentLoggingConfiguration = .disabled
     ) {
@@ -34,6 +38,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.streamIdleTimeout = streamIdleTimeout
         self.extraHeaders = extraHeaders
         self.enableWebSearch = enableWebSearch
+        self.enableImageGeneration = enableImageGeneration
+        self.imageGenerationOutputFormat = imageGenerationOutputFormat
         self.requestRetryPolicy = requestRetryPolicy
         self.logging = logging
     }

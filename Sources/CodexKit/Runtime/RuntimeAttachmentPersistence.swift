@@ -51,7 +51,8 @@ struct RuntimeAttachmentStore: Sendable {
         return PersistedImageAttachment(
             id: attachment.id,
             mimeType: attachment.mimeType,
-            storageKey: relativePath
+            storageKey: relativePath,
+            generationMetadata: attachment.generationMetadata
         )
     }
 
@@ -61,7 +62,8 @@ struct RuntimeAttachmentStore: Sendable {
         return AgentImageAttachment(
             id: attachment.id,
             mimeType: attachment.mimeType,
-            data: data
+            data: data,
+            generationMetadata: attachment.generationMetadata
         )
     }
 
@@ -96,6 +98,7 @@ struct PersistedImageAttachment: Codable, Hashable {
     let id: String
     let mimeType: String
     let storageKey: String
+    let generationMetadata: AgentImageGenerationMetadata?
 }
 
 struct PersistedAgentMessage: Codable, Hashable {

@@ -103,6 +103,7 @@ extension AgentDemoView {
                 HStack(spacing: 10) {
                     modelBadge(title: viewModel.activeThreadID == nil ? "Default Model" : "Thread Model", value: viewModel.activeThreadConfiguration.model)
                     modelBadge(title: "Search", value: viewModel.enableWebSearch ? "On" : "Off")
+                    modelBadge(title: "Images", value: viewModel.enableImageGeneration ? "On" : "Off")
                 }
             }
 
@@ -154,6 +155,17 @@ extension AgentDemoView {
                 ) {
                     Task {
                         await viewModel.createTravelPlannerSkillThread()
+                    }
+                }
+
+                DemoActionTile(
+                    title: "Generate Image",
+                    subtitle: "Starts a thread that uses the hosted image generation tool.",
+                    systemImage: "paintbrush.pointed",
+                    isDisabled: !viewModel.enableImageGeneration
+                ) {
+                    Task {
+                        await viewModel.runImageGenerationDemo()
                     }
                 }
             }

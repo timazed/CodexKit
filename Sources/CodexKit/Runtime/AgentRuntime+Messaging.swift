@@ -54,6 +54,7 @@ extension AgentRuntime {
         let userMessage = storesTurnState
             ? makeVisibleUserMessage(for: request, in: threadID)
             : nil
+        let turnHistory = storesTurnState ? effectiveHistory(for: threadID) : []
 
         logger.info(
             .runtime,
@@ -108,7 +109,7 @@ extension AgentRuntime {
                     }
                     let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
                         thread: thread,
-                        history: storesTurnState ? self.effectiveHistory(for: threadID) : [],
+                        history: turnHistory,
                         message: request,
                         instructions: resolvedInstructions,
                         responseContract: responseContract,
@@ -222,6 +223,7 @@ extension AgentRuntime {
         let userMessage = storesTurnState
             ? makeVisibleUserMessage(for: request, in: threadID)
             : nil
+        let turnHistory = storesTurnState ? effectiveHistory(for: threadID) : []
 
         logger.info(
             .runtime,
@@ -276,7 +278,7 @@ extension AgentRuntime {
                     }
                     let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
                         thread: thread,
-                        history: storesTurnState ? self.effectiveHistory(for: threadID) : [],
+                        history: turnHistory,
                         message: request,
                         instructions: resolvedInstructions,
                         responseContract: responseContract,

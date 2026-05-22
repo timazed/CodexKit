@@ -346,6 +346,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
     let model: String
     let enableWebSearch: Bool
+    let enableImageGeneration: Bool
     let stateURL: URL?
     let keychainAccount: String
     let catalog: DemoCatalog
@@ -370,6 +371,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         runtime: AgentRuntime,
         model: String,
         enableWebSearch: Bool,
+        enableImageGeneration: Bool,
         reasoningEffort: ReasoningEffort,
         stateURL: URL?,
         keychainAccount: String,
@@ -383,6 +385,7 @@ final class AgentDemoViewModel: @unchecked Sendable {
         self.runtime = runtime
         self.model = model
         self.enableWebSearch = enableWebSearch
+        self.enableImageGeneration = enableImageGeneration
         self.reasoningEffort = reasoningEffort
         self.developerLogLevel = diagnostics.initialDeveloperLogLevel()
         self.stateURL = stateURL

@@ -22,7 +22,7 @@ enum DemoAuthenticationMethod: String, CaseIterable, Identifiable {
 }
 
 enum AgentDemoRuntimeFactory {
-    static let defaultModel = "gpt-5.4"
+    static let defaultModel = "gpt-5.5"
     static let defaultKeychainAccount = "AssistantRuntimeDemoApp"
 
     #if canImport(AuthenticationServices)
@@ -31,6 +31,7 @@ enum AgentDemoRuntimeFactory {
     static func makeLive(
         model: String = defaultModel,
         enableWebSearch: Bool = false,
+        enableImageGeneration: Bool = false,
         reasoningEffort: ReasoningEffort = .medium,
         stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount
@@ -41,6 +42,7 @@ enum AgentDemoRuntimeFactory {
             authenticationMethod: .deviceCode,
             model: model,
             enableWebSearch: enableWebSearch,
+            enableImageGeneration: enableImageGeneration,
             reasoningEffort: reasoningEffort,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
@@ -51,6 +53,7 @@ enum AgentDemoRuntimeFactory {
             runtime: runtime,
             model: model,
             enableWebSearch: enableWebSearch,
+            enableImageGeneration: enableImageGeneration,
             reasoningEffort: reasoningEffort,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
@@ -67,6 +70,7 @@ enum AgentDemoRuntimeFactory {
         authenticationMethod: DemoAuthenticationMethod,
         model: String = defaultModel,
         enableWebSearch: Bool = false,
+        enableImageGeneration: Bool = false,
         reasoningEffort: ReasoningEffort = .medium,
         stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount,
@@ -101,6 +105,7 @@ enum AgentDemoRuntimeFactory {
                     model: model,
                     reasoningEffort: reasoningEffort,
                     enableWebSearch: enableWebSearch,
+                    enableImageGeneration: enableImageGeneration,
                     logging: sdkLogging
                 )
             ),
@@ -144,6 +149,7 @@ enum AgentDemoRuntimeFactory {
     static func makeRestorableRuntimeForSystemIntegration(
         model: String = defaultModel,
         enableWebSearch: Bool = true,
+        enableImageGeneration: Bool = true,
         reasoningEffort: ReasoningEffort = .medium,
         keychainAccount: String = defaultKeychainAccount
     ) -> AgentRuntime {
@@ -162,6 +168,7 @@ enum AgentDemoRuntimeFactory {
                     model: model,
                     reasoningEffort: reasoningEffort,
                     enableWebSearch: enableWebSearch,
+                    enableImageGeneration: enableImageGeneration,
                     logging: sdkLogging
                 )
             ),

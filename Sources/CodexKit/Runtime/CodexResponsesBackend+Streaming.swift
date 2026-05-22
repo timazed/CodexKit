@@ -58,6 +58,7 @@ struct StreamEnvelope: Decodable {
 enum StreamItem: Decodable {
     case message(StreamMessageItem)
     case functionCall(StreamFunctionCallItem)
+    case imageGenerationCall(StreamImageGenerationCallItem)
     case other
 
     init(from decoder: Decoder) throws {
@@ -72,6 +73,9 @@ enum StreamItem: Decodable {
         case "function_call":
             let data = try JSONEncoder().encode(object)
             self = .functionCall(try JSONDecoder().decode(StreamFunctionCallItem.self, from: data))
+        case "image_generation_call":
+            let data = try JSONEncoder().encode(object)
+            self = .imageGenerationCall(try JSONDecoder().decode(StreamImageGenerationCallItem.self, from: data))
         default:
             self = .other
         }
@@ -125,6 +129,54 @@ struct StreamFunctionCallItem: Decodable {
         case name
         case arguments
         case callID = "call_id"
+    }
+}
+
+struct StreamImageGenerationCallItem: Decodable {
+    let id: String
+    let status: String
+    let action: String?
+    let background: String?
+    let outputFormat: String?
+    let quality: String?
+    let size: String?
+    let revisedPrompt: String?
+    let result: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case action
+        case background
+        case outputFormat = "output_format"
+        case quality
+        case size
+        case revisedPrompt = "revised_prompt"
+        case result
+    }
+
+    var imageAttachment: AgentImageAttachment? {
+        guard let result else {
+            return nil
+        }
+        return AgentImageAttachment(
+            base64String: result,
+            id: id,
+            generationMetadata: AgentImageGenerationMetadata(
+                id: id,
+                status: status,
+                action: action,
+                revisedPrompt: revisedPrompt,
+                background: background,
+                outputFormat: outputFormat,
+                quality: quality,
+                size: size
+            )
+        )
+    }
+
+    var assistantText: String {
+        revisedPrompt ?? ""
     }
 }
 

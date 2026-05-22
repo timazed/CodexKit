@@ -161,6 +161,24 @@ extension AgentDemoViewModel {
         )
     }
 
+    func runImageGenerationDemo() async {
+        guard enableImageGeneration else {
+            lastError = "Image generation is not enabled for this demo runtime."
+            return
+        }
+
+        await createThreadInternal(
+            title: "Image Generation Demo",
+            personaStack: nil
+        )
+
+        await sendMessageInternal(
+            """
+            Generate a clean square app-icon style image of a small assistant workstation: a laptop, a speech bubble, and a tiny paintbrush. Use a crisp modern style and no text.
+            """
+        )
+    }
+
     func activateThread(id: String) async {
         activeThreadID = id
         bindActiveThreadObservation(for: id)
@@ -221,6 +239,7 @@ extension AgentDemoViewModel {
         }
 
         threads = await runtime.threads()
+        await upgradeLegacyDemoThreadModelsIfNeeded()
         developerLog(
             "Snapshot refreshed. session=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
         )
@@ -258,6 +277,37 @@ extension AgentDemoViewModel {
         activeThreadID = nil
         activeThreadObservationCancellables.removeAll()
         resetObservedThreadState()
+    }
+
+    func upgradeLegacyDemoThreadModelsIfNeeded() async {
+        let legacyDemoModels: Set<String> = ["gpt-5.4"]
+        let threadsToUpgrade = threads.filter { thread in
+            guard let configuration = thread.configuration else {
+                return false
+            }
+            return legacyDemoModels.contains(configuration.model) && configuration.model != model
+        }
+
+        guard !threadsToUpgrade.isEmpty else {
+            return
+        }
+
+        do {
+            for thread in threadsToUpgrade {
+                let current = thread.configuration ?? defaultThreadConfiguration
+                let updated = AgentThreadConfiguration(
+                    model: model,
+                    reasoningEffort: current.reasoningEffort
+                )
+                try await runtime.updateThreadConfiguration(updated, for: thread.id)
+            }
+            threads = await runtime.threads()
+            developerLog(
+                "Upgraded legacy demo thread models. model=\(model) count=\(threadsToUpgrade.count)"
+            )
+        } catch {
+            reportError(error)
+        }
     }
 
     func refreshThreadContextState(for threadID: String? = nil) async {

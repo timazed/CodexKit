@@ -15,6 +15,7 @@ struct AssistantRuntimeDemoApp: App {
     init() {
         let viewModel = AgentDemoRuntimeFactory.makeLive(
             enableWebSearch: true,
+            enableImageGeneration: true,
             keychainAccount: "AssistantRuntimeDemoApp"
         )
         _viewModel = State(initialValue: viewModel)

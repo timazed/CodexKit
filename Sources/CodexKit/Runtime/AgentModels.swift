@@ -216,19 +216,53 @@ public struct AgentUsage: Codable, Hashable, Sendable {
     }
 }
 
+public struct AgentImageGenerationMetadata: Codable, Hashable, Sendable {
+    public let id: String
+    public let status: String?
+    public let action: String?
+    public let revisedPrompt: String?
+    public let background: String?
+    public let outputFormat: String?
+    public let quality: String?
+    public let size: String?
+
+    public init(
+        id: String,
+        status: String? = nil,
+        action: String? = nil,
+        revisedPrompt: String? = nil,
+        background: String? = nil,
+        outputFormat: String? = nil,
+        quality: String? = nil,
+        size: String? = nil
+    ) {
+        self.id = id
+        self.status = status
+        self.action = action
+        self.revisedPrompt = revisedPrompt
+        self.background = background
+        self.outputFormat = outputFormat
+        self.quality = quality
+        self.size = size
+    }
+}
+
 public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
     public let id: String
     public let mimeType: String
     public let data: Data
+    public let generationMetadata: AgentImageGenerationMetadata?
 
     public init(
         id: String = UUID().uuidString,
         mimeType: String,
-        data: Data
+        data: Data,
+        generationMetadata: AgentImageGenerationMetadata? = nil
     ) {
         self.id = id
         self.mimeType = mimeType
         self.data = data
+        self.generationMetadata = generationMetadata
     }
 
     public static func png(
@@ -274,13 +308,14 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
     public init?(
         base64String: String,
         mimeType: String = "image/png",
-        id: String = UUID().uuidString
+        id: String = UUID().uuidString,
+        generationMetadata: AgentImageGenerationMetadata? = nil
     ) {
         guard let data = Data(base64Encoded: base64String), !data.isEmpty else {
             return nil
         }
 
-        self.init(id: id, mimeType: mimeType, data: data)
+        self.init(id: id, mimeType: mimeType, data: data, generationMetadata: generationMetadata)
     }
 }
 

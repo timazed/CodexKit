@@ -348,6 +348,171 @@ final class CodexResponsesBackendTests: XCTestCase {
         for try await _ in turnStream.events {}
     }
 
+    func testBackendIncludesHostedImageGenerationToolWhenEnabled() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(enableImageGeneration: true),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Image tool ready"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_image_tool","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let toolsJSON = try XCTUnwrap(json?["tools"] as? [[String: Any]])
+                    let imageTool = try XCTUnwrap(
+                        toolsJSON.first(where: { $0["type"] as? String == "image_generation" })
+                    )
+                    XCTAssertEqual(imageTool["output_format"] as? String, "png")
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-image-tool"),
+            history: [],
+            message: Request(text: "Generate an image"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
+    func testBackendConvertsHostedImageGenerationCallIntoAssistantImage() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(enableImageGeneration: true),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let pngBytes = Data([0x89, 0x50, 0x4E, 0x47])
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"id":"ig_123","type":"image_generation_call","status":"generating","action":"generate","background":"opaque","output_format":"png","quality":"medium","size":"1536x1024","revised_prompt":"A tiny blue square","result":"\(pngBytes.base64EncodedString())"}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_image_generation","usage":{"input_tokens":7,"input_tokens_details":{"cached_tokens":0},"output_tokens":3}}}
+
+                    """.utf8
+                )
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-image-generation"),
+            history: [],
+            message: Request(text: "Generate a tiny blue square"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        var assistantMessage: AgentMessage?
+
+        for try await event in turnStream.events {
+            if case let .assistantMessageCompleted(message) = event {
+                assistantMessage = message
+            }
+        }
+
+        XCTAssertEqual(assistantMessage?.text, "A tiny blue square")
+        XCTAssertEqual(assistantMessage?.images.count, 1)
+        XCTAssertEqual(assistantMessage?.images.first?.id, "ig_123")
+        XCTAssertEqual(assistantMessage?.images.first?.mimeType, "image/png")
+        XCTAssertEqual(assistantMessage?.images.first?.data, pngBytes)
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.id, "ig_123")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.status, "generating")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.action, "generate")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.background, "opaque")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.outputFormat, "png")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.quality, "medium")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.size, "1536x1024")
+        XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.revisedPrompt, "A tiny blue square")
+    }
+
+    func testBackendIgnoresIncompleteHostedImageGenerationCallWithoutResult() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(enableImageGeneration: true),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"id":"ig_123","type":"image_generation_call","status":"in_progress"}}
+
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Still working"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_image_generation_pending","usage":{"input_tokens":7,"input_tokens_details":{"cached_tokens":0},"output_tokens":3}}}
+
+                    """.utf8
+                )
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-image-generation-pending"),
+            history: [],
+            message: Request(text: "Generate a tiny blue square"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        var assistantMessage: AgentMessage?
+
+        for try await event in turnStream.events {
+            if case let .assistantMessageCompleted(message) = event {
+                assistantMessage = message
+            }
+        }
+
+        XCTAssertEqual(assistantMessage?.text, "Still working")
+        XCTAssertEqual(assistantMessage?.images, [])
+    }
+
     func testBackendEncodesUserImageAttachmentsAsInputImages() async throws {
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         let session = ChatGPTSession(

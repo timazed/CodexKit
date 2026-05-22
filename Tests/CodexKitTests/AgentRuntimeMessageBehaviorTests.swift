@@ -186,6 +186,29 @@ extension AgentRuntimeTests {
         ])
     }
 
+    func testStreamedRequestDoesNotReplayCurrentUserMessageInHistory() async throws {
+        let backend = InMemoryAgentBackend()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString),
+            backend: backend,
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.signIn()
+
+        let thread = try await runtime.createThread(title: "No Duplicate Current Message")
+        _ = try await runtime.send(Request(text: "First turn."), in: thread.id)
+        _ = try await runtime.send(Request(text: "Second turn."), in: thread.id)
+
+        let historyTexts = await backend.receivedHistoryTexts()
+        XCTAssertEqual(historyTexts.last, [
+            "First turn.",
+            "Echo: First turn.",
+        ])
+    }
+
     func testEphemeralStructuredRequestReturnsPayloadWithoutPersistingMetadata() async throws {
         let backend = InMemoryAgentBackend(
             structuredResponseText: #"{"reply":"Computed without transcript writes.","priority":"normal"}"#
