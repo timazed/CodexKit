@@ -25,15 +25,18 @@ let package = Package(
             name: "CodexKit",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
-            ]
+            ],
+            path: "Sources/CodexKit"
         ),
         .target(
             name: "CodexKitUI",
-            dependencies: ["CodexKit"]
+            dependencies: ["CodexKit"],
+            path: "Sources/CodexKitUI"
         ),
         .testTarget(
             name: "CodexKitTests",
-            dependencies: ["CodexKit", "CodexKitUI"]
+            dependencies: ["CodexKit", "CodexKitUI"],
+            path: "Tests/CodexKitTests"
         ),
     ]
 )

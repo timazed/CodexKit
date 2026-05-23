@@ -171,6 +171,8 @@ let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
 - `CodexKit`: core runtime, auth, backend, tools, approvals
 - `CodexKitUI`: optional SwiftUI-facing helpers
 
+The SwiftPM manifest uses explicit target paths under `Sources/`. The checked-in `DemoApp/` is not part of any package product or target; it is an example app only.
+
 Supported package platforms:
 
 - iOS 17+
@@ -1131,9 +1133,9 @@ struct SummarizeImportedContentIntent: AppIntent {
 
 ## Demo App
 
-The checked-in demo app under `DemoApp/` consumes local package products through SPM.
+The checked-in demo app under `DemoApp/` consumes local package products through SPM. It is not part of the published `CodexKit` or `CodexKitUI` package products.
 
-![CodexKit demo](preview-200326-1.png)
+![CodexKit demo](preview-220526-1.png)
 
 ```sh
 open DemoApp/AssistantRuntimeDemoApp.xcodeproj

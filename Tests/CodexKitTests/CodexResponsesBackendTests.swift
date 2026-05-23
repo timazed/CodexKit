@@ -576,6 +576,72 @@ final class CodexResponsesBackendTests: XCTestCase {
         for try await _ in turnStream.events {}
     }
 
+    func testBackendDoesNotReplayAssistantImagesAsResponseContent() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let generatedImage = AgentImageAttachment.png(
+            Data([0x89, 0x50, 0x4E, 0x47]),
+            id: "ig_generated"
+        )
+        let history = [
+            AgentMessage(
+                threadID: "thread-generated-image",
+                role: .assistant,
+                text: "A tiny blue square",
+                images: [generatedImage]
+            ),
+        ]
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_no_replay_image","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let bodyString = String(decoding: body, as: UTF8.self)
+                    XCTAssertFalse(bodyString.contains("output_image"))
+                    XCTAssertFalse(bodyString.contains(generatedImage.dataURLString))
+
+                    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    let input = try XCTUnwrap(json?["input"] as? [[String: Any]])
+                    let assistantMessage = try XCTUnwrap(
+                        input.first(where: { $0["role"] as? String == "assistant" })
+                    )
+                    let content = try XCTUnwrap(assistantMessage["content"] as? [[String: Any]])
+                    XCTAssertEqual(content.count, 1)
+                    XCTAssertEqual(content.first?["type"] as? String, "output_text")
+                    XCTAssertEqual(content.first?["text"] as? String, "A tiny blue square")
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-generated-image"),
+            history: history,
+            message: Request(text: "Make another one"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
     func testBackendCarriesToolImageOutputsIntoAssistantMessages() async throws {
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         let session = ChatGPTSession(

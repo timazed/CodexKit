@@ -142,12 +142,6 @@ enum WorkingHistoryItem: Sendable {
                     "text": .string(message.text),
                 ]))
             }
-            content.append(contentsOf: message.images.map { image in
-                .object([
-                    "type": .string("output_image"),
-                    "image_url": .string(image.dataURLString),
-                ])
-            })
 
         default:
             if !message.text.isEmpty {
