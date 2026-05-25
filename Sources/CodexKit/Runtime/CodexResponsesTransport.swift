@@ -223,34 +223,55 @@ struct CodexResponsesEventStreamClient: Sendable {
             return false
         }
 
-        if let urlError = error as? URLError {
-            let shouldRetry = policy.retryableURLErrorCodes.contains(urlError.errorCode)
+        if let retryableURLCode = retryableURLErrorCode(in: error, policy: policy) {
             logger.debug(
                 .retry,
                 "Evaluated URL error retry decision.",
                 metadata: [
-                    "code": "\(urlError.errorCode)",
-                    "retry": "\(shouldRetry)"
+                    "code": "\(retryableURLCode)",
+                    "retry": "true"
                 ]
             )
-            return shouldRetry
-        }
-
-        let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain {
-            let shouldRetry = policy.retryableURLErrorCodes.contains(nsError.code)
-            logger.debug(
-                .retry,
-                "Evaluated NSError retry decision.",
-                metadata: [
-                    "code": "\(nsError.code)",
-                    "retry": "\(shouldRetry)"
-                ]
-            )
-            return shouldRetry
+            return true
         }
 
         return false
+    }
+
+    private func retryableURLErrorCode(
+        in error: Error,
+        policy: RequestRetryPolicy,
+        remainingDepth: Int = 4
+    ) -> Int? {
+        guard remainingDepth >= 0 else {
+            return nil
+        }
+
+        if let urlError = error as? URLError,
+           policy.retryableURLErrorCodes.contains(urlError.errorCode) {
+            return urlError.errorCode
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           policy.retryableURLErrorCodes.contains(nsError.code) {
+            return nsError.code
+        }
+
+        for value in nsError.userInfo.values {
+            guard let nestedError = value as? Error,
+                  let retryableCode = retryableURLErrorCode(
+                    in: nestedError,
+                    policy: policy,
+                    remainingDepth: remainingDepth - 1
+                  )
+            else {
+                continue
+            }
+            return retryableCode
+        }
+
+        return nil
     }
 
     private func httpStatusCode(from errorCode: String) -> Int? {

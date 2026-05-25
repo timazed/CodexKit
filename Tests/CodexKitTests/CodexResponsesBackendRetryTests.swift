@@ -61,7 +61,54 @@ extension CodexResponsesBackendTests {
         }
     }
 
-    func testBackendRetriesWhenNetworkConnectionIsLostBeforeOutput() async throws {
+    func testBackendRetriesRetryableURLErrorCodesBeforeOutput() async throws {
+        let retryableCodes: [URLError.Code] = [
+            .timedOut,
+            .cannotConnectToHost,
+            .dnsLookupFailed,
+            .networkConnectionLost,
+            .notConnectedToInternet,
+        ]
+
+        for code in retryableCodes {
+            try await assertBackendRetriesURLFailure(
+                URLError(code),
+                threadID: "thread-url-retry-\(code.rawValue)",
+                expectedText: "Recovered after URL error \(code.rawValue)"
+            )
+        }
+    }
+
+    func testBackendRetriesNSURLErrorDomainFailuresBeforeOutput() async throws {
+        try await assertBackendRetriesURLFailure(
+            NSError(
+                domain: NSURLErrorDomain,
+                code: URLError.timedOut.rawValue
+            ),
+            threadID: "thread-ns-url-retry",
+            expectedText: "Recovered after NSError URL failure"
+        )
+    }
+
+    func testBackendRetriesWrappedRetryableURLErrorBeforeOutput() async throws {
+        try await assertBackendRetriesURLFailure(
+            NSError(
+                domain: "CodexKitTests.Wrapper",
+                code: 1,
+                userInfo: [
+                    NSUnderlyingErrorKey: URLError(.networkConnectionLost),
+                ]
+            ),
+            threadID: "thread-wrapped-url-retry",
+            expectedText: "Recovered after wrapped URL failure"
+        )
+    }
+
+    private func assertBackendRetriesURLFailure(
+        _ error: Error,
+        threadID: String,
+        expectedText: String
+    ) async throws {
         let backend = CodexResponsesBackend(
             configuration: CodexResponsesBackendConfiguration(
                 requestRetryPolicy: .init(maxAttempts: 2, initialBackoff: 0, maxBackoff: 0, jitterFactor: 0)
@@ -70,17 +117,17 @@ extension CodexResponsesBackendTests {
         )
         let session = ChatGPTSession(accessToken: "access-token", refreshToken: "refresh-token", account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus))
 
-        await TestURLProtocol.enqueue(.init(body: Data(), error: URLError(.networkConnectionLost)))
+        await TestURLProtocol.enqueue(.init(body: Data(), error: error))
         await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "text/event-stream"], body: Data("""
         event: response.output_item.done
-        data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Recovered after network loss"}]}}
+        data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"\(expectedText)"}]}}
 
         event: response.completed
         data: {"type":"response.completed","response":{"id":"resp_network_retry","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
 
         """.utf8)))
 
-        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-network-retry"), history: [], message: Request(text: "Retry me"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: threadID), history: [], message: Request(text: "Retry me"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
 
         var assistantMessage: AgentMessage?
         for try await event in turnStream.events {
@@ -89,7 +136,7 @@ extension CodexResponsesBackendTests {
             }
         }
 
-        XCTAssertEqual(assistantMessage?.text, "Recovered after network loss")
+        XCTAssertEqual(assistantMessage?.text, expectedText)
     }
 }
 
