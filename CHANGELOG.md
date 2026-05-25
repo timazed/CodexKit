@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.17] - 2026-05-25
+
+### Fixed
+
+- Retried wrapped URL transport failures, including nested `NSURLErrorDomain` and `URLError` network connection loss errors, according to the configured retry policy.
+
 ## [2.0.0-alpha.16] - 2026-05-23
 
 ### Fixed
@@ -138,7 +144,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.16...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.17...HEAD
+[2.0.0-alpha.17]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.16...v2.0.0-alpha.17
 [2.0.0-alpha.16]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.15...v2.0.0-alpha.16
 [2.0.0-alpha.15]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.14...v2.0.0-alpha.15
 [2.0.0-alpha.14]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.13...v2.0.0-alpha.14
