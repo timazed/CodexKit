@@ -8,6 +8,7 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
         let headers: [String: String]
         let body: Data
         let error: Error?
+        let completionError: Error?
         let inspect: @Sendable (URLRequest) throws -> Void
 
         init(
@@ -15,12 +16,14 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
             headers: [String: String] = [:],
             body: Data,
             error: Error? = nil,
+            completionError: Error? = nil,
             inspect: @escaping @Sendable (URLRequest) throws -> Void = { _ in }
         ) {
             self.statusCode = statusCode
             self.headers = headers
             self.body = body
             self.error = error
+            self.completionError = completionError
             self.inspect = inspect
         }
     }
@@ -84,6 +87,10 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
                 )!
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocol(self, didLoad: stub.body)
+                if let completionError = stub.completionError {
+                    client?.urlProtocol(self, didFailWithError: completionError)
+                    return
+                }
                 client?.urlProtocolDidFinishLoading(self)
             } catch {
                 client?.urlProtocol(self, didFailWithError: error)

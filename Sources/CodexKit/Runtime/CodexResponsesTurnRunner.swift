@@ -205,12 +205,13 @@ struct CodexResponsesTurnRunner {
                 )
                 return disposition
             } catch {
-                guard shouldRetry(
+                let retryDecision = retryDecision(
                     error,
                     attempt: attempt,
                     policy: retryPolicy,
                     retryState: retryState
-                ) else {
+                )
+                guard retryDecision.shouldRetry else {
                     logger.error(
                         .network,
                         "Backend turn pass failed without retry.",
@@ -218,6 +219,11 @@ struct CodexResponsesTurnRunner {
                             "thread_id": threadID,
                             "turn_id": turnID,
                             "attempt": "\(attempt)",
+                            "max_attempts": "\(retryPolicy.maxAttempts)",
+                            "has_visible_output": "\(retryState.hasVisibleOutput)",
+                            "has_non_replayable_output": "\(retryState.hasNonReplayableOutput)",
+                            "retryable_error": "\(retryDecision.retryableError)",
+                            "retry_blocked_by": retryDecision.blockedBy ?? "unknown",
                             "error": error.localizedDescription
                         ]
                     )
@@ -231,6 +237,7 @@ struct CodexResponsesTurnRunner {
                         "turn_id": turnID,
                         "attempt": "\(attempt)",
                         "max_attempts": "\(retryPolicy.maxAttempts)",
+                        "retryable_error": "\(retryDecision.retryableError)",
                         "error": error.localizedDescription
                     ]
                 )
@@ -278,12 +285,12 @@ struct CodexResponsesTurnRunner {
     ) async throws -> StreamEventResult {
         switch event {
         case let .assistantTextDelta(delta):
-            try handleAssistantTextDelta(delta, state: &state)
-            return .visibleOutput
+            let emittedDelta = try handleAssistantTextDelta(delta, state: &state)
+            return emittedDelta ? .assistantDelta : .none
 
         case let .assistantMessage(messageTemplate):
             try handleAssistantMessage(messageTemplate, state: &state)
-            return .visibleOutput
+            return .assistantMessage
 
         case let .structuredOutputPartial(value):
             continuation.yield(.structuredOutputPartial(value))
@@ -331,8 +338,11 @@ struct CodexResponsesTurnRunner {
     private func handleAssistantTextDelta(
         _ delta: String,
         state: inout TurnRunState
-    ) throws {
+    ) throws -> Bool {
         guard responseContract?.streamedRequest != nil else {
+            guard !delta.isEmpty else {
+                return false
+            }
             continuation.yield(
                 .assistantMessageDelta(
                     threadID: threadID,
@@ -340,15 +350,17 @@ struct CodexResponsesTurnRunner {
                     delta: delta
                 )
             )
-            return
+            return true
         }
 
+        var emittedVisibleDelta = false
         for parsedEvent in state.structuredParser.consume(delta: delta) {
             switch parsedEvent {
             case let .visibleText(visibleDelta):
                 guard !visibleDelta.isEmpty else {
                     continue
                 }
+                emittedVisibleDelta = true
                 continuation.yield(
                     .assistantMessageDelta(
                         threadID: threadID,
@@ -362,6 +374,7 @@ struct CodexResponsesTurnRunner {
                 continuation.yield(.structuredOutputValidationFailed(validationFailure))
             }
         }
+        return emittedVisibleDelta
     }
 
     private func handleAssistantMessage(
@@ -521,15 +534,44 @@ struct CodexResponsesTurnRunner {
         state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
     }
 
-    private func shouldRetry(
+    private func retryDecision(
         _ error: Error,
         attempt: Int,
         policy: RequestRetryPolicy,
         retryState: RetryAttemptState
-    ) -> Bool {
-        !retryState.hasVisibleOutput
-            && attempt < policy.maxAttempts
-            && streamClient.shouldRetry(error, policy: policy)
+    ) -> RetryDecision {
+        let hasAttemptsRemaining = attempt < policy.maxAttempts
+        let retryableError = streamClient.shouldRetry(error, policy: policy)
+
+        if retryState.hasNonReplayableOutput {
+            return RetryDecision(
+                shouldRetry: false,
+                retryableError: retryableError,
+                blockedBy: "non_replayable_output_emitted"
+            )
+        }
+
+        if !hasAttemptsRemaining {
+            return RetryDecision(
+                shouldRetry: false,
+                retryableError: retryableError,
+                blockedBy: "max_attempts_reached"
+            )
+        }
+
+        if !retryableError {
+            return RetryDecision(
+                shouldRetry: false,
+                retryableError: false,
+                blockedBy: "non_retryable_error"
+            )
+        }
+
+        return RetryDecision(
+            shouldRetry: true,
+            retryableError: true,
+            blockedBy: nil
+        )
     }
 
     private func sleepBeforeRetry(
@@ -569,29 +611,51 @@ private struct TurnRunState {
 }
 
 private struct RetryAttemptState {
-    var hasVisibleOutput = false
+    var hasAssistantDelta = false
+    var hasNonReplayableOutput = false
+
+    var hasVisibleOutput: Bool {
+        hasAssistantDelta || hasNonReplayableOutput
+    }
 
     mutating func record(_ eventResult: StreamEventResult) {
-        hasVisibleOutput = hasVisibleOutput || eventResult.emittedVisibleOutput
+        hasAssistantDelta = hasAssistantDelta || eventResult.emittedAssistantDelta
+        hasNonReplayableOutput = hasNonReplayableOutput || eventResult.emittedNonReplayableOutput
     }
 }
 
+private struct RetryDecision {
+    let shouldRetry: Bool
+    let retryableError: Bool
+    let blockedBy: String?
+}
+
 private struct StreamEventResult {
-    let emittedVisibleOutput: Bool
+    let emittedAssistantDelta: Bool
+    let emittedNonReplayableOutput: Bool
     let passDisposition: TurnPassDisposition
 
     static let none = StreamEventResult(
-        emittedVisibleOutput: false,
+        emittedAssistantDelta: false,
+        emittedNonReplayableOutput: false,
         passDisposition: .completed
     )
 
-    static let visibleOutput = StreamEventResult(
-        emittedVisibleOutput: true,
+    static let assistantDelta = StreamEventResult(
+        emittedAssistantDelta: true,
+        emittedNonReplayableOutput: false,
+        passDisposition: .completed
+    )
+
+    static let assistantMessage = StreamEventResult(
+        emittedAssistantDelta: false,
+        emittedNonReplayableOutput: true,
         passDisposition: .completed
     )
 
     static let toolCall = StreamEventResult(
-        emittedVisibleOutput: true,
+        emittedAssistantDelta: false,
+        emittedNonReplayableOutput: true,
         passDisposition: .needsAnotherPass
     )
 }

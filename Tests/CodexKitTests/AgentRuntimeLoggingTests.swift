@@ -174,8 +174,65 @@ extension CodexResponsesBackendTests {
             $0.level == .verbose &&
                 $0.category == .network &&
                 $0.message.contains("Responses stream payload") &&
-                ($0.metadata["payload"]?.contains("\"type\":\"response.completed\"") ?? false)
+            ($0.metadata["payload"]?.contains("\"type\":\"response.completed\"") ?? false)
         })
+    }
+
+    func testBackendFailureLogIncludesRetryDecisionMetadata() async throws {
+        let buffer = RuntimeLogBuffer()
+        let logging = AgentLoggingConfiguration(
+            minimumLevel: .debug,
+            sink: RuntimeTestLogSink(buffer: buffer)
+        )
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(
+                requestRetryPolicy: .init(
+                    maxAttempts: 1,
+                    initialBackoff: 0,
+                    maxBackoff: 0,
+                    jitterFactor: 0
+                ),
+                logging: logging
+            ),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(
+                id: "workspace-123",
+                email: "taylor@example.com",
+                plan: .plus
+            )
+        )
+
+        await TestURLProtocol.enqueue(.init(
+            body: Data(),
+            error: URLError(.networkConnectionLost)
+        ))
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-retry-log"),
+            history: [],
+            message: Request(text: "Hi"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        await XCTAssertThrowsErrorAsync(try await drainLoggingTestEvents(turnStream.events))
+
+        let failureEntry = try XCTUnwrap(buffer.entries.first {
+            $0.category == .network &&
+                $0.message.contains("Backend turn pass failed without retry")
+        })
+        XCTAssertEqual(failureEntry.metadata["attempt"], "1")
+        XCTAssertEqual(failureEntry.metadata["max_attempts"], "1")
+        XCTAssertEqual(failureEntry.metadata["has_visible_output"], "false")
+        XCTAssertEqual(failureEntry.metadata["retryable_error"], "true")
+        XCTAssertEqual(failureEntry.metadata["retry_blocked_by"], "max_attempts_reached")
     }
 }
 
@@ -194,6 +251,10 @@ private final class RuntimeLogBuffer: @unchecked Sendable {
         storage.append(entry)
         lock.unlock()
     }
+}
+
+private func drainLoggingTestEvents(_ events: AsyncThrowingStream<AgentBackendEvent, Error>) async throws {
+    for try await _ in events {}
 }
 
 private struct RuntimeTestLogSink: AgentLogSink {

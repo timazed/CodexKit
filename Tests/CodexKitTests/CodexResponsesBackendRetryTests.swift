@@ -104,6 +104,55 @@ extension CodexResponsesBackendTests {
         )
     }
 
+    func testBackendRetriesNetworkLossAfterPartialStreamBeforeCommit() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(
+                requestRetryPolicy: .init(maxAttempts: 2, initialBackoff: 0, maxBackoff: 0, jitterFactor: 0)
+            ),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(accessToken: "access-token", refreshToken: "refresh-token", account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus))
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","delta":"Hel"}
+
+            """.utf8),
+            completionError: URLError(.networkConnectionLost)
+        ))
+        await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "text/event-stream"], body: Data("""
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","delta":"Hello after retry"}
+
+        event: response.output_item.done
+        data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello after retry"}]}}
+
+        event: response.completed
+        data: {"type":"response.completed","response":{"id":"resp_delta_retry","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+        """.utf8)))
+
+        let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-delta-retry"), history: [], message: Request(text: "Retry me"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
+
+        var deltas: [String] = []
+        var assistantMessage: AgentMessage?
+        for try await event in turnStream.events {
+            switch event {
+            case let .assistantMessageDelta(_, _, delta):
+                deltas.append(delta)
+            case let .assistantMessageCompleted(message):
+                assistantMessage = message
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(deltas, ["Hello after retry"])
+        XCTAssertEqual(assistantMessage?.text, "Hello after retry")
+    }
+
     private func assertBackendRetriesURLFailure(
         _ error: Error,
         threadID: String,
