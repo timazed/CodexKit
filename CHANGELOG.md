@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.18] - 2026-05-26
+
+### Fixed
+
+- Retried dropped Responses streams after assistant text deltas when no assistant message or tool side effect has been committed yet.
+- Added retry decision metadata to no-retry backend logs so blocked retries explain whether they hit max attempts, non-replayable output, or a non-retryable error.
+
 ## [2.0.0-alpha.17] - 2026-05-25
 
 ### Fixed
@@ -144,7 +151,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.17...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.18...HEAD
+[2.0.0-alpha.18]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.17...v2.0.0-alpha.18
 [2.0.0-alpha.17]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.16...v2.0.0-alpha.17
 [2.0.0-alpha.16]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.15...v2.0.0-alpha.16
 [2.0.0-alpha.15]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.14...v2.0.0-alpha.15
