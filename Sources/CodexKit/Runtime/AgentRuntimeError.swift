@@ -42,6 +42,13 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
         )
     }
 
+    public static func unsupportedImageMimeType(_ mimeType: String) -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "unsupported_image_mime_type",
+            message: "Image attachments must use PNG, JPEG, or WebP. Received \(mimeType)."
+        )
+    }
+
     public static func assistantResponseMissing() -> AgentRuntimeError {
         AgentRuntimeError(
             code: "assistant_response_missing",
