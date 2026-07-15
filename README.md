@@ -91,8 +91,8 @@ let runtime = try AgentRuntime(configuration: .init(
     ),
     backend: CodexResponsesBackend(
         configuration: .init(
-            model: "gpt-5.4",
-            reasoningEffort: .medium,
+            model: .gpt56Sol,
+            reasoningEffort: .low,
             enableWebSearch: true
         )
     ),
@@ -110,8 +110,8 @@ let _ = try await runtime.signIn()
 let thread = try await runtime.createThread(
     title: "First Chat",
     configuration: AgentThreadConfiguration(
-        model: "gpt-5.4",
-        reasoningEffort: .medium
+        model: .gpt56Sol,
+        reasoningEffort: .low
     )
 )
 let stream = try await runtime.stream(
@@ -249,7 +249,7 @@ If your app needs capabilities outside the built-in backend path, the intended a
 ```swift
 let backend = CodexResponsesBackend(
     configuration: .init(
-        model: "gpt-5.4",
+        model: .gpt56Sol,
         requestRetryPolicy: .init(
             maxAttempts: 3,
             initialBackoff: 0.5,
@@ -267,11 +267,38 @@ let backend = CodexResponsesBackend(
 ```swift
 let backend = CodexResponsesBackend(
     configuration: .init(
-        model: "gpt-5.4",
+        model: .gpt56Sol,
         reasoningEffort: .high
     )
 )
 ```
+
+`CodexModel` provides typed identifiers and metadata for the current model catalog. Use `CodexModel.catalog` when internal entries matter, `CodexModel.userFacingModels` to build a picker, or a known static member directly in configuration:
+
+```swift
+let model = CodexModel.gpt56Terra
+print(model.rawValue) // gpt-5.6-terra
+print(model.info?.contextWindowTokenCount ?? 0)
+
+// Omitting reasoningEffort uses the known model's catalog default.
+let configuration = CodexResponsesBackendConfiguration(model: model)
+```
+
+| Typed model | Wire identifier | Default effort | Supported efforts | Context |
+| --- | --- | --- | --- | ---: |
+| `.gpt56Sol` | `gpt-5.6-sol` | `low` | `low` through `ultra` | 372,000 |
+| `.gpt56Terra` | `gpt-5.6-terra` | `medium` | `low` through `ultra` | 372,000 |
+| `.gpt56Luna` | `gpt-5.6-luna` | `medium` | `low` through `max` | 372,000 |
+| `.gpt55` | `gpt-5.5` | `medium` | `low` through `xhigh` | 272,000 |
+| `.gpt54` | `gpt-5.4` | `medium` | `low` through `xhigh` | 272,000 |
+| `.gpt54Mini` | `gpt-5.4-mini` | `medium` | `low` through `xhigh` | 272,000 |
+| `.gpt53CodexSpark` | `gpt-5.3-codex-spark` | `high` | `low` through `xhigh` | 128,000 |
+| `.gpt52` | `gpt-5.2` | `medium` | `low` through `xhigh` | 272,000 |
+| `.codexAutoReview` | `codex-auto-review` | `medium` | `low` through `xhigh` | 272,000 |
+
+`CodexModel.userFacingModels` mirrors the current seven-model Codex picker. GPT-5.2 remains represented in the complete bundled catalog, while Codex Auto Review is marked for internal use. GPT-5.3-Codex-Spark is marked as a text-only research preview. Actual model access is account- and server-dependent; the catalog is metadata, not an authorization list. String-based configuration remains supported, and apps can use `CodexModel(rawValue:)` for a server-enabled or future identifier that this release does not yet know.
+
+`ReasoningEffort.ultra` matches the Codex client setting but maps to the backend-compatible `max` inference value. Ultra's proactive task delegation is a Codex host feature; CodexKit does not add delegation behavior by selecting that effort alone. Unknown non-empty effort strings decode as `.custom(...)` so persisted threads remain compatible with future model-defined values.
 
 Threads can override those defaults with `AgentThreadConfiguration`, and future turns in that thread use the thread configuration:
 
@@ -279,15 +306,15 @@ Threads can override those defaults with `AgentThreadConfiguration`, and future 
 let thread = try await runtime.createThread(
     title: "Planning",
     configuration: AgentThreadConfiguration(
-        model: "gpt-5.4",
+        model: .gpt56Terra,
         reasoningEffort: .high
     )
 )
 
 try await runtime.updateThreadConfiguration(
     AgentThreadConfiguration(
-        model: "gpt-5.4",
-        reasoningEffort: .extraHigh
+        model: .gpt56Sol,
+        reasoningEffort: .max
     ),
     for: thread.id
 )
@@ -309,7 +336,7 @@ let logging = AgentLoggingConfiguration.console(
 
 let backend = CodexResponsesBackend(
     configuration: .init(
-        model: "gpt-5.4",
+        model: .gpt56Sol,
         logging: logging
     )
 )
@@ -852,7 +879,7 @@ let runtime = try AgentRuntime(configuration: .init(
         account: "demo"
     ),
     backend: CodexResponsesBackend(
-        configuration: .init(model: "gpt-5.4")
+        configuration: .init(model: .gpt56Sol)
     ),
     approvalPresenter: approvalPresenter,
     stateStore: try SQLiteRuntimeStateStore(url: stateURL),

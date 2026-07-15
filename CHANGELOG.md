@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.21] - 2026-07-14
+
+### Added
+
+- Added `none`, `minimal`, `max`, `ultra`, and forward-compatible custom reasoning efforts, with Ultra mapped to the backend-compatible `max` inference value.
+- Added the open-ended `CodexModel` identifier and `CodexModelInfo` catalog for GPT-5.6 Sol, Terra, Luna, GPT-5.5, GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex Spark, GPT-5.2, and Codex Auto Review.
+- Added every user-facing catalog model to the demo with model-specific effort choices.
+
+### Changed
+
+- Updated the built-in backend and demo defaults to `gpt-5.6-sol` at low reasoning effort.
+- Preserved string-based model configuration while adding typed backend and thread configuration conveniences.
+
+### Fixed
+
+- Reported model-specific context windows from each thread's configured model, including 372,000 tokens for GPT-5.6, 128,000 for GPT-5.3 Codex Spark, and 272,000 for the earlier catalog models.
+
 ## [2.0.0-alpha.20] - 2026-07-14
 
 ### Added
@@ -174,7 +191,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.20...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.21...HEAD
+[2.0.0-alpha.21]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.20...v2.0.0-alpha.21
 [2.0.0-alpha.20]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.19...v2.0.0-alpha.20
 [2.0.0-alpha.19]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.18...v2.0.0-alpha.19
 [2.0.0-alpha.18]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.17...v2.0.0-alpha.18

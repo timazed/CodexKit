@@ -25,12 +25,27 @@ public struct AgentThreadConfiguration: Codable, Hashable, Sendable {
     public var model: String
     public var reasoningEffort: ReasoningEffort
 
+    public var codexModel: CodexModel {
+        get { CodexModel(rawValue: model) }
+        set { model = newValue.rawValue }
+    }
+
     public init(
         model: String,
         reasoningEffort: ReasoningEffort
     ) {
         self.model = model
         self.reasoningEffort = reasoningEffort
+    }
+
+    public init(
+        model: CodexModel,
+        reasoningEffort: ReasoningEffort? = nil
+    ) {
+        self.init(
+            model: model.rawValue,
+            reasoningEffort: reasoningEffort ?? model.info?.defaultReasoningEffort ?? .medium
+        )
     }
 }
 

@@ -46,7 +46,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                     let body = try XCTUnwrap(requestBodyData(for: request))
                     let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
                     let reasoning = try XCTUnwrap(json?["reasoning"] as? [String: Any])
-                    XCTAssertEqual(reasoning["effort"] as? String, "medium")
+                    XCTAssertEqual(reasoning["effort"] as? String, "low")
                 }
             )
         )
@@ -134,6 +134,82 @@ final class CodexResponsesBackendTests: XCTestCase {
         )
 
         for try await _ in turnStream.events {}
+    }
+
+    func testBackendEncodesMaxAndMapsUltraToMax() async throws {
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+
+        for effort in [ReasoningEffort.max, .ultra] {
+            let backend = CodexResponsesBackend(
+                configuration: CodexResponsesBackendConfiguration(
+                    model: "gpt-5.6-sol",
+                    reasoningEffort: effort
+                ),
+                urlSession: makeTestURLSession()
+            )
+            await TestURLProtocol.enqueue(
+                .init(
+                    headers: ["Content-Type": "text/event-stream"],
+                    body: Data(
+                        """
+                        event: response.output_item.done
+                        data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Ready"}]}}
+
+                        event: response.completed
+                        data: {"type":"response.completed","response":{"id":"resp_new_effort","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                        """.utf8
+                    ),
+                    inspect: { request in
+                        let body = try XCTUnwrap(requestBodyData(for: request))
+                        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                        let reasoning = try XCTUnwrap(json?["reasoning"] as? [String: Any])
+                        XCTAssertEqual(reasoning["effort"] as? String, "max")
+                    }
+                )
+            )
+
+            let turnStream = try await backend.beginTurn(
+                thread: AgentThread(id: "thread-\(effort.rawValue)"),
+                history: [],
+                message: Request(text: "Think as hard as possible"),
+                instructions: "Resolved instructions",
+                responseFormat: nil,
+                streamedStructuredOutput: nil,
+                tools: [],
+                session: session
+            )
+
+            for try await _ in turnStream.events {}
+        }
+    }
+
+    func testBackendReportsContextWindowsForKnownModels() async {
+        let backend = CodexResponsesBackend()
+
+        let defaultWindow = await backend.modelContextWindowTokenCount
+        let defaultUsableWindow = await backend.usableContextWindowTokenCount
+
+        XCTAssertEqual(defaultWindow, 372_000)
+        XCTAssertEqual(defaultUsableWindow, 353_400)
+
+        for info in CodexModel.catalog {
+            let modelWindow = await backend.modelContextWindowTokenCount(for: info.model.rawValue)
+            let usableWindow = await backend.usableContextWindowTokenCount(for: info.model.rawValue)
+            XCTAssertEqual(modelWindow, info.contextWindowTokenCount, info.model.rawValue)
+            XCTAssertEqual(
+                usableWindow,
+                (info.contextWindowTokenCount * 95) / 100,
+                info.model.rawValue
+            )
+        }
+
+        let futureWindow = await backend.modelContextWindowTokenCount(for: "gpt-5.7-future")
+        XCTAssertNil(futureWindow)
     }
 
     func testBackendUsesThreadConfigurationForModelAndReasoningEffort() async throws {

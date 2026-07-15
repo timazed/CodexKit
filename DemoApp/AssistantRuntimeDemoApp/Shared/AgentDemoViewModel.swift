@@ -344,7 +344,7 @@ final class AgentDemoViewModel {
 
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
-    let model: String
+    var model: String
     let enableWebSearch: Bool
     let enableImageGeneration: Bool
     let stateURL: URL?
@@ -419,6 +419,11 @@ final class AgentDemoViewModel {
 
     var activeThreadConfiguration: AgentThreadConfiguration {
         activeThread?.configuration ?? defaultThreadConfiguration
+    }
+
+    var supportedReasoningEfforts: [ReasoningEffort] {
+        activeThreadConfiguration.codexModel.info?.supportedReasoningEfforts
+            ?? ReasoningEffort.allCases
     }
 
     var resolvedStateURL: URL {

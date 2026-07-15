@@ -103,6 +103,53 @@ extension AgentDemoViewModel {
         }
     }
 
+    func updateModel(_ selectedModel: CodexModel) async {
+        guard canReconfigureRuntime else {
+            lastError = "Wait for the current turn to finish before switching models."
+            return
+        }
+
+        let current = activeThread?.configuration ?? defaultThreadConfiguration
+        let modelInfo = selectedModel.info
+        let resolvedReasoningEffort = modelInfo?.supports(current.reasoningEffort) != false
+            ? current.reasoningEffort
+            : modelInfo?.defaultReasoningEffort ?? current.reasoningEffort
+
+        if let activeThreadID {
+            guard current.model != selectedModel.rawValue ||
+                current.reasoningEffort != resolvedReasoningEffort ||
+                model != selectedModel.rawValue else {
+                return
+            }
+            do {
+                let updated = AgentThreadConfiguration(
+                    model: selectedModel.rawValue,
+                    reasoningEffort: resolvedReasoningEffort
+                )
+                try await runtime.updateThreadConfiguration(updated, for: activeThreadID)
+                model = selectedModel.rawValue
+                reasoningEffort = resolvedReasoningEffort
+                threads = await runtime.threads()
+                observedThread = threads.first { $0.id == activeThreadID }
+                await refreshThreadContextState(for: activeThreadID)
+                developerLog(
+                    "Updated thread model. threadID=\(activeThreadID) model=\(updated.model) reasoningEffort=\(updated.reasoningEffort.rawValue)"
+                )
+            } catch {
+                reportError(error)
+            }
+        } else {
+            guard model != selectedModel.rawValue || reasoningEffort != resolvedReasoningEffort else {
+                return
+            }
+            model = selectedModel.rawValue
+            reasoningEffort = resolvedReasoningEffort
+            developerLog(
+                "Updated default thread model. model=\(model) reasoningEffort=\(reasoningEffort.rawValue)"
+            )
+        }
+    }
+
     func createThread() async {
         await createThreadInternal(
             title: nil,
@@ -240,7 +287,6 @@ extension AgentDemoViewModel {
         }
 
         threads = await runtime.threads()
-        await upgradeLegacyDemoThreadModelsIfNeeded()
         developerLog(
             "Snapshot refreshed. session=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
         )
@@ -279,37 +325,6 @@ extension AgentDemoViewModel {
         activeThreadObservationBindingTask?.cancel()
         activeThreadObservationCancellables.removeAll()
         resetObservedThreadState()
-    }
-
-    func upgradeLegacyDemoThreadModelsIfNeeded() async {
-        let legacyDemoModels: Set<String> = ["gpt-5.4"]
-        let threadsToUpgrade = threads.filter { thread in
-            guard let configuration = thread.configuration else {
-                return false
-            }
-            return legacyDemoModels.contains(configuration.model) && configuration.model != model
-        }
-
-        guard !threadsToUpgrade.isEmpty else {
-            return
-        }
-
-        do {
-            for thread in threadsToUpgrade {
-                let current = thread.configuration ?? defaultThreadConfiguration
-                let updated = AgentThreadConfiguration(
-                    model: model,
-                    reasoningEffort: current.reasoningEffort
-                )
-                try await runtime.updateThreadConfiguration(updated, for: thread.id)
-            }
-            threads = await runtime.threads()
-            developerLog(
-                "Upgraded legacy demo thread models. model=\(model) count=\(threadsToUpgrade.count)"
-            )
-        } catch {
-            reportError(error)
-        }
     }
 
     func refreshThreadContextState(for threadID: String? = nil) async {

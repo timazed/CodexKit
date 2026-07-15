@@ -41,4 +41,16 @@ public extension AgentThreadContextUsage {
 public protocol AgentBackendContextWindowProviding: Sendable {
     var modelContextWindowTokenCount: Int? { get async }
     var usableContextWindowTokenCount: Int? { get async }
+    func modelContextWindowTokenCount(for model: String) async -> Int?
+    func usableContextWindowTokenCount(for model: String) async -> Int?
+}
+
+public extension AgentBackendContextWindowProviding {
+    func modelContextWindowTokenCount(for _: String) async -> Int? {
+        await modelContextWindowTokenCount
+    }
+
+    func usableContextWindowTokenCount(for _: String) async -> Int? {
+        await usableContextWindowTokenCount
+    }
 }

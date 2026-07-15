@@ -8,13 +8,14 @@ extension AgentRuntime {
 
         let visibleMessages = state.messagesByThread[threadID] ?? []
         let effectiveMessages = effectiveHistory(for: threadID)
+        let model = state.threads.first(where: { $0.id == threadID })?.configuration?.model
 
         return AgentThreadContextUsage(
             threadID: threadID,
             visibleEstimatedTokenCount: approximateTokenCount(for: visibleMessages),
             effectiveEstimatedTokenCount: approximateTokenCount(for: effectiveMessages),
-            modelContextWindowTokenCount: await modelContextWindowTokenCount(),
-            usableContextWindowTokenCount: await usableContextWindowTokenCount()
+            modelContextWindowTokenCount: await modelContextWindowTokenCount(for: model),
+            usableContextWindowTokenCount: await usableContextWindowTokenCount(for: model)
         )
     }
 
@@ -31,11 +32,23 @@ extension AgentRuntime {
         )
     }
 
-    private func modelContextWindowTokenCount() async -> Int? {
-        await (backend as? any AgentBackendContextWindowProviding)?.modelContextWindowTokenCount
+    private func modelContextWindowTokenCount(for model: String?) async -> Int? {
+        guard let provider = backend as? any AgentBackendContextWindowProviding else {
+            return nil
+        }
+        if let model {
+            return await provider.modelContextWindowTokenCount(for: model)
+        }
+        return await provider.modelContextWindowTokenCount
     }
 
-    private func usableContextWindowTokenCount() async -> Int? {
-        await (backend as? any AgentBackendContextWindowProviding)?.usableContextWindowTokenCount
+    private func usableContextWindowTokenCount(for model: String?) async -> Int? {
+        guard let provider = backend as? any AgentBackendContextWindowProviding else {
+            return nil
+        }
+        if let model {
+            return await provider.usableContextWindowTokenCount(for: model)
+        }
+        return await provider.usableContextWindowTokenCount
     }
 }

@@ -107,11 +107,18 @@ extension AgentDemoView {
                 }
             }
 
-            Text(viewModel.activeThreadID == nil ? "Pick a thinking level for new threads." : "Pick a thinking level for future turns in the active thread and new threads.")
+            Text(viewModel.activeThreadID == nil ? "Choose a Codex model and thinking level for new threads." : "Choose a model and thinking level for future turns in the active thread and new threads.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
             LazyVGrid(columns: tileColumns, spacing: 12) {
-                ForEach(ReasoningEffort.allCases, id: \.self) { effort in
+                ForEach(CodexModel.userFacingModels) { model in
+                    modelTile(for: model)
+                }
+            }
+
+            LazyVGrid(columns: tileColumns, spacing: 12) {
+                ForEach(viewModel.supportedReasoningEfforts, id: \.self) { effort in
                     reasoningEffortTile(for: effort)
                 }
             }
@@ -453,6 +460,21 @@ extension AgentDemoView {
     }
 
     @ViewBuilder
+    func modelTile(for model: CodexModel) -> some View {
+        DemoActionTile(
+            title: model.info?.displayName ?? model.rawValue,
+            subtitle: model.info?.summary ?? "Custom Codex model.",
+            systemImage: model.demoSystemImage,
+            isProminent: model.rawValue == viewModel.activeThreadConfiguration.model,
+            isDisabled: !viewModel.canReconfigureRuntime
+        ) {
+            Task {
+                await viewModel.updateModel(model)
+            }
+        }
+    }
+
+    @ViewBuilder
     func reasoningEffortTile(for effort: ReasoningEffort) -> some View {
         DemoActionTile(
             title: effort.demoTitle,
@@ -549,9 +571,38 @@ extension AgentDemoView {
     }
 }
 
+private extension CodexModel {
+    var demoSystemImage: String {
+        switch self {
+        case .gpt56Sol:
+            "sun.max"
+        case .gpt56Terra:
+            "globe.americas"
+        case .gpt56Luna:
+            "moon.stars"
+        case .gpt55:
+            "sparkles"
+        case .gpt54:
+            "brain.head.profile"
+        case .gpt54Mini:
+            "hare"
+        case .gpt53CodexSpark:
+            "bolt.fill"
+        case .gpt52:
+            "briefcase"
+        default:
+            "cpu"
+        }
+    }
+}
+
 private extension ReasoningEffort {
     var demoTitle: String {
         switch self {
+        case .none:
+            "No Reasoning"
+        case .minimal:
+            "Think Minimal"
         case .low:
             "Think Low"
         case .medium:
@@ -560,11 +611,21 @@ private extension ReasoningEffort {
             "Think High"
         case .extraHigh:
             "Think Extra High"
+        case .max:
+            "Think Max"
+        case .ultra:
+            "Think Ultra"
+        case let .custom(value):
+            "Think \(value)"
         }
     }
 
     var summary: String {
         switch self {
+        case .none:
+            "Skip model reasoning when supported."
+        case .minimal:
+            "Use the lightest available reasoning."
         case .low:
             "Fastest responses with lighter reasoning."
         case .medium:
@@ -572,12 +633,22 @@ private extension ReasoningEffort {
         case .high:
             "Deeper reasoning for tougher requests."
         case .extraHigh:
-            "Maximum effort for complex planning and review."
+            "Extra-high reasoning for complex planning and review."
+        case .max:
+            "Maximum reasoning depth for the hardest problems."
+        case .ultra:
+            "Maximum reasoning; delegation requires a multi-agent host."
+        case .custom:
+            "Use a model-defined reasoning effort."
         }
     }
 
     var systemImage: String {
         switch self {
+        case .none:
+            "circle.slash"
+        case .minimal:
+            "gauge.with.dots.needle.0percent"
         case .low:
             "hare"
         case .medium:
@@ -586,6 +657,12 @@ private extension ReasoningEffort {
             "brain.head.profile"
         case .extraHigh:
             "sparkles"
+        case .max:
+            "gauge.with.dots.needle.100percent"
+        case .ultra:
+            "point.3.connected.trianglepath.dotted"
+        case .custom:
+            "slider.horizontal.3"
         }
     }
 }

@@ -356,6 +356,10 @@ private extension ThreadDetailView {
 
     var reasoningEffortTitle: String {
         switch threadConfiguration.reasoningEffort {
+        case .none:
+            "No Reasoning"
+        case .minimal:
+            "Think Minimal"
         case .low:
             "Think Low"
         case .medium:
@@ -364,11 +368,21 @@ private extension ThreadDetailView {
             "Think High"
         case .extraHigh:
             "Think Extra High"
+        case .max:
+            "Think Max"
+        case .ultra:
+            "Think Ultra"
+        case let .custom(value):
+            "Think \(value)"
         }
     }
 
     var reasoningEffortSymbol: String {
         switch threadConfiguration.reasoningEffort {
+        case .none:
+            "circle.slash"
+        case .minimal:
+            "gauge.with.dots.needle.0percent"
         case .low:
             "hare"
         case .medium:
@@ -377,6 +391,12 @@ private extension ThreadDetailView {
             "brain.head.profile"
         case .extraHigh:
             "sparkles"
+        case .max:
+            "gauge.with.dots.needle.100percent"
+        case .ultra:
+            "point.3.connected.trianglepath.dotted"
+        case .custom:
+            "slider.horizontal.3"
         }
     }
 

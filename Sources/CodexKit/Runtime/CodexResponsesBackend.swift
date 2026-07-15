@@ -14,10 +14,14 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let requestRetryPolicy: RequestRetryPolicy
     public let logging: AgentLoggingConfiguration
 
+    public var codexModel: CodexModel {
+        CodexModel(rawValue: model)
+    }
+
     public init(
         baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
-        model: String = "gpt-5",
-        reasoningEffort: ReasoningEffort = .medium,
+        model: String = "gpt-5.6-sol",
+        reasoningEffort: ReasoningEffort? = nil,
         instructions: String = """
         You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
         """,
@@ -33,6 +37,8 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.baseURL = baseURL
         self.model = model
         self.reasoningEffort = reasoningEffort
+            ?? CodexModel(rawValue: model).info?.defaultReasoningEffort
+            ?? .medium
         self.instructions = instructions
         self.originator = originator
         self.streamIdleTimeout = streamIdleTimeout
@@ -42,6 +48,38 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.imageGenerationOutputFormat = imageGenerationOutputFormat
         self.requestRetryPolicy = requestRetryPolicy
         self.logging = logging
+    }
+
+    public init(
+        model: CodexModel,
+        baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
+        reasoningEffort: ReasoningEffort? = nil,
+        instructions: String = """
+        You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
+        """,
+        originator: String = "codex_cli_rs",
+        streamIdleTimeout: TimeInterval = 60,
+        extraHeaders: [String: String] = [:],
+        enableWebSearch: Bool = false,
+        enableImageGeneration: Bool = false,
+        imageGenerationOutputFormat: String = "png",
+        requestRetryPolicy: RequestRetryPolicy = .default,
+        logging: AgentLoggingConfiguration = .disabled
+    ) {
+        self.init(
+            baseURL: baseURL,
+            model: model.rawValue,
+            reasoningEffort: reasoningEffort ?? model.info?.defaultReasoningEffort ?? .medium,
+            instructions: instructions,
+            originator: originator,
+            streamIdleTimeout: streamIdleTimeout,
+            extraHeaders: extraHeaders,
+            enableWebSearch: enableWebSearch,
+            enableImageGeneration: enableImageGeneration,
+            imageGenerationOutputFormat: imageGenerationOutputFormat,
+            requestRetryPolicy: requestRetryPolicy,
+            logging: logging
+        )
     }
 }
 
@@ -53,19 +91,30 @@ extension CodexResponsesBackendConfiguration {
         )
     }
 
-    var modelContextWindowTokenCount: Int? {
+    func modelContextWindowTokenCount(for model: String) -> Int? {
         let normalizedModel = model.lowercased()
-        if normalizedModel.hasPrefix("gpt-5") {
+        if let contextWindowTokenCount = CodexModel(rawValue: normalizedModel).info?.contextWindowTokenCount {
+            return contextWindowTokenCount
+        }
+        if normalizedModel == "gpt-5" {
             return 272_000
         }
         return nil
     }
 
-    var usableContextWindowTokenCount: Int? {
-        guard let modelContextWindowTokenCount else {
+    func usableContextWindowTokenCount(for model: String) -> Int? {
+        guard let modelContextWindowTokenCount = modelContextWindowTokenCount(for: model) else {
             return nil
         }
         return (modelContextWindowTokenCount * 95) / 100
+    }
+
+    var modelContextWindowTokenCount: Int? {
+        modelContextWindowTokenCount(for: model)
+    }
+
+    var usableContextWindowTokenCount: Int? {
+        usableContextWindowTokenCount(for: model)
     }
 }
 
@@ -149,6 +198,14 @@ extension CodexResponsesBackend: AgentBackendContextWindowProviding {
 
     public var usableContextWindowTokenCount: Int? {
         configuration.usableContextWindowTokenCount
+    }
+
+    public func modelContextWindowTokenCount(for model: String) async -> Int? {
+        configuration.modelContextWindowTokenCount(for: model)
+    }
+
+    public func usableContextWindowTokenCount(for model: String) async -> Int? {
+        configuration.usableContextWindowTokenCount(for: model)
     }
 }
 

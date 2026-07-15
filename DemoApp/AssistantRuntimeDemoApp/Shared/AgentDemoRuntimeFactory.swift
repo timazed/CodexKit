@@ -22,7 +22,7 @@ enum DemoAuthenticationMethod: String, CaseIterable, Identifiable {
 }
 
 enum AgentDemoRuntimeFactory {
-    static let defaultModel = "gpt-5.5"
+    static let defaultModel = CodexModel.gpt56Sol.rawValue
     static let defaultKeychainAccount = "AssistantRuntimeDemoApp"
 
     #if canImport(AuthenticationServices)
@@ -32,7 +32,7 @@ enum AgentDemoRuntimeFactory {
         model: String = defaultModel,
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
-        reasoningEffort: ReasoningEffort = .medium,
+        reasoningEffort: ReasoningEffort = .low,
         stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount
     ) -> AgentDemoViewModel {
@@ -71,7 +71,7 @@ enum AgentDemoRuntimeFactory {
         model: String = defaultModel,
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
-        reasoningEffort: ReasoningEffort = .medium,
+        reasoningEffort: ReasoningEffort = .low,
         stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount,
         approvalInbox: ApprovalInbox,
@@ -150,7 +150,7 @@ enum AgentDemoRuntimeFactory {
         model: String = defaultModel,
         enableWebSearch: Bool = true,
         enableImageGeneration: Bool = true,
-        reasoningEffort: ReasoningEffort = .medium,
+        reasoningEffort: ReasoningEffort = .low,
         keychainAccount: String = defaultKeychainAccount
     ) -> AgentRuntime {
         let diagnostics = DemoDiagnostics()
