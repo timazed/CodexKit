@@ -18,8 +18,8 @@ public actor AgentRuntime {
     }
 
     public struct Configuration: Sendable {
-        public let authProvider: any ChatGPTAuthProviding
-        public let secureStore: any SessionSecureStoring
+        public let authProvider: ChatGPTAuthProvider
+        public let secureStore: KeychainSessionSecureStore
         public let backend: any AgentBackend
         public let approvalPresenter: any ApprovalPresenting
         public let stateStore: any RuntimeStateStoring
@@ -32,8 +32,8 @@ public actor AgentRuntime {
         public let contextCompaction: AgentContextCompactionConfiguration
 
         public init(
-            authProvider: any ChatGPTAuthProviding,
-            secureStore: any SessionSecureStoring,
+            authProvider: ChatGPTAuthProvider,
+            secureStore: KeychainSessionSecureStore,
             backend: any AgentBackend,
             approvalPresenter: any ApprovalPresenting,
             stateStore: any RuntimeStateStoring,
@@ -67,10 +67,10 @@ public actor AgentRuntime {
     let toolRegistry: ToolRegistry
     let approvalCoordinator: ApprovalCoordinator
     let memoryConfiguration: AgentMemoryConfiguration?
-    let baseInstructions: String?
+    let configuredBaseInstructions: String?
     let definitionSourceLoader: AgentDefinitionSourceLoader
     let contextCompactionConfiguration: AgentContextCompactionConfiguration
-    nonisolated let observationCenter: AgentRuntimeObservationCenter
+    let observationCenter: AgentRuntimeObservationCenter
     var skillsByID: [String: AgentSkill]
 
     var state: StoredRuntimeState = .empty
@@ -96,7 +96,7 @@ public actor AgentRuntime {
         }
     }
 
-    final class TurnSkillPolicyTracker: @unchecked Sendable {
+    final class TurnSkillPolicyTracker {
         private let policy: CompiledSkillToolPolicy
         private var toolCallsCount = 0
         private var usedToolNames: Set<String> = []
@@ -175,15 +175,18 @@ public actor AgentRuntime {
             presenter: configuration.approvalPresenter
         )
         self.memoryConfiguration = configuration.memory
-        self.baseInstructions = configuration.baseInstructions ?? configuration.backend.baseInstructions
+        self.configuredBaseInstructions = configuration.baseInstructions
         self.definitionSourceLoader = configuration.definitionSourceLoader
         self.contextCompactionConfiguration = configuration.contextCompaction
         self.observationCenter = AgentRuntimeObservationCenter()
         self.skillsByID = try Self.validatedSkills(from: configuration.skills)
     }
 
-    public nonisolated var observations: AnyPublisher<AgentRuntimeObservation, Never> {
-        observationCenter.publisher
+    public var observations: AgentRuntimeObservationPublisher<AgentRuntimeObservation> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.publisher
+        }
     }
 
     @discardableResult
@@ -193,7 +196,7 @@ public actor AgentRuntime {
         _ = try await stateStore.prepare()
         state = try await stateStore.loadState()
         pendingStoreOperations.removeAll()
-        publishAllObservations()
+        await publishAllObservations()
         logger.info(
             .runtime,
             "Runtime restore completed.",
@@ -218,6 +221,12 @@ public actor AgentRuntime {
             ]
         )
         return session
+    }
+
+    @discardableResult
+    public func useSession(_ session: ChatGPTSession) async throws -> ChatGPTSession {
+        logger.info(.auth, "Loading supplied ChatGPT session.")
+        return try await sessionManager.useSession(session)
     }
 
     public func currentSession() async -> ChatGPTSession? {
@@ -262,7 +271,7 @@ public actor AgentRuntime {
         guard !pendingStoreOperations.isEmpty else {
             logger.debug(.persistence, "Persisting full runtime state snapshot.")
             try await stateStore.saveState(state)
-            publishAllObservations()
+            await publishAllObservations()
             return
         }
 
@@ -277,7 +286,7 @@ public actor AgentRuntime {
         )
         try await stateStore.apply(operations)
         pendingStoreOperations.removeAll()
-        publishObservations(for: operations)
+        await publishObservations(for: operations)
     }
 
     func enqueueStoreOperation(_ operation: AgentStoreWriteOperation) {
@@ -307,14 +316,14 @@ public actor AgentRuntime {
         return coalesced
     }
 
-    func publishAllObservations() {
+    func publishAllObservations() async {
         observationCenter.send(.threadsChanged(threads()))
         for thread in state.threads {
-            publishThreadObservations(for: thread.id)
+            await publishThreadObservations(for: thread.id)
         }
     }
 
-    func publishObservations(for operations: [AgentStoreWriteOperation]) {
+    func publishObservations(for operations: [AgentStoreWriteOperation]) async {
         let deletedThreadIDs = Set(operations.compactMap { operation -> String? in
             guard case let .deleteThread(threadID) = operation else {
                 return nil
@@ -328,11 +337,11 @@ public actor AgentRuntime {
             observationCenter.send(.threadDeleted(threadID: threadID))
         }
         for threadID in affectedThreadIDs.subtracting(deletedThreadIDs) {
-            publishThreadObservations(for: threadID)
+            await publishThreadObservations(for: threadID)
         }
     }
 
-    func publishThreadObservations(for threadID: String) {
+    func publishThreadObservations(for threadID: String) async {
         guard let thread = thread(for: threadID) else {
             return
         }
@@ -358,7 +367,7 @@ public actor AgentRuntime {
         observationCenter.send(
             .threadContextUsageChanged(
                 threadID: threadID,
-                usage: threadContextUsage(for: threadID)
+                usage: await threadContextUsage(for: threadID)
             )
         )
     }
@@ -368,6 +377,12 @@ public actor AgentRuntime {
         message: Request,
         resolvedTurnSkills: ResolvedTurnSkills
     ) async -> String {
+        let baseInstructions: String?
+        if let configuredBaseInstructions {
+            baseInstructions = configuredBaseInstructions
+        } else {
+            baseInstructions = await backend.baseInstructions
+        }
         let compiled = AgentInstructionCompiler.compile(
             baseInstructions: baseInstructions,
             threadPersonaStack: thread.personaStack,

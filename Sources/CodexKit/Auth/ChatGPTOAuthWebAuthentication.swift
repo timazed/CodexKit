@@ -11,6 +11,8 @@ import AppKit
 
 #if canImport(AuthenticationServices)
 @available(iOS 13.0, macOS 10.15, *)
+// ASWebAuthenticationSession is callback/delegate based and not Sendable; this
+// provider keeps session state on the main actor while preserving sync init.
 public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthenticationProviding, @unchecked Sendable {
     private var activeSession: ASWebAuthenticationSession?
     private var activePresentationContextProvider: PresentationContextProvider?

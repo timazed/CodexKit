@@ -5,9 +5,26 @@ import Foundation
 @MainActor
 extension AgentDemoViewModel {
     func configureRuntimeObservationBindings() {
+        runtimeObservationBindingTask?.cancel()
+        activeThreadObservationBindingTask?.cancel()
         runtimeObservationCancellables.removeAll()
+        activeThreadObservationCancellables.removeAll()
+        resetObservedThreadState()
 
-        runtime.observeThreads()
+        let runtime = runtime
+
+        runtimeObservationBindingTask = Task { @MainActor [weak self] in
+            await self?.configureRuntimeObservationBindingsAsync(runtime: runtime)
+        }
+    }
+
+    private func configureRuntimeObservationBindingsAsync(runtime: AgentRuntime) async {
+        let publisher = await runtime.observeThreads()
+        guard !Task.isCancelled else {
+            return
+        }
+
+        publisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] threads in
                 guard let self else {
@@ -18,6 +35,8 @@ extension AgentDemoViewModel {
                 if let activeThreadID = self.activeThreadID,
                    !threads.contains(where: { $0.id == activeThreadID }) {
                     self.activeThreadID = nil
+                    self.activeThreadObservationBindingTask?.cancel()
+                    self.activeThreadObservationCancellables.removeAll()
                     self.resetObservedThreadState()
                     self.messages = []
                 } else if let activeThreadID = self.activeThreadID {
@@ -26,28 +45,55 @@ extension AgentDemoViewModel {
             }
             .store(in: &runtimeObservationCancellables)
 
+        guard !Task.isCancelled else {
+            return
+        }
+
         if let activeThreadID {
             bindActiveThreadObservation(for: activeThreadID)
-        } else {
-            resetObservedThreadState()
         }
     }
 
     func bindActiveThreadObservation(for threadID: String) {
+        activeThreadObservationBindingTask?.cancel()
         activeThreadObservationCancellables.removeAll()
         resetObservedThreadState()
 
-        runtime.observeThread(id: threadID)
+        let runtime = runtime
+        activeThreadObservationBindingTask = Task { @MainActor [weak self] in
+            await self?.bindActiveThreadObservationAsync(
+                for: threadID,
+                runtime: runtime
+            )
+        }
+    }
+
+    private func bindActiveThreadObservationAsync(
+        for threadID: String,
+        runtime: AgentRuntime
+    ) async {
+        let threadPublisher = await runtime.observeThread(id: threadID)
+        guard shouldContinueBinding(threadID: threadID) else {
+            return
+        }
+        threadPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] thread in
-                self?.observedThread = thread
+                guard let self, self.activeThreadID == threadID else {
+                    return
+                }
+                self.observedThread = thread
             }
             .store(in: &activeThreadObservationCancellables)
 
-        runtime.observeMessages(in: threadID)
+        let messagesPublisher = await runtime.observeMessages(in: threadID)
+        guard shouldContinueBinding(threadID: threadID) else {
+            return
+        }
+        messagesPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] messages in
-                guard let self else {
+                guard let self, self.activeThreadID == threadID else {
                     return
                 }
                 self.observedMessages = messages
@@ -55,17 +101,28 @@ extension AgentDemoViewModel {
             }
             .store(in: &activeThreadObservationCancellables)
 
-        runtime.observeThreadSummary(id: threadID)
+        let summaryPublisher = await runtime.observeThreadSummary(id: threadID)
+        guard shouldContinueBinding(threadID: threadID) else {
+            return
+        }
+        summaryPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] summary in
-                self?.observedThreadSummary = summary
+                guard let self, self.activeThreadID == threadID else {
+                    return
+                }
+                self.observedThreadSummary = summary
             }
             .store(in: &activeThreadObservationCancellables)
 
-        runtime.observeThreadContextState(id: threadID)
+        let contextStatePublisher = await runtime.observeThreadContextState(id: threadID)
+        guard shouldContinueBinding(threadID: threadID) else {
+            return
+        }
+        contextStatePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] contextState in
-                guard let self else {
+                guard let self, self.activeThreadID == threadID else {
                     return
                 }
                 self.observedThreadContextState = contextState
@@ -73,16 +130,24 @@ extension AgentDemoViewModel {
             }
             .store(in: &activeThreadObservationCancellables)
 
-        runtime.observeThreadContextUsage(id: threadID)
+        let contextUsagePublisher = await runtime.observeThreadContextUsage(id: threadID)
+        guard shouldContinueBinding(threadID: threadID) else {
+            return
+        }
+        contextUsagePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] contextUsage in
-                guard let self else {
+                guard let self, self.activeThreadID == threadID else {
                     return
                 }
                 self.observedThreadContextUsage = contextUsage
                 self.activeThreadContextUsage = contextUsage
             }
             .store(in: &activeThreadObservationCancellables)
+    }
+
+    private func shouldContinueBinding(threadID: String) -> Bool {
+        !Task.isCancelled && activeThreadID == threadID
     }
 
     func resetObservedThreadState() {

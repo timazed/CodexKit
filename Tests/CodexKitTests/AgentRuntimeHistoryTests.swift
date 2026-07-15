@@ -15,7 +15,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "History Summary")
         _ = try await runtime.send(
@@ -59,7 +59,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Paged Messages")
         _ = try await runtime.send(Request(text: "one"), in: thread.id)
@@ -122,7 +122,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Pending Approval")
         let stream = try await runtime.stream(
@@ -184,7 +184,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Pending Tool")
         let stream = try await runtime.stream(
@@ -236,7 +236,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Partial Structured")
         let stream = try await runtime.stream(
@@ -334,7 +334,7 @@ extension AgentRuntimeTests {
         XCTAssertTrue(metadata.capabilities.supportsPushdownQueries)
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Queryable")
         _ = try await runtime.send(Request(text: "hello"), in: thread.id)
@@ -372,7 +372,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Redactions")
         _ = try await runtime.send(Request(text: "top secret"), in: thread.id)
@@ -425,7 +425,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Delete Me")
         _ = try await runtime.send(Request(text: "bye"), in: thread.id)

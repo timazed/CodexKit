@@ -70,8 +70,8 @@ extension CodexResponsesBackendConfiguration {
 }
 
 public actor CodexResponsesBackend: AgentBackend {
-    public nonisolated let baseInstructions: String?
-    public nonisolated let defaultThreadConfiguration: AgentThreadConfiguration?
+    public let baseInstructions: String?
+    public let defaultThreadConfiguration: AgentThreadConfiguration?
 
     let configuration: CodexResponsesBackendConfiguration
     let logger: AgentLogger
@@ -113,7 +113,7 @@ public actor CodexResponsesBackend: AgentBackend {
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         let responseContract: AgentResponseContract?
         if let streamedStructuredOutput {
             responseContract = AgentResponseContract(
@@ -138,16 +138,16 @@ public actor CodexResponsesBackend: AgentBackend {
             message: message,
             tools: tools,
             session: session
-        )
+        ).stream
     }
 }
 
 extension CodexResponsesBackend: AgentBackendContextWindowProviding {
-    public nonisolated var modelContextWindowTokenCount: Int? {
+    public var modelContextWindowTokenCount: Int? {
         configuration.modelContextWindowTokenCount
     }
 
-    public nonisolated var usableContextWindowTokenCount: Int? {
+    public var usableContextWindowTokenCount: Int? {
         configuration.usableContextWindowTokenCount
     }
 }
@@ -174,11 +174,8 @@ extension CodexResponsesBackend {
     }
 }
 
-final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
-    let events: AsyncThrowingStream<AgentBackendEvent, Error>
-
-    private let logger: AgentLogger
-    private let pendingToolResults: PendingToolResults
+private struct CodexResponsesTurnSession {
+    let stream: AgentTurnStream
 
     init(
         configuration: CodexResponsesBackendConfiguration,
@@ -194,13 +191,11 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) {
-        self.logger = logger
         let pendingToolResults = PendingToolResults()
-        self.pendingToolResults = pendingToolResults
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
         let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
 
-        events = AsyncThrowingStream { continuation in
+        let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
             continuation.yield(.turnStarted(turn))
             let runner = CodexResponsesTurnRunner(
                 configuration: configuration,
@@ -260,12 +255,8 @@ final class CodexResponsesTurnSession: AgentTurnStreaming, @unchecked Sendable {
                 }
             }
         }
-    }
-
-    func submitToolResult(
-        _ result: ToolResultEnvelope,
-        for invocationID: String
-    ) async throws {
-        await pendingToolResults.resolve(result, for: invocationID)
+        stream = AgentTurnStream(events: events) { result, invocationID in
+            await pendingToolResults.resolve(result, for: invocationID)
+        }
     }
 }

@@ -27,7 +27,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Skills",
@@ -68,7 +68,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Turn Skills")
 
@@ -119,7 +119,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Append Skills",
@@ -170,7 +170,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Skill IDs")
 
@@ -211,7 +211,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
@@ -248,7 +248,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
@@ -309,7 +309,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             personaStack: supportPersona,
@@ -357,7 +357,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
@@ -397,7 +397,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(personaStack: supportPersona)
 
@@ -454,7 +454,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
         let thread = try await runtime.createThread()
 
         await XCTAssertThrowsErrorAsync(

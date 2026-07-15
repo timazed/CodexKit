@@ -5,7 +5,7 @@ extension AgentRuntimeTests {
     func testSkillPolicyBlocksDisallowedToolCalls() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), skills: [.init(id: "strict_support", name: "Strict Support", instructions: "Answer directly.", executionPolicy: .init(allowedToolNames: ["allowed_tool"]))]))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         try await runtime.registerTool(ToolDefinition(name: "demo_lookup_profile", description: "Lookup profile", inputSchema: .object([:]), approvalPolicy: .automatic), executor: AnyToolExecutor { invocation, _ in .success(invocation: invocation, text: "profile-ok") })
         let thread = try await runtime.createThread(title: "Strict Tool Policy", skillIDs: ["strict_support"])
@@ -22,7 +22,7 @@ extension AgentRuntimeTests {
     func testSkillPolicyFailsTurnWhenRequiredToolIsMissing() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), skills: [.init(id: "requires_tool", name: "Requires Tool", instructions: "Use the required tool.", executionPolicy: .init(requiredToolNames: ["demo_lookup_profile"]))]))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Required Tool", skillIDs: ["requires_tool"])
         let stream = try await runtime.stream(Request(text: "hello without tool"), in: thread.id)
@@ -57,7 +57,7 @@ extension AgentRuntimeTests {
     func testResolvedInstructionsPreviewIncludesThreadPersonaAndSkills() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(baseInstructions: "Base host instructions."), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), skills: [.init(id: "health_coach", name: "Health Coach", instructions: "Coach users toward their daily step goals.")]))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Preview", personaStack: AgentPersonaStack(layers: [.init(name: "planner", instructions: "Act as a planning specialist.")]), skillIDs: ["health_coach"])
         let preview = try await runtime.resolvedInstructionsPreview(for: thread.id, request: Request(text: "Give me a plan."))
@@ -71,7 +71,7 @@ extension AgentRuntimeTests {
         let backend = InMemoryAgentBackend(baseInstructions: "Base host instructions.")
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let personaText = "Act as a migration planning assistant focused on sequencing."
         let personaFile = try temporaryFile(with: personaText, pathExtension: "txt")
@@ -86,7 +86,7 @@ extension AgentRuntimeTests {
         let backend = InMemoryAgentBackend(baseInstructions: "Base host instructions.")
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let skillJSON = """
         {

@@ -6,6 +6,29 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.20] - 2026-07-14
+
+### Added
+
+- Added `AgentRuntime.useSession(_:)` for loading and persisting a supplied ChatGPT session without interactive sign-in.
+- Added the sendable `AgentTurnStream` and `AgentRuntimeObservationPublisher` value types for backend turn delivery and runtime observation.
+
+### Changed
+
+- Made `ChatGPTAuthProvider` and `KeychainSessionSecureStore` the concrete runtime authentication and session-storage configuration types.
+- Made backend defaults and context-window metadata asynchronously readable so actor-backed custom backends no longer need nonisolated witnesses.
+- Made runtime observation access actor-isolated and made `MemoryWriter.resolve(_:)` actor-isolated.
+
+### Fixed
+
+- Prevented stale demo observation-binding tasks from updating the active thread after a runtime or thread switch.
+
+## [2.0.0-alpha.19] - 2026-05-31
+
+### Added
+
+- Added `AgentImageGenerationClient` and supporting models for authenticated image generation and editing with prompt and image inputs.
+
 ## [2.0.0-alpha.18] - 2026-05-26
 
 ### Fixed
@@ -151,7 +174,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.18...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.20...HEAD
+[2.0.0-alpha.20]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.19...v2.0.0-alpha.20
+[2.0.0-alpha.19]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.18...v2.0.0-alpha.19
 [2.0.0-alpha.18]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.17...v2.0.0-alpha.18
 [2.0.0-alpha.17]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.16...v2.0.0-alpha.17
 [2.0.0-alpha.16]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.15...v2.0.0-alpha.16

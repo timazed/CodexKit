@@ -17,7 +17,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Complete")
         let reply = try await runtime.send(
@@ -44,7 +44,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured")
         let reply = try await runtime.send(
@@ -93,7 +93,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Stream")
         let stream = try await runtime.stream(
@@ -166,7 +166,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Stream Restore")
         let stream = try await runtime.stream(
@@ -214,7 +214,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Required")
         let stream = try await runtime.stream(
@@ -245,7 +245,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Optional")
         let stream = try await runtime.stream(
@@ -287,7 +287,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Failure")
 
@@ -319,7 +319,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Stream Failure")
         let stream = try await runtime.stream(

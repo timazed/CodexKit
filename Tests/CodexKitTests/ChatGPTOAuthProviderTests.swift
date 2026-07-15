@@ -1,7 +1,7 @@
 @testable import CodexKit
 import XCTest
 
-private final class MockWebAuthenticationProvider: ChatGPTWebAuthenticationProviding, @unchecked Sendable {
+private actor MockWebAuthenticationProvider: ChatGPTWebAuthenticationProviding {
     private(set) var authorizeURL: URL?
 
     func authenticate(
@@ -96,16 +96,18 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         XCTAssertEqual(signedIn.account.plan, .plus)
         XCTAssertEqual(signedIn.refreshToken, "refresh-123")
         XCTAssertEqual(signedIn.idToken, idToken)
-        XCTAssertEqual(mockBrowser.authorizeURL?.host, "auth.openai.com")
+        let capturedAuthorizeURL = await mockBrowser.authorizeURL
+        let authorizeURL = try XCTUnwrap(capturedAuthorizeURL)
+        XCTAssertEqual(authorizeURL.host, "auth.openai.com")
         XCTAssertEqual(
-            URLComponents(url: try XCTUnwrap(mockBrowser.authorizeURL), resolvingAgainstBaseURL: false)?
+            URLComponents(url: authorizeURL, resolvingAgainstBaseURL: false)?
                 .queryItems?
                 .first(where: { $0.name == "redirect_uri" })?
                 .value,
             codexBrowserOAuthRedirectURI.absoluteString
         )
         XCTAssertEqual(
-            URLComponents(url: try XCTUnwrap(mockBrowser.authorizeURL), resolvingAgainstBaseURL: false)?
+            URLComponents(url: authorizeURL, resolvingAgainstBaseURL: false)?
                 .queryItems?
                 .first(where: { $0.name == "scope" })?
                 .value,
@@ -173,5 +175,83 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         XCTAssertEqual(refreshed.account.email, "jamie@example.com")
         XCTAssertEqual(refreshed.account.plan, .pro)
         XCTAssertEqual(refreshed.refreshToken, "refresh-456")
+    }
+
+    func testRuntimeUnauthorizedRecoveryRefreshesThroughConcreteProvider() async throws {
+        let now = Date()
+        let refreshedAccessToken = try makeUnsignedJWT(
+            claims: [
+                "chatgpt_account_id": "workspace-runtime",
+                "chatgpt_plan_type": "plus",
+                "iat": Int(now.timeIntervalSince1970),
+                "exp": Int(now.addingTimeInterval(1800).timeIntervalSince1970),
+            ]
+        )
+        let refreshedIDToken = try makeUnsignedJWT(
+            claims: [
+                "email": "runtime@example.com",
+                "chatgpt_account_id": "workspace-runtime",
+                "chatgpt_plan_type": "plus",
+                "iat": Int(now.timeIntervalSince1970),
+                "exp": Int(now.addingTimeInterval(3600).timeIntervalSince1970),
+            ]
+        )
+
+        await TestURLProtocol.enqueue(
+            .init(
+                body: try JSONEncoder().encode([
+                    "id_token": refreshedIDToken,
+                    "access_token": refreshedAccessToken,
+                    "refresh_token": "refresh-runtime-2",
+                ]),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let form = parseFormURLEncodedBody(body)
+                    XCTAssertEqual(form["grant_type"], "refresh_token")
+                    XCTAssertEqual(form["refresh_token"], "refresh-runtime-1")
+                }
+            )
+        )
+
+        let secureStore = KeychainSessionSecureStore(
+            service: "CodexKitTests.ChatGPTSession",
+            account: UUID().uuidString
+        )
+        let backend = UnauthorizedThenSuccessBackend()
+        let authProvider = try ChatGPTAuthProvider(
+            method: .oauth,
+            urlSession: makeTestURLSession()
+        )
+        let runtime = try AgentRuntime(
+            configuration: .init(
+                authProvider: authProvider,
+                secureStore: secureStore,
+                backend: backend,
+                approvalPresenter: AutoApprovalPresenter(),
+                stateStore: InMemoryRuntimeStateStore()
+            )
+        )
+        _ = try await runtime.restore()
+        _ = try await runtime.useSession(
+            ChatGPTSession(
+                accessToken: "runtime-access-token-1",
+                refreshToken: "refresh-runtime-1",
+                account: ChatGPTAccount(
+                    id: "workspace-runtime",
+                    email: "runtime@example.com",
+                    plan: .plus
+                ),
+                expiresAt: now.addingTimeInterval(1800)
+            )
+        )
+
+        let thread = try await runtime.createThread(title: "OAuth Recovery")
+        _ = try await runtime.send(Request(text: "Retry after refresh"), in: thread.id)
+
+        let attemptedTokens = await backend.attemptedAccessTokens()
+        XCTAssertEqual(attemptedTokens, ["runtime-access-token-1", refreshedAccessToken])
+        let currentSession = await runtime.currentSession()
+        XCTAssertEqual(currentSession?.accessToken, refreshedAccessToken)
+        XCTAssertEqual(currentSession?.refreshToken, "refresh-runtime-2")
     }
 }

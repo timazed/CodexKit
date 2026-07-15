@@ -148,7 +148,7 @@ public actor MemoryWriter {
         self.defaults = defaults
     }
 
-    public nonisolated func resolve(
+    public func resolve(
         _ draft: MemoryDraft,
         now: Date = Date()
     ) throws -> MemoryRecord {
@@ -278,11 +278,11 @@ public actor MemoryWriter {
         )
     }
 
-    private nonisolated func resolvedNamespace(for draft: MemoryDraft) throws -> String {
+    private func resolvedNamespace(for draft: MemoryDraft) throws -> String {
         try resolvedNamespace(draft.namespace)
     }
 
-    private nonisolated func resolvedNamespace(_ namespace: String?) throws -> String {
+    private func resolvedNamespace(_ namespace: String?) throws -> String {
         guard let namespace = (namespace ?? defaults.namespace)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !namespace.isEmpty
         else {
@@ -292,14 +292,14 @@ public actor MemoryWriter {
         return namespace
     }
 
-    private nonisolated func resolvedScope(for draft: MemoryDraft) throws -> MemoryScope {
+    private func resolvedScope(for draft: MemoryDraft) throws -> MemoryScope {
         guard let scope = draft.scope ?? defaults.scope else {
             throw MemoryAuthoringError.missingScope
         }
         return scope
     }
 
-    private nonisolated func resolvedCategory(for draft: MemoryDraft) throws -> String {
+    private func resolvedCategory(for draft: MemoryDraft) throws -> String {
         guard let category = (draft.category ?? defaults.category)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !category.isEmpty
         else {

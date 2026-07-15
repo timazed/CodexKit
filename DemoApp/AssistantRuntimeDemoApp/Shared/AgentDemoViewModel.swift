@@ -280,7 +280,7 @@ struct DemoSDKLogSink: AgentLogSink {
 
 @MainActor
 @Observable
-final class AgentDemoViewModel: @unchecked Sendable {
+final class AgentDemoViewModel {
     var session: ChatGPTSession?
     var threads: [AgentThread] = []
     var messages: [AgentMessage] = []
@@ -361,6 +361,10 @@ final class AgentDemoViewModel: @unchecked Sendable {
     var runtimeObservationCancellables: Set<AnyCancellable> = []
     @ObservationIgnored
     var activeThreadObservationCancellables: Set<AnyCancellable> = []
+    @ObservationIgnored
+    var runtimeObservationBindingTask: Task<Void, Never>?
+    @ObservationIgnored
+    var activeThreadObservationBindingTask: Task<Void, Never>?
 
 #if os(iOS)
     let healthStore = HKHealthStore()

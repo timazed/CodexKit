@@ -122,7 +122,7 @@ let stream = try await runtime.stream(
 
 ## 2.0 Migration Notes
 
-If you are moving code forward from earlier 2.0 alpha snapshots, there are two important API changes to update:
+If you are moving code forward from earlier 2.0 alpha snapshots, update these API areas:
 
 - `GRDBRuntimeStateStore` was renamed to `SQLiteRuntimeStateStore`
   The public runtime-store surface now uses `SQLite` naming consistently alongside `SQLiteMemoryStore`.
@@ -130,6 +130,14 @@ If you are moving code forward from earlier 2.0 alpha snapshots, there are two i
   Use `Request` with `context:` when you want to attach host-app context separately from freeform prompt text.
 - fulfillment policy is request-side
   Use `Request.options` when the app needs to guide how lookup or enrichment work should be performed without putting that policy into user-visible text.
+- runtime auth and session storage are concrete
+  Configure `AgentRuntime` with `ChatGPTAuthProvider` and `KeychainSessionSecureStore`. Use `AgentRuntime.useSession(_:)` when the app already has a session to load.
+- backend turn streaming uses a value type
+  Custom `AgentBackend` implementations return `AgentTurnStream`; backend defaults and context-window metadata are asynchronously readable.
+- runtime observation is actor-isolated
+  Await `observeThreads()`, `observeMessages(in:)`, and related accessors. They return `AgentRuntimeObservationPublisher`; call `eraseToAnyPublisher()` when additional Combine operators are needed.
+- memory draft resolution is actor-isolated
+  Await `MemoryWriter.resolve(_:)` when validating a draft without writing it.
 
 Example rename:
 
@@ -431,28 +439,28 @@ import Combine
 
 var cancellables = Set<AnyCancellable>()
 
-runtime.observeThread(id: thread.id)
+await runtime.observeThread(id: thread.id)
     .receive(on: DispatchQueue.main)
     .sink { thread in
         print("Observed title:", thread?.title ?? "Untitled")
     }
     .store(in: &cancellables)
 
-runtime.observeMessages(in: thread.id)
+await runtime.observeMessages(in: thread.id)
     .receive(on: DispatchQueue.main)
     .sink { messages in
         print("Observed message count:", messages.count)
     }
     .store(in: &cancellables)
 
-runtime.observeThreadContextState(id: thread.id)
+await runtime.observeThreadContextState(id: thread.id)
     .receive(on: DispatchQueue.main)
     .sink { contextState in
         print("Observed compaction generation:", contextState?.generation ?? 0)
     }
     .store(in: &cancellables)
 
-runtime.observeThreadContextUsage(id: thread.id)
+await runtime.observeThreadContextUsage(id: thread.id)
     .receive(on: DispatchQueue.main)
     .sink { usage in
         print("Estimated effective tokens:", usage?.effectiveEstimatedTokenCount ?? 0)

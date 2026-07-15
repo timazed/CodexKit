@@ -2,8 +2,29 @@ import CodexKit
 import Foundation
 import XCTest
 
-private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var requestHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+private final class StubURLProtocol: URLProtocol {
+    private final class RequestHandlerStorage: @unchecked Sendable {
+        private let lock = NSLock()
+        private var handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+
+        func set(_ handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?) {
+            lock.lock()
+            defer { lock.unlock() }
+            self.handler = handler
+        }
+
+        func load() -> (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? {
+            lock.lock()
+            defer { lock.unlock() }
+            return handler
+        }
+    }
+
+    private static let requestHandlerStorage = RequestHandlerStorage()
+
+    static func setRequestHandler(_ handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?) {
+        requestHandlerStorage.set(handler)
+    }
 
     override class func canInit(with _: URLRequest) -> Bool {
         true
@@ -14,7 +35,7 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
-        guard let handler = Self.requestHandler else {
+        guard let handler = Self.requestHandlerStorage.load() else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
@@ -77,7 +98,7 @@ final class AgentDefinitionSourceLoaderTests: XCTestCase {
         let loader = AgentDefinitionSourceLoader(urlSession: session)
         let url = URL(string: "https://example.com/skills/health.json")!
 
-        StubURLProtocol.requestHandler = { request in
+        StubURLProtocol.setRequestHandler { request in
             XCTAssertEqual(request.url, url)
             let body = """
             {
@@ -97,7 +118,7 @@ final class AgentDefinitionSourceLoaderTests: XCTestCase {
             )
         }
         defer {
-            StubURLProtocol.requestHandler = nil
+            StubURLProtocol.setRequestHandler(nil)
         }
 
         let skill = try await loader.loadSkill(from: .remote(url))

@@ -2,7 +2,7 @@ import CodexKit
 import Foundation
 
 public actor InMemoryAgentBackend: AgentBackend {
-    public nonisolated let baseInstructions: String?
+    public let baseInstructions: String?
 
     private var threads: [String: AgentThread] = [:]
     private var beginTurnInstructions: [String] = []
@@ -45,7 +45,7 @@ public actor InMemoryAgentBackend: AgentBackend {
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         beginTurnInstructions.append(instructions)
         beginTurnResponseFormats.append(responseFormat)
         beginTurnMessages.append(message)
@@ -79,7 +79,7 @@ public actor InMemoryAgentBackend: AgentBackend {
                 : nil,
             responseFormat: responseFormat,
             streamedStructuredOutput: streamedStructuredOutput
-        )
+        ).stream
     }
 
     public func receivedInstructions() -> [String] {
@@ -103,9 +103,8 @@ public actor InMemoryAgentBackend: AgentBackend {
     }
 }
 
-public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable {
-    public let events: AsyncThrowingStream<AgentBackendEvent, Error>
-    private let pendingResults: PendingToolResults
+public final class MockAgentTurnSession {
+    public let stream: AgentTurnStream
 
     public init(
         thread: AgentThread,
@@ -117,10 +116,9 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
     ) {
         let hasStreamingStructuredOutput = streamedStructuredOutput != nil
         let pendingResults = PendingToolResults()
-        self.pendingResults = pendingResults
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
 
-        events = AsyncThrowingStream { continuation in
+        let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
             Task {
                 continuation.yield(.turnStarted(turn))
 
@@ -246,13 +244,9 @@ public final class MockAgentTurnSession: AgentTurnStreaming, @unchecked Sendable
                 continuation.finish()
             }
         }
-    }
-
-    public func submitToolResult(
-        _ result: ToolResultEnvelope,
-        for invocationID: String
-    ) async throws {
-        await pendingResults.resolve(result, for: invocationID)
+        stream = AgentTurnStream(events: events) { result, invocationID in
+            await pendingResults.resolve(result, for: invocationID)
+        }
     }
 
     private static func chunks(for text: String, chunkSize: Int = 16) -> [String] {

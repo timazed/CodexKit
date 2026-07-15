@@ -7,7 +7,7 @@ extension AgentRuntimeTests {
         let backend = CompactingTestBackend()
         let runtime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Compaction")
         let longMessages = [
@@ -51,7 +51,7 @@ extension AgentRuntimeTests {
             contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic, trigger: AgentContextCompactionTrigger(estimatedTokenThreshold: 100_000, retryOnContextLimitError: true))
         )
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Retry Compact")
         _ = try await runtime.send(Request(text: "one"), in: thread.id)
@@ -73,7 +73,7 @@ extension AgentRuntimeTests {
         let backend = CompactingTestBackend()
         let runtime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url), contextCompaction: AgentContextCompactionConfiguration(isEnabled: true, mode: .automatic))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Persisted Context")
         _ = try await runtime.send(Request(text: "alpha"), in: thread.id)
@@ -99,7 +99,7 @@ extension AgentRuntimeTests {
             )
         )
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Usage")
         let longMessages = [

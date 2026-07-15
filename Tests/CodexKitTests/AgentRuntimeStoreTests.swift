@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class AgentRuntimeStoreTests: XCTestCase {
-    func testStoreRestoresSignsInAndStreamsMessages() async throws {
+    func testStoreRestoresSessionAndStreamsMessages() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
@@ -21,7 +21,8 @@ final class AgentRuntimeStoreTests: XCTestCase {
         await store.restore()
         XCTAssertNil(store.session)
 
-        await store.signIn()
+        _ = try await runtime.useSession(demoSession())
+        await store.restore()
         XCTAssertEqual(store.session?.account.email, "demo@example.com")
 
         await store.send("hello")
@@ -46,7 +47,7 @@ final class AgentRuntimeStoreTests: XCTestCase {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Coalescing")
         _ = try await runtime.send(Request(text: "hello"), in: thread.id)

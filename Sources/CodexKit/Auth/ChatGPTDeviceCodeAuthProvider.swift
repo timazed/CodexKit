@@ -16,7 +16,7 @@ public protocol ChatGPTDeviceCodePresenting: Sendable {
     func clear() async
 }
 
-public final class ChatGPTDeviceCodeAuthProvider: ChatGPTAuthProviding, @unchecked Sendable {
+public final class ChatGPTDeviceCodeAuthProvider: Sendable {
     public struct Configuration: Sendable {
         public let issuerURL: URL
         public let clientID: String

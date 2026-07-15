@@ -4,7 +4,7 @@ import Observation
 
 @MainActor
 @Observable
-public final class AgentRuntimeStore: @unchecked Sendable {
+public final class AgentRuntimeStore {
     public private(set) var session: ChatGPTSession?
     public private(set) var threads: [AgentThread] = []
     public private(set) var messages: [AgentMessage] = []

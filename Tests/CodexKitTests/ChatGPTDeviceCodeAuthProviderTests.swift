@@ -2,7 +2,7 @@ import CodexKit
 import XCTest
 
 @MainActor
-private final class RecordingDeviceCodePresenter: ChatGPTDeviceCodePresenting, @unchecked Sendable {
+private final class RecordingDeviceCodePresenter: ChatGPTDeviceCodePresenting {
     private(set) var prompts: [ChatGPTDeviceCodePrompt] = []
     private(set) var clearCount = 0
 

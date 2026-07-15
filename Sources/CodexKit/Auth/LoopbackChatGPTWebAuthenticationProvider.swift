@@ -14,6 +14,8 @@ import AppKit
 
 #if canImport(AuthenticationServices) && canImport(Network)
 @available(iOS 13.0, macOS 10.15, *)
+// ASWebAuthenticationSession is not Sendable; active session state is touched
+// on the main actor while callback waiting is delegated to actor-backed helpers.
 final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthenticationProviding, @unchecked Sendable {
     private let callbackServerFactory: @Sendable (URL) throws -> LoopbackCallbackServing
     private let presentationAnchorProvider: @MainActor @Sendable () -> ASPresentationAnchor?
@@ -203,6 +205,8 @@ protocol LoopbackCallbackServing: Sendable {
 }
 
 @available(iOS 13.0, macOS 10.15, *)
+// NWListener/NWConnection are callback-driven reference types; mutable callback
+// state lives in LoopbackCallbackServerState and listener work runs on queue.
 final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing {
     private let redirectURL: URL
     private let queue = DispatchQueue(label: "ai.assistantruntime.loopback-callback")

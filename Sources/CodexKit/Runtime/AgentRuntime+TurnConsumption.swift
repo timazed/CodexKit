@@ -4,7 +4,7 @@ extension AgentRuntime {
     // MARK: - Turn Consumption
 
     func consumeTurnStream(
-        _ turnStream: any AgentTurnStreaming,
+        _ turnStream: AgentTurnStream,
         for threadID: String,
         userMessage: AgentMessage?,
         session: ChatGPTSession,

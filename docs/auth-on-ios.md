@@ -15,7 +15,7 @@ The important upstream ideas we keep are:
 
 - a durable ChatGPT session model
 - refresh-on-demand behavior
-- host-provided refresh seams
+- externally supplied session handoff
 - account metadata extraction from auth tokens
 
 ## Recommended iOS Design
@@ -24,7 +24,7 @@ The iOS host app owns:
 
 - when sign-in starts
 - what sign-in UI is shown
-- Keychain policy selection if it wants to customize storage
+- Keychain service and account naming
 - approval and prompt presentation
 
 The runtime owns:
@@ -38,7 +38,7 @@ The runtime owns:
 
 The recommended live iOS path in this repo is now:
 
-1. host app creates `ChatGPTDeviceCodeAuthProvider`
+1. host app creates `ChatGPTAuthProvider(method: .deviceCode, ...)`
 2. host app provides `DeviceCodePromptCoordinator` from `CodexKitUI`
 3. runtime starts sign-in through `AgentRuntime.signIn()`
 4. device-code prompt state is surfaced to SwiftUI
@@ -62,11 +62,10 @@ For that reason:
 
 When an app specifically wants a browser callback flow, it can still use:
 
-- `ChatGPTOAuthProvider`
-- `SystemChatGPTWebAuthenticationProvider`
-- a custom redirect URI
+- `ChatGPTAuthProvider(method: .oauth)`
+- the built-in localhost callback flow
 
-That path preserves Codex’s PKCE and token exchange model, but it is not the default recommendation for first-time integration.
+That path preserves Codex’s PKCE and token exchange model, but it is not the default recommendation for first-time integration. `ChatGPTOAuthProvider` remains the underlying public OAuth implementation, while `AgentRuntime.Configuration` accepts the unified `ChatGPTAuthProvider` wrapper.
 
 ## Secure Storage
 
@@ -81,7 +80,7 @@ Why:
 - stays inside iOS sandbox constraints
 - avoids plaintext token files
 
-Apps can still swap storage with `SessionSecureStoring`, but Keychain is the normal production path.
+`AgentRuntime.Configuration` uses this Keychain-backed store directly. Apps can choose distinct service and account identifiers when they need separate session domains.
 
 ## Session Lifecycle
 
@@ -122,8 +121,7 @@ These are normalized through `AgentRuntimeError` rather than leaking raw transpo
 The current auth surface is:
 
 - `ChatGPTSession`
-- `ChatGPTAuthProviding`
-- `SessionSecureStoring`
+- `ChatGPTAuthProvider`
 - `KeychainSessionSecureStore`
 - `ChatGPTSessionManager`
 - `ChatGPTDeviceCodeAuthProvider`
@@ -137,7 +135,7 @@ Port the Codex auth model, not Codex’s desktop login transport.
 The intended mapping is:
 
 - Codex `AuthManager` -> `ChatGPTSessionManager`
-- Codex external refresher seam -> `ChatGPTAuthProviding.refresh`
+- externally supplied session handoff -> `AgentRuntime.useSession(_:)`
 - Codex device-code login model -> `ChatGPTDeviceCodeAuthProvider`
 - Codex file/keyring persistence -> `KeychainSessionSecureStore`
 - app-facing prompt state -> `DeviceCodePromptCoordinator`

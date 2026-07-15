@@ -11,14 +11,26 @@ public enum AgentBackendEvent: Sendable {
     case turnCompleted(AgentTurnSummary)
 }
 
-public protocol AgentTurnStreaming: Sendable {
-    var events: AsyncThrowingStream<AgentBackendEvent, Error> { get }
-    func submitToolResult(_ result: ToolResultEnvelope, for invocationID: String) async throws
+public struct AgentTurnStream: Sendable {
+    public let events: AsyncThrowingStream<AgentBackendEvent, Error>
+    private let submitToolResultHandler: @Sendable (ToolResultEnvelope, String) async throws -> Void
+
+    public init(
+        events: AsyncThrowingStream<AgentBackendEvent, Error>,
+        submitToolResult: @escaping @Sendable (ToolResultEnvelope, String) async throws -> Void = { _, _ in }
+    ) {
+        self.events = events
+        self.submitToolResultHandler = submitToolResult
+    }
+
+    public func submitToolResult(_ result: ToolResultEnvelope, for invocationID: String) async throws {
+        try await submitToolResultHandler(result, invocationID)
+    }
 }
 
 public protocol AgentBackend: Sendable {
-    var baseInstructions: String? { get }
-    var defaultThreadConfiguration: AgentThreadConfiguration? { get }
+    var baseInstructions: String? { get async }
+    var defaultThreadConfiguration: AgentThreadConfiguration? { get async }
     func createThread(session: ChatGPTSession) async throws -> AgentThread
     func resumeThread(id: String, session: ChatGPTSession) async throws -> AgentThread
     func beginTurn(
@@ -30,10 +42,10 @@ public protocol AgentBackend: Sendable {
         streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
         tools: [ToolDefinition],
         session: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming
+    ) async throws -> AgentTurnStream
 }
 
 public extension AgentBackend {
-    var baseInstructions: String? { nil }
-    var defaultThreadConfiguration: AgentThreadConfiguration? { nil }
+    var baseInstructions: String? { get async { nil } }
+    var defaultThreadConfiguration: AgentThreadConfiguration? { get async { nil } }
 }

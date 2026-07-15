@@ -164,9 +164,9 @@ private actor PartialEmissionGate {
 }
 
 actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting, AgentBackendContextWindowProviding {
-    nonisolated let baseInstructions: String? = nil
-    nonisolated let modelContextWindowTokenCount: Int? = 272_000
-    nonisolated let usableContextWindowTokenCount: Int? = 258_400
+    let baseInstructions: String? = nil
+    let modelContextWindowTokenCount: Int? = 272_000
+    let usableContextWindowTokenCount: Int? = 258_400
 
     private let failOnHistoryCountAbove: Int?
     private var threads: [String: AgentThread] = [:]
@@ -199,7 +199,7 @@ actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting, AgentB
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         historyCounts.append(history.count)
         if let failOnHistoryCountAbove,
            history.count > failOnHistoryCountAbove,
@@ -207,7 +207,7 @@ actor CompactingTestBackend: AgentBackend, AgentBackendContextCompacting, AgentB
             throw AgentRuntimeError(code: "context_limit_exceeded", message: "Maximum context length exceeded.")
         }
 
-        return MockAgentTurnSession(thread: thread, message: message, selectedTool: nil, structuredResponseText: nil, streamedStructuredOutput: nil)
+        return MockAgentTurnSession(thread: thread, message: message, selectedTool: nil, structuredResponseText: nil, streamedStructuredOutput: nil).stream
     }
 
     func compactContext(
@@ -250,7 +250,7 @@ actor DelayedBeginTurnBackend: AgentBackend {
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         await gate.markStarted()
         await gate.waitForRelease()
         return MockAgentTurnSession(
@@ -259,7 +259,7 @@ actor DelayedBeginTurnBackend: AgentBackend {
             selectedTool: nil,
             structuredResponseText: nil,
             streamedStructuredOutput: nil
-        )
+        ).stream
     }
 
     func waitForBeginTurnStart() async {
@@ -291,22 +291,22 @@ actor BlockingStructuredPartialBackend: AgentBackend {
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
-        BlockingStructuredPartialTurnSession(threadID: thread.id, gate: gate)
+    ) async throws -> AgentTurnStream {
+        BlockingStructuredPartialTurnSession(threadID: thread.id, gate: gate).stream
     }
 
     func waitForPartialEmission() async { await gate.waitForPartialEmission() }
     func releaseCommit() async { await gate.releaseCommit() }
 }
 
-private final class BlockingStructuredPartialTurnSession: AgentTurnStreaming, @unchecked Sendable {
-    let events: AsyncThrowingStream<AgentBackendEvent, Error>
+private final class BlockingStructuredPartialTurnSession {
+    let stream: AgentTurnStream
 
     init(threadID: String, gate: PartialEmissionGate) {
         let turn = AgentTurn(id: UUID().uuidString, threadID: threadID)
         let payload: JSONValue = .object(["reply": .string("Your order is already in transit."), "priority": .string("high")])
 
-        events = AsyncThrowingStream { continuation in
+        let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
             Task {
                 continuation.yield(.turnStarted(turn))
                 continuation.yield(.assistantMessageDelta(threadID: threadID, turnID: turn.id, delta: "Echo: Draft a shipping reply."))
@@ -319,7 +319,6 @@ private final class BlockingStructuredPartialTurnSession: AgentTurnStreaming, @u
                 continuation.finish()
             }
         }
+        stream = AgentTurnStream(events: events)
     }
-
-    func submitToolResult(_: ToolResultEnvelope, for _: String) async throws {}
 }

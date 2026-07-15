@@ -11,6 +11,31 @@ public enum AgentRuntimeObservation: Sendable {
     case threadDeleted(threadID: String)
 }
 
+public struct AgentRuntimeObservationPublisher<Output: Sendable>: Sendable {
+    private let makePublisher: @Sendable () -> AnyPublisher<Output, Never>
+
+    init(makePublisher: @escaping @Sendable () -> AnyPublisher<Output, Never>) {
+        self.makePublisher = makePublisher
+    }
+
+    public func eraseToAnyPublisher() -> AnyPublisher<Output, Never> {
+        makePublisher()
+    }
+
+    public func sink(receiveValue: @escaping (Output) -> Void) -> AnyCancellable {
+        makePublisher().sink(receiveValue: receiveValue)
+    }
+
+    public func receive<S: Scheduler>(
+        on scheduler: S,
+        options: S.SchedulerOptions? = nil
+    ) -> AnyPublisher<Output, Never> {
+        makePublisher().receive(on: scheduler, options: options).eraseToAnyPublisher()
+    }
+}
+
+// Combine subjects are reference types without Sendable conformance; access to
+// subject registries is lock-protected and publishing is the class's purpose.
 public final class AgentRuntimeObservationCenter: @unchecked Sendable {
     private let lock = NSLock()
     private let subject = PassthroughSubject<AgentRuntimeObservation, Never>()
@@ -160,27 +185,45 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
 }
 
 extension AgentRuntime {
-    public nonisolated func observeThreads() -> AnyPublisher<[AgentThread], Never> {
-        observationCenter.threadListPublisher
+    public func observeThreads() -> AgentRuntimeObservationPublisher<[AgentThread]> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.threadListPublisher
+        }
     }
 
-    public nonisolated func observeThread(id threadID: String) -> AnyPublisher<AgentThread?, Never> {
-        observationCenter.threadPublisher(for: threadID)
+    public func observeThread(id threadID: String) -> AgentRuntimeObservationPublisher<AgentThread?> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.threadPublisher(for: threadID)
+        }
     }
 
-    public nonisolated func observeMessages(in threadID: String) -> AnyPublisher<[AgentMessage], Never> {
-        observationCenter.messagePublisher(for: threadID)
+    public func observeMessages(in threadID: String) -> AgentRuntimeObservationPublisher<[AgentMessage]> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.messagePublisher(for: threadID)
+        }
     }
 
-    public nonisolated func observeThreadSummary(id threadID: String) -> AnyPublisher<AgentThreadSummary?, Never> {
-        observationCenter.threadSummaryPublisher(for: threadID)
+    public func observeThreadSummary(id threadID: String) -> AgentRuntimeObservationPublisher<AgentThreadSummary?> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.threadSummaryPublisher(for: threadID)
+        }
     }
 
-    public nonisolated func observeThreadContextState(id threadID: String) -> AnyPublisher<AgentThreadContextState?, Never> {
-        observationCenter.threadContextStatePublisher(for: threadID)
+    public func observeThreadContextState(id threadID: String) -> AgentRuntimeObservationPublisher<AgentThreadContextState?> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.threadContextStatePublisher(for: threadID)
+        }
     }
 
-    public nonisolated func observeThreadContextUsage(id threadID: String) -> AnyPublisher<AgentThreadContextUsage?, Never> {
-        observationCenter.threadContextUsagePublisher(for: threadID)
+    public func observeThreadContextUsage(id threadID: String) -> AgentRuntimeObservationPublisher<AgentThreadContextUsage?> {
+        let observationCenter = observationCenter
+        return AgentRuntimeObservationPublisher {
+            observationCenter.threadContextUsagePublisher(for: threadID)
+        }
     }
 }

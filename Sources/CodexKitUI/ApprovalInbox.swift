@@ -4,7 +4,7 @@ import Observation
 
 @MainActor
 @Observable
-public final class ApprovalInbox: ApprovalPresenting, @unchecked Sendable {
+public final class ApprovalInbox: ApprovalPresenting {
     public private(set) var currentRequest: ApprovalRequest?
 
     private var continuation: CheckedContinuation<ApprovalDecision, Error>?

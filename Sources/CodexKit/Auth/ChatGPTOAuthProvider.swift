@@ -83,7 +83,7 @@ public protocol ChatGPTWebAuthenticationProviding: Sendable {
     ) async throws -> URL
 }
 
-public final class ChatGPTOAuthProvider: ChatGPTAuthProviding, @unchecked Sendable {
+public final class ChatGPTOAuthProvider: Sendable {
     private let configuration: ChatGPTOAuthConfiguration
     private let urlSession: URLSession
     private let webAuthenticationProvider: any ChatGPTWebAuthenticationProviding

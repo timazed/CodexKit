@@ -2,7 +2,7 @@ import CodexKit
 import Foundation
 import XCTest
 
-final class TestURLProtocol: URLProtocol, @unchecked Sendable {
+final class TestURLProtocol: URLProtocol {
     struct StubResponse {
         let statusCode: Int
         let headers: [String: String]
@@ -28,18 +28,25 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 
-    private actor StubStore {
+    private final class StubStore: @unchecked Sendable {
+        private let lock = NSLock()
         private var queuedResponses: [StubResponse] = []
 
         func enqueue(_ response: StubResponse) {
+            lock.lock()
+            defer { lock.unlock() }
             queuedResponses.append(response)
         }
 
         func reset() {
+            lock.lock()
+            defer { lock.unlock() }
             queuedResponses.removeAll()
         }
 
         func dequeue() throws -> StubResponse {
+            lock.lock()
+            defer { lock.unlock() }
             guard !queuedResponses.isEmpty else {
                 throw AgentRuntimeError(
                     code: "missing_test_stub",
@@ -53,11 +60,11 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
     private static let store = StubStore()
 
     static func enqueue(_ response: StubResponse) async {
-        await store.enqueue(response)
+        store.enqueue(response)
     }
 
     static func reset() async {
-        await store.reset()
+        store.reset()
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -69,32 +76,30 @@ final class TestURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
-        Task {
-            do {
-                let stub = try await Self.store.dequeue()
-                try stub.inspect(request)
+        do {
+            let stub = try Self.store.dequeue()
+            try stub.inspect(request)
 
-                if let error = stub.error {
-                    client?.urlProtocol(self, didFailWithError: error)
-                    return
-                }
-
-                let response = HTTPURLResponse(
-                    url: request.url ?? URL(string: "https://example.com")!,
-                    statusCode: stub.statusCode,
-                    httpVersion: nil,
-                    headerFields: stub.headers
-                )!
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: stub.body)
-                if let completionError = stub.completionError {
-                    client?.urlProtocol(self, didFailWithError: completionError)
-                    return
-                }
-                client?.urlProtocolDidFinishLoading(self)
-            } catch {
+            if let error = stub.error {
                 client?.urlProtocol(self, didFailWithError: error)
+                return
             }
+
+            let response = HTTPURLResponse(
+                url: request.url ?? URL(string: "https://example.com")!,
+                statusCode: stub.statusCode,
+                httpVersion: nil,
+                headerFields: stub.headers
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: stub.body)
+            if let completionError = stub.completionError {
+                client?.urlProtocol(self, didFailWithError: completionError)
+                return
+            }
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
         }
     }
 

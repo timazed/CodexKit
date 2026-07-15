@@ -1,7 +1,7 @@
 import Foundation
 
 extension AgentRuntime {
-    func threadContextUsage(for threadID: String) -> AgentThreadContextUsage? {
+    func threadContextUsage(for threadID: String) async -> AgentThreadContextUsage? {
         guard state.threads.contains(where: { $0.id == threadID }) else {
             return nil
         }
@@ -13,8 +13,8 @@ extension AgentRuntime {
             threadID: threadID,
             visibleEstimatedTokenCount: approximateTokenCount(for: visibleMessages),
             effectiveEstimatedTokenCount: approximateTokenCount(for: effectiveMessages),
-            modelContextWindowTokenCount: modelContextWindowTokenCount(),
-            usableContextWindowTokenCount: usableContextWindowTokenCount()
+            modelContextWindowTokenCount: await modelContextWindowTokenCount(),
+            usableContextWindowTokenCount: await usableContextWindowTokenCount()
         )
     }
 
@@ -31,11 +31,11 @@ extension AgentRuntime {
         )
     }
 
-    private func modelContextWindowTokenCount() -> Int? {
-        (backend as? any AgentBackendContextWindowProviding)?.modelContextWindowTokenCount
+    private func modelContextWindowTokenCount() async -> Int? {
+        await (backend as? any AgentBackendContextWindowProviding)?.modelContextWindowTokenCount
     }
 
-    private func usableContextWindowTokenCount() -> Int? {
-        (backend as? any AgentBackendContextWindowProviding)?.usableContextWindowTokenCount
+    private func usableContextWindowTokenCount() async -> Int? {
+        await (backend as? any AgentBackendContextWindowProviding)?.usableContextWindowTokenCount
     }
 }

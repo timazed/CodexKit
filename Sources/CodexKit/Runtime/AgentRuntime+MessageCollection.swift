@@ -42,7 +42,7 @@ extension AgentRuntime {
     }
 
     func collectFinalAssistantMessage(
-        from turnStream: any AgentTurnStreaming
+        from turnStream: AgentTurnStream
     ) async throws -> AgentMessage {
         var latestAssistantMessage: AgentMessage?
 

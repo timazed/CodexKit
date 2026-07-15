@@ -64,12 +64,3 @@ public struct ChatGPTSession: Codable, Hashable, Sendable {
 public enum ChatGPTAuthRefreshReason: Sendable {
     case unauthorized
 }
-
-public protocol ChatGPTAuthProviding: Sendable {
-    func signInInteractively() async throws -> ChatGPTSession
-    func refresh(
-        session: ChatGPTSession,
-        reason: ChatGPTAuthRefreshReason
-    ) async throws -> ChatGPTSession
-    func signOut(session: ChatGPTSession?) async
-}

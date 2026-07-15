@@ -79,7 +79,7 @@ enum AgentDemoRuntimeFactory {
     ) -> AgentRuntime {
         let diagnostics = DemoDiagnostics()
         let sdkLogging = diagnostics.sdkLoggingConfiguration()
-        let authProvider: any ChatGPTAuthProviding
+        let authProvider: ChatGPTAuthProvider
 
         switch authenticationMethod {
         case .deviceCode:

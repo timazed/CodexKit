@@ -108,7 +108,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Input")
         let reply = try await runtime.send(
@@ -159,7 +159,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Ephemeral")
         _ = try await runtime.send(Request(text: "Remember this normal turn."), in: thread.id)
@@ -196,7 +196,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "No Duplicate Current Message")
         _ = try await runtime.send(Request(text: "First turn."), in: thread.id)
@@ -221,7 +221,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Ephemeral Structured")
         let reply = try await runtime.send(
@@ -267,7 +267,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Structured Input Only")
         let reply = try await runtime.send(
@@ -343,7 +343,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Options")
         _ = try await runtime.send(
@@ -390,7 +390,7 @@ extension AgentRuntimeTests {
     func testImageOnlyMessageIsAcceptedAndPersisted() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Images")
         let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
@@ -404,7 +404,7 @@ extension AgentRuntimeTests {
     func testAssistantImagesAreCommittedToThreadHistory() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: ImageReplyAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Assistant Images")
         let reply = try await runtime.send(Request(text: "show me an image"), in: thread.id)
@@ -418,7 +418,7 @@ extension AgentRuntimeTests {
     func testRuntimeStreamsToolApprovalAndCompletion() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), tools: [.init(definition: ToolDefinition(name: "demo_lookup_profile", description: "Lookup profile", inputSchema: .object([:]), approvalPolicy: .requiresApproval), executor: AnyToolExecutor { invocation, _ in .success(invocation: invocation, text: "demo-result") })]))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread()
         let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id)
@@ -444,7 +444,7 @@ extension AgentRuntimeTests {
     func testStructuredStreamWorksAlongsideToolCalls() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), tools: [.init(definition: ToolDefinition(name: "demo_lookup_profile", description: "Lookup profile", inputSchema: .object([:]), approvalPolicy: .requiresApproval), executor: AnyToolExecutor { invocation, _ in .success(invocation: invocation, text: "demo-result") })]))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread()
         let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id, response: ShippingReplyDraft.self)
@@ -466,41 +466,43 @@ extension AgentRuntimeTests {
         XCTAssertTrue(sawCommitted)
     }
 
-    func testSendMessageRetriesUnauthorizedByRefreshingSession() async throws {
-        let authProvider = RotatingDemoAuthProvider()
-        let backend = UnauthorizedThenSuccessBackend()
-        let runtime = try AgentRuntime(configuration: .init(authProvider: authProvider, secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
+    func testSendMessageRecoversUnauthorizedFromStoredSession() async throws {
+        let secureStore = KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString)
+        let backend = UnauthorizedThenSuccessBackend(
+            secureStore: secureStore,
+            replacementSession: demoSession(accessToken: "demo-access-token-refreshed-1")
+        )
+        let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: secureStore, backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession(accessToken: "demo-access-token-initial"))
 
         let thread = try await runtime.createThread(title: "Recovered Thread")
         _ = try await runtime.send(Request(text: "Hello after refresh"), in: thread.id)
 
-        let refreshCount = await authProvider.refreshCount()
         let attemptedTokens = await backend.attemptedAccessTokens()
         let assistantCount = await runtime.messages(for: thread.id)
             .filter { $0.role == .assistant }
             .count
 
-        XCTAssertEqual(refreshCount, 1)
         XCTAssertEqual(attemptedTokens.count, 2)
         XCTAssertEqual(attemptedTokens[0], "demo-access-token-initial")
         XCTAssertEqual(attemptedTokens[1], "demo-access-token-refreshed-1")
         XCTAssertEqual(assistantCount, 1)
     }
 
-    func testCreateThreadRetriesUnauthorizedByRefreshingSession() async throws {
-        let authProvider = RotatingDemoAuthProvider()
-        let backend = UnauthorizedOnCreateThenSuccessBackend()
-        let runtime = try AgentRuntime(configuration: .init(authProvider: authProvider, secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
+    func testCreateThreadRecoversUnauthorizedFromStoredSession() async throws {
+        let secureStore = KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString)
+        let backend = UnauthorizedOnCreateThenSuccessBackend(
+            secureStore: secureStore,
+            replacementSession: demoSession(accessToken: "demo-access-token-refreshed-1")
+        )
+        let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: secureStore, backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession(accessToken: "demo-access-token-initial"))
 
         let thread = try await runtime.createThread(title: "Recovered Thread")
-        let refreshCountBeforeAssertions = await authProvider.refreshCount()
         XCTAssertEqual(thread.title, "Recovered Thread")
         let attemptedTokens = await backend.attemptedAccessTokens()
-        XCTAssertEqual(refreshCountBeforeAssertions, 1)
         XCTAssertEqual(attemptedTokens.count, 2)
         XCTAssertEqual(attemptedTokens[0], "demo-access-token-initial")
         XCTAssertEqual(attemptedTokens[1], "demo-access-token-refreshed-1")
@@ -509,7 +511,7 @@ extension AgentRuntimeTests {
     func testConfigurationRegistersInitialTools() async throws {
         let runtime = try AgentRuntime(configuration: .init(authProvider: DemoChatGPTAuthProvider(), secureStore: KeychainSessionSecureStore(service: "CodexKitTests.ChatGPTSession", account: UUID().uuidString), backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), tools: [.init(definition: ToolDefinition(name: "demo_lookup_profile", description: "Lookup profile", inputSchema: .object([:]), approvalPolicy: .requiresApproval), executor: AnyToolExecutor { invocation, _ in .success(invocation: invocation, text: "demo-result") })]))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread()
         let stream = try await runtime.stream(Request(text: "please use the tool"), in: thread.id)
@@ -535,7 +537,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Immediate Stream")
         let streamTask = Task {
@@ -585,14 +587,14 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Observed Send")
         let observedUserMessage = expectation(description: "Observed the local user message")
         observedUserMessage.assertForOverFulfill = false
         var cancellables = Set<AnyCancellable>()
 
-        runtime.observations
+        await runtime.observations
             .sink { observation in
                 guard case let .messagesChanged(threadID, messages) = observation,
                       threadID == thread.id,
@@ -630,7 +632,7 @@ extension AgentRuntimeTests {
             stateStore: InMemoryRuntimeStateStore()
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Observe Messages")
         let observedInitialState = expectation(description: "Observed the initial empty message state")
@@ -639,7 +641,7 @@ extension AgentRuntimeTests {
         var snapshots: [[String]] = []
         var cancellables = Set<AnyCancellable>()
 
-        let publisher = runtime.observeMessages(in: thread.id)
+        let publisher = await runtime.observeMessages(in: thread.id)
         publisher
             .sink { messages in
                 snapshots.append(messages.map(\.text))
@@ -683,7 +685,7 @@ extension AgentRuntimeTests {
             )
         )
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Observe Context")
         let longMessages = [
@@ -701,7 +703,7 @@ extension AgentRuntimeTests {
         var contexts: [AgentThreadContextState?] = []
         var cancellables = Set<AnyCancellable>()
 
-        let publisher = runtime.observeThreadContextState(id: thread.id)
+        let publisher = await runtime.observeThreadContextState(id: thread.id)
         publisher
             .sink { state in
                 contexts.append(state)
@@ -739,7 +741,7 @@ extension AgentRuntimeTests {
             )
         )
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Observe Usage")
         let longMessages = [
@@ -757,7 +759,7 @@ extension AgentRuntimeTests {
         var usages: [AgentThreadContextUsage?] = []
         var cancellables = Set<AnyCancellable>()
 
-        runtime.observeThreadContextUsage(id: thread.id)
+        await runtime.observeThreadContextUsage(id: thread.id)
             .sink { usage in
                 usages.append(usage)
                 if let usage,
@@ -789,7 +791,7 @@ extension AgentRuntimeTests {
             stateStore: stateStore
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Original Title")
         let observedInitialThread = expectation(description: "Observed the initial thread")
@@ -798,7 +800,7 @@ extension AgentRuntimeTests {
         var observedTitles: [String?] = []
         var cancellables = Set<AnyCancellable>()
 
-        runtime.observeThread(id: thread.id)
+        await runtime.observeThread(id: thread.id)
             .sink { observedThread in
                 observedTitles.append(observedThread?.title)
                 if observedThread?.title == "Original Title" {

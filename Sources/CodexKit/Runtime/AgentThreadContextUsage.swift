@@ -39,6 +39,6 @@ public extension AgentThreadContextUsage {
 }
 
 public protocol AgentBackendContextWindowProviding: Sendable {
-    var modelContextWindowTokenCount: Int? { get }
-    var usableContextWindowTokenCount: Int? { get }
+    var modelContextWindowTokenCount: Int? { get async }
+    var usableContextWindowTokenCount: Int? { get async }
 }

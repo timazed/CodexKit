@@ -40,7 +40,11 @@ extension AgentRuntime {
         if let title {
             thread.title = title
         }
-        thread.configuration = configuration ?? thread.configuration ?? backend.defaultThreadConfiguration
+        if let configuration {
+            thread.configuration = configuration
+        } else if thread.configuration == nil {
+            thread.configuration = await backend.defaultThreadConfiguration
+        }
         thread.personaStack = resolvedPersonaStack
         thread.skillIDs = skillIDs
         thread.memoryContext = memoryContext
@@ -77,7 +81,7 @@ extension AgentRuntime {
         }
         var thread = resume.result
         if thread.configuration == nil {
-            thread.configuration = backend.defaultThreadConfiguration
+            thread.configuration = await backend.defaultThreadConfiguration
         }
         try await upsertThread(thread, persist: false)
         appendHistoryItem(
@@ -166,7 +170,12 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        let existing = thread.configuration ?? backend.defaultThreadConfiguration
+        let existing: AgentThreadConfiguration?
+        if let configuration = thread.configuration {
+            existing = configuration
+        } else {
+            existing = await backend.defaultThreadConfiguration
+        }
         guard existing != nil || model != nil || reasoningEffort != nil else {
             throw AgentRuntimeError(
                 code: "thread_configuration_unavailable",

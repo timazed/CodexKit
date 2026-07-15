@@ -39,7 +39,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Memory",
@@ -98,7 +98,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Scoped Memory",
@@ -154,7 +154,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Auto Memory",
@@ -225,7 +225,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Auto Policy",
@@ -293,7 +293,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Graceful",
@@ -342,7 +342,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Observed",
@@ -384,7 +384,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Thread Memory Writer",
@@ -476,7 +476,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Memory Context",

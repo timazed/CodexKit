@@ -212,6 +212,7 @@ extension AgentDemoViewModel {
             memoryPreviewResult = nil
             activeThreadID = nil
             healthCoachThreadID = nil
+            activeThreadObservationBindingTask?.cancel()
             activeThreadObservationCancellables.removeAll()
             resetObservedThreadState()
             healthCoachFeedback = "Set a step goal, then start moving."
@@ -275,6 +276,7 @@ extension AgentDemoViewModel {
         isRunningSkillPolicyProbe = false
         skillPolicyProbeResult = nil
         activeThreadID = nil
+        activeThreadObservationBindingTask?.cancel()
         activeThreadObservationCancellables.removeAll()
         resetObservedThreadState()
     }

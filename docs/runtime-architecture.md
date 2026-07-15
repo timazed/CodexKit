@@ -103,14 +103,15 @@ public enum AgentEvent
 ### Host extension points
 
 ```swift
-public protocol ChatGPTAuthProviding
-public protocol SessionSecureStoring
 public protocol AgentBackend
-public protocol AgentTurnStreaming
 public protocol ApprovalPresenting
 public protocol RuntimeStateStoring
 public protocol ToolExecuting
 ```
+
+Authentication and session persistence intentionally use the concrete
+`ChatGPTAuthProvider` and `KeychainSessionSecureStore` types. Custom backends
+return the sendable `AgentTurnStream` value from `beginTurn(...)`.
 
 ### Runtime and transport types
 
@@ -118,6 +119,8 @@ public protocol ToolExecuting
 public actor AgentRuntime
 public struct AgentRuntime.Configuration
 public struct AgentRuntime.ToolRegistration
+public struct AgentTurnStream
+public struct AgentRuntimeObservationPublisher
 public actor ChatGPTSessionManager
 public actor CodexResponsesBackend
 public struct CodexResponsesBackendConfiguration

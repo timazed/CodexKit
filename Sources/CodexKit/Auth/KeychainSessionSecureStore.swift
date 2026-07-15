@@ -1,11 +1,9 @@
 import Foundation
 import Security
 
-public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked Sendable {
+public final class KeychainSessionSecureStore: Sendable {
     private let service: String
     private let account: String
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
     public init(
         service: String = "CodexKit.ChatGPTSession",
@@ -31,7 +29,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
                     message: "Keychain returned an unexpected session payload."
                 )
             }
-            return try decoder.decode(ChatGPTSession.self, from: data)
+            return try JSONDecoder().decode(ChatGPTSession.self, from: data)
         case errSecItemNotFound:
             return nil
         default:
@@ -43,7 +41,7 @@ public final class KeychainSessionSecureStore: SessionSecureStoring, @unchecked 
     }
 
     public func saveSession(_ session: ChatGPTSession) throws {
-        let data = try encoder.encode(session)
+        let data = try JSONEncoder().encode(session)
         var attributes = baseQuery()
         attributes[kSecValueData as String] = data
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly

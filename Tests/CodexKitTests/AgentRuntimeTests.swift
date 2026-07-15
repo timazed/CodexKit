@@ -80,7 +80,7 @@ final class AgentRuntimeTests: XCTestCase {
             stateStore: stateStore
         ))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(
             title: "Configurable",
@@ -126,46 +126,19 @@ final class AgentRuntimeTests: XCTestCase {
 
 // MARK: - Backend/Test Doubles
 
-actor RotatingDemoAuthProvider: ChatGPTAuthProviding {
-    private var refreshInvocationCount = 0
-
-    func signInInteractively() async throws -> ChatGPTSession {
-        ChatGPTSession(
-            accessToken: "demo-access-token-initial",
-            refreshToken: "demo-refresh-token",
-            account: ChatGPTAccount(
-                id: "demo-account",
-                email: "demo@example.com",
-                plan: .plus
-            ),
-            acquiredAt: Date(),
-            expiresAt: Date().addingTimeInterval(3600),
-            isExternallyManaged: true
-        )
-    }
-
-    func refresh(
-        session: ChatGPTSession,
-        reason _: ChatGPTAuthRefreshReason
-    ) async throws -> ChatGPTSession {
-        refreshInvocationCount += 1
-        var refreshed = session
-        refreshed.accessToken = "demo-access-token-refreshed-\(refreshInvocationCount)"
-        refreshed.acquiredAt = Date()
-        refreshed.expiresAt = Date().addingTimeInterval(3600)
-        return refreshed
-    }
-
-    func signOut(session _: ChatGPTSession?) async {}
-
-    func refreshCount() -> Int {
-        refreshInvocationCount
-    }
-}
-
 actor UnauthorizedThenSuccessBackend: AgentBackend {
     private var didThrowUnauthorized = false
     private var accessTokensByAttempt: [String] = []
+    private let secureStore: KeychainSessionSecureStore?
+    private let replacementSession: ChatGPTSession?
+
+    init(
+        secureStore: KeychainSessionSecureStore? = nil,
+        replacementSession: ChatGPTSession? = nil
+    ) {
+        self.secureStore = secureStore
+        self.replacementSession = replacementSession
+    }
 
     func createThread(session _: ChatGPTSession) async throws -> AgentThread {
         AgentThread(id: UUID().uuidString)
@@ -184,10 +157,13 @@ actor UnauthorizedThenSuccessBackend: AgentBackend {
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         accessTokensByAttempt.append(session.accessToken)
         if !didThrowUnauthorized {
             didThrowUnauthorized = true
+            if let secureStore, let replacementSession {
+                try secureStore.saveSession(replacementSession)
+            }
             throw AgentRuntimeError.unauthorized("Simulated unauthorized")
         }
 
@@ -197,7 +173,7 @@ actor UnauthorizedThenSuccessBackend: AgentBackend {
             selectedTool: nil,
             structuredResponseText: nil,
             streamedStructuredOutput: nil
-        )
+        ).stream
     }
 
     func attemptedAccessTokens() -> [String] {
@@ -208,11 +184,24 @@ actor UnauthorizedThenSuccessBackend: AgentBackend {
 actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
     private var didThrowUnauthorized = false
     private var accessTokensByAttempt: [String] = []
+    private let secureStore: KeychainSessionSecureStore?
+    private let replacementSession: ChatGPTSession?
+
+    init(
+        secureStore: KeychainSessionSecureStore? = nil,
+        replacementSession: ChatGPTSession? = nil
+    ) {
+        self.secureStore = secureStore
+        self.replacementSession = replacementSession
+    }
 
     func createThread(session: ChatGPTSession) async throws -> AgentThread {
         accessTokensByAttempt.append(session.accessToken)
         if !didThrowUnauthorized {
             didThrowUnauthorized = true
+            if let secureStore, let replacementSession {
+                try secureStore.saveSession(replacementSession)
+            }
             throw AgentRuntimeError.unauthorized("Simulated unauthorized during createThread")
         }
 
@@ -232,14 +221,14 @@ actor UnauthorizedOnCreateThenSuccessBackend: AgentBackend {
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         MockAgentTurnSession(
             thread: thread,
             message: .init(text: ""),
             selectedTool: nil,
             structuredResponseText: nil,
             streamedStructuredOutput: nil
-        )
+        ).stream
     }
 
     func attemptedAccessTokens() -> [String] {
@@ -265,8 +254,8 @@ actor ImageReplyAgentBackend: AgentBackend {
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
-        ImageReplyTurn(threadID: thread.id)
+    ) async throws -> AgentTurnStream {
+        ImageReplyTurn(threadID: thread.id).stream
     }
 }
 
@@ -288,25 +277,25 @@ actor OptionalStructuredMissingBackend: AgentBackend {
         streamedStructuredOutput _: AgentStreamedStructuredOutputRequest?,
         tools _: [ToolDefinition],
         session _: ChatGPTSession
-    ) async throws -> any AgentTurnStreaming {
+    ) async throws -> AgentTurnStream {
         MockAgentTurnSession(
             thread: thread,
             message: message,
             selectedTool: nil,
             structuredResponseText: nil,
             streamedStructuredOutput: nil
-        )
+        ).stream
     }
 }
 
-final class ImageReplyTurn: AgentTurnStreaming, @unchecked Sendable {
-    let events: AsyncThrowingStream<AgentBackendEvent, Error>
+final class ImageReplyTurn {
+    let stream: AgentTurnStream
 
     init(threadID: String) {
         let image = AgentImageAttachment.png(Data([0x89, 0x50, 0x4E, 0x47]))
         let turn = AgentTurn(id: UUID().uuidString, threadID: threadID)
 
-        events = AsyncThrowingStream { continuation in
+        let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
             continuation.yield(.turnStarted(turn))
             continuation.yield(
                 .assistantMessageCompleted(
@@ -329,12 +318,8 @@ final class ImageReplyTurn: AgentTurnStreaming, @unchecked Sendable {
             )
             continuation.finish()
         }
+        stream = AgentTurnStream(events: events)
     }
-
-    func submitToolResult(
-        _: ToolResultEnvelope,
-        for _: String
-    ) async throws {}
 }
 
 actor ThrowingMemoryStore: MemoryStoring {

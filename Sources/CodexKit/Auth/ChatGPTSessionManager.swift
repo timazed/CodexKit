@@ -1,14 +1,14 @@
 import Foundation
 
 public actor ChatGPTSessionManager {
-    private let authProvider: any ChatGPTAuthProviding
-    private let secureStore: any SessionSecureStoring
+    private let authProvider: ChatGPTAuthProvider
+    private let secureStore: KeychainSessionSecureStore
     private let logger: AgentLogger
     private var session: ChatGPTSession?
 
     public init(
-        authProvider: any ChatGPTAuthProviding,
-        secureStore: any SessionSecureStoring,
+        authProvider: ChatGPTAuthProvider,
+        secureStore: KeychainSessionSecureStore,
         logging: AgentLoggingConfiguration = .disabled
     ) {
         self.authProvider = authProvider
@@ -33,6 +33,22 @@ public actor ChatGPTSessionManager {
 
     public func currentSession() -> ChatGPTSession? {
         session
+    }
+
+    @discardableResult
+    public func useSession(_ session: ChatGPTSession) throws -> ChatGPTSession {
+        try secureStore.saveSession(session)
+        self.session = session
+        logger.info(
+            .auth,
+            "Session loaded and persisted.",
+            metadata: [
+                "account_id": session.account.id,
+                "plan": session.account.plan.rawValue,
+                "externally_managed": "\(session.isExternallyManaged)"
+            ]
+        )
+        return session
     }
 
     @discardableResult

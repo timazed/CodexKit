@@ -12,7 +12,7 @@ extension AgentRuntimeTests {
         let runtime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: store)
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "GRDB Thread")
         _ = try await runtime.send(Request(text: "Draft the shipping update."), in: thread.id, response: ShippingReplyDraft.self)
@@ -45,7 +45,7 @@ extension AgentRuntimeTests {
 
         let runtime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "GRDB Mutations")
         _ = try await runtime.send(Request(text: "please redact me"), in: thread.id)
@@ -80,7 +80,7 @@ extension AgentRuntimeTests {
         let backend = InMemoryAgentBackend(structuredResponseText: #"{"reply":"Legacy import payload.","priority":"normal"}"#)
         let legacyRuntime = try makeHistoryRuntime(backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: FileRuntimeStateStore(url: legacyURL))
         _ = try await legacyRuntime.restore()
-        _ = try await legacyRuntime.signIn()
+        _ = try await legacyRuntime.useSession(demoSession())
 
         let thread = try await legacyRuntime.createThread(title: "Legacy File Thread")
         _ = try await legacyRuntime.send(Request(text: "Create a legacy payload."), in: thread.id, response: ShippingReplyDraft.self)
@@ -110,7 +110,7 @@ extension AgentRuntimeTests {
         let imageData = Data([0x89, 0x50, 0x4E, 0x47, 0xDE, 0xAD, 0xBE, 0xEF])
         let runtime = try makeHistoryRuntime(backend: InMemoryAgentBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: try SQLiteRuntimeStateStore(url: url))
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Attachment Thread")
         _ = try await runtime.send(Request(text: "here is an image", images: [.png(imageData)]), in: thread.id)
@@ -146,7 +146,7 @@ extension AgentRuntimeTests {
         )
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
 
         let thread = try await runtime.createThread(title: "Explicit Empty Filters")
         _ = try await runtime.send(

@@ -21,7 +21,7 @@ extension AgentRuntimeTests {
         ))
 
         _ = try await runtime.restore()
-        _ = try await runtime.signIn()
+        _ = try await runtime.useSession(demoSession())
         let thread = try await runtime.createThread(title: "Logging")
         _ = try await runtime.send(
             Request(text: "Log this turn"),
@@ -29,7 +29,7 @@ extension AgentRuntimeTests {
         )
 
         let entries = buffer.entries
-        XCTAssertTrue(entries.contains { $0.category == .auth && $0.message.contains("sign-in completed") })
+        XCTAssertTrue(entries.contains { $0.category == .auth && $0.message.contains("Session loaded") })
         XCTAssertTrue(entries.contains { $0.category == .runtime && $0.message.contains("Thread created") })
         XCTAssertTrue(entries.contains { $0.category == .runtime && $0.message.contains("Starting streamed message") })
         XCTAssertTrue(entries.contains { $0.category == .persistence })

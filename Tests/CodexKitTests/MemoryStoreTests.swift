@@ -201,11 +201,12 @@ final class MemoryStoreTests: XCTestCase {
     func testMemoryWriterThrowsWhenRequiredDefaultsAreMissing() async throws {
         let writer = MemoryWriter(store: InMemoryMemoryStore())
 
-        XCTAssertThrowsError(
-            try writer.resolve(
+        do {
+            _ = try await writer.resolve(
                 MemoryDraft(summary: "Missing namespace and scope.")
             )
-        ) { error in
+            XCTFail("Expected missing namespace error.")
+        } catch {
             XCTAssertEqual(error as? MemoryAuthoringError, .missingNamespace)
         }
 
@@ -214,11 +215,12 @@ final class MemoryStoreTests: XCTestCase {
             defaults: MemoryWriterDefaults(namespace: "demo-assistant")
         )
 
-        XCTAssertThrowsError(
-            try namespaceOnlyWriter.resolve(
+        do {
+            _ = try await namespaceOnlyWriter.resolve(
                 MemoryDraft(summary: "Still missing scope.")
             )
-        ) { error in
+            XCTFail("Expected missing scope error.")
+        } catch {
             XCTAssertEqual(error as? MemoryAuthoringError, .missingScope)
         }
     }

@@ -5,7 +5,12 @@ public enum ChatGPTAuthenticationMethod: Sendable {
     case oauth
 }
 
-public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendable {
+public final class ChatGPTAuthProvider: Sendable {
+    private enum Implementation: Sendable {
+        case deviceCode(ChatGPTDeviceCodeAuthProvider)
+        case oauth(ChatGPTOAuthProvider)
+    }
+
     public struct Configuration: Sendable {
         public let issuerURL: URL
         public let clientID: String
@@ -58,7 +63,7 @@ public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendabl
         }
     }
 
-    private let implementation: any ChatGPTAuthProviding
+    private let implementation: Implementation
 
     public init(
         method: ChatGPTAuthenticationMethod,
@@ -74,32 +79,51 @@ public final class ChatGPTAuthProvider: ChatGPTAuthProviding, @unchecked Sendabl
                     message: "ChatGPT device-code auth requires a presenter."
                 )
             }
-            implementation = ChatGPTDeviceCodeAuthProvider(
-                configuration: configuration.deviceCodeConfiguration,
-                urlSession: urlSession,
-                presenter: deviceCodePresenter
+            implementation = .deviceCode(
+                ChatGPTDeviceCodeAuthProvider(
+                    configuration: configuration.deviceCodeConfiguration,
+                    urlSession: urlSession,
+                    presenter: deviceCodePresenter
+                )
             )
 
         case .oauth:
-            implementation = ChatGPTOAuthProvider(
-                configuration: configuration.oauthConfiguration,
-                urlSession: urlSession
+            implementation = .oauth(
+                ChatGPTOAuthProvider(
+                    configuration: configuration.oauthConfiguration,
+                    urlSession: urlSession
+                )
             )
         }
     }
 
     public func signInInteractively() async throws -> ChatGPTSession {
-        try await implementation.signInInteractively()
+        switch implementation {
+        case let .deviceCode(provider):
+            try await provider.signInInteractively()
+        case let .oauth(provider):
+            try await provider.signInInteractively()
+        }
     }
 
     public func refresh(
         session: ChatGPTSession,
         reason: ChatGPTAuthRefreshReason
     ) async throws -> ChatGPTSession {
-        try await implementation.refresh(session: session, reason: reason)
+        switch implementation {
+        case let .deviceCode(provider):
+            try await provider.refresh(session: session, reason: reason)
+        case let .oauth(provider):
+            try await provider.refresh(session: session, reason: reason)
+        }
     }
 
     public func signOut(session: ChatGPTSession?) async {
-        await implementation.signOut(session: session)
+        switch implementation {
+        case let .deviceCode(provider):
+            await provider.signOut(session: session)
+        case let .oauth(provider):
+            await provider.signOut(session: session)
+        }
     }
 }

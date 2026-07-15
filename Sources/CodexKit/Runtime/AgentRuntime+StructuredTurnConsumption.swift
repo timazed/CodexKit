@@ -2,7 +2,7 @@ import Foundation
 
 extension AgentRuntime {
     func consumeStructuredTurnStream<Output: Decodable & Sendable>(
-        _ turnStream: any AgentTurnStreaming,
+        _ turnStream: AgentTurnStream,
         for threadID: String,
         userMessage: AgentMessage?,
         session: ChatGPTSession,

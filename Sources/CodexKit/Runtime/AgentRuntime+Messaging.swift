@@ -325,7 +325,7 @@ extension AgentRuntime {
         session: ChatGPTSession,
         allowsContextCompaction: Bool = true
     ) async throws -> (
-        turnStream: any AgentTurnStreaming,
+        turnStream: AgentTurnStream,
         session: ChatGPTSession
     ) {
         do {
