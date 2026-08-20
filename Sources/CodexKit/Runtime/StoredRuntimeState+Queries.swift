@@ -53,6 +53,7 @@ extension StoredRuntimeState {
                 normalizedContextState[thread.id] = AgentThreadContextState(
                     threadID: thread.id,
                     effectiveMessages: existing.effectiveMessages,
+                    providerContext: existing.providerContext,
                     generation: existing.generation,
                     lastCompactedAt: existing.lastCompactedAt,
                     lastCompactionReason: existing.lastCompactionReason,

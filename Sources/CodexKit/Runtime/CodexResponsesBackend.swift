@@ -1,5 +1,10 @@
 import Foundation
 
+public enum CodexResponsesStateManagement: String, Codable, Hashable, Sendable {
+    case clientManaged
+    case serverManaged
+}
+
 public struct CodexResponsesBackendConfiguration: Sendable {
     public let baseURL: URL
     public let model: String
@@ -11,6 +16,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let enableWebSearch: Bool
     public let enableImageGeneration: Bool
     public let imageGenerationOutputFormat: String
+    public let stateManagement: CodexResponsesStateManagement
     public let requestRetryPolicy: RequestRetryPolicy
     public let logging: AgentLoggingConfiguration
 
@@ -31,6 +37,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
+        stateManagement: CodexResponsesStateManagement = .clientManaged,
         requestRetryPolicy: RequestRetryPolicy = .default,
         logging: AgentLoggingConfiguration = .disabled
     ) {
@@ -46,6 +53,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.enableWebSearch = enableWebSearch
         self.enableImageGeneration = enableImageGeneration
         self.imageGenerationOutputFormat = imageGenerationOutputFormat
+        self.stateManagement = stateManagement
         self.requestRetryPolicy = requestRetryPolicy
         self.logging = logging
     }
@@ -63,6 +71,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
+        stateManagement: CodexResponsesStateManagement = .clientManaged,
         requestRetryPolicy: RequestRetryPolicy = .default,
         logging: AgentLoggingConfiguration = .disabled
     ) {
@@ -77,6 +86,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
             enableWebSearch: enableWebSearch,
             enableImageGeneration: enableImageGeneration,
             imageGenerationOutputFormat: imageGenerationOutputFormat,
+            stateManagement: stateManagement,
             requestRetryPolicy: requestRetryPolicy,
             logging: logging
         )
@@ -163,6 +173,30 @@ public actor CodexResponsesBackend: AgentBackend {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentTurnStream {
+        try await beginTurn(
+            thread: thread,
+            history: history,
+            providerContext: nil,
+            message: message,
+            instructions: instructions,
+            responseFormat: responseFormat,
+            streamedStructuredOutput: streamedStructuredOutput,
+            tools: tools,
+            session: session
+        )
+    }
+
+    public func beginTurn(
+        thread: AgentThread,
+        history: [AgentMessage],
+        providerContext: AgentProviderContext?,
+        message: Request,
+        instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        tools: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> AgentTurnStream {
         let responseContract: AgentResponseContract?
         if let streamedStructuredOutput {
             responseContract = AgentResponseContract(
@@ -184,12 +218,15 @@ public actor CodexResponsesBackend: AgentBackend {
             decoder: decoder,
             thread: thread,
             history: history,
+            providerContext: providerContext,
             message: message,
             tools: tools,
             session: session
         ).stream
     }
 }
+
+extension CodexResponsesBackend: AgentBackendProviderContextSupporting {}
 
 extension CodexResponsesBackend: AgentBackendContextWindowProviding {
     public var modelContextWindowTokenCount: Int? {
@@ -244,6 +281,7 @@ private struct CodexResponsesTurnSession {
         decoder: JSONDecoder,
         thread: AgentThread,
         history: [AgentMessage],
+        providerContext: AgentProviderContext?,
         message: Request,
         tools: [ToolDefinition],
         session: ChatGPTSession
@@ -273,8 +311,9 @@ private struct CodexResponsesTurnSession {
 
             Task {
                 do {
-                    let usage = try await runner.run(
+                    let result = try await runner.run(
                         history: history,
+                        providerContext: providerContext,
                         newMessage: message
                     )
 
@@ -284,8 +323,15 @@ private struct CodexResponsesTurnSession {
                         metadata: [
                             "thread_id": thread.id,
                             "turn_id": turn.id,
-                            "output_tokens": "\(usage.outputTokens)"
+                            "output_tokens": "\(result.usage.outputTokens)"
                         ]
+                    )
+
+                    continuation.yield(
+                        .providerContextUpdated(
+                            threadID: thread.id,
+                            context: result.providerContext
+                        )
                     )
 
                     continuation.yield(
@@ -293,7 +339,7 @@ private struct CodexResponsesTurnSession {
                             AgentTurnSummary(
                                 threadID: thread.id,
                                 turnID: turn.id,
-                                usage: usage
+                                usage: result.usage
                             )
                         )
                     )

@@ -8,6 +8,24 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentCompactionResult {
+        try await compactContext(
+            thread: thread,
+            effectiveHistory: effectiveHistory,
+            providerContext: nil,
+            instructions: instructions,
+            tools: tools,
+            session: session
+        )
+    }
+
+    public func compactContext(
+        thread: AgentThread,
+        effectiveHistory: [AgentMessage],
+        providerContext: AgentProviderContext?,
+        instructions: String,
+        tools: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> AgentCompactionResult {
         logger.info(
             .compaction,
             "Starting remote context compaction.",
@@ -21,19 +39,31 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             encoder: encoder
         )
         let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
+        let providerState = CodexResponsesProviderState(context: providerContext)
+        let previousResponseID = configuration.stateManagement == .serverManaged
+            ? providerState?.previousResponseID
+            : nil
+        let input: [JSONValue]? = if previousResponseID != nil {
+            nil
+        } else if let items = providerState?.items, !items.isEmpty {
+            items
+        } else {
+            effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
+        }
         let requestBody = ResponsesCompactRequestBody(
             model: threadConfiguration.model,
             reasoning: .init(effort: threadConfiguration.reasoningEffort),
             instructions: instructions,
             text: .init(format: .init(responseFormat: nil)),
-            input: effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue },
+            input: input,
             tools: requestFactory.responsesTools(
                 from: tools,
                 enableWebSearch: configuration.enableWebSearch,
                 enableImageGeneration: configuration.enableImageGeneration,
                 imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ),
-            parallelToolCalls: false
+            parallelToolCalls: false,
+            previousResponseID: previousResponseID
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses/compact"))
@@ -51,14 +81,14 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
-        if let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
+        if let bodyData = request.httpBody {
             logger.debug(
                 .network,
                 "Responses compact request payload.",
                 metadata: [
                     "thread_id": thread.id,
                     "request_id": thread.id,
-                    "payload": body
+                    "payload": sanitizedResponsesJSONString(from: bodyData)
                 ]
             )
         }
@@ -71,14 +101,14 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             )
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
+            let body = sanitizedResponsesJSONString(from: data)
             logger.error(
                 .network,
                 "Remote context compaction failed.",
                 metadata: [
                     "thread_id": thread.id,
                     "status": "\(httpResponse.statusCode)",
-                    "body_length": "\(body.count)",
+                    "body_length": "\(data.count)",
                     "body": body
                 ]
             )
@@ -88,24 +118,22 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             )
         }
 
-        if let body = String(data: data, encoding: .utf8) {
-            logger.debug(
-                .network,
-                "Responses compact response payload.",
-                metadata: [
-                    "thread_id": thread.id,
-                    "status": "\(httpResponse.statusCode)",
-                    "payload": body
-                ]
-            )
-        }
+        logger.debug(
+            .network,
+            "Responses compact response payload.",
+            metadata: [
+                "thread_id": thread.id,
+                "status": "\(httpResponse.statusCode)",
+                "payload": sanitizedResponsesJSONString(from: data)
+            ]
+        )
 
         let payload = try decoder.decode(JSONValue.self, from: data)
         let output = payload.objectValue?["output"]?.arrayValue ?? []
         let messages = output.compactMap { item in
             Self.compactedMessage(from: item, threadID: thread.id)
         }
-        guard !messages.isEmpty else {
+        guard !output.isEmpty else {
             throw AgentRuntimeError.contextCompactionUnsupported()
         }
 
@@ -121,7 +149,8 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
 
         return AgentCompactionResult(
             effectiveMessages: messages,
-            summaryPreview: messages.first?.displayText
+            providerContext: CodexResponsesProviderState(items: output).agentProviderContext,
+            summaryPreview: nil
         )
     }
 
@@ -133,15 +162,6 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
               let type = object["type"]?.stringValue
         else {
             return nil
-        }
-
-        if type == "compaction",
-           let summary = object["encrypted_content"]?.stringValue {
-            return AgentMessage(
-                threadID: threadID,
-                role: .system,
-                text: summary
-            )
         }
 
         guard type == "message",
@@ -176,3 +196,5 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         )
     }
 }
+
+extension CodexResponsesBackend: AgentBackendProviderContextCompacting {}

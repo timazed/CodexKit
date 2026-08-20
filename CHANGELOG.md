@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.22] - 2026-08-21
+
+### Added
+
+- Added explicit client-managed and server-managed Responses state modes through `CodexResponsesStateManagement`.
+- Added opaque provider context persistence so backend-specific response state survives runtime reloads and remote compaction.
+
+### Changed
+
+- Client-managed Responses turns now request, preserve, and replay encrypted reasoning items in their original output order.
+- Server-managed Responses turns now send `store: true` and chain stored responses with `previous_response_id` without replaying prior history.
+
+### Fixed
+
+- Prevented encrypted reasoning content from appearing as visible messages or being converted into compaction summaries.
+- Redacted `encrypted_content` values from request, response, stream, compaction, and HTTP error logs.
+- Discarded incomplete response items before retrying an interrupted stream.
+
 ## [2.0.0-alpha.21] - 2026-07-14
 
 ### Added

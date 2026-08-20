@@ -53,41 +53,58 @@ struct StreamEnvelope: Decodable {
     let delta: String?
     let item: StreamItem?
     let response: StreamResponsePayload?
+    let outputIndex: Int?
+    let sequenceNumber: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case delta
+        case item
+        case response
+        case outputIndex = "output_index"
+        case sequenceNumber = "sequence_number"
+    }
 }
 
-enum StreamItem: Decodable {
-    case message(StreamMessageItem)
-    case functionCall(StreamFunctionCallItem)
-    case imageGenerationCall(StreamImageGenerationCallItem)
-    case other
+struct StreamItem: Decodable, Sendable {
+    let rawValue: JSONValue
+    let kind: StreamItemKind
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        let object = try container.decode([String: JSONValue].self)
+        rawValue = try container.decode(JSONValue.self)
+        let object = rawValue.objectValue ?? [:]
         let type = object["type"]?.stringValue
 
         switch type {
         case "message":
             let data = try JSONEncoder().encode(object)
-            self = .message(try JSONDecoder().decode(StreamMessageItem.self, from: data))
+            kind = .message(try JSONDecoder().decode(StreamMessageItem.self, from: data))
         case "function_call":
             let data = try JSONEncoder().encode(object)
-            self = .functionCall(try JSONDecoder().decode(StreamFunctionCallItem.self, from: data))
+            kind = .functionCall(try JSONDecoder().decode(StreamFunctionCallItem.self, from: data))
         case "image_generation_call":
             let data = try JSONEncoder().encode(object)
-            self = .imageGenerationCall(try JSONDecoder().decode(StreamImageGenerationCallItem.self, from: data))
+            kind = .imageGenerationCall(try JSONDecoder().decode(StreamImageGenerationCallItem.self, from: data))
         default:
-            self = .other
+            kind = .other
         }
     }
 }
 
-struct StreamMessageItem: Decodable {
+enum StreamItemKind: Sendable {
+    case message(StreamMessageItem)
+    case functionCall(StreamFunctionCallItem)
+    case imageGenerationCall(StreamImageGenerationCallItem)
+    case other
+}
+
+struct StreamMessageItem: Decodable, Sendable {
     let role: String
     let content: [StreamMessageContent]
 }
 
-struct StreamMessageContent: Decodable {
+struct StreamMessageContent: Decodable, Sendable {
     let type: String
     let displayText: String?
     let imageAttachment: AgentImageAttachment?
@@ -120,7 +137,7 @@ struct StreamMessageContent: Decodable {
     }
 }
 
-struct StreamFunctionCallItem: Decodable {
+struct StreamFunctionCallItem: Decodable, Sendable {
     let name: String
     let arguments: String
     let callID: String
@@ -132,7 +149,7 @@ struct StreamFunctionCallItem: Decodable {
     }
 }
 
-struct StreamImageGenerationCallItem: Decodable {
+struct StreamImageGenerationCallItem: Decodable, Sendable {
     let id: String
     let status: String
     let action: String?

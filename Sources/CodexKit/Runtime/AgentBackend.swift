@@ -1,5 +1,15 @@
 import Foundation
 
+public struct AgentProviderContext: Codable, Hashable, Sendable {
+    public let providerID: String
+    public let payload: JSONValue
+
+    public init(providerID: String, payload: JSONValue) {
+        self.providerID = providerID
+        self.payload = payload
+    }
+}
+
 public enum AgentBackendEvent: Sendable {
     case turnStarted(AgentTurn)
     case assistantMessageDelta(threadID: String, turnID: String, delta: String)
@@ -8,6 +18,7 @@ public enum AgentBackendEvent: Sendable {
     case structuredOutputCommitted(JSONValue)
     case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
     case toolCallRequested(ToolInvocation)
+    case providerContextUpdated(threadID: String, context: AgentProviderContext)
     case turnCompleted(AgentTurnSummary)
 }
 
@@ -36,6 +47,20 @@ public protocol AgentBackend: Sendable {
     func beginTurn(
         thread: AgentThread,
         history: [AgentMessage],
+        message: Request,
+        instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        tools: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> AgentTurnStream
+}
+
+public protocol AgentBackendProviderContextSupporting: AgentBackend {
+    func beginTurn(
+        thread: AgentThread,
+        history: [AgentMessage],
+        providerContext: AgentProviderContext?,
         message: Request,
         instructions: String,
         responseFormat: AgentStructuredOutputFormat?,

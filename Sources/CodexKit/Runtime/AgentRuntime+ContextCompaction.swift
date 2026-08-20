@@ -7,6 +7,32 @@ extension AgentRuntime {
             ?? []
     }
 
+    func providerContext(for threadID: String) -> AgentProviderContext? {
+        state.contextStateByThread[threadID]?.providerContext
+    }
+
+    func updateProviderContext(
+        _ providerContext: AgentProviderContext,
+        for threadID: String
+    ) {
+        let current = state.contextStateByThread[threadID]
+            ?? AgentThreadContextState(
+                threadID: threadID,
+                effectiveMessages: state.messagesByThread[threadID] ?? []
+            )
+        let updated = AgentThreadContextState(
+            threadID: current.threadID,
+            effectiveMessages: current.effectiveMessages,
+            providerContext: providerContext,
+            generation: current.generation,
+            lastCompactedAt: current.lastCompactedAt,
+            lastCompactionReason: current.lastCompactionReason,
+            latestMarkerID: current.latestMarkerID
+        )
+        state.contextStateByThread[threadID] = updated
+        enqueueStoreOperation(.upsertThreadContextState(threadID: threadID, state: updated))
+    }
+
     func shouldUseCompaction() -> Bool {
         contextCompactionConfiguration.isEnabled
     }
@@ -26,6 +52,7 @@ extension AgentRuntime {
         let updated = AgentThreadContextState(
             threadID: current.threadID,
             effectiveMessages: current.effectiveMessages + [message],
+            providerContext: current.providerContext,
             generation: current.generation,
             lastCompactedAt: current.lastCompactedAt,
             lastCompactionReason: current.lastCompactionReason,
@@ -202,6 +229,7 @@ extension AgentRuntime {
         let updated = AgentThreadContextState(
             threadID: threadID,
             effectiveMessages: result.effectiveMessages,
+            providerContext: result.providerContext,
             generation: nextGeneration,
             lastCompactedAt: markerTime,
             lastCompactionReason: reason,
@@ -236,6 +264,19 @@ extension AgentRuntime {
     ) async throws -> AgentCompactionResult {
         switch contextCompactionConfiguration.strategy {
         case .preferRemoteThenLocal:
+            if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
+                if let result = try? await compactingBackend.compactContext(
+                    thread: thread,
+                    effectiveHistory: effectiveHistory,
+                    providerContext: providerContext(for: thread.id),
+                    instructions: instructions,
+                    tools: tools,
+                    session: session
+                ) {
+                    return result
+                }
+                return localCompactionResult(for: thread.id, from: effectiveHistory)
+            }
             if let compactingBackend = backend as? any AgentBackendContextCompacting,
                let result = try? await compactingBackend.compactContext(
                    thread: thread,
@@ -249,6 +290,16 @@ extension AgentRuntime {
             return localCompactionResult(for: thread.id, from: effectiveHistory)
 
         case .remoteOnly:
+            if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
+                return try await compactingBackend.compactContext(
+                    thread: thread,
+                    effectiveHistory: effectiveHistory,
+                    providerContext: providerContext(for: thread.id),
+                    instructions: instructions,
+                    tools: tools,
+                    session: session
+                )
+            }
             guard let compactingBackend = backend as? any AgentBackendContextCompacting else {
                 throw AgentRuntimeError.contextCompactionUnsupported()
             }

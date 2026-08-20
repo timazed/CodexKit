@@ -1,5 +1,10 @@
 import Foundation
 
+struct CodexResponsesTurnResult: Sendable {
+    let usage: AgentUsage
+    let providerContext: AgentProviderContext
+}
+
 struct CodexResponsesTurnRunner {
     let configuration: CodexResponsesBackendConfiguration
     let logger: AgentLogger
@@ -54,8 +59,9 @@ struct CodexResponsesTurnRunner {
 
     func run(
         history: [AgentMessage],
+        providerContext: AgentProviderContext?,
         newMessage: Request
-    ) async throws -> AgentUsage {
+    ) async throws -> CodexResponsesTurnResult {
         let runStartedAt = Date()
         logger.debug(
             .network,
@@ -67,8 +73,16 @@ struct CodexResponsesTurnRunner {
                 "tool_count": "\(tools.count)"
             ]
         )
+        let providerState = CodexResponsesProviderState(context: providerContext)
         var state = TurnRunState(
-            workingHistory: initialWorkingHistory(history: history, newMessage: newMessage)
+            workingHistory: initialWorkingHistory(
+                history: history,
+                providerState: providerState,
+                newMessage: newMessage
+            ),
+            previousResponseID: configuration.stateManagement == .serverManaged
+                ? providerState?.previousResponseID
+                : nil
         )
 
         try await runTurnPasses(state: &state)
@@ -85,14 +99,44 @@ struct CodexResponsesTurnRunner {
                 "output_tokens": "\(state.aggregateUsage.outputTokens)"
             ]
         )
-        return state.aggregateUsage
+        let updatedProviderState: CodexResponsesProviderState = switch configuration.stateManagement {
+        case .clientManaged:
+            CodexResponsesProviderState(
+                items: state.workingHistory.map(\.jsonValue)
+            )
+        case .serverManaged:
+            CodexResponsesProviderState(
+                previousResponseID: state.previousResponseID
+            )
+        }
+        return CodexResponsesTurnResult(
+            usage: state.aggregateUsage,
+            providerContext: updatedProviderState.agentProviderContext
+        )
     }
 
     private func initialWorkingHistory(
         history: [AgentMessage],
+        providerState: CodexResponsesProviderState?,
         newMessage: Request
     ) -> [WorkingHistoryItem] {
-        var workingHistory = history.map(WorkingHistoryItem.visibleMessage)
+        var workingHistory: [WorkingHistoryItem]
+        switch configuration.stateManagement {
+        case .clientManaged:
+            if let items = providerState?.items, !items.isEmpty {
+                workingHistory = items.map(WorkingHistoryItem.raw)
+            } else {
+                workingHistory = history.map(WorkingHistoryItem.visibleMessage)
+            }
+        case .serverManaged:
+            if providerState?.previousResponseID != nil {
+                workingHistory = []
+            } else if let items = providerState?.items, !items.isEmpty {
+                workingHistory = items.map(WorkingHistoryItem.raw)
+            } else {
+                workingHistory = history.map(WorkingHistoryItem.visibleMessage)
+            }
+        }
         workingHistory.append(contentsOf: developerMessages(for: newMessage))
         if newMessage.hasVisibleContent {
             workingHistory.append(
@@ -176,6 +220,7 @@ struct CodexResponsesTurnRunner {
         )
 
         for attempt in 1...retryPolicy.maxAttempts {
+            state.beginAttempt()
             var retryState = RetryAttemptState()
             logger.debug(
                 .network,
@@ -257,6 +302,7 @@ struct CodexResponsesTurnRunner {
             responseContract: responseContract,
             threadID: threadID,
             items: state.workingHistory,
+            previousResponseID: state.previousResponseID,
             tools: tools,
             session: session
         )
@@ -274,6 +320,9 @@ struct CodexResponsesTurnRunner {
             let eventResult = try await handleStreamEvent(event, state: &state)
             passDisposition = passDisposition.merging(with: eventResult.passDisposition)
             retryState.record(eventResult)
+            if case .completed = event {
+                return passDisposition
+            }
         }
 
         return passDisposition
@@ -288,9 +337,72 @@ struct CodexResponsesTurnRunner {
             let emittedDelta = try handleAssistantTextDelta(delta, state: &state)
             return emittedDelta ? .assistantDelta : .none
 
-        case let .assistantMessage(messageTemplate):
-            try handleAssistantMessage(messageTemplate, state: &state)
-            return .assistantMessage
+        case let .outputItem(item, outputIndex, sequenceNumber):
+            state.pendingResponseItems.append(
+                PendingResponseItem(
+                    outputIndex: outputIndex,
+                    sequenceNumber: sequenceNumber,
+                    arrivalOrder: state.pendingResponseItems.count,
+                    value: item.rawValue
+                )
+            )
+            switch item.kind {
+            case let .message(messageItem):
+                let text = messageItem.content
+                    .compactMap(\.displayText)
+                    .joined()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let images = messageItem.content.compactMap(\.imageAttachment)
+                guard !text.isEmpty || !images.isEmpty else {
+                    return .none
+                }
+                try handleAssistantMessage(
+                    AgentMessage(
+                        threadID: "",
+                        role: .assistant,
+                        text: text,
+                        images: images
+                    ),
+                    state: &state
+                )
+                return .assistantMessage
+
+            case let .functionCall(functionCallItem):
+                let functionCall = FunctionCallRecord(
+                    name: functionCallItem.name,
+                    callID: functionCallItem.callID,
+                    argumentsRaw: functionCallItem.arguments
+                )
+                logger.info(
+                    .tools,
+                    "Received tool call from backend.",
+                    metadata: [
+                        "thread_id": threadID,
+                        "turn_id": turnID,
+                        "tool_name": functionCall.name
+                    ]
+                )
+                try await handleFunctionCall(functionCall, state: &state)
+                return .toolCall
+
+            case let .imageGenerationCall(imageGenerationCall):
+                guard let image = imageGenerationCall.imageAttachment else {
+                    return .none
+                }
+                try handleAssistantMessage(
+                    AgentMessage(
+                        threadID: "",
+                        role: .assistant,
+                        text: imageGenerationCall.assistantText,
+                        images: [image]
+                    ),
+                    state: &state
+                )
+                return .assistantMessage
+
+            case .other:
+                return .none
+            }
 
         case let .structuredOutputPartial(value):
             continuation.yield(.structuredOutputPartial(value))
@@ -304,23 +416,11 @@ struct CodexResponsesTurnRunner {
             continuation.yield(.structuredOutputValidationFailed(validationFailure))
             return .none
 
-        case let .functionCall(functionCall):
-            logger.info(
-                .tools,
-                "Received tool call from backend.",
-                metadata: [
-                    "thread_id": threadID,
-                    "turn_id": turnID,
-                    "tool_name": functionCall.name
-                ]
-            )
-            try await handleFunctionCall(functionCall, state: &state)
-            return .toolCall
-
-        case let .completed(usage):
+        case let .completed(usage, responseID):
             state.aggregateUsage.inputTokens += usage.inputTokens
             state.aggregateUsage.cachedInputTokens += usage.cachedInputTokens
             state.aggregateUsage.outputTokens += usage.outputTokens
+            try commitCompletedPass(responseID: responseID, state: &state)
             logger.debug(
                 .network,
                 "Backend stream completed pass.",
@@ -402,7 +502,6 @@ struct CodexResponsesTurnRunner {
                 )
         )
 
-        state.workingHistory.append(.assistantMessage(message))
         continuation.yield(.assistantMessageCompleted(message))
         state.pendingToolImages.removeAll(keepingCapacity: true)
         state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
@@ -464,8 +563,6 @@ struct CodexResponsesTurnRunner {
         _ functionCall: FunctionCallRecord,
         state: inout TurnRunState
     ) async throws {
-        state.workingHistory.append(.functionCall(functionCall))
-
         let invocation = ToolInvocation(
             id: functionCall.callID,
             threadID: threadID,
@@ -496,7 +593,7 @@ struct CodexResponsesTurnRunner {
             state.pendingToolFallbackTexts.append(primaryText)
         }
 
-        state.workingHistory.append(
+        state.pendingToolOutputs.append(
             .functionCallOutput(
                 callID: invocation.id,
                 output: toolOutputAdapter.text(from: toolResult)
@@ -515,6 +612,45 @@ struct CodexResponsesTurnRunner {
         )
     }
 
+    private func commitCompletedPass(
+        responseID: String?,
+        state: inout TurnRunState
+    ) throws {
+        let completedItems = state.pendingResponseItems
+            .sorted { lhs, rhs in
+                if lhs.outputIndex == rhs.outputIndex {
+                    if let lhsSequenceNumber = lhs.sequenceNumber,
+                       let rhsSequenceNumber = rhs.sequenceNumber,
+                       lhsSequenceNumber != rhsSequenceNumber
+                    {
+                        return lhsSequenceNumber < rhsSequenceNumber
+                    }
+                    return lhs.arrivalOrder < rhs.arrivalOrder
+                }
+                return lhs.outputIndex < rhs.outputIndex
+            }
+            .map { WorkingHistoryItem.raw($0.value) }
+
+        switch configuration.stateManagement {
+        case .clientManaged:
+            state.workingHistory.append(contentsOf: completedItems)
+            state.workingHistory.append(contentsOf: state.pendingToolOutputs)
+
+        case .serverManaged:
+            guard let responseID, !responseID.isEmpty else {
+                throw AgentRuntimeError(
+                    code: "responses_server_state_missing_id",
+                    message: "The Responses endpoint did not return a response ID required for server-managed state."
+                )
+            }
+            state.previousResponseID = responseID
+            state.workingHistory = state.pendingToolOutputs
+        }
+
+        state.pendingResponseItems.removeAll(keepingCapacity: true)
+        state.pendingToolOutputs.removeAll(keepingCapacity: true)
+    }
+
     private func emitPendingAssistantFallbackIfNeeded(
         state: inout TurnRunState
     ) {
@@ -528,7 +664,9 @@ struct CodexResponsesTurnRunner {
             text: state.pendingToolFallbackTexts.joined(separator: "\n\n"),
             images: state.pendingToolImages
         )
-        state.workingHistory.append(.assistantMessage(message))
+        if configuration.stateManagement == .clientManaged {
+            state.workingHistory.append(.assistantMessage(message))
+        }
         continuation.yield(.assistantMessageCompleted(message))
         state.pendingToolImages.removeAll(keepingCapacity: true)
         state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
@@ -603,11 +741,26 @@ private enum TurnPassDisposition {
 
 private struct TurnRunState {
     var workingHistory: [WorkingHistoryItem]
+    var previousResponseID: String?
     var aggregateUsage = AgentUsage()
+    var pendingResponseItems: [PendingResponseItem] = []
+    var pendingToolOutputs: [WorkingHistoryItem] = []
     var pendingToolImages: [AgentImageAttachment] = []
     var pendingToolFallbackTexts: [String] = []
     var structuredParser = CodexResponsesStructuredStreamParser()
     var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
+
+    mutating func beginAttempt() {
+        pendingResponseItems.removeAll(keepingCapacity: true)
+        pendingToolOutputs.removeAll(keepingCapacity: true)
+    }
+}
+
+private struct PendingResponseItem {
+    let outputIndex: Int
+    let sequenceNumber: Int?
+    let arrivalOrder: Int
+    let value: JSONValue
 }
 
 private struct RetryAttemptState {

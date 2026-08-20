@@ -1072,4 +1072,318 @@ final class CodexResponsesBackendTests: XCTestCase {
         for try await _ in turnStream.events {}
     }
 
+    func testClientManagedModeReplaysEncryptedReasoningBeforeToolOutput() async throws {
+        let encryptedContent = "encrypted-reasoning-payload"
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let tool = ToolDefinition(
+            name: "lookup",
+            description: "Lookup a value",
+            inputSchema: .object(["type": .string("object")]),
+            approvalPolicy: .automatic
+        )
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"sequence_number":3,"item":{"id":"rs_1","type":"reasoning","content":[],"encrypted_content":"\(encryptedContent)","summary":[]}}
+
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":1,"sequence_number":4,"item":{"id":"fc_1","type":"function_call","name":"lookup","arguments":"{}","call_id":"call_1","status":"completed"}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":8,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+            """.utf8),
+            inspect: { request in
+                let body = try XCTUnwrap(requestBodyData(for: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(json["store"] as? Bool, false)
+                XCTAssertEqual(json["include"] as? [String], ["reasoning.encrypted_content"])
+                XCTAssertNil(json["previous_response_id"])
+            }
+        ))
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_2","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+            """.utf8),
+            inspect: { request in
+                let body = try XCTUnwrap(requestBodyData(for: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                let input = try XCTUnwrap(json["input"] as? [[String: Any]])
+                let trailingTypes = input.suffix(3).compactMap { $0["type"] as? String }
+                XCTAssertEqual(trailingTypes, ["reasoning", "function_call", "function_call_output"])
+                let reasoning = try XCTUnwrap(input.first { $0["type"] as? String == "reasoning" })
+                XCTAssertEqual(reasoning["id"] as? String, "rs_1")
+                XCTAssertEqual(reasoning["encrypted_content"] as? String, encryptedContent)
+            }
+        ))
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-reasoning"),
+            history: [],
+            providerContext: nil,
+            message: Request(text: "Use the lookup"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [tool],
+            session: session
+        )
+
+        var assistantMessages: [AgentMessage] = []
+        var providerContext: AgentProviderContext?
+        for try await event in turnStream.events {
+            switch event {
+            case let .toolCallRequested(invocation):
+                try await turnStream.submitToolResult(
+                    .success(invocation: invocation, text: "lookup-result"),
+                    for: invocation.id
+                )
+            case let .assistantMessageCompleted(message):
+                assistantMessages.append(message)
+            case let .providerContextUpdated(_, context):
+                providerContext = context
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(assistantMessages.map(\.text), ["Done"])
+        let persistedItems = try XCTUnwrap(providerContext?.payload.objectValue?["items"]?.arrayValue)
+        XCTAssertTrue(persistedItems.contains {
+            $0.objectValue?["encrypted_content"]?.stringValue == encryptedContent
+        })
+    }
+
+    func testServerManagedModeChainsResponseIDsWithoutReplayingHistory() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(stateManagement: .serverManaged),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let tool = ToolDefinition(
+            name: "lookup",
+            description: "Lookup a value",
+            inputSchema: .object(["type": .string("object")]),
+            approvalPolicy: .automatic
+        )
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_server","type":"function_call","name":"lookup","arguments":"{}","call_id":"call_server","status":"completed"}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_server_1","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+            """.utf8),
+            inspect: { request in
+                let body = try XCTUnwrap(requestBodyData(for: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(json["store"] as? Bool, true)
+                XCTAssertEqual(json["include"] as? [String], [])
+                XCTAssertNil(json["previous_response_id"])
+            }
+        ))
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_server","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Stored result"}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_server_2","usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+            """.utf8),
+            inspect: { request in
+                let body = try XCTUnwrap(requestBodyData(for: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(json["previous_response_id"] as? String, "resp_server_1")
+                let input = try XCTUnwrap(json["input"] as? [[String: Any]])
+                XCTAssertEqual(input.count, 1)
+                XCTAssertEqual(input.first?["type"] as? String, "function_call_output")
+            }
+        ))
+
+        let firstTurn = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-server"),
+            history: [],
+            providerContext: nil,
+            message: Request(text: "Use the lookup"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [tool],
+            session: session
+        )
+        var providerContext: AgentProviderContext?
+        for try await event in firstTurn.events {
+            switch event {
+            case let .toolCallRequested(invocation):
+                try await firstTurn.submitToolResult(
+                    .success(invocation: invocation, text: "stored-tool-result"),
+                    for: invocation.id
+                )
+            case let .providerContextUpdated(_, context):
+                providerContext = context
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(
+            providerContext?.payload.objectValue?["previous_response_id"]?.stringValue,
+            "resp_server_2"
+        )
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_server_2","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Next answer"}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_server_3","usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+            """.utf8),
+            inspect: { request in
+                let body = try XCTUnwrap(requestBodyData(for: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(json["previous_response_id"] as? String, "resp_server_2")
+                let bodyText = String(decoding: body, as: UTF8.self)
+                XCTAssertFalse(bodyText.contains("SHOULD_NOT_REPLAY"))
+                let input = try XCTUnwrap(json["input"] as? [[String: Any]])
+                XCTAssertEqual(input.count, 1)
+            }
+        ))
+
+        let secondTurn = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-server"),
+            history: [AgentMessage(threadID: "thread-server", role: .assistant, text: "SHOULD_NOT_REPLAY")],
+            providerContext: providerContext,
+            message: Request(text: "Next question"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+        for try await _ in secondTurn.events {}
+    }
+
+    func testServerManagedModeFailsWhenEndpointOmitsResponseID() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(stateManagement: .serverManaged),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_no_id","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"No ID"}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+            """.utf8)
+        ))
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-server-no-id"),
+            history: [],
+            message: Request(text: "Hello"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        await XCTAssertThrowsErrorAsync(try await drainBackendEvents(turnStream.events)) { error in
+            XCTAssertEqual((error as? AgentRuntimeError)?.code, "responses_server_state_missing_id")
+        }
+    }
+
+    func testRemoteCompactionPreservesOpaqueCompactionItem() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let priorReasoning: JSONValue = .object([
+            "id": .string("rs_prior"),
+            "type": .string("reasoning"),
+            "encrypted_content": .string("prior-ciphertext"),
+            "summary": .array([]),
+        ])
+        let providerContext = AgentProviderContext(
+            providerID: "openai.responses",
+            payload: .object([
+                "items": .array([priorReasoning]),
+                "previous_response_id": .null,
+            ])
+        )
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "application/json"],
+            body: Data("""
+            {"id":"cmp_response","object":"response.compaction","output":[
+              {"id":"msg_user","type":"message","status":"completed","role":"user","content":[{"type":"input_text","text":"Original question"}]},
+              {"id":"cmp_1","type":"compaction","encrypted_content":"compacted-ciphertext"}
+            ]}
+            """.utf8),
+            inspect: { request in
+                let body = try XCTUnwrap(requestBodyData(for: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                let input = try XCTUnwrap(json["input"] as? [[String: Any]])
+                XCTAssertEqual(input.first?["encrypted_content"] as? String, "prior-ciphertext")
+            }
+        ))
+
+        let result = try await backend.compactContext(
+            thread: AgentThread(id: "thread-compact"),
+            effectiveHistory: [],
+            providerContext: providerContext,
+            instructions: "Resolved instructions",
+            tools: [],
+            session: session
+        )
+
+        XCTAssertFalse(result.effectiveMessages.contains { $0.text == "compacted-ciphertext" })
+        XCTAssertNil(result.summaryPreview)
+        let outputItems = try XCTUnwrap(result.providerContext?.payload.objectValue?["items"]?.arrayValue)
+        XCTAssertEqual(outputItems.last?.objectValue?["type"]?.stringValue, "compaction")
+        XCTAssertEqual(
+            outputItems.last?.objectValue?["encrypted_content"]?.stringValue,
+            "compacted-ciphertext"
+        )
+    }
+
+}
+
+private func drainBackendEvents(_ events: AsyncThrowingStream<AgentBackendEvent, Error>) async throws {
+    for try await _ in events {}
 }

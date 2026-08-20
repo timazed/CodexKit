@@ -273,6 +273,18 @@ let backend = CodexResponsesBackend(
 )
 ```
 
+By default, CodexKit manages response state locally. It requests encrypted reasoning items and persists them as opaque provider context so later turns can replay the complete Responses input without exposing reasoning as chat content. To let the backend retain state instead, opt in to server-managed mode:
+
+```swift
+let backend = CodexResponsesBackend(
+    configuration: .init(
+        stateManagement: .serverManaged
+    )
+)
+```
+
+Server-managed mode sends `store: true` and chains turns with `previous_response_id`. Client-managed mode remains the default and sends `store: false` with `include: ["reasoning.encrypted_content"]`.
+
 `CodexModel` provides typed identifiers and metadata for the current model catalog. Use `CodexModel.catalog` when internal entries matter, `CodexModel.userFacingModels` to build a picker, or a known static member directly in configuration:
 
 ```swift

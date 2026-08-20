@@ -153,6 +153,64 @@ extension CodexResponsesBackendTests {
         XCTAssertEqual(assistantMessage?.text, "Hello after retry")
     }
 
+    func testBackendDiscardsUncommittedReasoningItemsBeforeRetry() async throws {
+        let backend = CodexResponsesBackend(
+            configuration: CodexResponsesBackendConfiguration(
+                requestRetryPolicy: .init(maxAttempts: 2, initialBackoff: 0, maxBackoff: 0, jitterFactor: 0)
+            ),
+            urlSession: makeTestURLSession()
+        )
+        let session = ChatGPTSession(accessToken: "access-token", refreshToken: "refresh-token", account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus))
+
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_stale","type":"reasoning","content":[],"encrypted_content":"stale-ciphertext","summary":[]}}
+
+            """.utf8),
+            completionError: URLError(.networkConnectionLost)
+        ))
+        await TestURLProtocol.enqueue(.init(
+            headers: ["Content-Type": "text/event-stream"],
+            body: Data("""
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_fresh","type":"reasoning","content":[],"encrypted_content":"fresh-ciphertext","summary":[]}}
+
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":1,"item":{"id":"msg_fresh","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Recovered"}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_fresh","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
+
+            """.utf8)
+        ))
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: "thread-reasoning-retry"),
+            history: [],
+            message: Request(text: "Retry reasoning"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        var providerContext: AgentProviderContext?
+        for try await event in turnStream.events {
+            if case let .providerContextUpdated(_, context) = event {
+                providerContext = context
+            }
+        }
+
+        let items = try XCTUnwrap(providerContext?.payload.objectValue?["items"]?.arrayValue)
+        let encryptedContents = items.compactMap {
+            $0.objectValue?["encrypted_content"]?.stringValue
+        }
+        XCTAssertEqual(encryptedContents, ["fresh-ciphertext"])
+    }
+
     private func assertBackendRetriesURLFailure(
         _ error: Error,
         threadID: String,

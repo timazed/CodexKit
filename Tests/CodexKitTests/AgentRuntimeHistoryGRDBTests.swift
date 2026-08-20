@@ -3,6 +3,60 @@ import CodexKitUI
 import XCTest
 
 extension AgentRuntimeTests {
+    func testSQLiteRuntimeStateStorePersistsProviderContextAcrossReload() async throws {
+        let url = temporaryRuntimeSQLiteURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let thread = AgentThread(id: "thread-provider-context")
+        let providerContext = AgentProviderContext(
+            providerID: "openai.responses",
+            payload: .object([
+                "items": .array([
+                    .object([
+                        "id": .string("rs_1"),
+                        "type": .string("reasoning"),
+                        "encrypted_content": .string("encrypted-state"),
+                    ]),
+                ]),
+                "previous_response_id": .null,
+            ])
+        )
+        let contextState = AgentThreadContextState(
+            threadID: thread.id,
+            effectiveMessages: [],
+            providerContext: providerContext
+        )
+        let store = try SQLiteRuntimeStateStore(url: url)
+        try await store.saveState(
+            StoredRuntimeState(
+                threads: [thread],
+                contextStateByThread: [thread.id: contextState]
+            )
+        )
+
+        let reloaded = try SQLiteRuntimeStateStore(url: url)
+        let loaded = try await reloaded.loadState()
+        XCTAssertEqual(
+            loaded.contextStateByThread[thread.id]?.providerContext,
+            providerContext
+        )
+    }
+
+    func testThreadContextStateDecodesLegacyPayloadWithoutProviderContext() throws {
+        let legacy = AgentThreadContextState(
+            threadID: "thread-legacy-context",
+            effectiveMessages: [],
+            generation: 2
+        )
+        let data = try JSONEncoder().encode(legacy)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(object["providerContext"])
+
+        let decoded = try JSONDecoder().decode(AgentThreadContextState.self, from: data)
+        XCTAssertNil(decoded.providerContext)
+        XCTAssertEqual(decoded.generation, 2)
+    }
+
     func testSQLiteRuntimeStateStorePersistsSummariesAndQueriesAcrossReload() async throws {
         let url = temporaryRuntimeSQLiteURL()
         defer { try? FileManager.default.removeItem(at: url) }

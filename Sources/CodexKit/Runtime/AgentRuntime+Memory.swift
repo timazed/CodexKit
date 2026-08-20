@@ -173,6 +173,7 @@ extension AgentRuntime {
         let turnStart = try await beginTurnWithUnauthorizedRecovery(
             thread: thread,
             history: [],
+            providerContext: nil,
             message: request,
             instructions: options.instructions ?? MemoryExtractionDraftResponse.instructions,
             responseContract: AgentResponseContract(

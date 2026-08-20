@@ -110,6 +110,7 @@ extension AgentRuntime {
                     let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
                         thread: thread,
                         history: turnHistory,
+                        providerContext: storesTurnState ? self.providerContext(for: threadID) : nil,
                         message: request,
                         instructions: resolvedInstructions,
                         responseContract: responseContract,
@@ -279,6 +280,7 @@ extension AgentRuntime {
                     let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
                         thread: thread,
                         history: turnHistory,
+                        providerContext: storesTurnState ? self.providerContext(for: threadID) : nil,
                         message: request,
                         instructions: resolvedInstructions,
                         responseContract: responseContract,
@@ -318,6 +320,7 @@ extension AgentRuntime {
     func beginTurnWithUnauthorizedRecovery(
         thread: AgentThread,
         history: [AgentMessage],
+        providerContext: AgentProviderContext?,
         message: Request,
         instructions: String,
         responseContract: AgentResponseContract?,
@@ -332,9 +335,10 @@ extension AgentRuntime {
             let beginTurn = try await withUnauthorizedRecovery(
                 initialSession: session
             ) { session in
-                try await backend.beginTurn(
+                try await self.beginBackendTurn(
                     thread: thread,
                     history: history,
+                    providerContext: providerContext,
                     message: message,
                     instructions: instructions,
                     responseFormat: responseContract?.textFormat,
@@ -363,9 +367,10 @@ extension AgentRuntime {
             let beginTurn = try await withUnauthorizedRecovery(
                 initialSession: session
             ) { session in
-                try await backend.beginTurn(
+                try await self.beginBackendTurn(
                     thread: thread,
                     history: self.effectiveHistory(for: thread.id),
+                    providerContext: self.providerContext(for: thread.id),
                     message: message,
                     instructions: instructions,
                     responseFormat: responseContract?.textFormat,
@@ -376,6 +381,42 @@ extension AgentRuntime {
             }
             return (beginTurn.result, beginTurn.session)
         }
+    }
+
+    private func beginBackendTurn(
+        thread: AgentThread,
+        history: [AgentMessage],
+        providerContext: AgentProviderContext?,
+        message: Request,
+        instructions: String,
+        responseFormat: AgentStructuredOutputFormat?,
+        streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        tools: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> AgentTurnStream {
+        if let contextBackend = backend as? any AgentBackendProviderContextSupporting {
+            return try await contextBackend.beginTurn(
+                thread: thread,
+                history: history,
+                providerContext: providerContext,
+                message: message,
+                instructions: instructions,
+                responseFormat: responseFormat,
+                streamedStructuredOutput: streamedStructuredOutput,
+                tools: tools,
+                session: session
+            )
+        }
+        return try await backend.beginTurn(
+            thread: thread,
+            history: history,
+            message: message,
+            instructions: instructions,
+            responseFormat: responseFormat,
+            streamedStructuredOutput: streamedStructuredOutput,
+            tools: tools,
+            session: session
+        )
     }
 
     // MARK: - Previews

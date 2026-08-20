@@ -1,5 +1,31 @@
 import Foundation
 
+func sanitizedResponsesJSONString(from data: Data) -> String {
+    guard let value = try? JSONDecoder().decode(JSONValue.self, from: data) else {
+        return "<unavailable; \(data.count) bytes>"
+    }
+    return value.redactingEncryptedContent.prettyJSONString
+}
+
+private extension JSONValue {
+    var redactingEncryptedContent: JSONValue {
+        switch self {
+        case let .object(object):
+            return .object(Dictionary(uniqueKeysWithValues: object.map { key, value in
+                if key == "encrypted_content" {
+                    let length = value.stringValue?.count ?? 0
+                    return (key, .string("<redacted; \(length) characters>"))
+                }
+                return (key, value.redactingEncryptedContent)
+            }))
+        case let .array(values):
+            return .array(values.map(\.redactingEncryptedContent))
+        case .string, .number, .bool, .null:
+            return self
+        }
+    }
+}
+
 struct ResponsesRequestBody: Encodable {
     let model: String
     let reasoning: ResponsesReasoningConfiguration
@@ -12,6 +38,7 @@ struct ResponsesRequestBody: Encodable {
     let store: Bool
     let stream: Bool
     let include: [String]
+    let previousResponseID: String?
     let promptCacheKey: String?
 
     enum CodingKeys: String, CodingKey {
@@ -26,6 +53,7 @@ struct ResponsesRequestBody: Encodable {
         case store
         case stream
         case include
+        case previousResponseID = "previous_response_id"
         case promptCacheKey = "prompt_cache_key"
     }
 }
@@ -35,9 +63,10 @@ struct ResponsesCompactRequestBody: Encodable {
     let reasoning: ResponsesReasoningConfiguration
     let instructions: String
     let text: ResponsesTextConfiguration
-    let input: [JSONValue]
+    let input: [JSONValue]?
     let tools: [JSONValue]
     let parallelToolCalls: Bool
+    let previousResponseID: String?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -47,6 +76,7 @@ struct ResponsesCompactRequestBody: Encodable {
         case input
         case tools
         case parallelToolCalls = "parallel_tool_calls"
+        case previousResponseID = "previous_response_id"
     }
 }
 
@@ -93,6 +123,7 @@ enum WorkingHistoryItem: Sendable {
     case developerMessage(String)
     case functionCall(FunctionCallRecord)
     case functionCallOutput(callID: String, output: String)
+    case raw(JSONValue)
 
     var jsonValue: JSONValue {
         switch self {
@@ -117,6 +148,8 @@ enum WorkingHistoryItem: Sendable {
                 "call_id": .string(callID),
                 "output": .string(output),
             ])
+        case let .raw(value):
+            value
         }
     }
 
@@ -179,6 +212,39 @@ enum WorkingHistoryItem: Sendable {
                 ]),
             ]),
         ])
+    }
+}
+
+struct CodexResponsesProviderState: Sendable {
+    static let providerID = "openai.responses"
+
+    var items: [JSONValue]
+    var previousResponseID: String?
+
+    init(items: [JSONValue] = [], previousResponseID: String? = nil) {
+        self.items = items
+        self.previousResponseID = previousResponseID
+    }
+
+    init?(context: AgentProviderContext?) {
+        guard let context,
+              context.providerID == Self.providerID,
+              let object = context.payload.objectValue
+        else {
+            return nil
+        }
+        items = object["items"]?.arrayValue ?? []
+        previousResponseID = object["previous_response_id"]?.stringValue
+    }
+
+    var agentProviderContext: AgentProviderContext {
+        AgentProviderContext(
+            providerID: Self.providerID,
+            payload: .object([
+                "items": .array(items),
+                "previous_response_id": previousResponseID.map(JSONValue.string) ?? .null,
+            ])
+        )
     }
 }
 
@@ -256,12 +322,11 @@ struct FunctionCallRecord: Sendable {
 
 enum CodexResponsesStreamEvent: Sendable {
     case assistantTextDelta(String)
-    case assistantMessage(AgentMessage)
+    case outputItem(StreamItem, outputIndex: Int, sequenceNumber: Int?)
     case structuredOutputPartial(JSONValue)
     case structuredOutputCommitted(JSONValue)
     case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
-    case functionCall(FunctionCallRecord)
-    case completed(AgentUsage)
+    case completed(AgentUsage, responseID: String?)
 }
 
 struct PendingToolResults: Sendable {

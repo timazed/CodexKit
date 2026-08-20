@@ -219,6 +219,13 @@ extension AgentRuntime {
                         continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
                     }
 
+                case let .providerContextUpdated(eventThreadID, context):
+                    guard storesTurnState, eventThreadID == threadID else {
+                        break
+                    }
+                    updateProviderContext(context, for: threadID)
+                    try await persistState()
+
                 case let .turnCompleted(summary):
                     if let completionError = policyTracker?.completionError() {
                         if storesTurnState {

@@ -10,6 +10,7 @@ struct CodexResponsesRequestFactory: Sendable {
         responseContract: AgentResponseContract?,
         threadID: String,
         items: [WorkingHistoryItem],
+        previousResponseID: String? = nil,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) throws -> URLRequest {
@@ -31,9 +32,14 @@ struct CodexResponsesRequestFactory: Sendable {
             ),
             toolChoice: "auto",
             parallelToolCalls: false,
-            store: false,
+            store: configuration.stateManagement == .serverManaged,
             stream: true,
-            include: [],
+            include: configuration.stateManagement == .clientManaged
+                ? ["reasoning.encrypted_content"]
+                : [],
+            previousResponseID: configuration.stateManagement == .serverManaged
+                ? previousResponseID
+                : nil,
             promptCacheKey: threadID
         )
 
@@ -83,13 +89,13 @@ struct CodexResponsesEventStreamClient: Sendable {
     func streamEvents(
         request: URLRequest
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
-        if let body = request.httpBody.flatMap({ String(data: $0, encoding: .utf8) }) {
+        if let bodyData = request.httpBody {
             logger.debug(
                 .network,
                 "Responses request payload.",
                 metadata: [
                     "request_id": request.value(forHTTPHeaderField: "x-client-request-id") ?? "",
-                    "payload": body
+                    "payload": sanitizedResponsesJSONString(from: bodyData)
                 ]
             )
         }
@@ -114,13 +120,13 @@ struct CodexResponsesEventStreamClient: Sendable {
 
         if !(200 ..< 300).contains(httpResponse.statusCode) {
             let bodyData = try await readAll(bytes)
-            let body = String(data: bodyData, encoding: .utf8) ?? "Unknown error"
+            let body = sanitizedResponsesJSONString(from: bodyData)
             logger.error(
                 .network,
                 "Responses event stream failed with HTTP status.",
                 metadata: [
                     "status": "\(httpResponse.statusCode)",
-                    "body_length": "\(body.count)",
+                    "body_length": "\(bodyData.count)",
                     "body": body
                 ]
             )
@@ -289,19 +295,12 @@ struct CodexResponsesEventStreamClient: Sendable {
             return nil
         }
 
-        if logger.isVerboseEnabled(for: .network) {
-            logger.verbose(
-                .network,
-                "Responses stream payload.",
-                metadata: ["payload": payload.data]
-            )
-        }
-
+        let payloadData = Data(payload.data.utf8)
         let envelope: StreamEnvelope
         do {
             envelope = try decoder.decode(
                 StreamEnvelope.self,
-                from: Data(payload.data.utf8)
+                from: payloadData
             )
         } catch {
             logger.error(
@@ -309,10 +308,18 @@ struct CodexResponsesEventStreamClient: Sendable {
                 "Failed to decode responses stream payload.",
                 metadata: [
                     "error": error.localizedDescription,
-                    "payload": payload.data
+                    "payload_length": "\(payloadData.count)"
                 ]
             )
             throw error
+        }
+        let sanitizedPayload = sanitizedResponsesJSONString(from: payloadData)
+        if logger.isVerboseEnabled(for: .network) {
+            logger.verbose(
+                .network,
+                "Responses stream payload.",
+                metadata: ["payload": sanitizedPayload]
+            )
         }
         if shouldLogResponsePayload(for: envelope.type) {
             logger.debug(
@@ -320,7 +327,7 @@ struct CodexResponsesEventStreamClient: Sendable {
                 "Responses response payload.",
                 metadata: [
                     "type": envelope.type,
-                    "payload": payload.data
+                    "payload": sanitizedPayload
                 ]
             )
         }
@@ -332,51 +339,14 @@ struct CodexResponsesEventStreamClient: Sendable {
             guard let item = envelope.item else {
                 return nil
             }
-
-            switch item {
-            case let .message(message):
-                let text = message.content
-                    .compactMap(\.displayText)
-                    .joined()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let images = message.content.compactMap(\.imageAttachment)
-                guard !text.isEmpty || !images.isEmpty else {
-                    return nil
-                }
-                return .assistantMessage(
-                    AgentMessage(
-                        threadID: "",
-                        role: .assistant,
-                        text: text,
-                        images: images
-                    )
-                )
-            case let .functionCall(functionCall):
-                return .functionCall(
-                    FunctionCallRecord(
-                        name: functionCall.name,
-                        callID: functionCall.callID,
-                        argumentsRaw: functionCall.arguments
-                    )
-                )
-            case let .imageGenerationCall(imageGenerationCall):
-                guard let image = imageGenerationCall.imageAttachment else {
-                    return nil
-                }
-                return .assistantMessage(
-                    AgentMessage(
-                        threadID: "",
-                        role: .assistant,
-                        text: imageGenerationCall.assistantText,
-                        images: [image]
-                    )
-                )
-            case .other:
-                return nil
-            }
+            return .outputItem(
+                item,
+                outputIndex: envelope.outputIndex ?? 0,
+                sequenceNumber: envelope.sequenceNumber
+            )
         case "response.completed":
             let usage = envelope.response?.usage?.assistantUsage ?? AgentUsage()
-            return .completed(usage)
+            return .completed(usage, responseID: envelope.response?.id)
         case "response.failed":
             let message = envelope.response?.error?.message ?? "The ChatGPT responses stream failed."
             throw AgentRuntimeError(code: "responses_stream_failed", message: message)

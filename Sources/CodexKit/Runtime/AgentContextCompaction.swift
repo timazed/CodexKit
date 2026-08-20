@@ -91,6 +91,7 @@ public struct AgentContextCompactionMarker: Codable, Hashable, Sendable {
 public struct AgentThreadContextState: Codable, Hashable, Sendable {
     public let threadID: String
     public let effectiveMessages: [AgentMessage]
+    public let providerContext: AgentProviderContext?
     public let generation: Int
     public let lastCompactedAt: Date?
     public let lastCompactionReason: AgentContextCompactionReason?
@@ -99,6 +100,7 @@ public struct AgentThreadContextState: Codable, Hashable, Sendable {
     public init(
         threadID: String,
         effectiveMessages: [AgentMessage],
+        providerContext: AgentProviderContext? = nil,
         generation: Int = 0,
         lastCompactedAt: Date? = nil,
         lastCompactionReason: AgentContextCompactionReason? = nil,
@@ -106,6 +108,7 @@ public struct AgentThreadContextState: Codable, Hashable, Sendable {
     ) {
         self.threadID = threadID
         self.effectiveMessages = effectiveMessages
+        self.providerContext = providerContext
         self.generation = generation
         self.lastCompactedAt = lastCompactedAt
         self.lastCompactionReason = lastCompactionReason
@@ -115,13 +118,16 @@ public struct AgentThreadContextState: Codable, Hashable, Sendable {
 
 public struct AgentCompactionResult: Codable, Hashable, Sendable {
     public let effectiveMessages: [AgentMessage]
+    public let providerContext: AgentProviderContext?
     public let summaryPreview: String?
 
     public init(
         effectiveMessages: [AgentMessage],
+        providerContext: AgentProviderContext? = nil,
         summaryPreview: String? = nil
     ) {
         self.effectiveMessages = effectiveMessages
+        self.providerContext = providerContext
         self.summaryPreview = summaryPreview
     }
 }
@@ -130,6 +136,17 @@ public protocol AgentBackendContextCompacting: Sendable {
     func compactContext(
         thread: AgentThread,
         effectiveHistory: [AgentMessage],
+        instructions: String,
+        tools: [ToolDefinition],
+        session: ChatGPTSession
+    ) async throws -> AgentCompactionResult
+}
+
+public protocol AgentBackendProviderContextCompacting: AgentBackendContextCompacting {
+    func compactContext(
+        thread: AgentThread,
+        effectiveHistory: [AgentMessage],
+        providerContext: AgentProviderContext?,
         instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession

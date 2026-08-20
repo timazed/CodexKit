@@ -141,7 +141,10 @@ extension CodexResponsesBackendTests {
             headers: ["Content-Type": "text/event-stream"],
             body: Data("""
             event: response.output_item.done
-            data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
+            data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_verbose","type":"reasoning","content":[],"encrypted_content":"secret-encrypted-reasoning","summary":[]}}
+
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
 
             event: response.completed
             data: {"type":"response.completed","response":{"id":"resp_verbose","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2}}}
@@ -163,6 +166,12 @@ extension CodexResponsesBackendTests {
         for try await _ in turnStream.events {}
 
         let entries = buffer.entries
+        XCTAssertFalse(entries.contains {
+            $0.metadata.values.contains { $0.contains("secret-encrypted-reasoning") }
+        })
+        XCTAssertTrue(entries.contains {
+            $0.metadata["payload"]?.contains("<redacted; 26 characters>") == true
+        })
         XCTAssertTrue(entries.contains {
             $0.level == .debug &&
                 $0.category == .network &&
