@@ -24,13 +24,16 @@ extension StoredRuntimeState {
             normalizedHistory[threadID] = projections.syntheticHistory(from: messages)
         }
 
-        let normalizedMessages: [String: [AgentMessage]] = normalizedHistory.mapValues { records in
+        var normalizedMessages: [String: [AgentMessage]] = normalizedHistory.mapValues { records in
             records.compactMap { record -> AgentMessage? in
                 guard case let .message(message) = record.item else {
                     return nil
                 }
                 return message
             }
+        }
+        for threadID in partiallyLoadedThreadIDs {
+            normalizedMessages[threadID] = messagesByThread[threadID] ?? []
         }
 
         var normalizedNextSequence = nextHistorySequenceByThread
@@ -44,11 +47,16 @@ extension StoredRuntimeState {
         var normalizedContextState = contextStateByThread
         for thread in sortedThreads {
             let history = normalizedHistory[thread.id] ?? []
-            normalizedSummaries[thread.id] = projections.rebuildSummary(
-                for: thread,
-                history: history,
-                existing: summariesByThread[thread.id]
-            )
+            if partiallyLoadedThreadIDs.contains(thread.id),
+               let existing = summariesByThread[thread.id] {
+                normalizedSummaries[thread.id] = existing
+            } else {
+                normalizedSummaries[thread.id] = projections.rebuildSummary(
+                    for: thread,
+                    history: history,
+                    existing: summariesByThread[thread.id]
+                )
+            }
             if let existing = normalizedContextState[thread.id] {
                 normalizedContextState[thread.id] = AgentThreadContextState(
                     threadID: thread.id,
@@ -69,6 +77,7 @@ extension StoredRuntimeState {
             summariesByThread: normalizedSummaries,
             contextStateByThread: normalizedContextState,
             nextHistorySequenceByThread: normalizedNextSequence,
+            partiallyLoadedThreadIDs: partiallyLoadedThreadIDs,
             normalizeState: false
         )
     }
@@ -262,6 +271,7 @@ extension StoredRuntimeState {
                 updated.summariesByThread.removeValue(forKey: threadID)
                 updated.contextStateByThread.removeValue(forKey: threadID)
                 updated.nextHistorySequenceByThread.removeValue(forKey: threadID)
+                updated.partiallyLoadedThreadIDs.remove(threadID)
             }
         }
 

@@ -11,6 +11,20 @@ public enum AgentRuntimeObservation: Sendable {
     case threadDeleted(threadID: String)
 }
 
+struct AgentRuntimeThreadObservationSnapshot: Sendable {
+    let thread: AgentThread
+    let messages: [AgentMessage]
+    let summary: AgentThreadSummary
+    let contextState: AgentThreadContextState?
+    let effectiveMessages: [AgentMessage]
+}
+
+struct AgentRuntimeObservationBatchSnapshot: Sendable {
+    let threadID: String
+    let threadSnapshot: AgentRuntimeThreadObservationSnapshot?
+    let isDeletion: Bool
+}
+
 public struct AgentRuntimeObservationPublisher<Output: Sendable>: Sendable {
     private let makePublisher: @Sendable () -> AnyPublisher<Output, Never>
 
@@ -130,6 +144,33 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
 
         updates.forEach { $0() }
         subject.send(observation)
+    }
+
+    func deactivateThread(id threadID: String, activeThreads: [AgentThread]) {
+        var updates: [() -> Void] = []
+        withLock {
+            if let threadSubject = threadSubjects.removeValue(forKey: threadID) {
+                updates.append { threadSubject.send(nil) }
+            }
+            if let messageSubject = messageSubjects.removeValue(forKey: threadID) {
+                updates.append { messageSubject.send([]) }
+            }
+            if let summarySubject = summarySubjects.removeValue(forKey: threadID) {
+                updates.append { summarySubject.send(nil) }
+            }
+            if let contextStateSubject = contextStateSubjects.removeValue(forKey: threadID) {
+                updates.append { contextStateSubject.send(nil) }
+            }
+            if let contextUsageSubject = contextUsageSubjects.removeValue(forKey: threadID) {
+                updates.append { contextUsageSubject.send(nil) }
+            }
+            updates.append { self.threadsSubject.send(activeThreads) }
+        }
+        updates.forEach { $0() }
+        subject.send(.threadsChanged(activeThreads))
+        subject.send(.messagesChanged(threadID: threadID, messages: []))
+        subject.send(.threadContextStateChanged(threadID: threadID, state: nil))
+        subject.send(.threadContextUsageChanged(threadID: threadID, usage: nil))
     }
 
     private func threadSubject(for threadID: String) -> CurrentValueSubject<AgentThread?, Never> {

@@ -119,8 +119,21 @@ extension AgentRuntime {
         if !pendingStoreOperations.isEmpty {
             try await persistState()
         }
-        state = try state.applying([.deleteThread(threadID: id)])
-        try await stateStore.apply([.deleteThread(threadID: id)])
+        let operation = AgentStoreWriteOperation.deleteThread(threadID: id)
+        state = try state.applying([operation])
+        do {
+            try await persistenceCoordinator.apply([operation])
+            await publishCommittedObservation(
+                AgentRuntimeObservationBatchSnapshot(
+                    threadID: id,
+                    threadSnapshot: nil,
+                    isDeletion: true
+                )
+            )
+        } catch {
+            await recoverAfterPersistenceFailure(threadIDs: [id])
+            throw error
+        }
     }
 
     public func redactHistoryItems(
@@ -141,14 +154,28 @@ extension AgentRuntime {
             reason: reason
         )
         state = try state.applying([operation])
-        try await stateStore.apply([operation])
+        let observationSnapshot = makeThreadObservationSnapshot(for: threadID)
+        do {
+            try await persistenceCoordinator.apply([operation])
+            await publishCommittedObservation(
+                AgentRuntimeObservationBatchSnapshot(
+                    threadID: threadID,
+                    threadSnapshot: observationSnapshot,
+                    isDeletion: false
+                )
+            )
+        } catch {
+            await recoverAfterPersistenceFailure(threadIDs: [threadID])
+            throw error
+        }
     }
 
+    @discardableResult
     func appendHistoryItem(
         _ item: AgentHistoryItem,
         threadID: String,
         createdAt: Date
-    ) {
+    ) -> AgentHistoryRecord {
         let nextSequence = state.nextHistorySequenceByThread[threadID]
             ?? ((state.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1)
         let record = AgentHistoryRecord(
@@ -172,9 +199,34 @@ extension AgentRuntime {
         )
         state.historyByThread[threadID, default: []].append(record)
         state.nextHistorySequenceByThread[threadID] = nextSequence + 1
+        if let thread = thread(for: threadID) {
+            let current = state.summariesByThread[threadID]
+                ?? state.threadSummaryFallback(for: thread)
+            let projected = StoredRuntimeStateProjectionBuilder().rebuildSummary(
+                for: thread,
+                history: [record],
+                existing: current
+            )
+            let updatedSummary = AgentThreadSummary(
+                threadID: projected.threadID,
+                createdAt: projected.createdAt,
+                updatedAt: max(projected.updatedAt, createdAt),
+                latestItemAt: createdAt,
+                itemCount: (current.itemCount ?? 0) + 1,
+                latestAssistantMessagePreview: projected.latestAssistantMessagePreview,
+                latestStructuredOutputMetadata: projected.latestStructuredOutputMetadata,
+                latestPartialStructuredOutput: projected.latestPartialStructuredOutput,
+                latestToolState: projected.latestToolState,
+                latestTurnStatus: projected.latestTurnStatus,
+                pendingState: projected.pendingState
+            )
+            state.summariesByThread[threadID] = updatedSummary
+            enqueueStoreOperation(.upsertSummary(threadID: threadID, summary: updatedSummary))
+        }
         enqueueStoreOperation(
             .appendHistoryItems(threadID: threadID, items: [record])
         )
+        return record
     }
 
     func updateThreadTimestamp(

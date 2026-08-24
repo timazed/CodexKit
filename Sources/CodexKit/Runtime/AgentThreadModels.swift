@@ -146,6 +146,11 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
     public var structuredOutput: AgentStructuredOutputMetadata?
+    /// A complete historical tool call/result relationship represented as one
+    /// atomic context item. Backends that understand tool history can replay
+    /// the original provider call ID and arguments without exposing a partial
+    /// call when a bounded context window is hydrated.
+    public var toolInteraction: AgentToolInteraction?
     public var createdAt: Date
 
     public init(
@@ -155,6 +160,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         text: String,
         images: [AgentImageAttachment] = [],
         structuredOutput: AgentStructuredOutputMetadata? = nil,
+        toolInteraction: AgentToolInteraction? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -163,6 +169,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         self.text = text
         self.images = images
         self.structuredOutput = structuredOutput
+        self.toolInteraction = toolInteraction
         self.createdAt = createdAt
     }
 
@@ -189,6 +196,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         case text
         case images
         case structuredOutput
+        case toolInteraction
         case createdAt
     }
 
@@ -203,7 +211,51 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
             AgentStructuredOutputMetadata.self,
             forKey: .structuredOutput
         )
+        toolInteraction = try container.decodeIfPresent(
+            AgentToolInteraction.self,
+            forKey: .toolInteraction
+        )
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
+}
+
+/// The durable, model-facing representation of a completed tool interaction.
+public struct AgentToolInteraction: Codable, Hashable, Sendable {
+    public let invocation: ToolInvocation
+    public let result: ToolResultEnvelope
+
+    public init(
+        invocation: ToolInvocation,
+        result: ToolResultEnvelope
+    ) {
+        self.invocation = invocation
+        self.result = result
+    }
+}
+
+extension AgentMessage {
+    var estimatedContextCharacterCount: Int {
+        var characters = text.count + (images.count * 512)
+        guard let toolInteraction else {
+            return characters
+        }
+
+        characters += toolInteraction.invocation.toolName.count
+        characters += toolInteraction.invocation.arguments.prettyJSONString.count
+        characters += toolInteraction.result.errorMessage?.count ?? 0
+        for content in toolInteraction.result.content {
+            switch content {
+            case let .text(text):
+                characters += text.count
+            case let .image(url):
+                characters += url.absoluteString.count
+            }
+        }
+        return characters
+    }
+
+    var modelContextItemCount: Int {
+        toolInteraction == nil ? 1 : 2
     }
 }
 

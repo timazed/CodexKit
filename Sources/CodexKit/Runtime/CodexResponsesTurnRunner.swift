@@ -126,7 +126,7 @@ struct CodexResponsesTurnRunner {
             if let items = providerState?.items, !items.isEmpty {
                 workingHistory = items.map(WorkingHistoryItem.raw)
             } else {
-                workingHistory = history.map(WorkingHistoryItem.visibleMessage)
+                workingHistory = workingHistoryItems(from: history)
             }
         case .serverManaged:
             if providerState?.previousResponseID != nil {
@@ -134,7 +134,7 @@ struct CodexResponsesTurnRunner {
             } else if let items = providerState?.items, !items.isEmpty {
                 workingHistory = items.map(WorkingHistoryItem.raw)
             } else {
-                workingHistory = history.map(WorkingHistoryItem.visibleMessage)
+                workingHistory = workingHistoryItems(from: history)
             }
         }
         workingHistory.append(contentsOf: developerMessages(for: newMessage))
@@ -151,6 +151,30 @@ struct CodexResponsesTurnRunner {
             )
         }
         return workingHistory
+    }
+
+    private func workingHistoryItems(
+        from history: [AgentMessage]
+    ) -> [WorkingHistoryItem] {
+        history.flatMap { message -> [WorkingHistoryItem] in
+            guard let interaction = message.toolInteraction else {
+                return [.visibleMessage(message)]
+            }
+
+            return [
+                .functionCall(
+                    FunctionCallRecord(
+                        name: interaction.invocation.toolName,
+                        callID: interaction.invocation.id,
+                        argumentsRaw: interaction.invocation.arguments.prettyJSONString
+                    )
+                ),
+                .functionCallOutput(
+                    callID: interaction.invocation.id,
+                    output: toolOutputAdapter.text(from: interaction.result)
+                ),
+            ]
+        }
     }
 
     private func developerMessages(

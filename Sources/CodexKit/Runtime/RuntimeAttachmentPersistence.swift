@@ -108,6 +108,7 @@ struct PersistedAgentMessage: Codable, Hashable {
     let text: String
     let images: [PersistedImageAttachment]
     let structuredOutput: AgentStructuredOutputMetadata?
+    let toolInteraction: AgentToolInteraction?
     let createdAt: Date
 
     init(
@@ -127,6 +128,7 @@ struct PersistedAgentMessage: Codable, Hashable {
             )
         }
         self.structuredOutput = message.structuredOutput
+        self.toolInteraction = message.toolInteraction
         self.createdAt = message.createdAt
     }
 
@@ -138,7 +140,45 @@ struct PersistedAgentMessage: Codable, Hashable {
             text: text,
             images: try images.map { try attachmentStore.load($0) },
             structuredOutput: structuredOutput,
+            toolInteraction: toolInteraction,
             createdAt: createdAt
+        )
+    }
+}
+
+struct PersistedAgentThreadContextState: Codable, Hashable {
+    let threadID: String
+    let effectiveMessages: [PersistedAgentMessage]
+    let providerContext: AgentProviderContext?
+    let generation: Int
+    let lastCompactedAt: Date?
+    let lastCompactionReason: AgentContextCompactionReason?
+    let latestMarkerID: String?
+
+    init(
+        state: AgentThreadContextState,
+        attachmentStore: RuntimeAttachmentStore
+    ) throws {
+        self.threadID = state.threadID
+        self.effectiveMessages = try state.effectiveMessages.map {
+            try PersistedAgentMessage(message: $0, attachmentStore: attachmentStore)
+        }
+        self.providerContext = state.providerContext
+        self.generation = state.generation
+        self.lastCompactedAt = state.lastCompactedAt
+        self.lastCompactionReason = state.lastCompactionReason
+        self.latestMarkerID = state.latestMarkerID
+    }
+
+    func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentThreadContextState {
+        AgentThreadContextState(
+            threadID: threadID,
+            effectiveMessages: try effectiveMessages.map { try $0.decode(using: attachmentStore) },
+            providerContext: providerContext,
+            generation: generation,
+            lastCompactedAt: lastCompactedAt,
+            lastCompactionReason: lastCompactionReason,
+            latestMarkerID: latestMarkerID
         )
     }
 }

@@ -69,6 +69,23 @@ struct RuntimeHistoryExistenceQuery {
     }
 }
 
+struct RuntimeNextHistorySequenceQuery {
+    let threadID: String
+
+    func execute(in db: Database) throws -> Int {
+        let row = try SQLRequest<Row>(
+            sql: """
+            SELECT COALESCE(MAX(sequenceNumber), 0) + 1 AS next_sequence
+            FROM \(RuntimeHistoryRow.databaseTableName)
+            WHERE threadID = ?
+            """,
+            arguments: [threadID]
+        ).fetchOne(db)
+        let nextSequence: Int? = row?["next_sequence"]
+        return nextSequence ?? 1
+    }
+}
+
 struct RuntimeStructuredOutputRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
     static let databaseTableName = "runtime_structured_outputs"
 

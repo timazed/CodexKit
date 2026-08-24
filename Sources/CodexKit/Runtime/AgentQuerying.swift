@@ -10,19 +10,46 @@ public struct AgentStoreCapabilities: Sendable, Hashable, Codable {
     public var supportsSorting: Bool
     public var supportsFiltering: Bool
     public var supportsMigrations: Bool
+    public var supportsLazyThreadActivation: Bool
 
     public init(
         supportsPushdownQueries: Bool,
         supportsCrossThreadQueries: Bool,
         supportsSorting: Bool,
         supportsFiltering: Bool,
-        supportsMigrations: Bool
+        supportsMigrations: Bool,
+        supportsLazyThreadActivation: Bool = false
     ) {
         self.supportsPushdownQueries = supportsPushdownQueries
         self.supportsCrossThreadQueries = supportsCrossThreadQueries
         self.supportsSorting = supportsSorting
         self.supportsFiltering = supportsFiltering
         self.supportsMigrations = supportsMigrations
+        self.supportsLazyThreadActivation = supportsLazyThreadActivation
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case supportsPushdownQueries
+        case supportsCrossThreadQueries
+        case supportsSorting
+        case supportsFiltering
+        case supportsMigrations
+        case supportsLazyThreadActivation
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            supportsPushdownQueries: try container.decode(Bool.self, forKey: .supportsPushdownQueries),
+            supportsCrossThreadQueries: try container.decode(Bool.self, forKey: .supportsCrossThreadQueries),
+            supportsSorting: try container.decode(Bool.self, forKey: .supportsSorting),
+            supportsFiltering: try container.decode(Bool.self, forKey: .supportsFiltering),
+            supportsMigrations: try container.decode(Bool.self, forKey: .supportsMigrations),
+            supportsLazyThreadActivation: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .supportsLazyThreadActivation
+            ) ?? false
+        )
     }
 }
 

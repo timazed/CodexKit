@@ -1,6 +1,13 @@
 import Foundation
 import GRDB
 
+struct SQLiteThreadActivationMetrics: Equatable, Sendable {
+    let fetchedHistoryRowCount: Int
+    let decodedHistoryRowCount: Int
+    let decodedHistoryByteCount: Int
+    let usedPersistedContextState: Bool
+}
+
 public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
     static let currentStoreSchemaVersion = 2
 
@@ -12,6 +19,8 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
     let dbQueue: DatabaseQueue
     let migrator: DatabaseMigrator
     var isPrepared = false
+    var decodedHistoryBodyCount = 0
+    var latestActivationMetrics: SQLiteThreadActivationMetrics?
 
     var persistence: SQLiteRuntimeStorePersistence {
         SQLiteRuntimeStorePersistence(attachmentStore: attachmentStore)
@@ -48,6 +57,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
 
         var configuration = Configuration()
         configuration.foreignKeysEnabled = true
+        configuration.busyMode = .timeout(5)
         configuration.label = "CodexKit.SQLiteRuntimeStateStore"
         dbQueue = try DatabaseQueue(path: url.path, configuration: configuration)
         migrator = SQLiteRuntimeStoreSchema(currentStoreSchemaVersion: Self.currentStoreSchemaVersion)
@@ -71,7 +81,8 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 supportsCrossThreadQueries: true,
                 supportsSorting: true,
                 supportsFiltering: true,
-                supportsMigrations: true
+                supportsMigrations: true,
+                supportsLazyThreadActivation: true
             ),
             storeKind: "SQLiteRuntimeStateStore"
         )
@@ -82,7 +93,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         let persistence = self.persistence
         logger.debug(.persistence, "Loading SQLite runtime state.", metadata: ["url": url.path])
 
-        let loadedState = try await dbQueue.read { db in
+        let loaded = try await dbQueue.read { db in
             let threadRows = try RuntimeThreadRow.fetchAll(db)
             let summaryRows = try RuntimeSummaryRow.fetchAll(db)
             let historyRows = try RuntimeHistoryRow.fetchAll(db)
@@ -104,13 +115,18 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 }
             )
 
-            return StoredRuntimeState(
-                threads: threads,
-                historyByThread: historyByThread,
-                summariesByThread: summariesByThread,
-                contextStateByThread: contextStateByThread
+            return (
+                state: StoredRuntimeState(
+                    threads: threads,
+                    historyByThread: historyByThread,
+                    summariesByThread: summariesByThread,
+                    contextStateByThread: contextStateByThread
+                ),
+                decodedHistoryBodyCount: historyRows.count
             )
         }
+        decodedHistoryBodyCount += loaded.decodedHistoryBodyCount
+        let loadedState = loaded.state
         logger.debug(
             .persistence,
             "Loaded SQLite runtime state.",
@@ -147,14 +163,168 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         }
     }
 
+    public func loadThreadActivationState(
+        id: String,
+        policy: AgentThreadActivationPolicy
+    ) async throws -> AgentThreadActivationState {
+        try await ensurePrepared()
+        let persistence = self.persistence
+        let historyRecordLimit = max(0, policy.maximumHistoryRecordCount)
+        let historyQueryLimit = historyRecordLimit == Int.max
+            ? Int.max
+            : historyRecordLimit + 1
+
+        let loaded = try await dbQueue.read { db in
+            guard let threadRow = try RuntimeThreadRow.fetchOne(db, key: id) else {
+                throw AgentRuntimeError.threadNotFound(id)
+            }
+
+            let thread = try persistence.decodeThread(from: threadRow)
+            let summary: AgentThreadSummary
+            if let summaryRow = try RuntimeSummaryRow.fetchOne(db, key: id) {
+                summary = try persistence.decodeSummary(from: summaryRow)
+            } else {
+                summary = StoredRuntimeState(threads: [thread]).threadSummaryFallback(for: thread)
+            }
+
+            let nextHistorySequence = try RuntimeNextHistorySequenceQuery(threadID: id)
+                .execute(in: db)
+
+            if let contextRow = try RuntimeContextStateRow.fetchOne(db, key: id) {
+                let persistedContextState = try persistence.decodeContextState(from: contextRow)
+                let effectiveMessages = AgentThreadContextWindow.boundedMessages(
+                    persistedContextState.effectiveMessages,
+                    policy: policy,
+                    requireClosedTurns: true
+                )
+                let contextState = AgentThreadContextState(
+                    threadID: id,
+                    effectiveMessages: effectiveMessages,
+                    providerContext: effectiveMessages == persistedContextState.effectiveMessages
+                        ? persistedContextState.providerContext
+                        : nil,
+                    generation: persistedContextState.generation,
+                    lastCompactedAt: persistedContextState.lastCompactedAt,
+                    lastCompactionReason: persistedContextState.lastCompactionReason,
+                    latestMarkerID: persistedContextState.latestMarkerID
+                )
+                return (
+                    state: AgentThreadActivationState(
+                        thread: thread,
+                        summary: summary,
+                        contextState: contextState,
+                        nextHistorySequence: nextHistorySequence,
+                        effectiveMessages: effectiveMessages
+                    ),
+                    metrics: SQLiteThreadActivationMetrics(
+                        fetchedHistoryRowCount: 0,
+                        decodedHistoryRowCount: 0,
+                        decodedHistoryByteCount: 0,
+                        usedPersistedContextState: true
+                    )
+                )
+            }
+
+            guard historyRecordLimit > 0 else {
+                return (
+                    state: AgentThreadActivationState(
+                        thread: thread,
+                        summary: summary,
+                        contextState: nil,
+                        nextHistorySequence: nextHistorySequence,
+                        effectiveMessages: []
+                    ),
+                    metrics: SQLiteThreadActivationMetrics(
+                        fetchedHistoryRowCount: 0,
+                        decodedHistoryRowCount: 0,
+                        decodedHistoryByteCount: 0,
+                        usedPersistedContextState: false
+                    )
+                )
+            }
+
+            // Fetch one extra row so a cut relationship at the leading edge can be
+            // discarded rather than exposed as a partial conversational turn.
+            let rows = try RuntimeHistoryRowsRequest(
+                sql: """
+                SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
+                WHERE threadID = ?
+                ORDER BY sequenceNumber DESC
+                LIMIT ?
+                """,
+                arguments: [id, historyQueryLimit]
+            ).execute(in: db)
+            let boundedRows = Array(rows.prefix(historyRecordLimit)).reversed()
+            let records = try boundedRows.map(persistence.decodeHistoryRecord)
+            let messages = AgentThreadContextWindow.reconstructedMessages(from: records)
+            let effectiveMessages = AgentThreadContextWindow.boundedMessages(
+                messages,
+                policy: policy,
+                requireClosedTurns: true
+            )
+
+            return (
+                state: AgentThreadActivationState(
+                    thread: thread,
+                    summary: summary,
+                    contextState: nil,
+                    nextHistorySequence: nextHistorySequence,
+                    effectiveMessages: effectiveMessages
+                ),
+                metrics: SQLiteThreadActivationMetrics(
+                    fetchedHistoryRowCount: rows.count,
+                    decodedHistoryRowCount: boundedRows.count,
+                    decodedHistoryByteCount: boundedRows.reduce(0) {
+                        $0 + $1.encodedRecord.count
+                    },
+                    usedPersistedContextState: false
+                )
+            )
+        }
+        latestActivationMetrics = loaded.metrics
+        decodedHistoryBodyCount += loaded.metrics.decodedHistoryRowCount
+        return loaded.state
+    }
+
+    func resetActivationDiagnostics() {
+        decodedHistoryBodyCount = 0
+        latestActivationMetrics = nil
+    }
+
+    func activationDiagnostics() -> (
+        decodedHistoryBodyCount: Int,
+        latestActivation: SQLiteThreadActivationMetrics?
+    ) {
+        (decodedHistoryBodyCount, latestActivationMetrics)
+    }
+
+    func activationHistoryQueryPlan(
+        threadID: String,
+        limit: Int
+    ) async throws -> [String] {
+        try await ensurePrepared()
+        return try await dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                EXPLAIN QUERY PLAN
+                SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
+                WHERE threadID = ?
+                ORDER BY sequenceNumber DESC
+                LIMIT ?
+                """,
+                arguments: [threadID, max(1, limit)]
+            )
+            return rows.compactMap { row in
+                let detail: String? = row["detail"]
+                return detail
+            }
+        }
+    }
+
     public func apply(_ operations: [AgentStoreWriteOperation]) async throws {
         try await ensurePrepared()
         guard !operations.isEmpty else {
-            return
-        }
-
-        let affectedThreadIDs = Set(operations.map(\.affectedThreadID))
-        guard !affectedThreadIDs.isEmpty else {
             return
         }
 
@@ -165,27 +335,33 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
             metadata: [
                 "url": url.path,
                 "operation_count": "\(operations.count)",
-                "affected_threads": "\(affectedThreadIDs.count)",
+                "affected_threads": "\(Set(operations.map(\.affectedThreadID)).count)",
                 "operation_types": operationTypeSummary(for: operations)
             ]
         )
         try await dbQueue.write { db in
-            var partialState = try persistence.loadPartialState(
-                for: affectedThreadIDs,
-                from: db
-            )
-            partialState = try partialState.applying(operations)
-
-            for threadID in affectedThreadIDs {
-                try persistence.deletePersistedThread(threadID, in: db)
-                try attachmentStore.removeThread(threadID)
+            if operations.contains(where: { operation in
+                if case .redactHistoryItems = operation { return true }
+                return false
+            }) {
+                let affectedThreadIDs = Set(operations.map(\.affectedThreadID))
+                var partialState = try persistence.loadPartialState(
+                    for: affectedThreadIDs,
+                    from: db
+                )
+                partialState = try partialState.applying(operations)
+                for threadID in affectedThreadIDs {
+                    try persistence.deletePersistedThread(threadID, in: db)
+                    try attachmentStore.removeThread(threadID)
+                }
+                try persistence.persistThreads(
+                    ids: affectedThreadIDs,
+                    from: partialState,
+                    in: db
+                )
+            } else {
+                try persistence.apply(operations, in: db)
             }
-
-            try persistence.persistThreads(
-                ids: affectedThreadIDs,
-                from: partialState,
-                in: db
-            )
         }
     }
 

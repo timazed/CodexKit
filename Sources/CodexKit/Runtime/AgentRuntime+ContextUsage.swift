@@ -2,18 +2,23 @@ import Foundation
 
 extension AgentRuntime {
     func threadContextUsage(for threadID: String) async -> AgentThreadContextUsage? {
-        guard state.threads.contains(where: { $0.id == threadID }) else {
+        guard let snapshot = makeThreadObservationSnapshot(for: threadID) else {
             return nil
         }
 
-        let visibleMessages = state.messagesByThread[threadID] ?? []
-        let effectiveMessages = effectiveHistory(for: threadID)
-        let model = state.threads.first(where: { $0.id == threadID })?.configuration?.model
+        return await threadContextUsage(for: snapshot)
+    }
+
+    func threadContextUsage(
+        for snapshot: AgentRuntimeThreadObservationSnapshot
+    ) async -> AgentThreadContextUsage {
+        let threadID = snapshot.thread.id
+        let model = snapshot.thread.configuration?.model
 
         return AgentThreadContextUsage(
             threadID: threadID,
-            visibleEstimatedTokenCount: approximateTokenCount(for: visibleMessages),
-            effectiveEstimatedTokenCount: approximateTokenCount(for: effectiveMessages),
+            visibleEstimatedTokenCount: approximateTokenCount(for: snapshot.messages),
+            effectiveEstimatedTokenCount: approximateTokenCount(for: snapshot.effectiveMessages),
             modelContextWindowTokenCount: await modelContextWindowTokenCount(for: model),
             usableContextWindowTokenCount: await usableContextWindowTokenCount(for: model)
         )
@@ -27,7 +32,7 @@ extension AgentRuntime {
         return max(
             1,
             messages.reduce(into: 0) { total, message in
-                total += message.text.count + (message.images.count * 512)
+                total += message.estimatedContextCharacterCount
             } / 4
         )
     }

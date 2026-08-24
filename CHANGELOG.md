@@ -6,6 +6,27 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.23] - 2026-08-24
+
+### Added
+
+- Added lazy, primary-key thread activation for SQLite runtimes with configurable message, token, and history-record bounds.
+- Added `deactivateThread(id:)` so hosts can release hydrated working sets without deleting durable history, summaries, compaction state, or semantic memory.
+- Added durable completed-tool interaction context that preserves invocation IDs, arguments, and results for exact Responses replay.
+
+### Changed
+
+- SQLite runtime startup now prepares metadata without decoding persisted threads or history, and thread resumption hydrates only the requested bounded context.
+- Runtime persistence now detaches immutable per-thread batches, serializes store writes through an isolated coordinator, and publishes observations from committed snapshots only.
+- SQLite history appends now validate and allocate against the persisted per-thread maximum sequence inside the database transaction.
+
+### Fixed
+
+- Fixed cold SQLite thread resumption failing with duplicate history sequence numbers after a process relaunch.
+- Prevented failed persistence appends from poisoning later writes for unrelated threads.
+- Retried same-thread resume sequence contention across concurrent runtimes while preserving monotonic history ordering.
+- Preserved closed conversation turns, tool call/result pairs, structured output, and compaction boundaries during legacy history hydration.
+
 ## [2.0.0-alpha.22] - 2026-08-21
 
 ### Added
@@ -209,7 +230,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.21...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.23...HEAD
+[2.0.0-alpha.23]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.22...v2.0.0-alpha.23
+[2.0.0-alpha.22]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.21...v2.0.0-alpha.22
 [2.0.0-alpha.21]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.20...v2.0.0-alpha.21
 [2.0.0-alpha.20]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.19...v2.0.0-alpha.20
 [2.0.0-alpha.19]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.18...v2.0.0-alpha.19

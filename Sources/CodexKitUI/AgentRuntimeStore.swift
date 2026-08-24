@@ -16,6 +16,7 @@ public final class AgentRuntimeStore {
 
     private let runtime: AgentRuntime
     private var activeThreadID: String?
+    private let restoredThreadLimit = 50
 
     public init(
         runtime: AgentRuntime,
@@ -38,10 +39,14 @@ public final class AgentRuntimeStore {
     public func restore() async {
         do {
             _ = try await runtime.restore()
-            threads = await runtime.threads()
-            if let firstThread = threads.first {
+            threads = try await loadThreadMetadata()
+            let activeThreads = await runtime.threads()
+            if let firstThread = activeThreads.first {
                 activeThreadID = firstThread.id
                 messages = await runtime.messages(for: firstThread.id)
+            } else {
+                activeThreadID = nil
+                messages = []
             }
             session = await runtime.currentSession()
         } catch {
@@ -52,7 +57,7 @@ public final class AgentRuntimeStore {
     public func signIn() async {
         do {
             session = try await runtime.signIn()
-            threads = await runtime.threads()
+            threads = try await loadThreadMetadata()
         } catch {
             lastError = error.localizedDescription
         }
@@ -74,7 +79,7 @@ public final class AgentRuntimeStore {
     public func createThread(title: String? = nil) async {
         do {
             let thread = try await runtime.createThread(title: title)
-            threads = await runtime.threads()
+            threads = try await loadThreadMetadata()
             activeThreadID = thread.id
             messages = await runtime.messages(for: thread.id)
         } catch {
@@ -83,9 +88,18 @@ public final class AgentRuntimeStore {
     }
 
     public func activateThread(id: String) async {
-        activeThreadID = id
-        messages = await runtime.messages(for: id)
-        streamingText = ""
+        do {
+            let activeThreads = await runtime.threads()
+            if !activeThreads.contains(where: { $0.id == id }) {
+                _ = try await runtime.resumeThread(id: id)
+                threads = try await loadThreadMetadata()
+            }
+            activeThreadID = id
+            messages = await runtime.messages(for: id)
+            streamingText = ""
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     public func send(_ text: String) async {
@@ -154,7 +168,7 @@ public final class AgentRuntimeStore {
 
                 case .turnCompleted:
                     messages = await runtime.messages(for: activeThreadID)
-                    threads = await runtime.threads()
+                    threads = try await loadThreadMetadata()
 
                 case let .turnFailed(error):
                     lastError = error.message
@@ -167,5 +181,11 @@ public final class AgentRuntimeStore {
 
     public func dismissError() {
         lastError = nil
+    }
+
+    private func loadThreadMetadata() async throws -> [AgentThread] {
+        try await runtime.execute(
+            ThreadMetadataQuery(limit: restoredThreadLimit)
+        )
     }
 }

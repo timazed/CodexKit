@@ -7,7 +7,8 @@ func makeHistoryRuntime(
     approvalPresenter: any ApprovalPresenting,
     stateStore: any RuntimeStateStoring,
     tools: [AgentRuntime.ToolRegistration] = [],
-    contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration()
+    contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration(),
+    threadActivationPolicy: AgentThreadActivationPolicy = AgentThreadActivationPolicy()
 ) throws -> AgentRuntime {
     try AgentRuntime(configuration: .init(
         authProvider: DemoChatGPTAuthProvider(),
@@ -16,7 +17,8 @@ func makeHistoryRuntime(
         approvalPresenter: approvalPresenter,
         stateStore: stateStore,
         tools: tools,
-        contextCompaction: contextCompaction
+        contextCompaction: contextCompaction,
+        threadActivationPolicy: threadActivationPolicy
     ))
 }
 

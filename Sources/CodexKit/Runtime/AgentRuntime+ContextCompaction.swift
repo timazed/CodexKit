@@ -38,10 +38,6 @@ extension AgentRuntime {
     }
 
     func appendEffectiveMessage(_ message: AgentMessage) {
-        guard shouldUseCompaction() || state.contextStateByThread[message.threadID] != nil else {
-            return
-        }
-
         let currentEffectiveMessages = state.contextStateByThread[message.threadID]?.effectiveMessages
             ?? Array((state.messagesByThread[message.threadID] ?? []).dropLast())
         let current = state.contextStateByThread[message.threadID]
@@ -49,10 +45,18 @@ extension AgentRuntime {
                 threadID: message.threadID,
                 effectiveMessages: currentEffectiveMessages
             )
+        let candidateEffectiveMessages = current.effectiveMessages + [message]
+        let boundedEffectiveMessages = AgentThreadContextWindow.boundedMessages(
+            candidateEffectiveMessages,
+            policy: threadActivationPolicy,
+            requireClosedTurns: false
+        )
         let updated = AgentThreadContextState(
             threadID: current.threadID,
-            effectiveMessages: current.effectiveMessages + [message],
-            providerContext: current.providerContext,
+            effectiveMessages: boundedEffectiveMessages,
+            providerContext: boundedEffectiveMessages == candidateEffectiveMessages
+                ? current.providerContext
+                : nil,
             generation: current.generation,
             lastCompactedAt: current.lastCompactedAt,
             lastCompactionReason: current.lastCompactionReason,
@@ -60,6 +64,29 @@ extension AgentRuntime {
         )
         state.contextStateByThread[message.threadID] = updated
         enqueueStoreOperation(.upsertThreadContextState(threadID: message.threadID, state: updated))
+    }
+
+    func appendEffectiveToolInteraction(
+        invocation: ToolInvocation,
+        result: ToolResultEnvelope,
+        completedAt: Date = Date()
+    ) {
+        let resultText = result.primaryText
+            ?? result.errorMessage
+            ?? (result.success ? "completed" : "failed")
+        appendEffectiveMessage(
+            AgentMessage(
+                id: "tool-interaction:\(invocation.id)",
+                threadID: invocation.threadID,
+                role: .tool,
+                text: "Tool \(invocation.toolName) completed: \(resultText)",
+                toolInteraction: AgentToolInteraction(
+                    invocation: invocation,
+                    result: result
+                ),
+                createdAt: completedAt
+            )
+        )
     }
 
     func maybeCompactThreadContextBeforeTurn(
@@ -202,6 +229,11 @@ extension AgentRuntime {
             tools: tools,
             session: session
         )
+        let boundedCompactedMessages = AgentThreadContextWindow.boundedMessages(
+            result.effectiveMessages,
+            policy: threadActivationPolicy,
+            requireClosedTurns: false
+        )
 
         let markerTime = Date()
         let nextGeneration = current.generation + 1
@@ -209,27 +241,28 @@ extension AgentRuntime {
             generation: nextGeneration,
             reason: reason,
             effectiveMessageCountBefore: current.effectiveMessages.count,
-            effectiveMessageCountAfter: result.effectiveMessages.count,
+            effectiveMessageCountAfter: boundedCompactedMessages.count,
             debugSummaryPreview: result.summaryPreview
         )
-        let markerRecord = AgentHistoryRecord(
-            sequenceNumber: state.nextHistorySequenceByThread[threadID]
-                ?? ((state.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1),
-            createdAt: markerTime,
-            item: .systemEvent(
+        let markerRecord = appendHistoryItem(
+            .systemEvent(
                 AgentSystemEventRecord(
                     type: .contextCompacted,
                     threadID: threadID,
                     compaction: markerPayload,
                     occurredAt: markerTime
                 )
-            )
+            ),
+            threadID: threadID,
+            createdAt: markerTime,
         )
 
         let updated = AgentThreadContextState(
             threadID: threadID,
-            effectiveMessages: result.effectiveMessages,
-            providerContext: result.providerContext,
+            effectiveMessages: boundedCompactedMessages,
+            providerContext: boundedCompactedMessages == result.effectiveMessages
+                ? result.providerContext
+                : nil,
             generation: nextGeneration,
             lastCompactedAt: markerTime,
             lastCompactionReason: reason,
@@ -237,9 +270,6 @@ extension AgentRuntime {
         )
         state.contextStateByThread[threadID] = updated
         enqueueStoreOperation(.upsertThreadContextState(threadID: threadID, state: updated))
-        state.historyByThread[threadID, default: []].append(markerRecord)
-        state.nextHistorySequenceByThread[threadID] = nextGenerationSequence(afterAppendingTo: threadID)
-        enqueueStoreOperation(.appendCompactionMarker(threadID: threadID, marker: markerRecord))
         try await persistState()
         logger.info(
             .compaction,
@@ -394,9 +424,5 @@ extension AgentRuntime {
         return message.contains("context") && message.contains("limit")
             || message.contains("maximum context length")
             || message.contains("too many tokens")
-    }
-
-    private func nextGenerationSequence(afterAppendingTo threadID: String) -> Int {
-        (state.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1
     }
 }

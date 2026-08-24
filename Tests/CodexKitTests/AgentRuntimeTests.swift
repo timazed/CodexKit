@@ -67,6 +67,7 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(state.threads.first?.configuration, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.images, [])
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.structuredOutput, nil)
+        XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.toolInteraction, nil)
         XCTAssertEqual(state.messagesByThread["thread-1"]?.first?.text, "Hello from legacy state")
     }
 

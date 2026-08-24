@@ -86,6 +86,84 @@ final class CodexResponsesBackendTests: XCTestCase {
         XCTAssertEqual(summary?.usage?.outputTokens, 4)
     }
 
+    func testBackendReplaysHydratedToolInteractionAsExactCallResultPair() async throws {
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        let session = ChatGPTSession(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)
+        )
+        let invocation = ToolInvocation(
+            id: "persisted-call-id",
+            threadID: "thread-tool-history",
+            turnID: "persisted-turn-id",
+            toolName: "lookup_status",
+            arguments: .object(["ticket": .string("CK-42")])
+        )
+        let result = ToolResultEnvelope.success(invocation: invocation, text: "ready")
+
+        await TestURLProtocol.enqueue(
+            .init(
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(
+                    """
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Confirmed"}]}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_tool_history","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":1}}}
+
+                    """.utf8
+                ),
+                inspect: { request in
+                    let body = try XCTUnwrap(requestBodyData(for: request))
+                    let json = try XCTUnwrap(
+                        JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    )
+                    let input = try XCTUnwrap(json["input"] as? [[String: Any]])
+                    let call = try XCTUnwrap(
+                        input.first { $0["type"] as? String == "function_call" }
+                    )
+                    let output = try XCTUnwrap(
+                        input.first { $0["type"] as? String == "function_call_output" }
+                    )
+                    XCTAssertEqual(call["name"] as? String, invocation.toolName)
+                    XCTAssertEqual(call["call_id"] as? String, invocation.id)
+                    let arguments = try XCTUnwrap(call["arguments"] as? String)
+                    let argumentJSON = try XCTUnwrap(
+                        JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: String]
+                    )
+                    XCTAssertEqual(argumentJSON, ["ticket": "CK-42"])
+                    XCTAssertEqual(output["call_id"] as? String, invocation.id)
+                    XCTAssertEqual(output["output"] as? String, "ready")
+                }
+            )
+        )
+
+        let turnStream = try await backend.beginTurn(
+            thread: AgentThread(id: invocation.threadID),
+            history: [
+                AgentMessage(
+                    threadID: invocation.threadID,
+                    role: .tool,
+                    text: "Tool lookup_status completed: ready",
+                    toolInteraction: AgentToolInteraction(
+                        invocation: invocation,
+                        result: result
+                    )
+                ),
+            ],
+            message: Request(text: "What happened?"),
+            instructions: "Resolved instructions",
+            responseFormat: nil,
+            streamedStructuredOutput: nil,
+            tools: [],
+            session: session
+        )
+
+        for try await _ in turnStream.events {}
+    }
+
     func testBackendEncodesConfiguredReasoningEffort() async throws {
         let backend = CodexResponsesBackend(
             configuration: CodexResponsesBackendConfiguration(

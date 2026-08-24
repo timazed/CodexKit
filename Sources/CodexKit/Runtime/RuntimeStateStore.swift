@@ -7,6 +7,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
     public var summariesByThread: [String: AgentThreadSummary]
     public var contextStateByThread: [String: AgentThreadContextState]
     public var nextHistorySequenceByThread: [String: Int]
+    var partiallyLoadedThreadIDs: Set<String>
 
     public init(
         threads: [AgentThread] = [],
@@ -23,6 +24,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
             summariesByThread: summariesByThread,
             contextStateByThread: contextStateByThread,
             nextHistorySequenceByThread: nextHistorySequenceByThread,
+            partiallyLoadedThreadIDs: [],
             normalizeState: false
         )
         self = normalized()
@@ -35,6 +37,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
         summariesByThread: [String: AgentThreadSummary],
         contextStateByThread: [String: AgentThreadContextState],
         nextHistorySequenceByThread: [String: Int],
+        partiallyLoadedThreadIDs: Set<String> = [],
         normalizeState: Bool
     ) {
         self.threads = threads
@@ -43,6 +46,7 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
         self.summariesByThread = summariesByThread
         self.contextStateByThread = contextStateByThread
         self.nextHistorySequenceByThread = nextHistorySequenceByThread
+        self.partiallyLoadedThreadIDs = partiallyLoadedThreadIDs
         if normalizeState {
             self = normalized()
         }
@@ -72,7 +76,14 @@ public struct StoredRuntimeState: Codable, Hashable, Sendable {
     }
 }
 
-public protocol RuntimeStateStoring: Sendable {
+public protocol RuntimeThreadActivating: Sendable {
+    func loadThreadActivationState(
+        id: String,
+        policy: AgentThreadActivationPolicy
+    ) async throws -> AgentThreadActivationState
+}
+
+public protocol RuntimeStateStoring: RuntimeThreadActivating, Sendable {
     func loadState() async throws -> StoredRuntimeState
     func saveState(_ state: StoredRuntimeState) async throws
     func prepare() async throws -> AgentStoreMetadata
@@ -91,6 +102,51 @@ public protocol RuntimeStateInspecting: Sendable {
 }
 
 public extension RuntimeStateStoring {
+    func loadThreadActivationState(
+        id: String,
+        policy: AgentThreadActivationPolicy
+    ) async throws -> AgentThreadActivationState {
+        let state = try await loadState().normalized()
+        guard let thread = state.threads.first(where: { $0.id == id }) else {
+            throw AgentRuntimeError.threadNotFound(id)
+        }
+
+        let summary = state.summariesByThread[id]
+            ?? state.threadSummaryFallback(for: thread)
+        let persistedContextState = state.contextStateByThread[id]
+        let sourceMessages = persistedContextState?.effectiveMessages
+            ?? AgentThreadContextWindow.reconstructedMessages(
+                from: state.historyByThread[id] ?? []
+            )
+        let effectiveMessages = AgentThreadContextWindow.boundedMessages(
+            sourceMessages,
+            policy: policy,
+            requireClosedTurns: true
+        )
+        let contextState = persistedContextState.map { contextState in
+            AgentThreadContextState(
+                threadID: contextState.threadID,
+                effectiveMessages: effectiveMessages,
+                providerContext: effectiveMessages == contextState.effectiveMessages
+                    ? contextState.providerContext
+                    : nil,
+                generation: contextState.generation,
+                lastCompactedAt: contextState.lastCompactedAt,
+                lastCompactionReason: contextState.lastCompactionReason,
+                latestMarkerID: contextState.latestMarkerID
+            )
+        }
+
+        return AgentThreadActivationState(
+            thread: thread,
+            summary: summary,
+            contextState: contextState,
+            nextHistorySequence: state.nextHistorySequenceByThread[id]
+                ?? ((state.historyByThread[id]?.last?.sequenceNumber ?? 0) + 1),
+            effectiveMessages: effectiveMessages
+        )
+    }
+
     func prepare() async throws -> AgentStoreMetadata {
         _ = try await loadState()
         return try await readMetadata()

@@ -53,6 +53,250 @@ extension SQLiteRuntimeStateStore {
 struct SQLiteRuntimeStorePersistence: Sendable {
     let attachmentStore: RuntimeAttachmentStore
 
+    func apply(
+        _ operations: [AgentStoreWriteOperation],
+        in db: Database
+    ) throws {
+        let explicitlyUpdatedSummaryThreadIDs = Set(operations.compactMap { operation -> String? in
+            guard case let .upsertSummary(threadID, _) = operation else { return nil }
+            return threadID
+        })
+
+        // A newly created thread must exist before its summary and history rows
+        // can satisfy their foreign keys, regardless of coalescing order.
+        for operation in operations {
+            guard case let .upsertThread(thread) = operation else { continue }
+            try makeThreadRow(from: thread).save(db)
+            if let summaryRow = try RuntimeSummaryRow.fetchOne(db, key: thread.id) {
+                let summary = try decodeSummary(from: summaryRow)
+                try makeSummaryRow(from: AgentThreadSummary(
+                    threadID: summary.threadID,
+                    createdAt: thread.createdAt,
+                    updatedAt: thread.updatedAt,
+                    latestItemAt: summary.latestItemAt,
+                    itemCount: summary.itemCount,
+                    latestAssistantMessagePreview: summary.latestAssistantMessagePreview,
+                    latestStructuredOutputMetadata: summary.latestStructuredOutputMetadata,
+                    latestPartialStructuredOutput: summary.latestPartialStructuredOutput,
+                    latestToolState: summary.latestToolState,
+                    latestTurnStatus: summary.latestTurnStatus,
+                    pendingState: summary.pendingState
+                )).save(db)
+            } else {
+                let summary = StoredRuntimeState(threads: [thread])
+                    .threadSummaryFallback(for: thread)
+                try makeSummaryRow(from: summary).save(db)
+            }
+        }
+
+        for operation in operations {
+            switch operation {
+            case .upsertThread:
+                continue
+
+            case let .upsertSummary(_, summary):
+                try makeSummaryRow(from: summary).save(db)
+
+            case let .appendHistoryItems(threadID, items):
+                try appendHistoryItems(items, to: threadID, in: db)
+                if !explicitlyUpdatedSummaryThreadIDs.contains(threadID) {
+                    try updateSummaryAfterAppending(items, threadID: threadID, in: db)
+                }
+
+            case let .appendCompactionMarker(threadID, marker):
+                try appendHistoryItems([marker], to: threadID, in: db)
+                if !explicitlyUpdatedSummaryThreadIDs.contains(threadID) {
+                    try updateSummaryAfterAppending([marker], threadID: threadID, in: db)
+                }
+
+            case let .upsertThreadContextState(threadID, state):
+                if let state {
+                    try makeContextStateRow(from: state).save(db)
+                } else {
+                    _ = try RuntimeContextStateRow.deleteOne(db, key: threadID)
+                }
+
+            case let .deleteThreadContextState(threadID):
+                _ = try RuntimeContextStateRow.deleteOne(db, key: threadID)
+
+            case let .setPendingState(threadID, pendingState):
+                try updateSummary(threadID: threadID, in: db) { summary in
+                    AgentThreadSummary(
+                        threadID: summary.threadID,
+                        createdAt: summary.createdAt,
+                        updatedAt: summary.updatedAt,
+                        latestItemAt: summary.latestItemAt,
+                        itemCount: summary.itemCount,
+                        latestAssistantMessagePreview: summary.latestAssistantMessagePreview,
+                        latestStructuredOutputMetadata: summary.latestStructuredOutputMetadata,
+                        latestPartialStructuredOutput: summary.latestPartialStructuredOutput,
+                        latestToolState: summary.latestToolState,
+                        latestTurnStatus: summary.latestTurnStatus,
+                        pendingState: pendingState
+                    )
+                }
+
+            case let .setPartialStructuredSnapshot(threadID, snapshot):
+                try updateSummary(threadID: threadID, in: db) { summary in
+                    AgentThreadSummary(
+                        threadID: summary.threadID,
+                        createdAt: summary.createdAt,
+                        updatedAt: summary.updatedAt,
+                        latestItemAt: summary.latestItemAt,
+                        itemCount: summary.itemCount,
+                        latestAssistantMessagePreview: summary.latestAssistantMessagePreview,
+                        latestStructuredOutputMetadata: summary.latestStructuredOutputMetadata,
+                        latestPartialStructuredOutput: snapshot,
+                        latestToolState: summary.latestToolState,
+                        latestTurnStatus: summary.latestTurnStatus,
+                        pendingState: summary.pendingState
+                    )
+                }
+
+            case let .upsertToolSession(threadID, session):
+                try updateSummary(threadID: threadID, in: db) { summary in
+                    let latestToolState = AgentLatestToolState(
+                        invocationID: session.invocationID,
+                        turnID: session.turnID,
+                        toolName: session.toolName,
+                        status: .running,
+                        success: nil,
+                        sessionID: session.sessionID,
+                        sessionStatus: session.sessionStatus,
+                        metadata: session.metadata,
+                        resumable: session.resumable,
+                        updatedAt: session.updatedAt,
+                        resultPreview: nil
+                    )
+                    return AgentThreadSummary(
+                        threadID: summary.threadID,
+                        createdAt: summary.createdAt,
+                        updatedAt: summary.updatedAt,
+                        latestItemAt: summary.latestItemAt,
+                        itemCount: summary.itemCount,
+                        latestAssistantMessagePreview: summary.latestAssistantMessagePreview,
+                        latestStructuredOutputMetadata: summary.latestStructuredOutputMetadata,
+                        latestPartialStructuredOutput: summary.latestPartialStructuredOutput,
+                        latestToolState: latestToolState,
+                        latestTurnStatus: summary.latestTurnStatus,
+                        pendingState: .toolWait(
+                            AgentPendingToolWaitState(
+                                invocationID: session.invocationID,
+                                turnID: session.turnID,
+                                toolName: session.toolName,
+                                startedAt: session.updatedAt,
+                                sessionID: session.sessionID,
+                                sessionStatus: session.sessionStatus,
+                                metadata: session.metadata,
+                                resumable: session.resumable
+                            )
+                        )
+                    )
+                }
+
+            case let .redactHistoryItems(threadID, itemIDs, reason):
+                try redactHistoryItems(itemIDs, in: threadID, reason: reason, database: db)
+
+            case let .deleteThread(threadID):
+                _ = try RuntimeThreadRow.deleteOne(db, key: threadID)
+                try attachmentStore.removeThread(threadID)
+            }
+        }
+    }
+
+    private func appendHistoryItems(
+        _ items: [AgentHistoryRecord],
+        to threadID: String,
+        in db: Database
+    ) throws {
+        guard !items.isEmpty else { return }
+        var expectedSequence = try RuntimeNextHistorySequenceQuery(threadID: threadID)
+            .execute(in: db)
+
+        for item in items {
+            guard item.item.threadID == threadID,
+                  item.sequenceNumber == expectedSequence
+            else {
+                throw AgentRuntimeError(
+                    code: "invalid_history_sequence",
+                    message: "Expected history sequence \(expectedSequence) for thread \(threadID), received \(item.sequenceNumber)."
+                )
+            }
+            try makeHistoryRow(from: item).insert(db)
+            for structuredOutputRow in try structuredOutputRows(from: [threadID: [item]]) {
+                try structuredOutputRow.save(db)
+            }
+            expectedSequence += 1
+        }
+    }
+
+    private func updateSummary(
+        threadID: String,
+        in db: Database,
+        transform: (AgentThreadSummary) -> AgentThreadSummary
+    ) throws {
+        guard let threadRow = try RuntimeThreadRow.fetchOne(db, key: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+        let thread = try decodeThread(from: threadRow)
+        let current: AgentThreadSummary
+        if let summaryRow = try RuntimeSummaryRow.fetchOne(db, key: threadID) {
+            current = try decodeSummary(from: summaryRow)
+        } else {
+            current = StoredRuntimeState(threads: [thread]).threadSummaryFallback(for: thread)
+        }
+        try makeSummaryRow(from: transform(current)).save(db)
+    }
+
+    private func updateSummaryAfterAppending(
+        _ items: [AgentHistoryRecord],
+        threadID: String,
+        in db: Database
+    ) throws {
+        guard !items.isEmpty else { return }
+        guard let threadRow = try RuntimeThreadRow.fetchOne(db, key: threadID) else {
+            throw AgentRuntimeError.threadNotFound(threadID)
+        }
+        let thread = try decodeThread(from: threadRow)
+        try updateSummary(threadID: threadID, in: db) { current in
+            let projected = StoredRuntimeStateProjectionBuilder().rebuildSummary(
+                for: thread,
+                history: items,
+                existing: current
+            )
+            return AgentThreadSummary(
+                threadID: projected.threadID,
+                createdAt: projected.createdAt,
+                updatedAt: projected.updatedAt,
+                latestItemAt: items.last?.createdAt ?? current.latestItemAt,
+                itemCount: (current.itemCount ?? 0) + items.count,
+                latestAssistantMessagePreview: projected.latestAssistantMessagePreview,
+                latestStructuredOutputMetadata: projected.latestStructuredOutputMetadata,
+                latestPartialStructuredOutput: projected.latestPartialStructuredOutput,
+                latestToolState: projected.latestToolState,
+                latestTurnStatus: projected.latestTurnStatus,
+                pendingState: projected.pendingState
+            )
+        }
+    }
+
+    private func redactHistoryItems(
+        _ itemIDs: [String],
+        in threadID: String,
+        reason: AgentRedactionReason?,
+        database db: Database
+    ) throws {
+        guard !itemIDs.isEmpty else { return }
+        let rows = try RuntimeHistoryRow
+            .filter(Column("threadID") == threadID)
+            .filter(itemIDs.contains(Column("recordID")))
+            .fetchAll(db)
+        for row in rows {
+            let redacted = try decodeHistoryRecord(from: row).redacted(reason: reason)
+            try makeHistoryRow(from: redacted).save(db)
+        }
+    }
+
     func replaceDatabaseContents(
         with normalized: StoredRuntimeState,
         in db: Database
@@ -211,10 +455,14 @@ struct SQLiteRuntimeStorePersistence: Sendable {
     }
 
     func makeContextStateRow(from state: AgentThreadContextState) throws -> RuntimeContextStateRow {
-        RuntimeContextStateRow(
+        let persisted = try PersistedAgentThreadContextState(
+            state: state,
+            attachmentStore: attachmentStore
+        )
+        return RuntimeContextStateRow(
             threadID: state.threadID,
             generation: state.generation,
-            encodedState: try JSONEncoder().encode(state)
+            encodedState: try JSONEncoder().encode(persisted)
         )
     }
 
@@ -272,7 +520,14 @@ struct SQLiteRuntimeStorePersistence: Sendable {
     }
 
     func decodeContextState(from row: RuntimeContextStateRow) throws -> AgentThreadContextState {
-        try JSONDecoder().decode(AgentThreadContextState.self, from: row.encodedState)
+        let decoder = JSONDecoder()
+        if let persisted = try? decoder.decode(
+            PersistedAgentThreadContextState.self,
+            from: row.encodedState
+        ) {
+            return try persisted.decode(using: attachmentStore)
+        }
+        return try decoder.decode(AgentThreadContextState.self, from: row.encodedState)
     }
 
     func decodeHistoryRecord(from row: RuntimeHistoryRow) throws -> AgentHistoryRecord {

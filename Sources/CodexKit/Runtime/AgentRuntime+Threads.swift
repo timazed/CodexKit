@@ -1,5 +1,21 @@
 import Foundation
 
+struct ThreadResumePersistenceProjection: Sendable {
+    let thread: AgentThread
+    let summary: AgentThreadSummary
+    let contextState: AgentThreadContextState
+    let record: AgentHistoryRecord
+
+    var operations: [AgentStoreWriteOperation] {
+        [
+            .upsertThread(thread),
+            .upsertSummary(threadID: thread.id, summary: summary),
+            .upsertThreadContextState(threadID: thread.id, state: contextState),
+            .appendHistoryItems(threadID: thread.id, items: [record]),
+        ]
+    }
+}
+
 extension AgentRuntime {
     // MARK: - Threads
 
@@ -72,33 +88,165 @@ extension AgentRuntime {
 
     @discardableResult
     public func resumeThread(id: String) async throws -> AgentThread {
+        await acquireThreadResume(id)
+        defer { releaseThreadResume(id) }
+
         logger.info(.runtime, "Resuming thread.", metadata: ["thread_id": id])
+        let metadata = try await stateStore.prepare()
+        lazyThreadActivationEnabled = metadata.capabilities.supportsLazyThreadActivation
+        if lazyThreadActivationEnabled, let activeThread = thread(for: id) {
+            return activeThread
+        }
+
+        var activation = try await stateStore.loadThreadActivationState(
+            id: id,
+            policy: threadActivationPolicy
+        )
         let session = try await sessionManager.requireSession()
         let resume = try await withUnauthorizedRecovery(
             initialSession: session
         ) { session in
             try await backend.resumeThread(id: id, session: session)
         }
-        var thread = resume.result
+        let backendThread = resume.result
+        guard backendThread.id == id else {
+            throw AgentRuntimeError(
+                code: "thread_resume_mismatch",
+                message: "The backend resumed thread \(backendThread.id) instead of the requested thread \(id)."
+            )
+        }
+        let resumedAt = Date()
+        let maximumSequenceAllocationAttempts = 3
+        var attempt = 1
+
+        while true {
+            let projection = await makeThreadResumeProjection(
+                activation: activation,
+                backendThread: backendThread,
+                resumedAt: resumedAt
+            )
+            do {
+                try await persistenceCoordinator.apply(projection.operations)
+
+                installActivationState(
+                    activation,
+                    thread: projection.thread,
+                    summary: projection.summary,
+                    nextHistorySequence: projection.record.sequenceNumber + 1
+                )
+                state.historyByThread[id] = [projection.record]
+                if let snapshot = makeThreadObservationSnapshot(for: id) {
+                    await publishCommittedObservation(
+                        AgentRuntimeObservationBatchSnapshot(
+                            threadID: id,
+                            threadSnapshot: snapshot,
+                            isDeletion: false
+                        )
+                    )
+                }
+                logger.info(.runtime, "Thread resumed.", metadata: ["thread_id": id])
+                return projection.thread
+            } catch let error as AgentRuntimeError
+                where error.code == "invalid_history_sequence"
+                    && attempt < maximumSequenceAllocationAttempts {
+                logger.debug(
+                    .persistence,
+                    "Retrying thread resume after a concurrent sequence allocation.",
+                    metadata: [
+                        "thread_id": id,
+                        "attempt": "\(attempt + 1)",
+                    ]
+                )
+                attempt += 1
+                activation = try await stateStore.loadThreadActivationState(
+                    id: id,
+                    policy: threadActivationPolicy
+                )
+            }
+        }
+    }
+
+    func makeThreadResumeProjection(
+        activation: AgentThreadActivationState,
+        backendThread: AgentThread,
+        resumedAt: Date
+    ) async -> ThreadResumePersistenceProjection {
+        var thread = activation.thread
+        if thread.title == nil {
+            thread.title = backendThread.title
+        }
+        if thread.configuration == nil {
+            thread.configuration = backendThread.configuration
+        }
+        if thread.personaStack == nil {
+            thread.personaStack = backendThread.personaStack
+        }
+        if thread.skillIDs.isEmpty {
+            thread.skillIDs = backendThread.skillIDs
+        }
+        if thread.memoryContext == nil {
+            thread.memoryContext = backendThread.memoryContext
+        }
+        thread.status = backendThread.status
         if thread.configuration == nil {
             thread.configuration = await backend.defaultThreadConfiguration
         }
-        try await upsertThread(thread, persist: false)
-        appendHistoryItem(
-            .systemEvent(
+        thread.updatedAt = max(thread.updatedAt, max(backendThread.updatedAt, resumedAt))
+
+        let record = AgentHistoryRecord(
+            sequenceNumber: activation.nextHistorySequence,
+            createdAt: resumedAt,
+            item: .systemEvent(
                 AgentSystemEventRecord(
                     type: .threadResumed,
                     threadID: thread.id,
-                    occurredAt: Date()
+                    occurredAt: resumedAt
                 )
-            ),
-            threadID: thread.id,
-            createdAt: Date()
+            )
         )
-        updateThreadTimestamp(Date(), for: thread.id)
-        try await persistState()
-        logger.info(.runtime, "Thread resumed.", metadata: ["thread_id": thread.id])
-        return thread
+        let projectedSummary = StoredRuntimeStateProjectionBuilder().rebuildSummary(
+            for: thread,
+            history: [record],
+            existing: activation.summary
+        )
+        let summary = AgentThreadSummary(
+            threadID: thread.id,
+            createdAt: activation.summary.createdAt,
+            updatedAt: thread.updatedAt,
+            latestItemAt: resumedAt,
+            itemCount: (activation.summary.itemCount ?? 0) + 1,
+            latestAssistantMessagePreview: projectedSummary.latestAssistantMessagePreview,
+            latestStructuredOutputMetadata: projectedSummary.latestStructuredOutputMetadata,
+            latestPartialStructuredOutput: projectedSummary.latestPartialStructuredOutput,
+            latestToolState: projectedSummary.latestToolState,
+            latestTurnStatus: projectedSummary.latestTurnStatus,
+            pendingState: projectedSummary.pendingState
+        )
+        let hydratedContextState = activation.contextState
+            ?? AgentThreadContextState(
+                threadID: thread.id,
+                effectiveMessages: activation.effectiveMessages
+            )
+        return ThreadResumePersistenceProjection(
+            thread: thread,
+            summary: summary,
+            contextState: hydratedContextState,
+            record: record
+        )
+    }
+
+    /// Releases one thread's hydrated working set without changing durable state.
+    public func deactivateThread(id: String) {
+        state.threads.removeAll { $0.id == id }
+        state.messagesByThread.removeValue(forKey: id)
+        state.historyByThread.removeValue(forKey: id)
+        state.summariesByThread.removeValue(forKey: id)
+        state.contextStateByThread.removeValue(forKey: id)
+        state.nextHistorySequenceByThread.removeValue(forKey: id)
+        state.partiallyLoadedThreadIDs.remove(id)
+        pendingStoreOperations.removeAll { $0.affectedThreadID == id }
+        committedObservationSnapshotsByThread.removeValue(forKey: id)
+        observationCenter.deactivateThread(id: id, activeThreads: committedActiveThreads())
     }
 
     // MARK: - Thread Configuration
@@ -322,6 +470,13 @@ extension AgentRuntime {
         )
         state.messagesByThread[message.threadID, default: []].append(message)
         appendEffectiveMessage(message)
+        if lazyThreadActivationEnabled {
+            state.messagesByThread[message.threadID] = AgentThreadContextWindow.boundedMessages(
+                state.messagesByThread[message.threadID] ?? [],
+                policy: threadActivationPolicy,
+                requireClosedTurns: false
+            )
+        }
         appendHistoryItem(
             .message(message),
             threadID: message.threadID,

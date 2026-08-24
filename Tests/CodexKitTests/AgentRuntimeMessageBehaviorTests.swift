@@ -439,6 +439,12 @@ extension AgentRuntimeTests {
 
         XCTAssertTrue(sawApproval)
         XCTAssertTrue(sawToolResult)
+        let contextState = try await runtime.fetchThreadContextState(id: thread.id)
+        let toolInteraction = try XCTUnwrap(
+            contextState?.effectiveMessages.first(where: { $0.role == .tool })?.toolInteraction
+        )
+        XCTAssertEqual(toolInteraction.invocation.toolName, "demo_lookup_profile")
+        XCTAssertEqual(toolInteraction.result.primaryText, "demo-result")
     }
 
     func testStructuredStreamWorksAlongsideToolCalls() async throws {

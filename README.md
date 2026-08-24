@@ -213,7 +213,7 @@ The recommended production path for iOS and macOS is:
 Bundled runtime-state stores now include:
 
 - `SQLiteRuntimeStateStore`
-  The recommended production store. Uses SQLite through GRDB, supports migrations, query pushdown, redaction, whole-thread deletion, paged history reads, and lightweight restore/inspection.
+  The recommended production store. Uses SQLite through GRDB, supports migrations, query pushdown, redaction, whole-thread deletion, paged history reads, and lazy per-thread activation after restore.
 - `FileRuntimeStateStore`
   A simple JSON-backed fallback for small apps, tests, or export/import-style workflows.
 - `InMemoryRuntimeStateStore`
@@ -439,6 +439,7 @@ For remote telemetry or file-backed logging, prefer a sink that buffers or enque
 - use `fetchThreadHistory(id:query:)` and `fetchLatestStructuredOutputMetadata(id:)` for common thread inspection
 - use the typed `execute(_:)` query surface when you need more control over filtering, sorting, paging, or cross-thread reads
 - use hidden context compaction when you want to optimize future turns without removing preserved thread history from UI or inspection APIs
+- resumed SQLite threads hydrate only a bounded, turn-closed working context; durable history remains queryable without being loaded wholesale
 
 ```swift
 let stateStore = try SQLiteRuntimeStateStore(
@@ -454,8 +455,16 @@ let runtime = try AgentRuntime(configuration: .init(
     secureStore: secureStore,
     backend: backend,
     approvalPresenter: approvalPresenter,
-    stateStore: stateStore
+    stateStore: stateStore,
+    threadActivationPolicy: .init(
+        maximumMessageCount: 128,
+        maximumEstimatedTokens: 16_000,
+        maximumHistoryRecordCount: 512
+    )
 ))
+
+// Releases hydrated context only. SQLite history and semantic memory remain durable.
+await runtime.deactivateThread(id: thread.id)
 
 let page = try await runtime.fetchThreadHistory(
     id: thread.id,
@@ -524,7 +533,7 @@ The checked-in demo app includes a thread detail `Observation Demo` card that ex
 
 `CodexKit` can compact the runtime's effective prompt context without mutating canonical thread history.
 
-- visible history stays intact for `messages(for:)`, `fetchThreadHistory(...)`, and normal thread UI
+- canonical visible history stays intact for `fetchThreadHistory(...)`; with lazy stores, `messages(for:)` reflects the bounded active working set
 - compacted effective context is used only for future turns
 - compaction markers are persisted for audit/debug semantics and hidden from normal history reads by default
 - manual compaction is always available when the feature is enabled; `.automatic` additionally lets the runtime compact pre-turn or after a context-limit retry path

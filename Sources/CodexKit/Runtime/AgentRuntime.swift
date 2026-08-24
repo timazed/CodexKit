@@ -30,6 +30,7 @@ public actor AgentRuntime {
         public let skills: [AgentSkill]
         public let definitionSourceLoader: AgentDefinitionSourceLoader
         public let contextCompaction: AgentContextCompactionConfiguration
+        public let threadActivationPolicy: AgentThreadActivationPolicy
 
         public init(
             authProvider: ChatGPTAuthProvider,
@@ -43,7 +44,8 @@ public actor AgentRuntime {
             tools: [ToolRegistration] = [],
             skills: [AgentSkill] = [],
             definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader(),
-            contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration()
+            contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration(),
+            threadActivationPolicy: AgentThreadActivationPolicy = AgentThreadActivationPolicy()
         ) {
             self.authProvider = authProvider
             self.secureStore = secureStore
@@ -57,6 +59,7 @@ public actor AgentRuntime {
             self.skills = skills
             self.definitionSourceLoader = definitionSourceLoader
             self.contextCompaction = contextCompaction
+            self.threadActivationPolicy = threadActivationPolicy
         }
     }
 
@@ -71,10 +74,16 @@ public actor AgentRuntime {
     let definitionSourceLoader: AgentDefinitionSourceLoader
     let contextCompactionConfiguration: AgentContextCompactionConfiguration
     let observationCenter: AgentRuntimeObservationCenter
+    let persistenceCoordinator: AgentRuntimePersistenceCoordinator
+    let threadActivationPolicy: AgentThreadActivationPolicy
     var skillsByID: [String: AgentSkill]
 
     var state: StoredRuntimeState = .empty
     var pendingStoreOperations: [AgentStoreWriteOperation] = []
+    var committedObservationSnapshotsByThread: [String: AgentRuntimeThreadObservationSnapshot] = [:]
+    var lazyThreadActivationEnabled = false
+    var resumingThreadIDs: Set<String> = []
+    var resumeWaitersByThread: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     struct ResolvedTurnSkills {
         let threadSkills: [AgentSkill]
@@ -179,6 +188,8 @@ public actor AgentRuntime {
         self.definitionSourceLoader = configuration.definitionSourceLoader
         self.contextCompactionConfiguration = configuration.contextCompaction
         self.observationCenter = AgentRuntimeObservationCenter()
+        self.persistenceCoordinator = AgentRuntimePersistenceCoordinator(store: configuration.stateStore)
+        self.threadActivationPolicy = configuration.threadActivationPolicy
         self.skillsByID = try Self.validatedSkills(from: configuration.skills)
     }
 
@@ -193,9 +204,13 @@ public actor AgentRuntime {
     public func restore() async throws -> StoredRuntimeState {
         logger.info(.runtime, "Restoring runtime state.")
         _ = try await sessionManager.restore()
-        _ = try await stateStore.prepare()
-        state = try await stateStore.loadState()
+        let metadata = try await stateStore.prepare()
+        lazyThreadActivationEnabled = metadata.capabilities.supportsLazyThreadActivation
+        state = lazyThreadActivationEnabled
+            ? .empty
+            : try await stateStore.loadState()
         pendingStoreOperations.removeAll()
+        synchronizeCommittedObservationSnapshotsFromState()
         await publishAllObservations()
         logger.info(
             .runtime,
@@ -244,6 +259,10 @@ public actor AgentRuntime {
         state.threads.sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    public func activeThreadCount() -> Int {
+        state.threads.count
+    }
+
     public func messages(for threadID: String) -> [AgentMessage] {
         state.messagesByThread[threadID] ?? []
     }
@@ -268,29 +287,125 @@ public actor AgentRuntime {
 
     func persistState() async throws {
         state = state.normalized()
-        guard !pendingStoreOperations.isEmpty else {
-            logger.debug(.persistence, "Persisting full runtime state snapshot.")
-            try await stateStore.saveState(state)
-            await publishAllObservations()
-            return
-        }
+        guard !pendingStoreOperations.isEmpty else { return }
 
+        let originalOperationCount = pendingStoreOperations.count
         let operations = coalescedStoreOperations(pendingStoreOperations)
+        pendingStoreOperations.removeAll(keepingCapacity: true)
         logger.debug(
             .persistence,
             "Applying incremental runtime store operations.",
             metadata: [
                 "count": "\(operations.count)",
-                "original_count": "\(pendingStoreOperations.count)"
+                "original_count": "\(originalOperationCount)"
             ]
         )
-        try await stateStore.apply(operations)
-        pendingStoreOperations.removeAll()
-        await publishObservations(for: operations)
+
+        var orderedThreadIDs: [String] = []
+        var seenThreadIDs = Set<String>()
+        for operation in operations where seenThreadIDs.insert(operation.affectedThreadID).inserted {
+            orderedThreadIDs.append(operation.affectedThreadID)
+        }
+        let observationSnapshots = Dictionary(
+            uniqueKeysWithValues: orderedThreadIDs.map { threadID in
+                let isDeletion = operations.contains { operation in
+                    guard operation.affectedThreadID == threadID,
+                          case .deleteThread = operation
+                    else {
+                        return false
+                    }
+                    return true
+                }
+                return (
+                    threadID,
+                    AgentRuntimeObservationBatchSnapshot(
+                        threadID: threadID,
+                        threadSnapshot: makeThreadObservationSnapshot(for: threadID),
+                        isDeletion: isDeletion
+                    )
+                )
+            }
+        )
+
+        for threadID in orderedThreadIDs {
+            let threadOperations = operations.filter { $0.affectedThreadID == threadID }
+            do {
+                try await persistenceCoordinator.apply(threadOperations)
+                if let snapshot = observationSnapshots[threadID] {
+                    await publishCommittedObservation(snapshot)
+                }
+            } catch {
+                await recoverAfterPersistenceFailure(threadIDs: [threadID])
+                throw error
+            }
+        }
     }
 
     func enqueueStoreOperation(_ operation: AgentStoreWriteOperation) {
         pendingStoreOperations.append(operation)
+    }
+
+    func installActivationState(
+        _ activation: AgentThreadActivationState,
+        thread: AgentThread? = nil,
+        summary: AgentThreadSummary? = nil,
+        nextHistorySequence: Int? = nil
+    ) {
+        let activatedThread = thread ?? activation.thread
+        state.threads.removeAll { $0.id == activatedThread.id }
+        state.threads.append(activatedThread)
+        state.messagesByThread[activatedThread.id] = activation.effectiveMessages
+        state.historyByThread[activatedThread.id] = []
+        state.summariesByThread[activatedThread.id] = summary ?? activation.summary
+        state.contextStateByThread[activatedThread.id] = activation.contextState
+            ?? AgentThreadContextState(
+                threadID: activatedThread.id,
+                effectiveMessages: activation.effectiveMessages
+            )
+        state.nextHistorySequenceByThread[activatedThread.id] = nextHistorySequence
+            ?? activation.nextHistorySequence
+        state.partiallyLoadedThreadIDs.insert(activatedThread.id)
+    }
+
+    func recoverAfterPersistenceFailure(threadIDs: Set<String>) async {
+        pendingStoreOperations.removeAll { threadIDs.contains($0.affectedThreadID) }
+        for threadID in threadIDs {
+            do {
+                let activation = try await stateStore.loadThreadActivationState(
+                    id: threadID,
+                    policy: threadActivationPolicy
+                )
+                installActivationState(activation)
+            } catch {
+                state.threads.removeAll { $0.id == threadID }
+                state.messagesByThread.removeValue(forKey: threadID)
+                state.historyByThread.removeValue(forKey: threadID)
+                state.summariesByThread.removeValue(forKey: threadID)
+                state.contextStateByThread.removeValue(forKey: threadID)
+                state.nextHistorySequenceByThread.removeValue(forKey: threadID)
+                state.partiallyLoadedThreadIDs.remove(threadID)
+            }
+        }
+    }
+
+    func acquireThreadResume(_ threadID: String) async {
+        guard resumingThreadIDs.contains(threadID) else {
+            resumingThreadIDs.insert(threadID)
+            return
+        }
+        await withCheckedContinuation { continuation in
+            resumeWaitersByThread[threadID, default: []].append(continuation)
+        }
+    }
+
+    func releaseThreadResume(_ threadID: String) {
+        if var waiters = resumeWaitersByThread[threadID], !waiters.isEmpty {
+            let next = waiters.removeFirst()
+            resumeWaitersByThread[threadID] = waiters.isEmpty ? nil : waiters
+            next.resume()
+        } else {
+            resumingThreadIDs.remove(threadID)
+        }
     }
 
     func coalescedStoreOperations(
@@ -317,57 +432,82 @@ public actor AgentRuntime {
     }
 
     func publishAllObservations() async {
-        observationCenter.send(.threadsChanged(threads()))
-        for thread in state.threads {
-            await publishThreadObservations(for: thread.id)
+        observationCenter.send(.threadsChanged(committedActiveThreads()))
+        for snapshot in committedObservationSnapshotsByThread.values.sorted(by: {
+            $0.thread.updatedAt > $1.thread.updatedAt
+        }) {
+            await publishThreadObservations(snapshot)
         }
     }
 
-    func publishObservations(for operations: [AgentStoreWriteOperation]) async {
-        let deletedThreadIDs = Set(operations.compactMap { operation -> String? in
-            guard case let .deleteThread(threadID) = operation else {
-                return nil
+    func synchronizeCommittedObservationSnapshotsFromState() {
+        committedObservationSnapshotsByThread = Dictionary(
+            uniqueKeysWithValues: state.threads.compactMap { thread in
+                makeThreadObservationSnapshot(for: thread.id).map { (thread.id, $0) }
             }
-            return threadID
-        })
-        let affectedThreadIDs = Set(operations.map(\.affectedThreadID))
-
-        observationCenter.send(.threadsChanged(threads()))
-        for threadID in deletedThreadIDs {
-            observationCenter.send(.threadDeleted(threadID: threadID))
-        }
-        for threadID in affectedThreadIDs.subtracting(deletedThreadIDs) {
-            await publishThreadObservations(for: threadID)
-        }
+        )
     }
 
-    func publishThreadObservations(for threadID: String) async {
+    func makeThreadObservationSnapshot(
+        for threadID: String
+    ) -> AgentRuntimeThreadObservationSnapshot? {
         guard let thread = thread(for: threadID) else {
+            return nil
+        }
+        return AgentRuntimeThreadObservationSnapshot(
+            thread: thread,
+            messages: state.messagesByThread[threadID] ?? [],
+            summary: state.summariesByThread[threadID]
+                ?? state.threadSummaryFallback(for: thread),
+            contextState: state.contextStateByThread[threadID],
+            effectiveMessages: effectiveHistory(for: threadID)
+        )
+    }
+
+    func committedActiveThreads() -> [AgentThread] {
+        committedObservationSnapshotsByThread.values
+            .map(\.thread)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    func publishCommittedObservation(
+        _ batch: AgentRuntimeObservationBatchSnapshot
+    ) async {
+        if batch.isDeletion {
+            committedObservationSnapshotsByThread.removeValue(forKey: batch.threadID)
+            observationCenter.send(.threadsChanged(committedActiveThreads()))
+            observationCenter.send(.threadDeleted(threadID: batch.threadID))
             return
         }
+        guard let snapshot = batch.threadSnapshot else { return }
 
-        observationCenter.send(.threadChanged(thread))
+        committedObservationSnapshotsByThread[batch.threadID] = snapshot
+        observationCenter.send(.threadsChanged(committedActiveThreads()))
+        await publishThreadObservations(snapshot)
+    }
+
+    func publishThreadObservations(
+        _ snapshot: AgentRuntimeThreadObservationSnapshot
+    ) async {
+        let threadID = snapshot.thread.id
+        observationCenter.send(.threadChanged(snapshot.thread))
         observationCenter.send(
             .messagesChanged(
                 threadID: threadID,
-                messages: state.messagesByThread[threadID] ?? []
+                messages: snapshot.messages
             )
         )
-        observationCenter.send(
-            .threadSummaryChanged(
-                state.summariesByThread[threadID] ?? state.threadSummaryFallback(for: thread)
-            )
-        )
+        observationCenter.send(.threadSummaryChanged(snapshot.summary))
         observationCenter.send(
             .threadContextStateChanged(
                 threadID: threadID,
-                state: state.contextStateByThread[threadID]
+                state: snapshot.contextState
             )
         )
         observationCenter.send(
             .threadContextUsageChanged(
                 threadID: threadID,
-                usage: await threadContextUsage(for: threadID)
+                usage: await threadContextUsage(for: snapshot)
             )
         )
     }

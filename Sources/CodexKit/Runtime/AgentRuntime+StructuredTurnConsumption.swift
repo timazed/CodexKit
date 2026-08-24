@@ -212,6 +212,13 @@ extension AgentRuntime {
                         policyTracker?.recordAccepted(toolName: invocation.toolName)
                     }
 
+                    if storesTurnState, result.session?.isTerminal != false {
+                        appendEffectiveToolInteraction(
+                            invocation: invocation,
+                            result: result
+                        )
+                        try await persistState()
+                    }
                     try await turnStream.submitToolResult(result, for: invocation.id)
                     continuation.yield(.toolCallFinished(result))
                     if storesTurnState {
