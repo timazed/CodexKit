@@ -16,17 +16,40 @@ let package = Package(
             name: "CodexKitUI",
             targets: ["CodexKitUI"]
         ),
+        .library(
+            name: "CodexKitSQLite",
+            targets: ["CodexKitSQLite"]
+        ),
+        .library(
+            name: "CodexKitRealm",
+            targets: ["CodexKitRealm"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0"),
+        .package(url: "https://github.com/realm/realm-swift.git", from: "20.0.5"),
     ],
     targets: [
         .target(
             name: "CodexKit",
+            dependencies: [],
+            path: "Sources/CodexKit"
+        ),
+        .target(
+            name: "CodexKitSQLite",
             dependencies: [
+                "CodexKit",
                 .product(name: "GRDB", package: "GRDB.swift"),
             ],
-            path: "Sources/CodexKit"
+            path: "Sources/CodexKitSQLite"
+        ),
+        .target(
+            name: "CodexKitRealm",
+            dependencies: [
+                "CodexKit",
+                .product(name: "RealmSwift", package: "realm-swift"),
+            ],
+            path: "Sources/CodexKitRealm"
         ),
         .target(
             name: "CodexKitUI",
@@ -35,7 +58,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CodexKitTests",
-            dependencies: ["CodexKit", "CodexKitUI"],
+            dependencies: ["CodexKit", "CodexKitUI", "CodexKitSQLite", "CodexKitRealm"],
             path: "Tests/CodexKitTests"
         ),
     ]

@@ -24,4 +24,22 @@ actor AgentRuntimePersistenceCoordinator {
         }
         try await operation.value
     }
+
+    func loadThreadActivationState(
+        id: String,
+        policy: AgentThreadActivationPolicy
+    ) async throws -> AgentThreadActivationState {
+        let predecessor = tail
+        let store = store
+        let operation = Task<AgentThreadActivationState, Error> {
+            if let predecessor {
+                await predecessor.value
+            }
+            return try await store.loadThreadActivationState(id: id, policy: policy)
+        }
+        tail = Task {
+            _ = try? await operation.value
+        }
+        return try await operation.value
+    }
 }

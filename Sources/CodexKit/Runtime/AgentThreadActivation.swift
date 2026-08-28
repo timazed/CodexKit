@@ -40,8 +40,60 @@ public struct AgentThreadActivationState: Hashable, Sendable {
     }
 }
 
-enum AgentThreadContextWindow {
-    static func reconstructedMessages(from records: [AgentHistoryRecord]) -> [AgentMessage] {
+package enum AgentThreadContextWindow {
+    package struct HistoryProjection: Sendable {
+        package let storageKey: String
+        package let sequenceNumber: Int
+        package let relationshipKey: String?
+
+        package init(
+            storageKey: String,
+            sequenceNumber: Int,
+            relationshipKey: String?
+        ) {
+            self.storageKey = storageKey
+            self.sequenceNumber = sequenceNumber
+            self.relationshipKey = relationshipKey
+        }
+    }
+
+    /// Selects complete history relationships from an already database-bounded
+    /// candidate set. This is packing only; filtering and companion lookup stay
+    /// in the persistence adapter and use indexed database queries.
+    package static func completeHistoryStorageKeys(
+        from projections: [HistoryProjection],
+        limit: Int
+    ) throws -> Set<String> {
+        guard limit > 0 else { return [] }
+        var groups: [String: [HistoryProjection]] = [:]
+        for projection in projections {
+            let groupKey = projection.relationshipKey
+                ?? "standalone:\(projection.storageKey)"
+            groups[groupKey, default: []].append(projection)
+        }
+        guard groups.values.allSatisfy({ $0.count <= 2 }) else {
+            throw AgentStoreError.invalidInput(
+                "a stored history relationship contains more than two records"
+            )
+        }
+
+        let newestFirst = groups.values.sorted { lhs, rhs in
+            let left = lhs.map(\.sequenceNumber).max() ?? 0
+            let right = rhs.map(\.sequenceNumber).max() ?? 0
+            if left == right {
+                return (lhs.first?.storageKey ?? "") > (rhs.first?.storageKey ?? "")
+            }
+            return left > right
+        }
+        var selected = Set<String>()
+        for group in newestFirst where selected.count + group.count <= limit {
+            selected.formUnion(group.map(\.storageKey))
+            if selected.count == limit { break }
+        }
+        return selected
+    }
+
+    package static func reconstructedMessages(from records: [AgentHistoryRecord]) -> [AgentMessage] {
         let relevantRecords: [AgentHistoryRecord]
         if let latestCompactionIndex = records.lastIndex(where: { record in
             guard case let .systemEvent(event) = record.item else { return false }
@@ -58,15 +110,25 @@ enum AgentThreadContextWindow {
             },
             uniquingKeysWith: { _, latest in latest }
         )
-        let messageIDs = Set(relevantRecords.compactMap { record -> String? in
-            guard case let .message(message) = record.item else { return nil }
-            return message.id
-        })
+        let structuredOutputsByMessageID = Dictionary(
+            relevantRecords.compactMap { record -> (String, AgentStructuredOutputMetadata)? in
+                guard case let .structuredOutput(output) = record.item,
+                      let messageID = output.messageID else { return nil }
+                return (messageID, output.metadata)
+            },
+            uniquingKeysWith: { _, latest in latest }
+        )
 
         return relevantRecords.compactMap { record -> AgentMessage? in
             switch record.item {
             case let .message(message):
-                return message
+                guard message.structuredOutput == nil,
+                      let metadata = structuredOutputsByMessageID[message.id] else {
+                    return message
+                }
+                var hydrated = message
+                hydrated.structuredOutput = metadata
+                return hydrated
 
             case let .toolCall(call):
                 guard let result = toolResultsByInvocationID[call.invocation.id] else {
@@ -92,9 +154,10 @@ enum AgentThreadContextWindow {
                 return nil
 
             case let .structuredOutput(output):
-                guard output.messageID.map({ !messageIDs.contains($0) }) ?? true else {
-                    return nil
-                }
+                // Linked output is meaningful only with its owning message.
+                // It is attached to that message above, never synthesized as a
+                // misleading standalone system message.
+                if output.messageID != nil { return nil }
                 return AgentMessage(
                     id: "activation-structured:\(record.id)",
                     threadID: output.threadID,
@@ -125,18 +188,27 @@ enum AgentThreadContextWindow {
         }
     }
 
-    static func boundedMessages(
+    package static func boundedMessages(
         _ messages: [AgentMessage],
         policy: AgentThreadActivationPolicy,
         requireClosedTurns: Bool
     ) -> [AgentMessage] {
-        let maximumMessageCount = max(0, policy.maximumMessageCount)
-        let maximumEstimatedTokens = max(0, policy.maximumEstimatedTokens)
+        let maximumMessageCount = min(
+            max(0, policy.maximumMessageCount),
+            AgentStoreLimits.maximumActivationMessageCount
+        )
+        let maximumEstimatedTokens = min(
+            max(0, policy.maximumEstimatedTokens),
+            AgentStoreLimits.maximumActivationEstimatedTokenCount
+        )
         guard maximumMessageCount > 0, maximumEstimatedTokens > 0 else {
             return []
         }
 
-        let units = conversationUnits(from: messages)
+        let boundedSource = messages.suffix(
+            AgentStoreLimits.maximumActivationHistoryRecordCount
+        )
+        let units = conversationUnits(from: Array(boundedSource))
         var selectedUnits: [[AgentMessage]] = []
         var selectedMessageCount = 0
         var selectedTokenCount = 0
@@ -146,7 +218,9 @@ enum AgentThreadContextWindow {
                 continue
             }
 
-            let unitMessageCount = unit.reduce(0) { $0 + $1.modelContextItemCount }
+            let unitMessageCount = unit.reduce(0) {
+                AgentCounter.saturatingAdd($0, $1.modelContextItemCount)
+            }
             let unitTokenCount = estimatedTokenCount(for: unit)
             guard unitMessageCount <= maximumMessageCount,
                   unitTokenCount <= maximumEstimatedTokens
@@ -170,8 +244,14 @@ enum AgentThreadContextWindow {
             }
 
             selectedUnits.append(unit)
-            selectedMessageCount += unitMessageCount
-            selectedTokenCount += unitTokenCount
+            selectedMessageCount = AgentCounter.saturatingAdd(
+                selectedMessageCount,
+                unitMessageCount
+            )
+            selectedTokenCount = AgentCounter.saturatingAdd(
+                selectedTokenCount,
+                unitTokenCount
+            )
         }
 
         return selectedUnits.reversed().flatMap { $0 }
@@ -204,8 +284,8 @@ enum AgentThreadContextWindow {
 
     private static func estimatedTokenCount(for messages: [AgentMessage]) -> Int {
         guard !messages.isEmpty else { return 0 }
-        let characters = messages.reduce(into: 0) { total, message in
-            total += message.estimatedContextCharacterCount
+        let characters = messages.reduce(0) {
+            AgentCounter.saturatingAdd($0, $1.estimatedContextCharacterCount)
         }
         return max(1, characters / 4)
     }

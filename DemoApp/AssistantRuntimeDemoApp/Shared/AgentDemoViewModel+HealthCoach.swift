@@ -215,7 +215,7 @@ extension AgentDemoViewModel {
                 currentHealthCoachPersona(),
                 for: healthCoachThreadID
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             lastError = nil
         } catch {
             reportError(error)
@@ -297,7 +297,7 @@ extension AgentDemoViewModel {
                     healthCoachFeedback = message.displayText
 
                 case .turnCompleted:
-                    threads = await runtime.threads()
+                    threads = await runtime.activeThreads()
                     cachedAICoachFeedbackKey = cacheKey
                     cachedAICoachFeedbackGeneratedAt = Date()
                     lastError = nil
@@ -322,11 +322,11 @@ extension AgentDemoViewModel {
             return healthCoachThreadID
         }
 
-        let existingThreads = await runtime.threads()
+        let existingThreads = await runtime.activeThreads()
         if let existing = existingThreads.first(where: { $0.title == healthCoachDesign.threadTitle }) {
             try await runtime.setPersonaStack(persona, for: existing.id)
             healthCoachThreadID = existing.id
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             return existing.id
         }
 
@@ -336,7 +336,7 @@ extension AgentDemoViewModel {
             personaStack: persona
         )
         healthCoachThreadID = thread.id
-        threads = await runtime.threads()
+        threads = await runtime.activeThreads()
         return thread.id
     }
 

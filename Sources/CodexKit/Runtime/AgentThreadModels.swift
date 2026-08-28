@@ -235,20 +235,35 @@ public struct AgentToolInteraction: Codable, Hashable, Sendable {
 
 extension AgentMessage {
     var estimatedContextCharacterCount: Int {
-        var characters = text.count + (images.count * 512)
+        var characters = AgentCounter.saturatingAdd(
+            text.count,
+            AgentCounter.saturatingMultiply(images.count, 512)
+        )
         guard let toolInteraction else {
             return characters
         }
 
-        characters += toolInteraction.invocation.toolName.count
-        characters += toolInteraction.invocation.arguments.prettyJSONString.count
-        characters += toolInteraction.result.errorMessage?.count ?? 0
+        characters = AgentCounter.saturatingAdd(
+            characters,
+            toolInteraction.invocation.toolName.count
+        )
+        characters = AgentCounter.saturatingAdd(
+            characters,
+            toolInteraction.invocation.arguments.prettyJSONString.count
+        )
+        characters = AgentCounter.saturatingAdd(
+            characters,
+            toolInteraction.result.errorMessage?.count ?? 0
+        )
         for content in toolInteraction.result.content {
             switch content {
             case let .text(text):
-                characters += text.count
+                characters = AgentCounter.saturatingAdd(characters, text.count)
             case let .image(url):
-                characters += url.absoluteString.count
+                characters = AgentCounter.saturatingAdd(
+                    characters,
+                    url.absoluteString.count
+                )
             }
         }
         return characters

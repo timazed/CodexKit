@@ -1,7 +1,16 @@
 import Foundation
 
 extension AgentRuntime: AgentRuntimeQueryable, AgentRuntimeThreadInspecting {
+    /// Queries the durable thread catalog. Unlike `activeThreads()`, this does
+    /// not depend on which threads are currently hydrated in memory.
+    public func persistedThreads(
+        _ query: ThreadMetadataQuery = ThreadMetadataQuery()
+    ) async throws -> [AgentThread] {
+        try await execute(query)
+    }
+
     public func execute<Query: AgentQuerySpec>(_ query: Query) async throws -> Query.Result {
+        try AgentStoreLimitValidator.validate(query)
         if let queryableStore = stateStore as? any AgentRuntimeQueryableStore {
             return try await queryableStore.execute(query)
         }
@@ -31,6 +40,7 @@ extension AgentRuntime: AgentRuntimeQueryable, AgentRuntimeThreadInspecting {
         id: String,
         query: AgentHistoryQuery
     ) async throws -> AgentThreadHistoryPage {
+        try AgentStoreLimitValidator.validateHistoryPage(query)
         if let inspectingStore = stateStore as? any RuntimeStateInspecting {
             return try await inspectingStore.fetchThreadHistory(id: id, query: query)
         }
@@ -42,7 +52,11 @@ extension AgentRuntime: AgentRuntimeQueryable, AgentRuntimeThreadInspecting {
                 includeRedacted: true,
                 includeCompactionEvents: query.filter?.includeCompactionEvents ?? false,
                 sort: query.direction == .forward ? .sequence(.ascending) : .sequence(.descending),
-                page: AgentQueryPage(limit: query.limit, cursor: query.cursor)
+                page: AgentQueryPage(
+                    limit: query.limit,
+                    cursor: query.cursor,
+                    direction: query.direction
+                )
             )
         )
 
@@ -121,19 +135,8 @@ extension AgentRuntime {
         }
         let operation = AgentStoreWriteOperation.deleteThread(threadID: id)
         state = try state.applying([operation])
-        do {
-            try await persistenceCoordinator.apply([operation])
-            await publishCommittedObservation(
-                AgentRuntimeObservationBatchSnapshot(
-                    threadID: id,
-                    threadSnapshot: nil,
-                    isDeletion: true
-                )
-            )
-        } catch {
-            await recoverAfterPersistenceFailure(threadIDs: [id])
-            throw error
-        }
+        enqueueStoreOperation(operation)
+        try await persistState()
     }
 
     public func redactHistoryItems(
@@ -154,20 +157,8 @@ extension AgentRuntime {
             reason: reason
         )
         state = try state.applying([operation])
-        let observationSnapshot = makeThreadObservationSnapshot(for: threadID)
-        do {
-            try await persistenceCoordinator.apply([operation])
-            await publishCommittedObservation(
-                AgentRuntimeObservationBatchSnapshot(
-                    threadID: threadID,
-                    threadSnapshot: observationSnapshot,
-                    isDeletion: false
-                )
-            )
-        } catch {
-            await recoverAfterPersistenceFailure(threadIDs: [threadID])
-            throw error
-        }
+        enqueueStoreOperation(operation)
+        try await persistState()
     }
 
     @discardableResult
@@ -175,9 +166,12 @@ extension AgentRuntime {
         _ item: AgentHistoryItem,
         threadID: String,
         createdAt: Date
-    ) -> AgentHistoryRecord {
+    ) throws -> AgentHistoryRecord {
         let nextSequence = state.nextHistorySequenceByThread[threadID]
-            ?? ((state.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1)
+            ?? AgentHistorySequence.nextOrMaximum(
+                after: state.historyByThread[threadID]?.last?.sequenceNumber
+            )
+        try AgentHistorySequence.validateAllocatable(nextSequence, threadID: threadID)
         let record = AgentHistoryRecord(
             sequenceNumber: nextSequence,
             createdAt: createdAt,
@@ -198,7 +192,10 @@ extension AgentRuntime {
             metadata: metadata
         )
         state.historyByThread[threadID, default: []].append(record)
-        state.nextHistorySequenceByThread[threadID] = nextSequence + 1
+        state.nextHistorySequenceByThread[threadID] = try AgentHistorySequence.next(
+            after: nextSequence,
+            threadID: threadID
+        )
         if let thread = thread(for: threadID) {
             let current = state.summariesByThread[threadID]
                 ?? state.threadSummaryFallback(for: thread)
@@ -212,7 +209,11 @@ extension AgentRuntime {
                 createdAt: projected.createdAt,
                 updatedAt: max(projected.updatedAt, createdAt),
                 latestItemAt: createdAt,
-                itemCount: (current.itemCount ?? 0) + 1,
+                itemCount: try AgentCounter.incrementing(
+                    current.itemCount ?? 0,
+                    field: "history item count",
+                    threadID: threadID
+                ),
                 latestAssistantMessagePreview: projected.latestAssistantMessagePreview,
                 latestStructuredOutputMetadata: projected.latestStructuredOutputMetadata,
                 latestPartialStructuredOutput: projected.latestPartialStructuredOutput,

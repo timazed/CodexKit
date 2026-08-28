@@ -29,23 +29,24 @@ extension AgentDemoViewModel {
         lastError = nil
         currentAuthenticationMethod = authenticationMethod
         developerLog("Sign-in started. method=\(authenticationMethod.rawValue)")
-        runtime = AgentDemoRuntimeFactory.makeRuntime(
-            authenticationMethod: authenticationMethod,
-            model: model,
-            enableWebSearch: enableWebSearch,
-            reasoningEffort: reasoningEffort,
-            stateURL: stateURL,
-            keychainAccount: keychainAccount,
-            approvalInbox: approvalInbox,
-            deviceCodePromptCoordinator: deviceCodePromptCoordinator
-        )
-        configureRuntimeObservationBindings()
-
         defer {
             isAuthenticating = false
         }
 
         do {
+            runtime = try AgentDemoRuntimeFactory.makeRuntime(
+                authenticationMethod: authenticationMethod,
+                model: model,
+                enableWebSearch: enableWebSearch,
+                enableImageGeneration: enableImageGeneration,
+                reasoningEffort: reasoningEffort,
+                persistenceAdapter: persistenceAdapter,
+                stateURL: stateURL,
+                keychainAccount: keychainAccount,
+                approvalInbox: approvalInbox,
+                deviceCodePromptCoordinator: deviceCodePromptCoordinator
+            )
+            configureRuntimeObservationBindings()
             _ = try await runtime.restore()
             await registerDemoTool()
             await registerDemoSkills()
@@ -60,6 +61,64 @@ extension AgentDemoViewModel {
         } catch {
             await deviceCodePromptCoordinator.clear()
             await refreshSnapshot()
+            reportError(error)
+        }
+    }
+
+    func updatePersistenceAdapter(_ selectedAdapter: DemoPersistenceAdapter) async {
+        guard selectedAdapter != persistenceAdapter else {
+            return
+        }
+        guard canReconfigureRuntime else {
+            lastError = "Wait for the current operation to finish before switching persistence adapters."
+            return
+        }
+
+        isSwitchingPersistenceAdapter = true
+        lastError = nil
+        developerLog(
+            "Persistence switch started. from=\(persistenceAdapter.rawValue) to=\(selectedAdapter.rawValue)"
+        )
+        defer {
+            isSwitchingPersistenceAdapter = false
+        }
+
+        do {
+            let replacementRuntime = try AgentDemoRuntimeFactory.makeRuntime(
+                authenticationMethod: currentAuthenticationMethod,
+                model: model,
+                enableWebSearch: enableWebSearch,
+                enableImageGeneration: enableImageGeneration,
+                reasoningEffort: reasoningEffort,
+                persistenceAdapter: selectedAdapter,
+                stateURL: stateURL,
+                keychainAccount: keychainAccount,
+                approvalInbox: approvalInbox,
+                deviceCodePromptCoordinator: deviceCodePromptCoordinator
+            )
+            _ = try await replacementRuntime.restore()
+            runtime = replacementRuntime
+            persistenceAdapter = selectedAdapter
+            AgentDemoRuntimeFactory.persistPersistenceAdapter(selectedAdapter)
+            clearThreadCatalog()
+            activeThreadID = nil
+            healthCoachThreadID = nil
+            automaticMemoryResult = nil
+            automaticPolicyMemoryResult = nil
+            guidedMemoryResult = nil
+            rawMemoryResult = nil
+            memoryPreviewResult = nil
+            configureRuntimeObservationBindings()
+            await registerDemoTool()
+            await registerDemoSkills()
+            await refreshSnapshot()
+            if healthCoachInitialized {
+                await refreshHealthCoachProgress()
+            }
+            developerLog(
+                "Persistence switch finished. adapter=\(persistenceAdapter.rawValue) store=\(resolvedStateURL.path)"
+            )
+        } catch {
             reportError(error)
         }
     }
@@ -84,7 +143,7 @@ extension AgentDemoViewModel {
                 )
                 try await runtime.updateThreadConfiguration(updated, for: activeThreadID)
                 self.reasoningEffort = reasoningEffort
-                threads = await runtime.threads()
+                threads = await runtime.activeThreads()
                 observedThread = threads.first { $0.id == activeThreadID }
                 developerLog(
                     "Updated thread configuration. threadID=\(activeThreadID) model=\(updated.model) reasoningEffort=\(updated.reasoningEffort.rawValue)"
@@ -129,7 +188,7 @@ extension AgentDemoViewModel {
                 try await runtime.updateThreadConfiguration(updated, for: activeThreadID)
                 model = selectedModel.rawValue
                 reasoningEffort = resolvedReasoningEffort
-                threads = await runtime.threads()
+                threads = await runtime.activeThreads()
                 observedThread = threads.first { $0.id == activeThreadID }
                 await refreshThreadContextState(for: activeThreadID)
                 developerLog(
@@ -175,7 +234,7 @@ extension AgentDemoViewModel {
                 catalog.plannerPersona,
                 for: activeThreadID
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
         } catch {
             reportError(error)
         }
@@ -227,19 +286,26 @@ extension AgentDemoViewModel {
     }
 
     func activateThread(id: String) async {
-        activeThreadID = id
-        bindActiveThreadObservation(for: id)
-        setMessages(await runtime.messages(for: id))
-        streamingText = ""
-        await refreshThreadContextState(for: id)
+        do {
+            _ = try await runtime.resumeThread(id: id)
+            threads = await runtime.activeThreads()
+            activeThreadID = id
+            bindActiveThreadObservation(for: id)
+            setMessages(await runtime.messages(for: id))
+            streamingText = ""
+            await refreshThreadContextState(for: id)
+        } catch {
+            reportError(error)
+        }
     }
 
     func signOut() async {
         do {
             try await runtime.signOut()
             await deviceCodePromptCoordinator.clear()
+            await refreshThreadCatalog()
             session = nil
-            threads = []
+            activeRuntimeThreads = []
             messages = []
             streamingText = ""
             composerText = ""
@@ -280,27 +346,29 @@ extension AgentDemoViewModel {
 
     func refreshSnapshot() async {
         session = await runtime.currentSession()
+        await refreshThreadCatalog()
         guard session != nil else {
             clearConversationSnapshot()
-            developerLog("Snapshot refreshed with no active session.")
+            developerLog(
+                "Snapshot refreshed with no active session. persistedThreadCount=\(persistedThreads.count)"
+            )
             return
         }
 
-        threads = await runtime.threads()
         developerLog(
             "Snapshot refreshed. session=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
         )
 
         let selectedThreadID = activeThreadID
         if let selectedThreadID,
-           threads.contains(where: { $0.id == selectedThreadID }) {
+           activeRuntimeThreads.contains(where: { $0.id == selectedThreadID }) {
             bindActiveThreadObservation(for: selectedThreadID)
             setMessages(await runtime.messages(for: selectedThreadID))
             await refreshThreadContextState(for: selectedThreadID)
             return
         }
 
-        if let firstThread = threads.first {
+        if let firstThread = activeRuntimeThreads.first {
             activeThreadID = firstThread.id
             bindActiveThreadObservation(for: firstThread.id)
             setMessages(await runtime.messages(for: firstThread.id))
@@ -313,7 +381,7 @@ extension AgentDemoViewModel {
     }
 
     func clearConversationSnapshot() {
-        threads = []
+        activeRuntimeThreads = []
         messages = []
         streamingText = ""
         pendingComposerImages = []
@@ -325,6 +393,23 @@ extension AgentDemoViewModel {
         activeThreadObservationBindingTask?.cancel()
         activeThreadObservationCancellables.removeAll()
         resetObservedThreadState()
+    }
+
+    func refreshThreadCatalog() async {
+        do {
+            persistedThreads = try await runtime.persistedThreads()
+        } catch {
+            persistedThreads = await runtime.activeThreads()
+            developerErrorLog(
+                "Failed to query persisted thread metadata. error=\(error.localizedDescription)"
+            )
+        }
+        activeRuntimeThreads = await runtime.activeThreads()
+    }
+
+    func clearThreadCatalog() {
+        persistedThreads = []
+        activeRuntimeThreads = []
     }
 
     func refreshThreadContextState(for threadID: String? = nil) async {
@@ -386,7 +471,7 @@ extension AgentDemoViewModel {
             developerLog("Manual context compaction started. threadID=\(activeThreadID)")
             activeThreadContextState = try await runtime.compactThreadContext(id: activeThreadID)
             activeThreadContextUsage = try await runtime.fetchThreadContextUsage(id: activeThreadID)
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             setMessages(await runtime.messages(for: activeThreadID))
             developerLog(
                 "Manual context compaction finished. threadID=\(activeThreadID) generation=\(activeThreadContextState?.generation ?? 0) effectiveTokens=\(activeThreadContextUsage?.effectiveEstimatedTokenCount ?? 0)"

@@ -107,7 +107,7 @@ final class AgentRuntimeTests: XCTestCase {
         ))
         _ = try await restoredRuntime.restore()
 
-        let restoredThreads = await restoredRuntime.threads()
+        let restoredThreads = await restoredRuntime.activeThreads()
         let restoredThread = try XCTUnwrap(restoredThreads.first(where: { $0.id == thread.id }))
         XCTAssertEqual(restoredThread.configuration?.model, "gpt-5")
         XCTAssertEqual(restoredThread.configuration?.reasoningEffort, .high)

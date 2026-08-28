@@ -36,6 +36,7 @@ struct ResponsesRequestBody: Encodable {
     let toolChoice: String
     let parallelToolCalls: Bool
     let store: Bool
+    let background: Bool?
     let stream: Bool
     let include: [String]
     let previousResponseID: String?
@@ -51,6 +52,7 @@ struct ResponsesRequestBody: Encodable {
         case toolChoice = "tool_choice"
         case parallelToolCalls = "parallel_tool_calls"
         case store
+        case background
         case stream
         case include
         case previousResponseID = "previous_response_id"
@@ -320,13 +322,20 @@ struct FunctionCallRecord: Sendable {
     }
 }
 
-enum CodexResponsesStreamEvent: Sendable {
-    case assistantTextDelta(String)
-    case outputItem(StreamItem, outputIndex: Int, sequenceNumber: Int?)
-    case structuredOutputPartial(JSONValue)
-    case structuredOutputCommitted(JSONValue)
-    case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
-    case completed(AgentUsage, responseID: String?)
+struct CodexResponsesStreamEvent: Sendable {
+    enum Kind: Sendable {
+        case responseCreated(responseID: String?)
+        case assistantTextDelta(String)
+        case outputItem(StreamItem, outputIndex: Int)
+        case structuredOutputPartial(JSONValue)
+        case structuredOutputCommitted(JSONValue)
+        case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
+        case completed(AgentUsage, responseID: String?)
+        case other
+    }
+
+    let kind: Kind
+    let sequenceNumber: Int?
 }
 
 struct PendingToolResults: Sendable {

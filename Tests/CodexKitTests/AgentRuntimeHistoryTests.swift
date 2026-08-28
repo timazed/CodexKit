@@ -320,6 +320,113 @@ extension AgentRuntimeTests {
         XCTAssertEqual(messageTexts(in: history), ["Hello from legacy state"])
     }
 
+    func testAttachmentStoreHashesHostileAndCollidingIdentifiers() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKitAttachmentTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("attachments", isDirectory: true)
+        let store = RuntimeAttachmentStore(rootURL: root)
+        let first = try store.persist(
+            .png(Data([1]), id: "a/b"),
+            threadID: "..",
+            recordID: "../outside",
+            index: 0
+        )
+        let second = try store.persist(
+            .png(Data([2]), id: "a?b"),
+            threadID: "..",
+            recordID: "../outside",
+            index: 0
+        )
+
+        XCTAssertEqual(try store.load(first).data, Data([1]))
+        XCTAssertEqual(try store.load(second).data, Data([2]))
+        let rootPath = root.standardizedFileURL.path + "/"
+        let files = try regularFiles(in: directory)
+        XCTAssertEqual(files.count, 2)
+        XCTAssertTrue(files.allSatisfy { $0.standardizedFileURL.path.hasPrefix(rootPath) })
+    }
+
+    func testFileRuntimeStateStorePublishesCompleteGenerations() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKitFileStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("runtime.json")
+        let store = FileRuntimeStateStore(url: url)
+        let thread = AgentThread(id: "../generation-thread")
+        let message = AgentMessage(
+            id: "../generation-message",
+            threadID: thread.id,
+            role: .user,
+            text: "first",
+            images: [.png(Data([1, 2, 3]))]
+        )
+        let record = AgentHistoryRecord(
+            sequenceNumber: 1,
+            createdAt: message.createdAt,
+            item: .message(message)
+        )
+        try await store.saveState(StoredRuntimeState(
+            threads: [thread],
+            historyByThread: [thread.id: [record]]
+        ))
+        try await store.saveState(StoredRuntimeState(threads: [thread]))
+
+        let loaded = try await FileRuntimeStateStore(url: url).loadState()
+        XCTAssertEqual(loaded.threads, [thread])
+        XCTAssertTrue(loaded.historyByThread[thread.id, default: []].isEmpty)
+        let generationsURL = directory
+            .appendingPathComponent("runtime.json.codexkit-state", isDirectory: true)
+            .appendingPathComponent("generations", isDirectory: true)
+        let generations = try FileManager.default.contentsOfDirectory(
+            at: generationsURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        XCTAssertEqual(generations.count, 1)
+        XCTAssertTrue(try regularFiles(in: generations[0].appendingPathComponent("attachments")).isEmpty)
+    }
+
+    func testFileRuntimeStateStoreExternalizesContextAttachments() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKitFileAttachmentTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("runtime.json")
+        let imageData = Data("CODEXKIT_FILE_CONTEXT_IMAGE_MUST_STAY_ON_DISK".utf8)
+        let thread = AgentThread(id: "file-context-attachment")
+        let message = AgentMessage(
+            id: "file-context-message",
+            threadID: thread.id,
+            role: .user,
+            text: "context image",
+            images: [.png(imageData)]
+        )
+        let context = AgentThreadContextState(
+            threadID: thread.id,
+            effectiveMessages: [message]
+        )
+        let store = FileRuntimeStateStore(url: url)
+
+        try await store.saveState(StoredRuntimeState(
+            threads: [thread],
+            contextStateByThread: [thread.id: context]
+        ))
+
+        let manifestData = try Data(contentsOf: url)
+        XCTAssertNil(manifestData.range(of: imageData))
+        XCTAssertNil(manifestData.range(of: imageData.base64EncodedData()))
+        let loaded = try await FileRuntimeStateStore(url: url).loadState()
+        XCTAssertEqual(loaded.contextStateByThread[thread.id], context)
+        let attachmentsRoot = directory
+            .appendingPathComponent("runtime.json.codexkit-state", isDirectory: true)
+            .appendingPathComponent("generations", isDirectory: true)
+        XCTAssertEqual(
+            try regularFiles(in: attachmentsRoot).filter { $0.pathExtension == "png" }.count,
+            1
+        )
+    }
+
     func testPrepareStoreReturnsMetadataAndQueryableExecutionWorks() async throws {
         let stateStore = InMemoryRuntimeStateStore()
         let runtime = try makeHistoryRuntime(

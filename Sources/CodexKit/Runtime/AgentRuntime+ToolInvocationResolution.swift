@@ -74,7 +74,7 @@ extension AgentRuntime {
             )
 
             if storesTurnState {
-                appendHistoryItem(
+                try appendHistoryItem(
                     .approval(
                         AgentApprovalRecord(
                             kind: .requested,
@@ -116,7 +116,7 @@ extension AgentRuntime {
                 decision: decision
             )
             if storesTurnState {
-                appendHistoryItem(
+                try appendHistoryItem(
                     .approval(
                         AgentApprovalRecord(
                             kind: .resolved,
@@ -148,7 +148,7 @@ extension AgentRuntime {
                         latestToolState(for: invocation, result: denied, updatedAt: resolution.decidedAt),
                         for: invocation.threadID
                     )
-                    appendHistoryItem(
+                    try appendHistoryItem(
                         .toolResult(
                             AgentToolResultRecord(
                                 threadID: invocation.threadID,
@@ -236,7 +236,7 @@ extension AgentRuntime {
                 )
             } else {
                 try setPendingState(nil, for: invocation.threadID)
-                appendHistoryItem(
+                try appendHistoryItem(
                     .toolResult(
                         AgentToolResultRecord(
                             threadID: invocation.threadID,

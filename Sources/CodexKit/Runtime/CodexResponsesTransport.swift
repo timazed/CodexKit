@@ -32,7 +32,9 @@ struct CodexResponsesRequestFactory: Sendable {
             ),
             toolChoice: "auto",
             parallelToolCalls: false,
-            store: configuration.stateManagement == .serverManaged,
+            store: configuration.stateManagement == .serverManaged ||
+                configuration.executionMode == .resumableBackground,
+            background: configuration.executionMode == .resumableBackground ? true : nil,
             stream: true,
             include: configuration.stateManagement == .clientManaged
                 ? ["reasoning.encrypted_content"]
@@ -58,6 +60,46 @@ struct CodexResponsesRequestFactory: Sendable {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
+        return request
+    }
+
+    func buildResumeURLRequest(
+        responseID: String,
+        startingAfter: Int,
+        threadID: String,
+        session: ChatGPTSession
+    ) throws -> URLRequest {
+        let responseURL = configuration.baseURL
+            .appendingPathComponent("responses")
+            .appendingPathComponent(responseID)
+        guard var components = URLComponents(url: responseURL, resolvingAgainstBaseURL: false) else {
+            throw AgentRuntimeError(
+                code: "responses_resume_invalid_url",
+                message: "The response recovery URL could not be constructed."
+            )
+        }
+        components.queryItems = [
+            URLQueryItem(name: "stream", value: "true"),
+            URLQueryItem(name: "starting_after", value: String(startingAfter)),
+        ]
+        guard let url = components.url else {
+            throw AgentRuntimeError(
+                code: "responses_resume_invalid_url",
+                message: "The response recovery URL could not be constructed."
+            )
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(session.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
+        request.setValue(threadID, forHTTPHeaderField: "session_id")
+        request.setValue(threadID, forHTTPHeaderField: "x-client-request-id")
+        request.setValue(configuration.originator, forHTTPHeaderField: "originator")
+        for (header, value) in configuration.extraHeaders {
+            request.setValue(value, forHTTPHeaderField: header)
+        }
         return request
     }
 
@@ -119,7 +161,10 @@ struct CodexResponsesEventStreamClient: Sendable {
         }
 
         if !(200 ..< 300).contains(httpResponse.statusCode) {
-            let bodyData = try await readAll(bytes)
+            let bodyData = try await readAll(
+                bytes,
+                limit: AgentStoreLimits.maximumResponseErrorBodyByteCount
+            )
             let body = sanitizedResponsesJSONString(from: bodyData)
             logger.error(
                 .network,
@@ -150,7 +195,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         )
 
         return AsyncThrowingStream { continuation in
-            Task {
+            let producerTask = Task {
                 var parser = SSEEventParser()
 
                 do {
@@ -164,22 +209,29 @@ struct CodexResponsesEventStreamClient: Sendable {
                             }
                             lineBuffer.removeAll(keepingCapacity: true)
 
-                            if let payload = parser.consume(line: line),
+                            if let payload = try parser.consume(line: line),
                                let event = try parseStreamEvent(from: payload) {
                                 continuation.yield(event)
                             }
                             continue
                         }
 
+                        guard lineBuffer.count < AgentStoreLimits.maximumResponseEventByteCount else {
+                            throw AgentRuntimeError(
+                                code: "responses_event_too_large",
+                                message: "A Responses stream event exceeded the supported size limit."
+                            )
+                        }
                         lineBuffer.append(byte)
                     }
 
+                    try Task.checkCancellation()
                     if !lineBuffer.isEmpty {
                         var line = String(decoding: lineBuffer, as: UTF8.self)
                         if line.hasSuffix("\r") {
                             line.removeLast()
                         }
-                        if let payload = parser.consume(line: line),
+                        if let payload = try parser.consume(line: line),
                            let event = try parseStreamEvent(from: payload) {
                             continuation.yield(event)
                         }
@@ -201,6 +253,11 @@ struct CodexResponsesEventStreamClient: Sendable {
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable termination in
+                if case .cancelled = termination {
+                    producerTask.cancel()
                 }
             }
         }
@@ -294,6 +351,12 @@ struct CodexResponsesEventStreamClient: Sendable {
         guard !payload.data.isEmpty else {
             return nil
         }
+        guard payload.data.utf8.count <= AgentStoreLimits.maximumResponseEventByteCount else {
+            throw AgentRuntimeError(
+                code: "responses_event_too_large",
+                message: "A Responses stream event exceeded the supported size limit."
+            )
+        }
 
         let payloadData = Data(payload.data.utf8)
         let envelope: StreamEnvelope
@@ -332,21 +395,28 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
         }
 
+        let kind: CodexResponsesStreamEvent.Kind
         switch envelope.type {
+        case "response.created":
+            kind = .responseCreated(responseID: envelope.response?.id)
         case "response.output_text.delta":
-            return envelope.delta.map(CodexResponsesStreamEvent.assistantTextDelta)
+            guard let delta = envelope.delta else {
+                kind = .other
+                break
+            }
+            kind = .assistantTextDelta(delta)
         case "response.output_item.done":
             guard let item = envelope.item else {
-                return nil
+                kind = .other
+                break
             }
-            return .outputItem(
+            kind = .outputItem(
                 item,
-                outputIndex: envelope.outputIndex ?? 0,
-                sequenceNumber: envelope.sequenceNumber
+                outputIndex: envelope.outputIndex ?? 0
             )
         case "response.completed":
             let usage = envelope.response?.usage?.assistantUsage ?? AgentUsage()
-            return .completed(usage, responseID: envelope.response?.id)
+            kind = .completed(usage, responseID: envelope.response?.id)
         case "response.failed":
             let message = envelope.response?.error?.message ?? "The ChatGPT responses stream failed."
             throw AgentRuntimeError(code: "responses_stream_failed", message: message)
@@ -357,8 +427,12 @@ struct CodexResponsesEventStreamClient: Sendable {
                 message: "The ChatGPT responses stream completed early: \(reason)."
             )
         default:
-            return nil
+            kind = .other
         }
+        return CodexResponsesStreamEvent(
+            kind: kind,
+            sequenceNumber: envelope.sequenceNumber
+        )
     }
 
     private func shouldLogResponsePayload(
@@ -375,134 +449,20 @@ struct CodexResponsesEventStreamClient: Sendable {
         }
     }
 
-    private func readAll(_ bytes: URLSession.AsyncBytes) async throws -> Data {
+    private func readAll(
+        _ bytes: URLSession.AsyncBytes,
+        limit: Int
+    ) async throws -> Data {
         var data = Data()
         for try await byte in bytes {
+            guard data.count < limit else {
+                throw AgentRuntimeError(
+                    code: "responses_error_body_too_large",
+                    message: "The Responses error body exceeded the supported size limit."
+                )
+            }
             data.append(byte)
         }
         return data
-    }
-}
-
-struct CodexResponsesToolOutputAdapter: Sendable {
-    let urlSession: URLSession
-
-    func text(from result: ToolResultEnvelope) -> String {
-        var segments: [String] = []
-
-        if let primaryText = result.primaryText, !primaryText.isEmpty {
-            segments.append(primaryText)
-        }
-
-        let imageURLs = result.content.compactMap { content -> URL? in
-            guard case let .image(url) = content else {
-                return nil
-            }
-            return url
-        }
-        if !imageURLs.isEmpty {
-            segments.append("Image URLs:\n" + imageURLs.map(\.absoluteString).joined(separator: "\n"))
-        }
-
-        if !segments.isEmpty {
-            return segments.joined(separator: "\n\n")
-        }
-        if let errorMessage = result.errorMessage, !errorMessage.isEmpty {
-            return errorMessage
-        }
-        return result.success ? "Tool execution completed." : "Tool execution failed."
-    }
-
-    func images(from result: ToolResultEnvelope) async -> [AgentImageAttachment] {
-        var attachments: [AgentImageAttachment] = []
-        for content in result.content {
-            guard case let .image(url) = content else {
-                continue
-            }
-            if let attachment = await imageAttachment(from: url) {
-                attachments.append(attachment)
-            }
-        }
-        return attachments.uniqued()
-    }
-
-    private func imageAttachment(from url: URL) async -> AgentImageAttachment? {
-        if url.scheme?.lowercased() == "data" {
-            let decoded = url.absoluteString.removingPercentEncoding ?? url.absoluteString
-            return AgentImageAttachment(dataURLString: decoded)
-        }
-
-        if url.isFileURL {
-            guard let mimeType = RuntimeImageMimeType(pathExtension: url.pathExtension),
-                  let data = try? Data(contentsOf: url),
-                  !data.isEmpty else {
-                return nil
-            }
-            return AgentImageAttachment(mimeType: mimeType.rawValue, data: data)
-        }
-
-        do {
-            let (data, response) = try await urlSession.data(from: url)
-            guard !data.isEmpty else {
-                return nil
-            }
-
-            let mimeType = RuntimeImageMimeType(
-                responseMimeType: response.mimeType,
-                pathExtension: url.pathExtension
-            ) ?? .png
-            guard mimeType.isImage else {
-                return nil
-            }
-            return AgentImageAttachment(mimeType: mimeType.rawValue, data: data)
-        } catch {
-            return nil
-        }
-    }
-}
-
-private enum RuntimeImageMimeType: String {
-    case png = "image/png"
-    case jpeg = "image/jpeg"
-    case gif = "image/gif"
-    case webp = "image/webp"
-    case heic = "image/heic"
-    case heif = "image/heif"
-
-    init?(pathExtension: String) {
-        switch pathExtension.lowercased() {
-        case "png":
-            self = .png
-        case "jpg", "jpeg":
-            self = .jpeg
-        case "gif":
-            self = .gif
-        case "webp":
-            self = .webp
-        case "heic":
-            self = .heic
-        case "heif":
-            self = .heif
-        default:
-            return nil
-        }
-    }
-
-    init?(responseMimeType: String?, pathExtension: String) {
-        if let responseMimeType,
-           let normalized = Self(rawValue: responseMimeType.lowercased()) {
-            self = normalized
-            return
-        }
-
-        guard let inferred = Self(pathExtension: pathExtension) else {
-            return nil
-        }
-
-        self = inferred
-    }
-
-    var isImage: Bool {
-        rawValue.hasPrefix("image/")
     }
 }

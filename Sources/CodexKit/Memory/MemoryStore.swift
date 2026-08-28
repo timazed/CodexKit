@@ -1,6 +1,9 @@
 import Foundation
 
 public protocol MemoryStoring: Sendable {
+    /// Performs any schema migration or database opening required by the store.
+    /// Persistent adapters also call this lazily from their first operation.
+    func prepare() async throws
     func put(_ record: MemoryRecord) async throws
     func putMany(_ records: [MemoryRecord]) async throws
     func upsert(_ record: MemoryRecord, dedupeKey: String) async throws
@@ -20,12 +23,15 @@ public protocol MemoryStoring: Sendable {
 }
 
 public extension MemoryStoring {
+    func prepare() async throws {}
+
     func list(
         namespace: String,
         scopes: [MemoryScope] = [],
         categories: [String] = [],
         includeArchived: Bool = false,
-        limit: Int? = nil
+        limit: Int? = nil,
+        offset: Int = 0
     ) async throws -> [MemoryRecord] {
         try await list(
             MemoryRecordListQuery(
@@ -33,7 +39,8 @@ public extension MemoryStoring {
                 scopes: scopes,
                 categories: categories,
                 includeArchived: includeArchived,
-                limit: limit
+                limit: limit,
+                offset: offset
             )
         )
     }

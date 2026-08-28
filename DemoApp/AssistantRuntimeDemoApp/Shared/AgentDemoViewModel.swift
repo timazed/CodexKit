@@ -282,7 +282,27 @@ struct DemoSDKLogSink: AgentLogSink {
 @Observable
 final class AgentDemoViewModel {
     var session: ChatGPTSession?
-    var threads: [AgentThread] = []
+    var persistedThreads: [AgentThread] = []
+    var activeRuntimeThreads: [AgentThread] = []
+    var threads: [AgentThread] {
+        get {
+            var threadsByID = Dictionary(
+                uniqueKeysWithValues: persistedThreads.map { ($0.id, $0) }
+            )
+            for thread in activeRuntimeThreads {
+                threadsByID[thread.id] = thread
+            }
+            return threadsByID.values.sorted { lhs, rhs in
+                if lhs.updatedAt == rhs.updatedAt {
+                    return lhs.id < rhs.id
+                }
+                return lhs.updatedAt > rhs.updatedAt
+            }
+        }
+        set {
+            activeRuntimeThreads = newValue
+        }
+    }
     var messages: [AgentMessage] = []
     var streamingText = ""
     var lastError: String?
@@ -333,6 +353,8 @@ final class AgentDemoViewModel {
     var cachedAIReminderGeneratedAt: Date?
     var reasoningEffort: ReasoningEffort
     var currentAuthenticationMethod: DemoAuthenticationMethod = .deviceCode
+    var persistenceAdapter: DemoPersistenceAdapter
+    var isSwitchingPersistenceAdapter = false
     var activeThreadContextState: AgentThreadContextState?
     var isCompactingThreadContext = false
     var observedThread: AgentThread?
@@ -377,6 +399,7 @@ final class AgentDemoViewModel {
         enableWebSearch: Bool,
         enableImageGeneration: Bool,
         reasoningEffort: ReasoningEffort,
+        persistenceAdapter: DemoPersistenceAdapter,
         stateURL: URL?,
         keychainAccount: String,
         approvalInbox: ApprovalInbox,
@@ -391,6 +414,7 @@ final class AgentDemoViewModel {
         self.enableWebSearch = enableWebSearch
         self.enableImageGeneration = enableImageGeneration
         self.reasoningEffort = reasoningEffort
+        self.persistenceAdapter = persistenceAdapter
         self.developerLogLevel = diagnostics.initialDeveloperLogLevel()
         self.stateURL = stateURL
         self.keychainAccount = keychainAccount
@@ -427,7 +451,11 @@ final class AgentDemoViewModel {
     }
 
     var resolvedStateURL: URL {
-        stateURL ?? AgentDemoRuntimeFactory.defaultStateURL()
+        AgentDemoRuntimeFactory.resolvedStateURL(stateURL, for: persistenceAdapter)
+    }
+
+    var resolvedMemoryURL: URL {
+        AgentDemoRuntimeFactory.defaultMemoryURL(for: persistenceAdapter)
     }
 
     var legacyStateURL: URL {
@@ -450,7 +478,7 @@ final class AgentDemoViewModel {
     }
 
     var canReconfigureRuntime: Bool {
-        !isAuthenticating && threads.allSatisfy { thread in
+        !isAuthenticating && !isSwitchingPersistenceAdapter && activeRuntimeThreads.allSatisfy { thread in
             switch thread.status {
             case .idle, .failed:
                 true

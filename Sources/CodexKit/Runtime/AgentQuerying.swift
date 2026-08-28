@@ -76,6 +76,7 @@ public enum AgentStoreError: Error, Sendable {
     case incompatibleLogicalSchema(found: Int, supported: [Int])
     case migrationRequired(from: Int, to: Int)
     case migrationFailed(String)
+    case invalidInput(String)
     case queryNotSupported(String)
 }
 
@@ -101,14 +102,40 @@ public enum AgentSortOrder: String, Sendable, Hashable, Codable {
 public struct AgentQueryPage: Sendable, Hashable, Codable {
     public var limit: Int
     public var cursor: AgentHistoryCursor?
+    public var direction: AgentHistoryDirection
 
     public init(
         limit: Int = 50,
-        cursor: AgentHistoryCursor? = nil
+        cursor: AgentHistoryCursor? = nil,
+        direction: AgentHistoryDirection = .backward
     ) {
         self.limit = limit
         self.cursor = cursor
+        self.direction = direction
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case limit
+        case cursor
+        case direction
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            limit: try container.decodeIfPresent(Int.self, forKey: .limit) ?? 50,
+            cursor: try container.decodeIfPresent(AgentHistoryCursor.self, forKey: .cursor),
+            direction: try container.decodeIfPresent(
+                AgentHistoryDirection.self,
+                forKey: .direction
+            ) ?? .backward
+        )
+    }
+}
+
+/// Returns a page overfetch size without overflowing for an unbounded caller.
+package func agentOverfetchLimit(_ normalizedLimit: Int) -> Int {
+    AgentStoreLimitValidator.boundedLimit(normalizedLimit) + 1
 }
 
 public enum AgentHistoryItemKind: String, Sendable, Hashable, Codable, CaseIterable {
@@ -160,6 +187,8 @@ public struct HistoryItemsQuery: AgentQuerySpec {
     public var includeRedacted: Bool
     public var includeCompactionEvents: Bool
     public var sort: AgentHistorySort
+    /// Pagination configuration. A `nil` value uses the bounded default page;
+    /// it never requests an unbounded history materialization.
     public var page: AgentQueryPage?
 
     public init(
@@ -183,13 +212,25 @@ public struct HistoryItemsQuery: AgentQuerySpec {
     }
 
     public func execute(in state: StoredRuntimeState) throws -> AgentHistoryQueryResult {
-        try state.execute(self)
+        try AgentStoreLimitValidator.validate(self)
+        return try state.execute(self)
     }
 }
 
 public enum AgentThreadMetadataSort: Sendable, Hashable, Codable {
     case updatedAt(AgentSortOrder)
     case createdAt(AgentSortOrder)
+}
+
+/// Stable keyset cursor for paging thread metadata without an offset scan.
+public struct AgentThreadMetadataCursor: Sendable, Hashable, Codable {
+    public var date: Date
+    public var threadID: String
+
+    public init(date: Date, threadID: String) {
+        self.date = date
+        self.threadID = threadID
+    }
 }
 
 public struct ThreadMetadataQuery: AgentQuerySpec {
@@ -200,23 +241,27 @@ public struct ThreadMetadataQuery: AgentQuerySpec {
     public var updatedAtRange: ClosedRange<Date>?
     public var sort: AgentThreadMetadataSort
     public var limit: Int?
+    public var cursor: AgentThreadMetadataCursor?
 
     public init(
         threadIDs: Set<String>? = nil,
         statuses: Set<AgentThreadStatus>? = nil,
         updatedAtRange: ClosedRange<Date>? = nil,
         sort: AgentThreadMetadataSort = .updatedAt(.descending),
-        limit: Int? = nil
+        limit: Int? = AgentStoreLimits.defaultListResultCount,
+        cursor: AgentThreadMetadataCursor? = nil
     ) {
         self.threadIDs = threadIDs
         self.statuses = statuses
         self.updatedAtRange = updatedAtRange
         self.sort = sort
         self.limit = limit
+        self.cursor = cursor
     }
 
     public func execute(in state: StoredRuntimeState) throws -> [AgentThread] {
-        state.execute(self)
+        try AgentStoreLimitValidator.validate(self)
+        return state.execute(self)
     }
 }
 
@@ -258,7 +303,7 @@ public struct PendingStateQuery: AgentQuerySpec {
         threadIDs: Set<String>? = nil,
         kinds: Set<AgentPendingStateKind>? = nil,
         sort: AgentPendingStateSort = .updatedAt(.descending),
-        limit: Int? = nil
+        limit: Int? = AgentStoreLimits.defaultListResultCount
     ) {
         self.threadIDs = threadIDs
         self.kinds = kinds
@@ -267,7 +312,8 @@ public struct PendingStateQuery: AgentQuerySpec {
     }
 
     public func execute(in state: StoredRuntimeState) throws -> [AgentPendingStateRecord] {
-        state.execute(self)
+        try AgentStoreLimitValidator.validate(self)
+        return state.execute(self)
     }
 }
 
@@ -289,7 +335,7 @@ public struct StructuredOutputQuery: AgentQuerySpec {
         formatNames: Set<String>? = nil,
         latestOnly: Bool = false,
         sort: AgentStructuredOutputSort = .committedAt(.descending),
-        limit: Int? = nil
+        limit: Int? = AgentStoreLimits.defaultListResultCount
     ) {
         self.threadIDs = threadIDs
         self.formatNames = formatNames
@@ -299,7 +345,8 @@ public struct StructuredOutputQuery: AgentQuerySpec {
     }
 
     public func execute(in state: StoredRuntimeState) throws -> [AgentStructuredOutputRecord] {
-        state.execute(self)
+        try AgentStoreLimitValidator.validate(self)
+        return state.execute(self)
     }
 }
 
@@ -358,7 +405,7 @@ public struct ThreadSnapshotQuery: AgentQuerySpec {
     public init(
         threadIDs: Set<String>? = nil,
         sort: AgentThreadSnapshotSort = .updatedAt(.descending),
-        limit: Int? = nil
+        limit: Int? = AgentStoreLimits.defaultListResultCount
     ) {
         self.threadIDs = threadIDs
         self.sort = sort
@@ -366,7 +413,8 @@ public struct ThreadSnapshotQuery: AgentQuerySpec {
     }
 
     public func execute(in state: StoredRuntimeState) throws -> [AgentThreadSnapshot] {
-        state.execute(self)
+        try AgentStoreLimitValidator.validate(self)
+        return state.execute(self)
     }
 }
 
@@ -434,6 +482,9 @@ public enum AgentStoreWriteOperation: Sendable, Hashable {
     case upsertThread(AgentThread)
     case upsertSummary(threadID: String, summary: AgentThreadSummary)
     case appendHistoryItems(threadID: String, items: [AgentHistoryRecord])
+    /// Restores an ordered history segment and permits the first retained
+    /// sequence to be greater than one when the destination history is empty.
+    case restoreHistoryItems(threadID: String, items: [AgentHistoryRecord])
     case appendCompactionMarker(threadID: String, marker: AgentHistoryRecord)
     case upsertThreadContextState(threadID: String, state: AgentThreadContextState?)
     case deleteThreadContextState(threadID: String)
@@ -446,6 +497,7 @@ public enum AgentStoreWriteOperation: Sendable, Hashable {
 
 public extension AgentRuntimeQueryableStore {
     func execute<Query: AgentQuerySpec>(_ query: Query) async throws -> Query.Result {
+        try AgentStoreLimitValidator.validate(query)
         let state = try await loadState()
         return try query.execute(in: state)
     }
@@ -461,13 +513,15 @@ extension AgentStoreWriteOperation {
         case toolSession(threadID: String, invocationID: String)
     }
 
-    var affectedThreadID: String {
+    package var affectedThreadID: String {
         switch self {
         case let .upsertThread(thread):
             thread.id
         case let .upsertSummary(threadID, _):
             threadID
         case let .appendHistoryItems(threadID, _):
+            threadID
+        case let .restoreHistoryItems(threadID, _):
             threadID
         case let .appendCompactionMarker(threadID, _):
             threadID
@@ -496,6 +550,8 @@ extension AgentStoreWriteOperation {
             .summary(threadID)
         case .appendHistoryItems:
             nil
+        case .restoreHistoryItems:
+            nil
         case .appendCompactionMarker:
             nil
         case let .upsertThreadContextState(threadID, _):
@@ -517,7 +573,7 @@ extension AgentStoreWriteOperation {
 }
 
 extension AgentThreadPendingState {
-    var kind: AgentPendingStateKind {
+    package var kind: AgentPendingStateKind {
         switch self {
         case .approval:
             .approval

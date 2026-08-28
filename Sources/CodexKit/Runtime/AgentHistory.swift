@@ -97,7 +97,7 @@ public struct AgentHistoryQuery: Sendable, Hashable {
     }
 }
 
-public enum AgentHistoryDirection: Sendable, Hashable {
+public enum AgentHistoryDirection: String, Sendable, Hashable, Codable {
     case forward
     case backward
 }

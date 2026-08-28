@@ -6,6 +6,79 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Added the optional `CodexKitRealm` product with `RealmRuntimeStateStore` and `RealmMemoryStore`.
+- Added protocol-based runtime and memory store migration utilities for copying existing data between adapters.
+- Added `MemoryTextMatchPolicy` with any-token, minimum-token, and all-token eligibility, plus exact token coverage and query-execution details in match explanations.
+- Added an optional background-activity provider and an iOS implementation that gives active turns the system's finite background completion window.
+- Added opt-in resumable background Responses turns, including persisted response checkpoints, sequence-based stream reconnection, relaunch recovery, and replay-safe message and tool persistence.
+
+### Changed
+
+- Moved `SQLiteRuntimeStateStore` and `SQLiteMemoryStore` into the optional `CodexKitSQLite` product so the core `CodexKit` product no longer depends on GRDB.
+- Updated the demo and package documentation to select concrete persistence adapters only in the runtime composition layer; the demo now links both adapters and can switch its runtime and memory stores between SQLite and Realm.
+- Updated the demo's lazy-store restart path to query persisted thread metadata, keep stored threads visible while signed out, and resume a selected thread on demand.
+- Pushed SQLite memory filtering, list ordering and limits, diagnostics aggregation, and expiry pruning into indexed database queries so irrelevant records are not decoded in memory.
+- Pushed Realm runtime history and typed metadata queries, plus Realm memory structural filtering, ordering, and expiry pruning, into indexed Realm operations before result materialization; Realm memory diagnostics now use one transactionally maintained snapshot per namespace.
+- Changed Realm history writes to append and redact only the affected records instead of decoding and rewriting an entire thread, and bounded generic SQLite history paging and latest-structured-output queries at the database layer.
+- Added SQLite runtime query indexes for thread status and ordering, pending states, snapshots, turn-scoped history, and context generation.
+- Made generic history queries honor ascending and descending order consistently across stores, including timestamp ties and sort-bound cursors.
+- Replaced encoded memory payloads and duplicated query projections with structured adapter schemas: SQLite stores ordered evidence, tags, and related IDs in normalized tables, while Realm stores queryable collections as indexed linked entities and the remaining rule fields as native properties.
+- Split Realm memory construction, queries, diagnostics, models, and schema migration into focused components under the repository's 600-line source-file limit; `RealmMemoryStore.builder(url:)` now owns the dedicated Realm configuration and connects the standalone migration component.
+- Replaced adapter-specific weighted ranking with explicit portable `importanceThenRecency` and `recencyThenImportance` profiles. Text and structural criteria are predicates and no longer change result order through adapter-specific relevance scores.
+- Added SQLite composite order indexes and normalized search-token predicates that preserve native index ordering without temporary sorts, plus a Realm-native multi-column sort with a bounded result prefix, keeping candidate scanning and ranking out of Swift.
+- Added explicit memory match explanations so persistent stores' database-native execution is not misrepresented as a weighted relevance score.
+- Replaced the ambiguous ranking-method explanation with independent ranking-profile and execution-method fields, and made runtime memory selection use ranking cursors plus the exact remaining prompt budget so persistent stores skip oversized rows inside the database.
+- Made SQLite and Realm memory-store preparation asynchronous, lazy, and single-flight so construction does not perform schema migration or Realm opening synchronously.
+- Split the Realm runtime, SQLite runtime, and Responses turn runner into focused source files so every production Swift source remains within the 600-line repository limit.
+- Changed SQLite and Realm archive, delete, compaction, and expiry paths to use set-based database mutations, and included the memory prompt header in the configured character budget.
+- Made generic history pages explicitly forward- or backward-directed and changed runtime and memory adapter migrations to stream, verify, and roll back bounded batches instead of materializing whole stores.
+- Made the active working set and durable thread catalog explicit through `activeThreads()` and `persistedThreads(_:)`, so lazy restoration cannot be mistaken for data loss.
+- Moved aggregate memory-budget packing into the memory-store query contract. SQLite now selects a deterministic ranked prefix in one window query, while Realm evaluates one indexed native result stream. Neither adapter searches lower-ranked rows in application memory for a smaller replacement.
+
+### Fixed
+
+- Bounded SQLite memory ranking to an index-ordered `limit + 1` candidate window before aggregate packing, made runtime persistence failure recovery generation-safe across concurrent callers, and preserved unrelated thread groups after a batch failure.
+- Kept Realm-repaired attachments when a later promotion fails, made missing or duplicate Realm dedupe ownership fail closed, and bounded tool-image, base64-image, SSE-event, and HTTP-error-body ingestion before materialization.
+- Made attachment paths traversal-safe, content-addressed, and adapter-specific so SQLite and Realm files with the same basename cannot share or overwrite sidecars.
+- Added durable SQLite and Realm attachment cleanup queues, post-commit reconciliation, legacy-sidecar migration, and generation-based file-store snapshots so interrupted writes and cleanup retry safely.
+- Made legacy file imports retry after failed attempts, scoped SQLite structured-output identities to their thread, and made Realm memory composite and dedupe identities collision-safe and transactionally unique.
+- Avoided loading attachment bodies while rebuilding summaries after redaction and removed Realm's per-thread latest-structured-output query loop.
+- Replaced startup-wide attachment payload decoding with normalized SQLite and Realm attachment-reference indexes, and bounded post-redaction summary rebuilding to indexed latest-record projections.
+- Added transactional SQLite and Realm migrations into their normalized memory schemas, rejected invalid memory records, non-finite query thresholds, and negative budgets, and made history-page overfetch arithmetic safe at `Int.max`.
+- Aligned exact Unicode token matching across all memory adapters and replaced redundant SQLite and Realm bulk-write lookups with set-based constraint checks so large batches remain transactional without per-record database queries.
+- Coalesced Realm diagnostics deltas across bulk mutations and migrated legacy aggregate rows into structured per-namespace snapshots, keeping diagnostics reads to one primary-key lookup without adding a second write pipeline.
+- Moved Realm memory mutations onto actor-isolated Realm instances and Realm's native asynchronous write serialization, keeping collision checks and managed-object lookup inside the transaction across concurrent store instances.
+- Replaced Realm memory dedupe string references with native linked claim objects and report dangling or mismatched ownership as integrity errors instead of silently repairing it during mutation.
+- Preserved the demo's saved-thread catalog across logout and app relaunch, separated custom SQLite and Realm files, and surfaced persistence initialization errors instead of crashing.
+- Made runtime-store preparation single-flight, moved Realm runtime access to one actor-isolated asynchronously opened Realm with native asynchronous writes, and serialized database-plus-attachment mutations across store instances.
+- Made SQLite expiry pruning one atomic delete, added bounded busy handling for concurrent store instances, and made memory migration prevalidate every requested namespace before copying keyset pages.
+- Replaced record-scanning SQLite diagnostics with trigger-maintained keyed snapshots and added composite ranking indexes for queries that include archived memories.
+- Pushed minimum-token matching and exact selected-record token counts into SQLite and Realm queries, keeping eligibility work in the database while materializing only the bounded result set.
+- Canonicalized signed-zero importance ordering in both persistent stores and made zero-character query behavior consistent.
+- Externalized image bytes from every durable payload, including cached file-store context, tool results, tool-interaction history, provider state, and turn-recovery checkpoints; SQLite and Realm transactions now persist only staged attachment references and remove promoted files after failed commits.
+- Added an advisory per-store process lock around database-plus-sidecar mutations, recovered abandoned attachment staging on startup, and made generation-based file-store updates atomic across store instances.
+- Made failed Realm opening single-flight retries generation-safe.
+- Made file manifests fail closed on malformed or future versions, validated generation paths, and migrated released inline context images without risking an empty legacy-state rewrite.
+- Avoided restaging unchanged content-addressed images, added durable promotion journals for process-crash recovery, and reduced normal startup cleanup to indexed interrupted/queued keys after one compatibility reconciliation.
+- Rejected memory compactions that list their replacement as a source, preserved retained history sequences during adapter migration, and removed empty Realm diagnostics snapshots after predictable one-pass removal aggregation.
+- Added stable keyset cursors for thread metadata, ranked memory queries, and memory lists; migrations now preserve tied timestamps without offset scans.
+- Rejected same-store migrations and unsafe non-empty overwrites, coordinated built-in persistent runtime and memory migrations exclusively across instances and processes, limited rollback to migration-owned IDs, and surfaced rollback failures.
+- Unified incremental and snapshot history validation across in-memory, file, SQLite, and Realm stores, including retained-history gaps and item ownership checks.
+- Made current file-store generations fail closed on missing or legacy-shaped history files, avoided decoding unrelated contexts during targeted reads, and added content-digest verification plus repair for externalized image attachments.
+- Propagated cancellation through runtime, backend, and SSE producer tasks so an expired iOS background allowance records a failed turn instead of leaving stale streaming state.
+- Bounded memory query tokens, result limits, and combined structural filters to prevent pathological database statements and in-memory query work.
+- Bounded runtime query defaults, aggregate query materialization, filter sets, write batches, redaction matches, message and context text, embedded JSON depth and node counts, tool-result content, and attachment batches; oversized operations now fail before mutation or unbounded decode across every bundled store.
+- Validated decoded runtime and memory payloads against their indexed SQLite and Realm projections, bounded normalized child collections, and added a batched Realm projection backfill so malformed, oversized, stale, or mismatched persisted rows fail closed instead of being materialized as trusted state.
+- Reworked whole-thread attachment deletion, snapshot replacement, promotion recovery, and orphan reconciliation to use database-native selection plus bounded storage-key batches rather than thread-sized in-memory sets.
+- Made diagnostics and bulk-memory cardinality explicit and bounded, retained constant-time snapshot reads, and added adversarial coverage for oversized contexts, aggregate payloads, corrupt normalized collections, structured payloads, duplicate redaction matches, large attachment sets, and migration/recovery batch boundaries.
+- Persisted each thread's next history sequence as an atomically advanced database field, replacing activation and append-time aggregate scans in both adapters.
+- Added indexed history relationship keys and relationship-complete activation windows so message/output and tool-call/result records cannot be split at a hydration boundary.
+- Collapsed unreleased schema iterations to release boundaries: Realm runtime and memory stores remain schema v1, SQLite runtime advances from released v2 to v3, and SQLite memory advances from released v1 to v2.
+- Added an exact-tag release gate so manually dispatched releases cannot publish an untagged or mismatched revision.
+- Made pending-turn recovery query bounded durable history directly, so lazy SQLite and Realm activation cannot hide a checkpoint after app relaunch.
+
 ## [2.0.0-alpha.23] - 2026-08-24
 
 ### Added

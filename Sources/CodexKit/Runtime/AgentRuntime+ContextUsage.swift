@@ -31,8 +31,8 @@ extension AgentRuntime {
 
         return max(
             1,
-            messages.reduce(into: 0) { total, message in
-                total += message.estimatedContextCharacterCount
+            messages.reduce(0) {
+                AgentCounter.saturatingAdd($0, $1.estimatedContextCharacterCount)
             } / 4
         )
     }

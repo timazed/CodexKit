@@ -1,7 +1,28 @@
-import CodexKit
+@testable import CodexKit
 import XCTest
 
 final class CodexResponsesBackendTests: XCTestCase {
+    func testToolImageAdapterRejectsOversizedLocalFileBeforeMaterializingIt() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data([0])))
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(AgentStoreLimits.maximumImageByteCount + 1))
+        try handle.close()
+
+        let adapter = CodexResponsesToolOutputAdapter(urlSession: makeTestURLSession())
+        let images = await adapter.images(from: ToolResultEnvelope(
+            invocationID: "oversized-image",
+            toolName: "image",
+            success: true,
+            content: [.image(url)]
+        ))
+
+        XCTAssertTrue(images.isEmpty)
+    }
+
     override func tearDown() {
         let expectation = XCTestExpectation(description: "reset protocol stubs")
         Task {

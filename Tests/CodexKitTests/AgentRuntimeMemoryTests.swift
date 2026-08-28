@@ -322,7 +322,7 @@ extension AgentRuntimeTests {
                 namespace: "demo-assistant",
                 scope: "feature:health-coach",
                 category: "preference",
-                summary: "Observed memory."
+                summary: "Use observed memory."
             ),
         ])
         let observer = RecordingMemoryObserver()
@@ -363,10 +363,26 @@ extension AgentRuntimeTests {
             return XCTFail("Expected queryStarted event.")
         }
         XCTAssertEqual(startedQuery.namespace, "demo-assistant")
+        XCTAssertEqual(startedQuery.textMatchPolicy, .runtimeDefault)
+        XCTAssertEqual(startedQuery.limit, MemoryReadBudget.runtimeDefault.maxItems)
+        XCTAssertEqual(
+            startedQuery.maxCharacters,
+            MemoryReadBudget.runtimeDefault.maxCharacters - "Relevant Memory:\n".count
+        )
         guard case let .querySucceeded(_, result) = events[1] else {
             return XCTFail("Expected querySucceeded event.")
         }
         XCTAssertEqual(result.matches.count, 1)
+
+        _ = try await runtime.send(
+            Request(text: "memory"),
+            in: thread.id
+        )
+        let singleTokenEvents = await observer.events()
+        guard case let .queryStarted(singleTokenQuery) = singleTokenEvents[2] else {
+            return XCTFail("Expected a second queryStarted event.")
+        }
+        XCTAssertEqual(singleTokenQuery.textMatchPolicy, .anyToken)
     }
 
     func testRuntimeProvidesThreadAwareMemoryWriterDefaults() async throws {

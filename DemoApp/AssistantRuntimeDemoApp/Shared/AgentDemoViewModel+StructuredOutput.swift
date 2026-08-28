@@ -46,7 +46,7 @@ extension AgentDemoViewModel {
                 customerMessage: DemoStructuredOutputExamples.shippingCustomerMessage,
                 draft: draft
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             activeThreadID = thread.id
             setMessages(await runtime.messages(for: thread.id))
             developerLog("Structured shipping reply demo finished. threadID=\(thread.id)")
@@ -97,7 +97,7 @@ extension AgentDemoViewModel {
                 sourceURL: DemoStructuredOutputExamples.importedArticleURL,
                 summary: summary
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             activeThreadID = thread.id
             setMessages(await runtime.messages(for: thread.id))
             developerLog("Structured imported summary demo finished. threadID=\(thread.id)")
@@ -197,7 +197,7 @@ extension AgentDemoViewModel {
                 committedPayload: committedPayload,
                 persistedMetadata: persistedMetadata
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             activeThreadID = thread.id
             setMessages(messages)
             developerLog(

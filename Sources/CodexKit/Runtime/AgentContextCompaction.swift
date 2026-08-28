@@ -161,13 +161,14 @@ public struct ThreadContextStateQuery: AgentQuerySpec {
 
     public init(
         threadIDs: Set<String>? = nil,
-        limit: Int? = nil
+        limit: Int? = AgentStoreLimits.defaultListResultCount
     ) {
         self.threadIDs = threadIDs
         self.limit = limit
     }
 
     public func execute(in state: StoredRuntimeState) throws -> [AgentThreadContextState] {
-        state.execute(self)
+        try AgentStoreLimitValidator.validate(self)
+        return state.execute(self)
     }
 }

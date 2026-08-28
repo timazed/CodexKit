@@ -29,11 +29,15 @@
 		1A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift */; };
 		1A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift */; };
 		1A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */; };
+		1A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift */; };
+		1A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */; };
 		7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */; };
 		84726927B752451499D9257F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 906A95007C8ECB92CFC2CE15 /* Foundation.framework */; };
 		B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA22585116A120BA97F76B8 /* AgentDemoView.swift */; };
 		BB4F38E64D1EBBB3821AC4E3 /* AgentDemoRuntimeFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */; };
 		C3F0C7C3FFE178D305D389FE /* CodexKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9F8AEFF635BE4069B99B8FA /* CodexKit */; };
+		D4A6C8E0F2B413579BDF2468 /* CodexKitSQLite in Frameworks */ = {isa = PBXBuildFile; productRef = E5B7D9F103C52468ACE13579 /* CodexKitSQLite */; };
+		A6B8C0D2E4F60718293A4B5C /* CodexKitRealm in Frameworks */ = {isa = PBXBuildFile; productRef = B7C9D1E3F508192A3B4C5D6E /* CodexKitRealm */; };
 		CE583AC4DFDD5DFB369C0D06 /* AgentDemoViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */; };
 		FFD1C48541C0330BD1625B6B /* CodexKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 228114D47B5BE09D030E944B /* CodexKitUI */; };
 /* End PBXBuildFile section */
@@ -62,6 +66,8 @@
 		2A2B3C4D5E6F700000000014 /* AgentDemoViewModel+ThreadState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+ThreadState.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000015 /* AgentDemoViewModel+Observation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+Observation.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThreadTurnActivityView.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+Presentation.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThreadMessageViews.swift; sourceTree = "<group>"; };
 		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
 		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
 		690A3E5A03E545F88FAF9A44 /* AssistantRuntimeDemoApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AssistantRuntimeDemoApp.entitlements; sourceTree = "<group>"; };
@@ -78,6 +84,8 @@
 			files = (
 				84726927B752451499D9257F /* Foundation.framework in Frameworks */,
 				C3F0C7C3FFE178D305D389FE /* CodexKit in Frameworks */,
+				A6B8C0D2E4F60718293A4B5C /* CodexKitRealm in Frameworks */,
+				D4A6C8E0F2B413579BDF2468 /* CodexKitSQLite in Frameworks */,
 				FFD1C48541C0330BD1625B6B /* CodexKitUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -135,6 +143,7 @@
 				86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */,
 				3CA22585116A120BA97F76B8 /* AgentDemoView.swift */,
 				2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */,
+				2A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift */,
 				2A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift */,
 				2A2B3C4D5E6F700000000003 /* HealthCoachView.swift */,
 				2A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift */,
@@ -153,6 +162,7 @@
 				2A2B3C4D5E6F70000000000D /* DemoUIComponents.swift */,
 				2A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift */,
 				2A2B3C4D5E6F70000000000F /* ThreadDetailView.swift */,
+				2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */,
 				2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */,
 				2A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift */,
 				2A2B3C4D5E6F700000000011 /* AgentDemoViewModel+Memory.swift */,
@@ -179,6 +189,8 @@
 			name = AssistantRuntimeDemoApp;
 			packageProductDependencies = (
 				C9F8AEFF635BE4069B99B8FA /* CodexKit */,
+				B7C9D1E3F508192A3B4C5D6E /* CodexKitRealm */,
+				E5B7D9F103C52468ACE13579 /* CodexKitSQLite */,
 				228114D47B5BE09D030E944B /* CodexKitUI */,
 			);
 			productName = AssistantRuntimeDemoApp;
@@ -232,6 +244,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift in Sources */,
+				1A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift in Sources */,
 				1A2B3C4D5E6F700000000003 /* HealthCoachView.swift in Sources */,
 				1A2B3C4D5E6F700000000004 /* DeviceCodePromptView.swift in Sources */,
@@ -246,6 +259,7 @@
 				1A2B3C4D5E6F70000000000D /* DemoUIComponents.swift in Sources */,
 				1A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift in Sources */,
 				1A2B3C4D5E6F70000000000F /* ThreadDetailView.swift in Sources */,
+				1A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift in Sources */,
 				1A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift in Sources */,
 				1A2B3C4D5E6F700000000011 /* AgentDemoViewModel+Memory.swift in Sources */,
 				1A2B3C4D5E6F700000000012 /* MemoryDemoView.swift in Sources */,
@@ -475,6 +489,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 802CFFA933DE41B7A27EFE75 /* XCLocalSwiftPackageReference ".." */;
 			productName = CodexKit;
+		};
+		E5B7D9F103C52468ACE13579 /* CodexKitSQLite */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 802CFFA933DE41B7A27EFE75 /* XCLocalSwiftPackageReference ".." */;
+			productName = CodexKitSQLite;
+		};
+		B7C9D1E3F508192A3B4C5D6E /* CodexKitRealm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 802CFFA933DE41B7A27EFE75 /* XCLocalSwiftPackageReference ".." */;
+			productName = CodexKitRealm;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

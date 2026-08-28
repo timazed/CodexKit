@@ -170,14 +170,14 @@ public struct AgentLoggingConfiguration: Sendable {
     }
 }
 
-struct AgentLogger: Sendable {
-    let configuration: AgentLoggingConfiguration
+package struct AgentLogger: Sendable {
+    package let configuration: AgentLoggingConfiguration
 
-    init(configuration: AgentLoggingConfiguration = .disabled) {
+    package init(configuration: AgentLoggingConfiguration = .disabled) {
         self.configuration = configuration
     }
 
-    func debug(
+    package func debug(
         _ category: AgentLogCategory,
         _ message: String,
         metadata: [String: String] = [:]
@@ -185,7 +185,7 @@ struct AgentLogger: Sendable {
         log(.debug, category, message, metadata: metadata)
     }
 
-    func verbose(
+    package func verbose(
         _ category: AgentLogCategory,
         _ message: String,
         metadata: [String: String] = [:]
@@ -193,7 +193,7 @@ struct AgentLogger: Sendable {
         log(.verbose, category, message, metadata: metadata)
     }
 
-    func info(
+    package func info(
         _ category: AgentLogCategory,
         _ message: String,
         metadata: [String: String] = [:]
@@ -201,7 +201,7 @@ struct AgentLogger: Sendable {
         log(.info, category, message, metadata: metadata)
     }
 
-    func warning(
+    package func warning(
         _ category: AgentLogCategory,
         _ message: String,
         metadata: [String: String] = [:]
@@ -209,7 +209,7 @@ struct AgentLogger: Sendable {
         log(.warning, category, message, metadata: metadata)
     }
 
-    func error(
+    package func error(
         _ category: AgentLogCategory,
         _ message: String,
         metadata: [String: String] = [:]
@@ -217,7 +217,7 @@ struct AgentLogger: Sendable {
         log(.error, category, message, metadata: metadata)
     }
 
-    func isVerboseEnabled(for category: AgentLogCategory) -> Bool {
+    package func isVerboseEnabled(for category: AgentLogCategory) -> Bool {
         configuration.allows(level: .verbose, category: category)
     }
 

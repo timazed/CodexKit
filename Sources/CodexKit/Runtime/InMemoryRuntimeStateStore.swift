@@ -3,6 +3,7 @@ import Foundation
 public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
     private var state: StoredRuntimeState
     private let logger: AgentLogger
+    private let migrationInstanceID = UUID()
 
     public init(
         initialState: StoredRuntimeState = .empty,
@@ -23,7 +24,15 @@ public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspect
             "Saving in-memory runtime state.",
             metadata: ["threads": "\(state.threads.count)"]
         )
-        self.state = state.normalized()
+        try AgentHistoryWriteValidator.validateSnapshot(state)
+        let normalized = state.normalized()
+        self.state = normalized
+    }
+
+    public func apply(_ operations: [AgentStoreWriteOperation]) async throws {
+        guard !operations.isEmpty else { return }
+        try AgentStoreLimitValidator.validate(operations)
+        state = try state.applying(operations)
     }
 
     public func prepare() async throws -> AgentStoreMetadata {
@@ -55,7 +64,8 @@ public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspect
         id: String,
         query: AgentHistoryQuery
     ) async throws -> AgentThreadHistoryPage {
-        try state.threadHistoryPage(id: id, query: query)
+        try AgentStoreLimitValidator.validateHistoryPage(query)
+        return try state.threadHistoryPage(id: id, query: query)
     }
 
     public func fetchLatestStructuredOutputMetadata(id: String) async throws -> AgentStructuredOutputMetadata? {
@@ -64,5 +74,11 @@ public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspect
 
     public func fetchThreadContextState(id: String) async throws -> AgentThreadContextState? {
         state.contextStateByThread[id]
+    }
+}
+
+extension InMemoryRuntimeStateStore: StoreMigrationIdentifying {
+    package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
+        StoreMigrationIdentity(kind: "runtime", instanceID: migrationInstanceID)
     }
 }

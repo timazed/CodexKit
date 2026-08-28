@@ -5,6 +5,11 @@ public enum CodexResponsesStateManagement: String, Codable, Hashable, Sendable {
     case serverManaged
 }
 
+public enum CodexResponsesExecutionMode: String, Codable, Hashable, Sendable {
+    case foreground
+    case resumableBackground
+}
+
 public struct CodexResponsesBackendConfiguration: Sendable {
     public let baseURL: URL
     public let model: String
@@ -17,6 +22,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let enableImageGeneration: Bool
     public let imageGenerationOutputFormat: String
     public let stateManagement: CodexResponsesStateManagement
+    public let executionMode: CodexResponsesExecutionMode
     public let requestRetryPolicy: RequestRetryPolicy
     public let logging: AgentLoggingConfiguration
 
@@ -38,6 +44,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
         stateManagement: CodexResponsesStateManagement = .clientManaged,
+        executionMode: CodexResponsesExecutionMode = .foreground,
         requestRetryPolicy: RequestRetryPolicy = .default,
         logging: AgentLoggingConfiguration = .disabled
     ) {
@@ -54,6 +61,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.enableImageGeneration = enableImageGeneration
         self.imageGenerationOutputFormat = imageGenerationOutputFormat
         self.stateManagement = stateManagement
+        self.executionMode = executionMode
         self.requestRetryPolicy = requestRetryPolicy
         self.logging = logging
     }
@@ -72,6 +80,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
         stateManagement: CodexResponsesStateManagement = .clientManaged,
+        executionMode: CodexResponsesExecutionMode = .foreground,
         requestRetryPolicy: RequestRetryPolicy = .default,
         logging: AgentLoggingConfiguration = .disabled
     ) {
@@ -87,6 +96,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
             enableImageGeneration: enableImageGeneration,
             imageGenerationOutputFormat: imageGenerationOutputFormat,
             stateManagement: stateManagement,
+            executionMode: executionMode,
             requestRetryPolicy: requestRetryPolicy,
             logging: logging
         )
@@ -303,18 +313,19 @@ private struct CodexResponsesTurnSession {
                 decoder: decoder,
                 threadID: thread.id,
                 turnID: turn.id,
+                turnStartedAt: turn.startedAt,
+                request: message,
                 tools: tools,
                 session: session,
                 pendingToolResults: pendingToolResults,
                 continuation: continuation
             )
 
-            Task {
+            let producerTask = Task {
                 do {
                     let result = try await runner.run(
                         history: history,
-                        providerContext: providerContext,
-                        newMessage: message
+                        providerContext: providerContext
                     )
 
                     logger.info(
@@ -355,6 +366,11 @@ private struct CodexResponsesTurnSession {
                         ]
                     )
                     continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable termination in
+                if case .cancelled = termination {
+                    producerTask.cancel()
                 }
             }
         }

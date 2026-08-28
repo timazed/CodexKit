@@ -1,15 +1,22 @@
 import Foundation
 
-internal enum MemoryQueryEngine {
-    internal enum TextScoreOrdering {
-        case higherIsBetter
-        case lowerIsBetter
-    }
+package enum MemoryQueryEngine {
+    private static let promptHeader = "Relevant Memory:\n"
 
-    internal struct Candidate {
-        let record: MemoryRecord
-        let textScore: Double?
-        let textScoreOrdering: TextScoreOrdering
+    package struct Candidate {
+        package let record: MemoryRecord
+        package let matchedTokenCount: Int
+        package let queryTokenCount: Int
+
+        package init(
+            record: MemoryRecord,
+            matchedTokenCount: Int,
+            queryTokenCount: Int
+        ) {
+            self.record = record
+            self.matchedTokenCount = matchedTokenCount
+            self.queryTokenCount = queryTokenCount
+        }
     }
 
     private struct ScoredCandidate {
@@ -17,163 +24,295 @@ internal enum MemoryQueryEngine {
         let characterCost: Int
     }
 
-    static func evaluate(
+    package static func evaluate(
         candidates: [Candidate],
         query: MemoryQuery,
         now: Date = Date()
     ) throws -> MemoryQueryResult {
-        try validateNamespace(query.namespace)
+        try validate(query)
 
+        let queryTokenCount = uniqueTokens(query.text).count
+        let minimumTextMatches = requiredTextMatchCount(
+            policy: query.textMatchPolicy,
+            queryTokenCount: queryTokenCount
+        )
         let activeCandidates = candidates.filter { candidate in
-            matchesFilters(candidate.record, query: query, now: now)
+            matchesFilters(candidate.record, query: query, now: now) &&
+                candidate.matchedTokenCount >= minimumTextMatches
         }
-
-        let textScores = normalizedTextScores(from: activeCandidates)
 
         let scored = activeCandidates.map { candidate -> ScoredCandidate in
-            let textScore = textScores[candidate.record.id] ?? 0
-            let recencyScore = recencyScore(
-                for: candidate.record,
-                query: query,
-                now: now
-            )
-            let importanceScore = clamp(candidate.record.importance)
-            let categoryBoost = query.categories.contains(candidate.record.category) ? query.ranking.categoryBoost : 0
-            let tagBoost = candidate.record.tags.contains(where: query.tags.contains) ? query.ranking.tagBoost : 0
-            let relatedBoost = candidate.record.relatedIDs.contains(where: query.relatedIDs.contains) ? query.ranking.relatedIDBoost : 0
-            let totalScore =
-                (textScore * query.ranking.textWeight) +
-                (importanceScore * query.ranking.importanceWeight) +
-                (recencyScore * query.ranking.recencyWeight) +
-                categoryBoost +
-                tagBoost +
-                relatedBoost
-
-            let explanation = MemoryMatchExplanation(
-                totalScore: totalScore,
-                textScore: textScore,
-                recencyScore: recencyScore,
-                importanceScore: importanceScore,
-                categoryBoost: categoryBoost,
-                tagBoost: tagBoost,
-                relatedIDBoost: relatedBoost
-            )
-            let match = MemoryQueryMatch(
+            let match = makeMatch(
                 record: candidate.record,
-                explanation: explanation
+                query: query,
+                now: now,
+                matchedTokenCount: candidate.matchedTokenCount,
+                queryTokenCount: candidate.queryTokenCount,
+                executionMethod: .inMemory
             )
-
             return ScoredCandidate(
                 match: match,
-                characterCost: renderMatch(match).count
+                characterCost: renderedCharacterCount(for: candidate.record)
             )
         }
-        .sorted {
-            if $0.match.explanation.totalScore == $1.match.explanation.totalScore {
-                if $0.match.record.effectiveDate == $1.match.record.effectiveDate {
-                    return $0.match.record.id < $1.match.record.id
-                }
-                return $0.match.record.effectiveDate > $1.match.record.effectiveDate
-            }
-            return $0.match.explanation.totalScore > $1.match.explanation.totalScore
+        .sorted { lhs, rhs in
+            ordered(lhs.match.record, before: rhs.match.record, profile: query.ranking)
         }
 
+        let individuallyRenderable = scored.filter {
+            $0.characterCost <= query.maxCharacters
+        }
+        let paged = individuallyRenderable.filter {
+            guard let cursor = query.cursor else { return true }
+            return isAfterCursor($0.match.record, cursor: cursor, profile: query.ranking)
+        }
         var selected: [MemoryQueryMatch] = []
         var characterCount = 0
-        var truncated = false
-
-        for candidate in scored {
-            if selected.count >= query.limit {
-                truncated = true
+        for candidate in paged {
+            guard selected.count < max(0, query.limit) else { break }
+            let separatorCost = selected.isEmpty ? 0 : 1
+            let remaining = query.maxCharacters - characterCount
+            guard separatorCost <= remaining,
+                  candidate.characterCost <= remaining - separatorCost else {
                 break
             }
-
-            let nextCount = characterCount + candidate.characterCost + (selected.isEmpty ? 0 : 1)
-            if nextCount > query.maxCharacters {
-                truncated = true
-                continue
-            }
-
             selected.append(candidate.match)
-            characterCount = nextCount
+            characterCount += candidate.characterCost + separatorCost
         }
-
-        if !truncated {
-            truncated = selected.count < scored.count
-        }
+        let truncated = selected.count < paged.count
 
         return MemoryQueryResult(
             matches: selected,
-            truncated: truncated
+            truncated: truncated,
+            nextCursor: truncated ? selected.last.map { cursor(for: $0.record, query: query) } : nil
         )
     }
 
-    static func renderPrompt(
+    package static func renderPrompt(
         matches: [MemoryQueryMatch],
         budget: MemoryReadBudget
     ) -> String {
         var lines: [String] = []
         var characterCount = 0
 
-        for match in matches.prefix(budget.maxItems) {
+        let itemLimit = max(0, budget.maxItems)
+        let characterLimit = promptContentCharacterLimit(for: budget)
+        for match in matches {
+            guard lines.count < itemLimit else { break }
             let rendered = renderMatch(match)
-            let nextCount = characterCount + rendered.count + (lines.isEmpty ? 0 : 1)
-            if !lines.isEmpty, nextCount > budget.maxCharacters {
-                break
-            }
-            if lines.isEmpty, rendered.count > budget.maxCharacters {
-                break
+            let separatorCost = lines.isEmpty ? 0 : 1
+            let remaining = characterLimit - characterCount
+            guard separatorCost <= remaining,
+                  rendered.count <= remaining - separatorCost
+            else {
+                continue
             }
             lines.append(rendered)
-            characterCount = nextCount
+            characterCount += rendered.count + separatorCost
         }
 
         guard !lines.isEmpty else {
             return ""
         }
 
-        return """
-        Relevant Memory:
-        \(lines.joined(separator: "\n"))
-        """
+        return promptHeader + lines.joined(separator: "\n")
     }
 
-    static func defaultTextScore(
+    package static func promptContentCharacterLimit(for budget: MemoryReadBudget) -> Int {
+        max(0, budget.maxCharacters - promptHeader.count)
+    }
+
+    package static func matchedTokenCount(
         for record: MemoryRecord,
-        queryText: String?
-    ) -> Double {
-        let queryTokens = tokenize(queryText)
-        guard !queryTokens.isEmpty else {
-            return 0
-        }
-
-        let haystack = tokenize(
+        queryTokens: Set<String>
+    ) -> Int {
+        guard !queryTokens.isEmpty else { return 0 }
+        let recordTokens = Set(tokenize(
             ([record.summary] + record.evidence + record.tags + [record.category]).joined(separator: " ")
+        ))
+        return queryTokens.intersection(recordTokens).count
+    }
+
+    package static func uniqueTokens(_ value: String?) -> [String] {
+        tokenize(
+            value,
+            maximumTokenCount: MemoryStoreLimits.maximumQueryTokenCount,
+            maximumInputBytes: MemoryStoreLimits.maximumQueryTextByteCount
         )
-        guard !haystack.isEmpty else {
-            return 0
-        }
-
-        let overlap = Set(queryTokens).intersection(Set(haystack))
-        return Double(overlap.count) / Double(Set(queryTokens).count)
     }
 
-    static func validateNamespace(_ namespace: String) throws {
-        guard !namespace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw MemoryStoreError.invalidNamespace
+    package static func requiredTextMatchCount(
+        policy: MemoryTextMatchPolicy,
+        queryTokenCount: Int
+    ) -> Int {
+        guard queryTokenCount > 0 else { return 0 }
+        switch policy {
+        case .anyToken:
+            return 1
+        case let .atLeastTokens(count):
+            return count
+        case .allTokens:
+            return queryTokenCount
         }
     }
 
-    static func tokenize(_ value: String?) -> [String] {
-        guard let value else {
+    /// Builds the public explanation for a record which has already been
+    /// selected and ordered by a persistent store. Persistent stores use this
+    /// helper only for the bounded result window; it must not be used to sort
+    /// an unbounded database candidate set in Swift.
+    package static func makeMatch(
+        record: MemoryRecord,
+        query: MemoryQuery,
+        now: Date,
+        matchedTokenCount: Int,
+        queryTokenCount: Int,
+        executionMethod: MemoryQueryExecutionMethod = .inMemory
+    ) -> MemoryQueryMatch {
+        let recencyScore = recencyScore(for: record, query: query, now: now)
+        let importanceScore = clamp(record.importance)
+
+        return MemoryQueryMatch(
+            record: record,
+            explanation: MemoryMatchExplanation(
+                rankingProfile: query.ranking,
+                executionMethod: executionMethod,
+                matchedTokenCount: matchedTokenCount,
+                queryTokenCount: queryTokenCount,
+                recencyScore: recencyScore,
+                importanceScore: importanceScore
+            )
+        )
+    }
+
+    package static func renderedCharacterCount(for record: MemoryRecord) -> Int {
+        renderMatch(MemoryQueryMatch(
+            record: record,
+            explanation: MemoryMatchExplanation(
+                rankingProfile: .default,
+                executionMethod: .inMemory,
+                matchedTokenCount: 0,
+                queryTokenCount: 0,
+                recencyScore: 0,
+                importanceScore: 0
+            )
+        )).count
+    }
+
+    /// Stable adapter-independent numeric tie breaker. Persistent stores index
+    /// this value so equal importance/date groups do not require a full string
+    /// sort. The record ID remains the final collision tie breaker.
+    package static func recordOrder(for id: String) -> Int64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in id.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return Int64(bitPattern: hash)
+    }
+
+    package static func cursor(
+        for record: MemoryRecord,
+        query: MemoryQuery
+    ) -> MemoryQueryCursor {
+        MemoryQueryCursor(
+            namespace: query.namespace,
+            rankingProfile: query.ranking,
+            importance: record.importance,
+            effectiveDate: record.effectiveDate,
+            recordOrder: recordOrder(for: record.id),
+            recordID: record.id
+        )
+    }
+
+    package static func isAfterCursor(
+        _ record: MemoryRecord,
+        cursor: MemoryQueryCursor,
+        profile: MemoryRankingProfile
+    ) -> Bool {
+        let order = recordOrder(for: record.id)
+        switch profile {
+        case .importanceThenRecency:
+            if record.importance != cursor.importance {
+                return record.importance < cursor.importance
+            }
+            if record.effectiveDate != cursor.effectiveDate {
+                return record.effectiveDate < cursor.effectiveDate
+            }
+        case .recencyThenImportance:
+            if record.effectiveDate != cursor.effectiveDate {
+                return record.effectiveDate < cursor.effectiveDate
+            }
+            if record.importance != cursor.importance {
+                return record.importance < cursor.importance
+            }
+        }
+        if order != cursor.recordOrder {
+            return order > cursor.recordOrder
+        }
+        return record.id > cursor.recordID
+    }
+
+    /// Realm cannot index Double columns. Canonicalizing signed zero keeps the
+    /// indexed representation consistent with Swift and SQLite equality/order.
+    package static func importanceRank(for importance: Double) -> Int64 {
+        let canonical = importance == 0 ? 0.0 : importance
+        return Int64(bitPattern: canonical.bitPattern)
+    }
+
+    /// Tokenizes a bounded prefix and stops as soon as the requested number of
+    /// distinct tokens has been collected. Oversized tokens are ignored rather
+    /// than being truncated into potentially colliding database keys.
+    package static func tokenize(
+        _ value: String?,
+        maximumTokenCount: Int = MemoryStoreLimits.maximumStoredSearchTokenCount,
+        maximumInputBytes: Int = MemoryStoreLimits.maximumSearchableRecordByteCount
+    ) -> [String] {
+        guard let value, maximumTokenCount > 0, maximumInputBytes > 0 else {
             return []
         }
-
-        return value
+        let bounded = String(
+            decoding: value.utf8.prefix(maximumInputBytes),
+            as: UTF8.self
+        )
+        let normalized = bounded
+            .precomposedStringWithCanonicalMapping
             .lowercased()
-            .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
-            .filter { !$0.isEmpty }
+        var result: [String] = []
+        var seen = Set<String>()
+        var token = ""
+        var tokenByteCount = 0
+        var oversized = false
+
+        func appendToken() -> Bool {
+            defer {
+                token.removeAll(keepingCapacity: true)
+                tokenByteCount = 0
+                oversized = false
+            }
+            guard !token.isEmpty, !oversized, seen.insert(token).inserted else {
+                return false
+            }
+            result.append(token)
+            return result.count == maximumTokenCount
+        }
+
+        for character in normalized {
+            if character.isLetter || character.isNumber {
+                let bytes = character.utf8.count
+                if tokenByteCount + bytes <= MemoryStoreLimits.maximumTokenByteCount {
+                    token.append(character)
+                    tokenByteCount += bytes
+                } else {
+                    oversized = true
+                }
+            } else if appendToken() {
+                break
+            }
+        }
+        if result.count < maximumTokenCount {
+            _ = appendToken()
+        }
+        return result.sorted()
     }
 
     private static func matchesFilters(
@@ -224,38 +363,33 @@ internal enum MemoryQueryEngine {
         return true
     }
 
-    private static func normalizedTextScores(
-        from candidates: [Candidate]
-    ) -> [String: Double] {
-        let rawScores = candidates.compactMap(\.textScore)
-        guard let maxScore = rawScores.max(),
-              let minScore = rawScores.min()
-        else {
-            return [:]
-        }
-
-        return candidates.reduce(into: [String: Double]()) { partial, candidate in
-            guard let rawScore = candidate.textScore else {
-                partial[candidate.record.id] = 0
-                return
+    private static func ordered(
+        _ lhs: MemoryRecord,
+        before rhs: MemoryRecord,
+        profile: MemoryRankingProfile
+    ) -> Bool {
+        switch profile {
+        case .importanceThenRecency:
+            if lhs.importance != rhs.importance {
+                return lhs.importance > rhs.importance
             }
-
-            if maxScore == minScore {
-                switch candidate.textScoreOrdering {
-                case .higherIsBetter:
-                    partial[candidate.record.id] = rawScore > 0 ? 1 : 0
-                case .lowerIsBetter:
-                    partial[candidate.record.id] = 1
-                }
-            } else {
-                switch candidate.textScoreOrdering {
-                case .higherIsBetter:
-                    partial[candidate.record.id] = clamp((rawScore - minScore) / (maxScore - minScore))
-                case .lowerIsBetter:
-                    partial[candidate.record.id] = clamp((maxScore - rawScore) / (maxScore - minScore))
-                }
+            if lhs.effectiveDate != rhs.effectiveDate {
+                return lhs.effectiveDate > rhs.effectiveDate
+            }
+        case .recencyThenImportance:
+            if lhs.effectiveDate != rhs.effectiveDate {
+                return lhs.effectiveDate > rhs.effectiveDate
+            }
+            if lhs.importance != rhs.importance {
+                return lhs.importance > rhs.importance
             }
         }
+        let lhsOrder = recordOrder(for: lhs.id)
+        let rhsOrder = recordOrder(for: rhs.id)
+        if lhsOrder != rhsOrder {
+            return lhsOrder < rhsOrder
+        }
+        return lhs.id < rhs.id
     }
 
     private static func recencyScore(

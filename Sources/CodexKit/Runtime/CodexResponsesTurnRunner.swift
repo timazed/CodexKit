@@ -16,6 +16,8 @@ struct CodexResponsesTurnRunner {
     let toolOutputAdapter: CodexResponsesToolOutputAdapter
     let threadID: String
     let turnID: String
+    let turnStartedAt: Date
+    let request: Request
     let tools: [ToolDefinition]
     let session: ChatGPTSession
     let pendingToolResults: PendingToolResults
@@ -32,6 +34,8 @@ struct CodexResponsesTurnRunner {
         decoder: JSONDecoder,
         threadID: String,
         turnID: String,
+        turnStartedAt: Date,
+        request: Request,
         tools: [ToolDefinition],
         session: ChatGPTSession,
         pendingToolResults: PendingToolResults,
@@ -51,6 +55,8 @@ struct CodexResponsesTurnRunner {
         self.toolOutputAdapter = CodexResponsesToolOutputAdapter(urlSession: urlSession)
         self.threadID = threadID
         self.turnID = turnID
+        self.turnStartedAt = turnStartedAt
+        self.request = request
         self.tools = tools
         self.session = session
         self.pendingToolResults = pendingToolResults
@@ -59,8 +65,7 @@ struct CodexResponsesTurnRunner {
 
     func run(
         history: [AgentMessage],
-        providerContext: AgentProviderContext?,
-        newMessage: Request
+        providerContext: AgentProviderContext?
     ) async throws -> CodexResponsesTurnResult {
         let runStartedAt = Date()
         logger.debug(
@@ -75,10 +80,10 @@ struct CodexResponsesTurnRunner {
         )
         let providerState = CodexResponsesProviderState(context: providerContext)
         var state = TurnRunState(
-            workingHistory: initialWorkingHistory(
+            workingHistory: try initialWorkingHistory(
                 history: history,
                 providerState: providerState,
-                newMessage: newMessage
+                newMessage: request
             ),
             previousResponseID: configuration.stateManagement == .serverManaged
                 ? providerState?.previousResponseID
@@ -99,15 +104,42 @@ struct CodexResponsesTurnRunner {
                 "output_tokens": "\(state.aggregateUsage.outputTokens)"
             ]
         )
+        return try turnResult(from: state)
+    }
+
+    func run(
+        resuming payload: CodexResponsesRecoveryPayload,
+        history: [AgentMessage],
+        providerAttachments: [AgentImageAttachment]
+    ) async throws -> CodexResponsesTurnResult {
+        var state = try payload.turnRunState(
+            using: CodexResponsesImageReferences.attachments(
+                in: history,
+                additional: providerAttachments
+            ),
+            pendingToolImages: providerAttachments
+        )
+        let disposition = try await resumeTurnPass(
+            responseID: payload.responseID,
+            state: &state
+        )
+        if case .needsAnotherPass = disposition {
+            try await runTurnPasses(state: &state)
+        }
+        emitPendingAssistantFallbackIfNeeded(state: &state)
+        return try turnResult(from: state)
+    }
+
+    private func turnResult(
+        from state: TurnRunState
+    ) throws -> CodexResponsesTurnResult {
         let updatedProviderState: CodexResponsesProviderState = switch configuration.stateManagement {
         case .clientManaged:
-            CodexResponsesProviderState(
-                items: state.workingHistory.map(\.jsonValue)
-            )
+            CodexResponsesProviderState(items: try CodexResponsesImageReferences.externalize(
+                state.workingHistory.map(\.jsonValue)
+            ))
         case .serverManaged:
-            CodexResponsesProviderState(
-                previousResponseID: state.previousResponseID
-            )
+            CodexResponsesProviderState(previousResponseID: state.previousResponseID)
         }
         return CodexResponsesTurnResult(
             usage: state.aggregateUsage,
@@ -115,16 +147,22 @@ struct CodexResponsesTurnRunner {
         )
     }
 
-    private func initialWorkingHistory(
+    func initialWorkingHistory(
         history: [AgentMessage],
         providerState: CodexResponsesProviderState?,
         newMessage: Request
-    ) -> [WorkingHistoryItem] {
+    ) throws -> [WorkingHistoryItem] {
         var workingHistory: [WorkingHistoryItem]
         switch configuration.stateManagement {
         case .clientManaged:
             if let items = providerState?.items, !items.isEmpty {
-                workingHistory = items.map(WorkingHistoryItem.raw)
+                workingHistory = try CodexResponsesImageReferences.restore(
+                    items,
+                    using: CodexResponsesImageReferences.attachments(
+                        in: history,
+                        additional: newMessage.images
+                    )
+                ).map(WorkingHistoryItem.raw)
             } else {
                 workingHistory = workingHistoryItems(from: history)
             }
@@ -132,7 +170,13 @@ struct CodexResponsesTurnRunner {
             if providerState?.previousResponseID != nil {
                 workingHistory = []
             } else if let items = providerState?.items, !items.isEmpty {
-                workingHistory = items.map(WorkingHistoryItem.raw)
+                workingHistory = try CodexResponsesImageReferences.restore(
+                    items,
+                    using: CodexResponsesImageReferences.attachments(
+                        in: history,
+                        additional: newMessage.images
+                    )
+                ).map(WorkingHistoryItem.raw)
             } else {
                 workingHistory = workingHistoryItems(from: history)
             }
@@ -153,7 +197,7 @@ struct CodexResponsesTurnRunner {
         return workingHistory
     }
 
-    private func workingHistoryItems(
+    func workingHistoryItems(
         from history: [AgentMessage]
     ) -> [WorkingHistoryItem] {
         history.flatMap { message -> [WorkingHistoryItem] in
@@ -177,7 +221,7 @@ struct CodexResponsesTurnRunner {
         }
     }
 
-    private func developerMessages(
+    func developerMessages(
         for message: Request
     ) -> [WorkingHistoryItem] {
         var sections: [String] = []
@@ -216,7 +260,7 @@ struct CodexResponsesTurnRunner {
         return [.developerMessage(sections.joined(separator: "\n\n"))]
     }
 
-    private func runTurnPasses(
+    func runTurnPasses(
         state: inout TurnRunState
     ) async throws {
         var nextPass: TurnPassDisposition = .needsAnotherPass
@@ -226,7 +270,7 @@ struct CodexResponsesTurnRunner {
         }
     }
 
-    private func runTurnPassWithRetry(
+    func runTurnPassWithRetry(
         state: inout TurnRunState
     ) async throws -> TurnPassDisposition {
         let retryPolicy = configuration.requestRetryPolicy
@@ -317,7 +361,7 @@ struct CodexResponsesTurnRunner {
         return .completed
     }
 
-    private func makeRequest(
+    func makeRequest(
         for state: TurnRunState
     ) throws -> URLRequest {
         try requestFactory.buildURLRequest(
@@ -332,507 +376,113 @@ struct CodexResponsesTurnRunner {
         )
     }
 
-    private func consumeEventStream(
-        request: URLRequest,
-        state: inout TurnRunState,
-        retryState: inout RetryAttemptState
+    func resumeTurnPass(
+        responseID: String,
+        state: inout TurnRunState
     ) async throws -> TurnPassDisposition {
-        let stream = try await streamClient.streamEvents(request: request)
-        var passDisposition: TurnPassDisposition = .completed
-
-        for try await event in stream {
-            let eventResult = try await handleStreamEvent(event, state: &state)
-            passDisposition = passDisposition.merging(with: eventResult.passDisposition)
-            retryState.record(eventResult)
-            if case .completed = event {
-                return passDisposition
-            }
-        }
-
-        return passDisposition
+        state.beginAttempt()
+        var retryState = RetryAttemptState()
+        let request = try requestFactory.buildResumeURLRequest(
+            responseID: responseID,
+            startingAfter: 0,
+            threadID: threadID,
+            session: session
+        )
+        return try await consumeEventStream(
+            request: request,
+            state: &state,
+            retryState: &retryState,
+            activeResponseID: responseID,
+            lastSequenceNumber: 0
+        )
     }
 
-    private func handleStreamEvent(
-        _ event: CodexResponsesStreamEvent,
-        state: inout TurnRunState
-    ) async throws -> StreamEventResult {
-        switch event {
-        case let .assistantTextDelta(delta):
-            let emittedDelta = try handleAssistantTextDelta(delta, state: &state)
-            return emittedDelta ? .assistantDelta : .none
+    func consumeEventStream(
+        request: URLRequest,
+        state: inout TurnRunState,
+        retryState: inout RetryAttemptState,
+        activeResponseID initialResponseID: String? = nil,
+        lastSequenceNumber initialSequenceNumber: Int? = nil
+    ) async throws -> TurnPassDisposition {
+        var streamRequest = request
+        var activeResponseID = initialResponseID
+        var lastSequenceNumber = initialSequenceNumber
+        var reconnectAttempt = 0
+        var passDisposition: TurnPassDisposition = .completed
 
-        case let .outputItem(item, outputIndex, sequenceNumber):
-            state.pendingResponseItems.append(
-                PendingResponseItem(
-                    outputIndex: outputIndex,
-                    sequenceNumber: sequenceNumber,
-                    arrivalOrder: state.pendingResponseItems.count,
-                    value: item.rawValue
-                )
-            )
-            switch item.kind {
-            case let .message(messageItem):
-                let text = messageItem.content
-                    .compactMap(\.displayText)
-                    .joined()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let images = messageItem.content.compactMap(\.imageAttachment)
-                guard !text.isEmpty || !images.isEmpty else {
-                    return .none
+        while true {
+            do {
+                let stream = try await streamClient.streamEvents(request: streamRequest)
+                for try await event in stream {
+                    if case let .responseCreated(responseID) = event.kind,
+                       let responseID,
+                       !responseID.isEmpty {
+                        activeResponseID = responseID
+                    }
+                    let eventResult = try await handleStreamEvent(event, state: &state)
+                    passDisposition = passDisposition.merging(with: eventResult.passDisposition)
+                    retryState.record(eventResult)
+                    if let sequenceNumber = event.sequenceNumber {
+                        lastSequenceNumber = max(lastSequenceNumber ?? sequenceNumber, sequenceNumber)
+                    }
+                    if case .completed = event.kind {
+                        return passDisposition
+                    }
                 }
-                try handleAssistantMessage(
-                    AgentMessage(
-                        threadID: "",
-                        role: .assistant,
-                        text: text,
-                        images: images
-                    ),
-                    state: &state
-                )
-                return .assistantMessage
 
-            case let .functionCall(functionCallItem):
-                let functionCall = FunctionCallRecord(
-                    name: functionCallItem.name,
-                    callID: functionCallItem.callID,
-                    argumentsRaw: functionCallItem.arguments
+                try Task.checkCancellation()
+                guard configuration.executionMode == .resumableBackground,
+                      activeResponseID != nil else {
+                    return passDisposition
+                }
+                throw AgentRuntimeError(
+                    code: "responses_stream_ended_early",
+                    message: "The background response stream ended before reaching a terminal event."
                 )
-                logger.info(
-                    .tools,
-                    "Received tool call from backend.",
+            } catch {
+                try Task.checkCancellation()
+                guard configuration.executionMode == .resumableBackground,
+                      let activeResponseID,
+                      reconnectAttempt + 1 < configuration.requestRetryPolicy.maxAttempts,
+                      shouldReconnectResponseStream(after: error) else {
+                    throw error
+                }
+                reconnectAttempt += 1
+                logger.warning(
+                    .retry,
+                    "Reconnecting to stored background response.",
                     metadata: [
                         "thread_id": threadID,
                         "turn_id": turnID,
-                        "tool_name": functionCall.name
+                        "response_id": activeResponseID,
+                        "starting_after": "\(lastSequenceNumber ?? 0)",
+                        "attempt": "\(reconnectAttempt)"
                     ]
                 )
-                try await handleFunctionCall(functionCall, state: &state)
-                return .toolCall
-
-            case let .imageGenerationCall(imageGenerationCall):
-                guard let image = imageGenerationCall.imageAttachment else {
-                    return .none
-                }
-                try handleAssistantMessage(
-                    AgentMessage(
-                        threadID: "",
-                        role: .assistant,
-                        text: imageGenerationCall.assistantText,
-                        images: [image]
-                    ),
-                    state: &state
+                try await sleepBeforeRetry(
+                    attempt: reconnectAttempt,
+                    policy: configuration.requestRetryPolicy
                 )
-                return .assistantMessage
-
-            case .other:
-                return .none
+                streamRequest = try requestFactory.buildResumeURLRequest(
+                    responseID: activeResponseID,
+                    startingAfter: lastSequenceNumber ?? 0,
+                    threadID: threadID,
+                    session: session
+                )
             }
-
-        case let .structuredOutputPartial(value):
-            continuation.yield(.structuredOutputPartial(value))
-            return .none
-
-        case let .structuredOutputCommitted(value):
-            continuation.yield(.structuredOutputCommitted(value))
-            return .none
-
-        case let .structuredOutputValidationFailed(validationFailure):
-            continuation.yield(.structuredOutputValidationFailed(validationFailure))
-            return .none
-
-        case let .completed(usage, responseID):
-            state.aggregateUsage.inputTokens += usage.inputTokens
-            state.aggregateUsage.cachedInputTokens += usage.cachedInputTokens
-            state.aggregateUsage.outputTokens += usage.outputTokens
-            try commitCompletedPass(responseID: responseID, state: &state)
-            logger.debug(
-                .network,
-                "Backend stream completed pass.",
-                metadata: [
-                    "thread_id": threadID,
-                    "turn_id": turnID,
-                    "input_tokens": "\(usage.inputTokens)",
-                    "output_tokens": "\(usage.outputTokens)"
-                ]
-            )
-            return .none
         }
     }
 
-    private func handleAssistantTextDelta(
-        _ delta: String,
-        state: inout TurnRunState
-    ) throws -> Bool {
-        guard responseContract?.streamedRequest != nil else {
-            guard !delta.isEmpty else {
-                return false
-            }
-            continuation.yield(
-                .assistantMessageDelta(
-                    threadID: threadID,
-                    turnID: turnID,
-                    delta: delta
-                )
-            )
+    private func shouldReconnectResponseStream(
+        after error: Error
+    ) -> Bool {
+        if let runtimeError = error as? AgentRuntimeError,
+           runtimeError.code == "responses_stream_ended_early" {
             return true
         }
-
-        var emittedVisibleDelta = false
-        for parsedEvent in state.structuredParser.consume(delta: delta) {
-            switch parsedEvent {
-            case let .visibleText(visibleDelta):
-                guard !visibleDelta.isEmpty else {
-                    continue
-                }
-                emittedVisibleDelta = true
-                continuation.yield(
-                    .assistantMessageDelta(
-                        threadID: threadID,
-                        turnID: turnID,
-                        delta: visibleDelta
-                    )
-                )
-            case let .structuredOutputPartial(value):
-                continuation.yield(.structuredOutputPartial(value))
-            case let .structuredOutputValidationFailed(validationFailure):
-                continuation.yield(.structuredOutputValidationFailed(validationFailure))
-            }
-        }
-        return emittedVisibleDelta
-    }
-
-    private func handleAssistantMessage(
-        _ messageTemplate: AgentMessage,
-        state: inout TurnRunState
-    ) throws {
-        let normalizedMessage = try normalizedAssistantMessage(
-            from: messageTemplate,
-            state: &state
-        )
-        let assistantText = resolvedAssistantText(
-            for: normalizedMessage,
-            fallbackTexts: state.pendingToolFallbackTexts
-        )
-        let mergedImages = (normalizedMessage.images + state.pendingToolImages).uniqued()
-        let message = AgentMessage(
-            threadID: threadID,
-            role: .assistant,
-            text: assistantText,
-            images: mergedImages,
-            structuredOutput: state.pendingStructuredOutputMetadata
-                ?? CodexResponsesBackend.structuredMetadata(
-                    from: assistantText,
-                    responseFormat: responseContract?.textFormat
-                )
-        )
-
-        continuation.yield(.assistantMessageCompleted(message))
-        state.pendingToolImages.removeAll(keepingCapacity: true)
-        state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
-        state.pendingStructuredOutputMetadata = nil
-    }
-
-    private func normalizedAssistantMessage(
-        from messageTemplate: AgentMessage,
-        state: inout TurnRunState
-    ) throws -> AgentMessage {
-        guard let streamedStructuredOutput = responseContract?.streamedRequest else {
-            return AgentMessage(
-                threadID: threadID,
-                role: .assistant,
-                text: messageTemplate.text,
-                images: messageTemplate.images
-            )
-        }
-
-        let extraction = state.structuredParser.finalize(rawMessage: messageTemplate.text)
-
-        switch extraction.finalResult {
-        case .none:
-            break
-        case let .committed(value):
-            state.pendingStructuredOutputMetadata = AgentStructuredOutputMetadata(
-                formatName: streamedStructuredOutput.responseFormat.name,
-                payload: value
-            )
-            continuation.yield(.structuredOutputCommitted(value))
-        case let .invalid(validationFailure):
-            continuation.yield(.structuredOutputValidationFailed(validationFailure))
-            throw AgentRuntimeError.structuredOutputInvalid(
-                stage: validationFailure.stage,
-                underlyingMessage: validationFailure.message
-            )
-        }
-
-        return AgentMessage(
-            threadID: threadID,
-            role: .assistant,
-            text: extraction.visibleText,
-            images: messageTemplate.images
+        return streamClient.shouldRetry(
+            error,
+            policy: configuration.requestRetryPolicy
         )
     }
-
-    private func resolvedAssistantText(
-        for message: AgentMessage,
-        fallbackTexts: [String]
-    ) -> String {
-        let trimmed = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.isEmpty, !fallbackTexts.isEmpty else {
-            return message.text
-        }
-        return fallbackTexts.joined(separator: "\n\n")
-    }
-
-    private func handleFunctionCall(
-        _ functionCall: FunctionCallRecord,
-        state: inout TurnRunState
-    ) async throws {
-        let invocation = ToolInvocation(
-            id: functionCall.callID,
-            threadID: threadID,
-            turnID: turnID,
-            toolName: functionCall.name,
-            arguments: functionCall.arguments
-        )
-
-        continuation.yield(.toolCallRequested(invocation))
-        logger.debug(
-            .tools,
-            "Waiting for tool result submission.",
-            metadata: [
-                "thread_id": threadID,
-                "turn_id": turnID,
-                "invocation_id": invocation.id,
-                "tool_name": invocation.toolName
-            ]
-        )
-        let toolResult = try await pendingToolResults.wait(for: invocation.id)
-        let toolImages = await toolOutputAdapter.images(from: toolResult)
-        state.pendingToolImages.append(contentsOf: toolImages)
-        state.pendingToolImages = state.pendingToolImages.uniqued()
-
-        if let primaryText = toolResult.primaryText?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !primaryText.isEmpty {
-            state.pendingToolFallbackTexts.append(primaryText)
-        }
-
-        state.pendingToolOutputs.append(
-            .functionCallOutput(
-                callID: invocation.id,
-                output: toolOutputAdapter.text(from: toolResult)
-            )
-        )
-        logger.debug(
-            .tools,
-            "Recorded tool result for follow-up backend pass.",
-            metadata: [
-                "thread_id": threadID,
-                "turn_id": turnID,
-                "invocation_id": invocation.id,
-                "tool_name": invocation.toolName,
-                "success": "\(toolResult.success)"
-            ]
-        )
-    }
-
-    private func commitCompletedPass(
-        responseID: String?,
-        state: inout TurnRunState
-    ) throws {
-        let completedItems = state.pendingResponseItems
-            .sorted { lhs, rhs in
-                if lhs.outputIndex == rhs.outputIndex {
-                    if let lhsSequenceNumber = lhs.sequenceNumber,
-                       let rhsSequenceNumber = rhs.sequenceNumber,
-                       lhsSequenceNumber != rhsSequenceNumber
-                    {
-                        return lhsSequenceNumber < rhsSequenceNumber
-                    }
-                    return lhs.arrivalOrder < rhs.arrivalOrder
-                }
-                return lhs.outputIndex < rhs.outputIndex
-            }
-            .map { WorkingHistoryItem.raw($0.value) }
-
-        switch configuration.stateManagement {
-        case .clientManaged:
-            state.workingHistory.append(contentsOf: completedItems)
-            state.workingHistory.append(contentsOf: state.pendingToolOutputs)
-
-        case .serverManaged:
-            guard let responseID, !responseID.isEmpty else {
-                throw AgentRuntimeError(
-                    code: "responses_server_state_missing_id",
-                    message: "The Responses endpoint did not return a response ID required for server-managed state."
-                )
-            }
-            state.previousResponseID = responseID
-            state.workingHistory = state.pendingToolOutputs
-        }
-
-        state.pendingResponseItems.removeAll(keepingCapacity: true)
-        state.pendingToolOutputs.removeAll(keepingCapacity: true)
-    }
-
-    private func emitPendingAssistantFallbackIfNeeded(
-        state: inout TurnRunState
-    ) {
-        guard !state.pendingToolImages.isEmpty || !state.pendingToolFallbackTexts.isEmpty else {
-            return
-        }
-
-        let message = AgentMessage(
-            threadID: threadID,
-            role: .assistant,
-            text: state.pendingToolFallbackTexts.joined(separator: "\n\n"),
-            images: state.pendingToolImages
-        )
-        if configuration.stateManagement == .clientManaged {
-            state.workingHistory.append(.assistantMessage(message))
-        }
-        continuation.yield(.assistantMessageCompleted(message))
-        state.pendingToolImages.removeAll(keepingCapacity: true)
-        state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
-    }
-
-    private func retryDecision(
-        _ error: Error,
-        attempt: Int,
-        policy: RequestRetryPolicy,
-        retryState: RetryAttemptState
-    ) -> RetryDecision {
-        let hasAttemptsRemaining = attempt < policy.maxAttempts
-        let retryableError = streamClient.shouldRetry(error, policy: policy)
-
-        if retryState.hasNonReplayableOutput {
-            return RetryDecision(
-                shouldRetry: false,
-                retryableError: retryableError,
-                blockedBy: "non_replayable_output_emitted"
-            )
-        }
-
-        if !hasAttemptsRemaining {
-            return RetryDecision(
-                shouldRetry: false,
-                retryableError: retryableError,
-                blockedBy: "max_attempts_reached"
-            )
-        }
-
-        if !retryableError {
-            return RetryDecision(
-                shouldRetry: false,
-                retryableError: false,
-                blockedBy: "non_retryable_error"
-            )
-        }
-
-        return RetryDecision(
-            shouldRetry: true,
-            retryableError: true,
-            blockedBy: nil
-        )
-    }
-
-    private func sleepBeforeRetry(
-        attempt: Int,
-        policy: RequestRetryPolicy
-    ) async throws {
-        let delay = policy.delayBeforeRetry(attempt: attempt)
-        guard delay > 0 else {
-            return
-        }
-        let nanoseconds = UInt64((delay * 1_000_000_000).rounded())
-        try await Task.sleep(nanoseconds: nanoseconds)
-    }
-}
-
-private enum TurnPassDisposition {
-    case needsAnotherPass
-    case completed
-
-    func merging(with other: TurnPassDisposition) -> TurnPassDisposition {
-        switch (self, other) {
-        case (.needsAnotherPass, _), (_, .needsAnotherPass):
-            return .needsAnotherPass
-        case (.completed, .completed):
-            return .completed
-        }
-    }
-}
-
-private struct TurnRunState {
-    var workingHistory: [WorkingHistoryItem]
-    var previousResponseID: String?
-    var aggregateUsage = AgentUsage()
-    var pendingResponseItems: [PendingResponseItem] = []
-    var pendingToolOutputs: [WorkingHistoryItem] = []
-    var pendingToolImages: [AgentImageAttachment] = []
-    var pendingToolFallbackTexts: [String] = []
-    var structuredParser = CodexResponsesStructuredStreamParser()
-    var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
-
-    mutating func beginAttempt() {
-        pendingResponseItems.removeAll(keepingCapacity: true)
-        pendingToolOutputs.removeAll(keepingCapacity: true)
-    }
-}
-
-private struct PendingResponseItem {
-    let outputIndex: Int
-    let sequenceNumber: Int?
-    let arrivalOrder: Int
-    let value: JSONValue
-}
-
-private struct RetryAttemptState {
-    var hasAssistantDelta = false
-    var hasNonReplayableOutput = false
-
-    var hasVisibleOutput: Bool {
-        hasAssistantDelta || hasNonReplayableOutput
-    }
-
-    mutating func record(_ eventResult: StreamEventResult) {
-        hasAssistantDelta = hasAssistantDelta || eventResult.emittedAssistantDelta
-        hasNonReplayableOutput = hasNonReplayableOutput || eventResult.emittedNonReplayableOutput
-    }
-}
-
-private struct RetryDecision {
-    let shouldRetry: Bool
-    let retryableError: Bool
-    let blockedBy: String?
-}
-
-private struct StreamEventResult {
-    let emittedAssistantDelta: Bool
-    let emittedNonReplayableOutput: Bool
-    let passDisposition: TurnPassDisposition
-
-    static let none = StreamEventResult(
-        emittedAssistantDelta: false,
-        emittedNonReplayableOutput: false,
-        passDisposition: .completed
-    )
-
-    static let assistantDelta = StreamEventResult(
-        emittedAssistantDelta: true,
-        emittedNonReplayableOutput: false,
-        passDisposition: .completed
-    )
-
-    static let assistantMessage = StreamEventResult(
-        emittedAssistantDelta: false,
-        emittedNonReplayableOutput: true,
-        passDisposition: .completed
-    )
-
-    static let toolCall = StreamEventResult(
-        emittedAssistantDelta: false,
-        emittedNonReplayableOutput: true,
-        passDisposition: .needsAnotherPass
-    )
 }

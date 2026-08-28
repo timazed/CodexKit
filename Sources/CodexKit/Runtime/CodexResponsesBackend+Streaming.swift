@@ -8,8 +8,9 @@ struct SSEEventPayload {
 struct SSEEventParser {
     private var eventName: String?
     private var dataLines: [String] = []
+    private var dataByteCount = 0
 
-    mutating func consume(line: String) -> SSEEventPayload? {
+    mutating func consume(line: String) throws -> SSEEventPayload? {
         if line.isEmpty {
             return flush()
         }
@@ -17,7 +18,20 @@ struct SSEEventParser {
         if line.hasPrefix("event:") {
             eventName = Self.trimmedFieldValue(from: line)
         } else if line.hasPrefix("data:") {
-            dataLines.append(Self.trimmedFieldValue(from: line))
+            let value = Self.trimmedFieldValue(from: line)
+            let separatorBytes = dataLines.isEmpty ? 0 : 1
+            let (nextCount, overflow) = dataByteCount.addingReportingOverflow(
+                value.utf8.count + separatorBytes
+            )
+            guard !overflow,
+                  nextCount <= AgentStoreLimits.maximumResponseEventByteCount else {
+                throw AgentRuntimeError(
+                    code: "responses_event_too_large",
+                    message: "A Responses stream event exceeded the supported size limit."
+                )
+            }
+            dataByteCount = nextCount
+            dataLines.append(value)
         }
 
         return nil
@@ -39,6 +53,7 @@ struct SSEEventParser {
         )
         eventName = nil
         dataLines.removeAll(keepingCapacity: true)
+        dataByteCount = 0
         return payload
     }
 
@@ -100,6 +115,7 @@ enum StreamItemKind: Sendable {
 }
 
 struct StreamMessageItem: Decodable, Sendable {
+    let id: String?
     let role: String
     let content: [StreamMessageContent]
 }

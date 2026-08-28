@@ -94,6 +94,7 @@ public enum AgentSystemEventType: String, Codable, Hashable, Sendable {
     case turnStarted
     case turnCompleted
     case turnFailed
+    case turnRecoveryCheckpointUpdated
     case contextCompacted
 }
 
@@ -104,6 +105,7 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
     public let status: AgentThreadStatus?
     public let turnSummary: AgentTurnSummary?
     public let error: AgentRuntimeError?
+    public let recoveryCheckpoint: AgentTurnRecoveryCheckpoint?
     public let compaction: AgentContextCompactionMarker?
     public let occurredAt: Date
 
@@ -114,6 +116,7 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
         status: AgentThreadStatus? = nil,
         turnSummary: AgentTurnSummary? = nil,
         error: AgentRuntimeError? = nil,
+        recoveryCheckpoint: AgentTurnRecoveryCheckpoint? = nil,
         compaction: AgentContextCompactionMarker? = nil,
         occurredAt: Date = Date()
     ) {
@@ -123,6 +126,7 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
         self.status = status
         self.turnSummary = turnSummary
         self.error = error
+        self.recoveryCheckpoint = recoveryCheckpoint
         self.compaction = compaction
         self.occurredAt = occurredAt
     }

@@ -44,7 +44,7 @@ The checked-in demo registers deterministic skill-specific tools (`health_coach_
 
 The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, size, quality, format, and status come from `AgentImageAttachment.generationMetadata`.
 
-Generated image bytes are persisted the same way as other runtime image attachments: the image data is written to flat files, while the runtime SQLite store keeps the relative attachment pointer and metadata.
+Generated image bytes are persisted the same way as other runtime image attachments: the image data is written to flat files, while the selected runtime store keeps the relative attachment pointer and metadata.
 
 The demo uses the new configuration-first surface:
 
@@ -53,9 +53,14 @@ The demo uses the new configuration-first surface:
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
 - `SQLiteRuntimeStateStore`
+- `RealmRuntimeStateStore`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 
-The app links `CodexKit` and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same SPM integration path a host app would use. Runtime state is stored in `runtime-state.sqlite`, memory is stored in `memory.sqlite`, and the SQLite runtime store will import an older sibling `runtime-state.json` file automatically on first launch if one exists.
+The app links `CodexKit`, `CodexKitSQLite`, `CodexKitRealm`, and `CodexKitUI` from the repo's local `Package.swift`, so it exercises the same adapter-based SPM integration path a host app would use. The Assistant screen has a SQLite/Realm picker that switches both runtime-state and memory persistence, and every thread row and thread detail screen identifies which adapter powers it. SQLite uses `runtime-state.sqlite` and `memory.sqlite`; Realm uses `runtime-state.realm` and `memory.realm`. The choice persists across launches and is also honored by the demo's App Intents. Each adapter keeps independent data, and either runtime store can import an older sibling `runtime-state.json` file automatically on first launch if one exists.
+
+Both persistent adapters use lazy thread activation. On launch, the demo queries lightweight persisted thread metadata for the thread list without decoding full histories. Selecting a stored thread resumes and hydrates only that thread. Persisted thread rows remain visible when signed out, but must be signed in before they can be resumed.
+
+On iOS, the interactive demo installs `IOSBackgroundActivityProvider`. Active turns request the system's finite background completion window and are cancelled cleanly if that allowance expires. This helps a nearly finished response survive a brief screen lock or app switch; it does not provide durable execution after suspension or process termination.
 
 The checked-in demo enables context compaction in automatic mode. In a thread detail screen, the `Context Compaction` card shows:
 

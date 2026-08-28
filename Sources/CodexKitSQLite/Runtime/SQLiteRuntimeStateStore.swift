@@ -1,4 +1,5 @@
 import Foundation
+import CodexKit
 import GRDB
 
 struct SQLiteThreadActivationMetrics: Equatable, Sendable {
@@ -9,18 +10,21 @@ struct SQLiteThreadActivationMetrics: Equatable, Sendable {
 }
 
 public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
-    static let currentStoreSchemaVersion = 2
+    // v2 is the last released SQLite runtime schema. All current work ships as v3.
+    static let currentStoreSchemaVersion = 3
 
     let url: URL
     let legacyStateURL: URL?
     let logger: AgentLogger
     let attachmentStore: RuntimeAttachmentStore
-    let databaseExistedAtInitialization: Bool
     let dbQueue: DatabaseQueue
     let migrator: DatabaseMigrator
     var isPrepared = false
+    var preparationTask: Task<Void, Error>?
+    var preparationGeneration: UInt64 = 0
     var decodedHistoryBodyCount = 0
     var latestActivationMetrics: SQLiteThreadActivationMetrics?
+    var attachmentMaintenanceTask: Task<Void, Never>?
 
     var persistence: SQLiteRuntimeStorePersistence {
         SQLiteRuntimeStorePersistence(attachmentStore: attachmentStore)
@@ -38,13 +42,14 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         self.url = url
         self.logger = AgentLogger(configuration: logging)
         let fileManager = FileManager.default
-        let basename = url.deletingPathExtension().lastPathComponent
-        self.databaseExistedAtInitialization = fileManager.fileExists(atPath: url.path)
         self.legacyStateURL = legacyStateURL ?? Self.defaultLegacyImportURL(for: url)
+        let sidecarURL = RuntimeAttachmentStore.sidecarDirectoryURL(for: url)
+        let legacySidecarURL = RuntimeAttachmentStore.legacySidecarDirectoryURL(for: url)
         self.attachmentStore = RuntimeAttachmentStore(
-            rootURL: url.deletingLastPathComponent()
-                .appendingPathComponent("\(basename).codexkit-state", isDirectory: true)
-                .appendingPathComponent("attachments", isDirectory: true)
+            rootURL: sidecarURL.appendingPathComponent("attachments", isDirectory: true),
+            legacyReadRootURLs: [
+                legacySidecarURL.appendingPathComponent("attachments", isDirectory: true),
+            ]
         )
 
         let directory = url.deletingLastPathComponent()
@@ -60,12 +65,16 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         configuration.busyMode = .timeout(5)
         configuration.label = "CodexKit.SQLiteRuntimeStateStore"
         dbQueue = try DatabaseQueue(path: url.path, configuration: configuration)
-        migrator = SQLiteRuntimeStoreSchema(currentStoreSchemaVersion: Self.currentStoreSchemaVersion)
+        migrator = SQLiteRuntimeStoreSchema(
+            currentStoreSchemaVersion: Self.currentStoreSchemaVersion,
+            attachmentStore: attachmentStore
+        )
             .makeMigrator()
     }
 
     public func prepare() async throws -> AgentStoreMetadata {
         try await ensurePrepared()
+        scheduleAttachmentMaintenance()
         return try await readMetadata()
     }
 
@@ -143,22 +152,62 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
     public func saveState(_ state: StoredRuntimeState) async throws {
         try await ensurePrepared()
 
+        try await RuntimeStoreMutationCoordinator.shared.perform(
+            for: attachmentStore.rootURL
+        ) {
+            try await self.saveStateWithoutCoordination(state)
+        }
+    }
+
+    func saveStateWithoutCoordination(_ state: StoredRuntimeState) async throws {
+        try AgentHistoryWriteValidator.validateSnapshot(state)
         let normalized = state.normalized()
-        let persistence = self.persistence
+        var attachmentBatch = try attachmentStore.stageAttachments(in: normalized)
+        do {
+            try attachmentStore.promote(&attachmentBatch)
+        } catch {
+            try? await removeUnreferencedPromotedAttachments(
+                attachmentBatch.newlyPromotedStorageKeys
+            )
+            throw error
+        }
+        let persistence = SQLiteRuntimeStorePersistence(
+            attachmentStore: attachmentStore,
+            preparedAttachments: attachmentBatch.preparedAttachments
+        )
+        let historyRecordCount = normalized.historyByThread.values.reduce(0) {
+            AgentCounter.saturatingAdd($0, $1.count)
+        }
         logger.info(
             .persistence,
             "Saving SQLite runtime state snapshot.",
             metadata: [
                 "url": url.path,
                 "threads": "\(normalized.threads.count)",
-                "history_records": "\(normalized.historyByThread.values.reduce(0) { $0 + $1.count })"
+                "history_records": "\(historyRecordCount)"
             ]
         )
-        try attachmentStore.reset()
-        try await dbQueue.write { db in
-            try persistence.replaceDatabaseContents(
-                with: normalized,
-                in: db
+        do {
+            try await dbQueue.write { db in
+                try persistence.replaceDatabaseContents(
+                    with: normalized,
+                    in: db
+                )
+            }
+        } catch {
+            try? await removeUnreferencedPromotedAttachments(
+                attachmentBatch.newlyPromotedStorageKeys
+            )
+            throw error
+        }
+        do {
+            try attachmentStore.complete(attachmentBatch)
+            try await settleAttachmentCleanup()
+        } catch {
+            logger.warning(
+                .persistence,
+                "SQLite state committed; deferred attachment cleanup will retry on a future mutation or preparation.",
+                metadata: ["error": error.localizedDescription]
             )
         }
     }
@@ -169,19 +218,30 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
     ) async throws -> AgentThreadActivationState {
         try await ensurePrepared()
         let persistence = self.persistence
-        let historyRecordLimit = max(0, policy.maximumHistoryRecordCount)
-        let historyQueryLimit = historyRecordLimit == Int.max
-            ? Int.max
-            : historyRecordLimit + 1
+        let historyRecordLimit = min(
+            max(0, policy.maximumHistoryRecordCount),
+            AgentStoreLimits.maximumActivationHistoryRecordCount
+        )
 
         let loaded = try await dbQueue.read { db in
+            var payloadByteCount = 0
             guard let threadRow = try RuntimeThreadRow.fetchOne(db, key: id) else {
                 throw AgentRuntimeError.threadNotFound(id)
             }
 
+            try AgentStoreLimitValidator.accumulateMaterializedPayload(
+                threadRow.encodedThread,
+                name: "thread activation",
+                total: &payloadByteCount
+            )
             let thread = try persistence.decodeThread(from: threadRow)
             let summary: AgentThreadSummary
             if let summaryRow = try RuntimeSummaryRow.fetchOne(db, key: id) {
+                try AgentStoreLimitValidator.accumulateMaterializedPayload(
+                    summaryRow.encodedSummary,
+                    name: "thread activation",
+                    total: &payloadByteCount
+                )
                 summary = try persistence.decodeSummary(from: summaryRow)
             } else {
                 summary = StoredRuntimeState(threads: [thread]).threadSummaryFallback(for: thread)
@@ -191,6 +251,11 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 .execute(in: db)
 
             if let contextRow = try RuntimeContextStateRow.fetchOne(db, key: id) {
+                try AgentStoreLimitValidator.accumulateMaterializedPayload(
+                    contextRow.encodedState,
+                    name: "thread activation",
+                    total: &payloadByteCount
+                )
                 let persistedContextState = try persistence.decodeContextState(from: contextRow)
                 let effectiveMessages = AgentThreadContextWindow.boundedMessages(
                     persistedContextState.effectiveMessages,
@@ -243,19 +308,58 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 )
             }
 
-            // Fetch one extra row so a cut relationship at the leading edge can be
-            // discarded rather than exposed as a partial conversational turn.
-            let rows = try RuntimeHistoryRowsRequest(
+            let candidateLimit = historyRecordLimit * 2 + 1
+            let candidates = try SQLRequest<RuntimeHistoryWindowRow>(
                 sql: """
-                SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
-                WHERE threadID = ?
-                ORDER BY sequenceNumber DESC
+                WITH recent AS (
+                    SELECT storageID, relationshipKey
+                    FROM \(RuntimeHistoryRow.databaseTableName)
+                    WHERE threadID = ?
+                    ORDER BY sequenceNumber DESC
+                    LIMIT ?
+                )
+                SELECT history.storageID,
+                       history.sequenceNumber,
+                       history.relationshipKey
+                FROM \(RuntimeHistoryRow.databaseTableName) AS history
+                WHERE history.threadID = ?
+                  AND (
+                    history.storageID IN (SELECT storageID FROM recent)
+                    OR history.relationshipKey IN (
+                        SELECT relationshipKey FROM recent
+                        WHERE relationshipKey IS NOT NULL
+                    )
+                  )
+                ORDER BY history.sequenceNumber DESC
                 LIMIT ?
                 """,
-                arguments: [id, historyQueryLimit]
-            ).execute(in: db)
-            let boundedRows = Array(rows.prefix(historyRecordLimit)).reversed()
-            let records = try boundedRows.map(persistence.decodeHistoryRecord)
+                arguments: [id, historyRecordLimit, id, candidateLimit]
+            ).fetchAll(db)
+            guard candidates.count < candidateLimit else {
+                throw AgentStoreError.invalidInput(
+                    "stored activation relationships exceed their bounded cardinality"
+                )
+            }
+            let selectedKeys = try AgentThreadContextWindow.completeHistoryStorageKeys(
+                from: candidates.map {
+                    .init(
+                        storageKey: $0.storageID,
+                        sequenceNumber: $0.sequenceNumber,
+                        relationshipKey: $0.relationshipKey
+                    )
+                },
+                limit: historyRecordLimit
+            )
+            let rowRequest = RuntimeHistoryRow
+                .filter(selectedKeys.contains(Column("storageID")))
+                .order(Column("sequenceNumber").asc)
+            let rows = try boundedRuntimeRows(
+                rowRequest.fetchCursor(db),
+                payload: \.encodedRecord,
+                name: "thread activation",
+                payloadByteCount: &payloadByteCount
+            )
+            let records = try rows.map(persistence.decodeHistoryRecord)
             let messages = AgentThreadContextWindow.reconstructedMessages(from: records)
             let effectiveMessages = AgentThreadContextWindow.boundedMessages(
                 messages,
@@ -272,9 +376,9 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                     effectiveMessages: effectiveMessages
                 ),
                 metrics: SQLiteThreadActivationMetrics(
-                    fetchedHistoryRowCount: rows.count,
-                    decodedHistoryRowCount: boundedRows.count,
-                    decodedHistoryByteCount: boundedRows.reduce(0) {
+                    fetchedHistoryRowCount: candidates.count,
+                    decodedHistoryRowCount: rows.count,
+                    decodedHistoryByteCount: rows.reduce(0) {
                         $0 + $1.encodedRecord.count
                     },
                     usedPersistedContextState: false
@@ -313,7 +417,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 ORDER BY sequenceNumber DESC
                 LIMIT ?
                 """,
-                arguments: [threadID, max(1, limit)]
+                arguments: [threadID, AgentStoreLimitValidator.boundedLimit(limit)]
             )
             return rows.compactMap { row in
                 let detail: String? = row["detail"]
@@ -327,8 +431,30 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         guard !operations.isEmpty else {
             return
         }
+        try AgentStoreLimitValidator.validate(operations)
 
-        let persistence = self.persistence
+        try await RuntimeStoreMutationCoordinator.shared.perform(
+            for: attachmentStore.rootURL
+        ) {
+            try await self.applyWithoutCoordination(operations)
+        }
+        scheduleAttachmentMaintenance()
+    }
+
+    private func applyWithoutCoordination(_ operations: [AgentStoreWriteOperation]) async throws {
+        var attachmentBatch = try attachmentStore.stageAttachments(in: operations)
+        do {
+            try attachmentStore.promote(&attachmentBatch)
+        } catch {
+            try? await removeUnreferencedPromotedAttachments(
+                attachmentBatch.newlyPromotedStorageKeys
+            )
+            throw error
+        }
+        let persistence = SQLiteRuntimeStorePersistence(
+            attachmentStore: attachmentStore,
+            preparedAttachments: attachmentBatch.preparedAttachments
+        )
         logger.debug(
             .persistence,
             "Applying SQLite runtime state operations.",
@@ -339,29 +465,25 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 "operation_types": operationTypeSummary(for: operations)
             ]
         )
-        try await dbQueue.write { db in
-            if operations.contains(where: { operation in
-                if case .redactHistoryItems = operation { return true }
-                return false
-            }) {
-                let affectedThreadIDs = Set(operations.map(\.affectedThreadID))
-                var partialState = try persistence.loadPartialState(
-                    for: affectedThreadIDs,
-                    from: db
-                )
-                partialState = try partialState.applying(operations)
-                for threadID in affectedThreadIDs {
-                    try persistence.deletePersistedThread(threadID, in: db)
-                    try attachmentStore.removeThread(threadID)
-                }
-                try persistence.persistThreads(
-                    ids: affectedThreadIDs,
-                    from: partialState,
-                    in: db
-                )
-            } else {
+        do {
+            try await dbQueue.write { db in
                 try persistence.apply(operations, in: db)
             }
+        } catch {
+            try? await removeUnreferencedPromotedAttachments(
+                attachmentBatch.newlyPromotedStorageKeys
+            )
+            throw error
+        }
+        do {
+            try attachmentStore.complete(attachmentBatch)
+            _ = try await settleAttachmentCleanupBatch()
+        } catch {
+            logger.warning(
+                .persistence,
+                "SQLite operations committed; deferred attachment cleanup will retry on a future mutation or preparation.",
+                metadata: ["error": error.localizedDescription]
+            )
         }
     }
 
@@ -386,6 +508,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         query: AgentHistoryQuery
     ) async throws -> AgentThreadHistoryPage {
         try await ensurePrepared()
+        try AgentStoreLimitValidator.validateHistoryPage(query)
         let queries = self.queries
 
         return try await dbQueue.read { db in
@@ -422,92 +545,56 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
 
     public func execute<Query: AgentQuerySpec>(_ query: Query) async throws -> Query.Result {
         try await ensurePrepared()
+        try AgentStoreLimitValidator.validate(query)
 
         if let historyQuery = query as? HistoryItemsQuery {
-            return try await executeHistoryQuery(historyQuery) as! Query.Result
+            return try castAgentQueryResult(
+                await executeHistoryQuery(historyQuery),
+                to: Query.Result.self
+            )
         }
         if let threadQuery = query as? ThreadMetadataQuery {
-            return try await executeThreadQuery(threadQuery) as! Query.Result
+            return try castAgentQueryResult(
+                await executeThreadQuery(threadQuery),
+                to: Query.Result.self
+            )
         }
         if let pendingQuery = query as? PendingStateQuery {
-            return try await executePendingStateQuery(pendingQuery) as! Query.Result
+            return try castAgentQueryResult(
+                await executePendingStateQuery(pendingQuery),
+                to: Query.Result.self
+            )
         }
         if let structuredQuery = query as? StructuredOutputQuery {
-            return try await executeStructuredOutputQuery(structuredQuery) as! Query.Result
+            return try castAgentQueryResult(
+                await executeStructuredOutputQuery(structuredQuery),
+                to: Query.Result.self
+            )
         }
         if let snapshotQuery = query as? ThreadSnapshotQuery {
-            return try await executeThreadSnapshotQuery(snapshotQuery) as! Query.Result
+            return try castAgentQueryResult(
+                await executeThreadSnapshotQuery(snapshotQuery),
+                to: Query.Result.self
+            )
         }
         if let contextQuery = query as? ThreadContextStateQuery {
-            return try await executeThreadContextStateQuery(contextQuery) as! Query.Result
-        }
-
-        let state = try await loadState()
-        return try query.execute(in: state)
-    }
-
-    func ensurePrepared() async throws {
-        if isPrepared {
-            return
-        }
-
-        logger.info(.persistence, "Preparing SQLite runtime state store.", metadata: ["url": url.path])
-        let version = try await readUserVersion()
-        guard version <= Self.currentStoreSchemaVersion else {
-            throw AgentStoreError.migrationFailed(
-                "Unsupported future SQLite runtime store schema version \(version)."
+            return try castAgentQueryResult(
+                await executeThreadContextStateQuery(contextQuery),
+                to: Query.Result.self
             )
         }
 
-        try migrator.migrate(dbQueue)
-        if try await shouldImportLegacyState() {
-            logger.info(
-                .persistence,
-                "Importing legacy file runtime state into SQLite store.",
-                metadata: ["legacy_url": legacyStateURL?.path ?? ""]
-            )
-            try await importLegacyState()
-        }
-        isPrepared = true
-        logger.info(.persistence, "SQLite runtime state store prepared.", metadata: ["url": url.path])
+        throw AgentStoreError.queryNotSupported(String(describing: Query.self))
     }
 
-    private func operationTypeSummary(
-        for operations: [AgentStoreWriteOperation]
-    ) -> String {
-        let counts = Dictionary(operations.map(operationTypeLabel(for:)), uniquingKeysWith: +)
-        return counts
-            .sorted { $0.key < $1.key }
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: ",")
+}
+
+extension SQLiteRuntimeStateStore: StoreMigrationIdentifying, StoreMigrationCoordinating {
+    package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
+        StoreMigrationIdentity(kind: "runtime", url: url)
     }
 
-    private func operationTypeLabel(
-        for operation: AgentStoreWriteOperation
-    ) -> (String, Int) {
-        switch operation {
-        case .upsertThread:
-            return ("upsert_thread", 1)
-        case .upsertSummary:
-            return ("upsert_summary", 1)
-        case .appendHistoryItems:
-            return ("append_history", 1)
-        case .setPendingState:
-            return ("set_pending_state", 1)
-        case .setPartialStructuredSnapshot:
-            return ("set_partial_snapshot", 1)
-        case .upsertToolSession:
-            return ("upsert_tool_session", 1)
-        case .redactHistoryItems:
-            return ("redact_history", 1)
-        case .deleteThread:
-            return ("delete_thread", 1)
-        case .upsertThreadContextState:
-            return ("upsert_context_state", 1)
-        case .appendCompactionMarker:
-            return ("append_compaction_marker", 1)
-        case .deleteThreadContextState:
-            return ("delete_context_state", 1)
-        }
+    package nonisolated var migrationCoordinationRootURL: URL {
+        attachmentStore.rootURL
     }
 }

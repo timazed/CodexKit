@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AgentStructuredStreamingOptions: Sendable, Hashable {
+public struct AgentStructuredStreamingOptions: Codable, Sendable, Hashable {
     public var required: Bool
     public var emitPartials: Bool
 
@@ -64,7 +64,7 @@ public enum AgentStructuredStreamEvent<Output: Sendable>: Sendable {
     case turnFailed(AgentRuntimeError)
 }
 
-public struct AgentStreamedStructuredOutputRequest: Sendable, Hashable {
+public struct AgentStreamedStructuredOutputRequest: Codable, Sendable, Hashable {
     public let responseFormat: AgentStructuredOutputFormat
     public let options: AgentStructuredStreamingOptions
 

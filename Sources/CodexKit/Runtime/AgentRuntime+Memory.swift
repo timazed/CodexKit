@@ -276,7 +276,10 @@ extension AgentRuntime {
         }
 
         do {
-            let result = try await memoryConfiguration.store.query(query)
+            let result = try await packedMemoryQuery(
+                query,
+                store: memoryConfiguration.store
+            )
             if let observer = memoryConfiguration.observer {
                 await observer.handle(event: .querySucceeded(query: query, result: result))
             }
@@ -294,10 +297,19 @@ extension AgentRuntime {
         }
     }
 
+    /// Packing is part of the memory-store query contract. Persistent adapters
+    /// perform eligibility, ranking, size skipping, and limiting in the database.
+    package func packedMemoryQuery(
+        _ query: MemoryQuery,
+        store: any MemoryStoring
+    ) async throws -> MemoryQueryResult {
+        try await store.query(query)
+    }
+
     func resolvedMemoryQuery(
         thread: AgentThread,
         message: Request,
-        fallbackRanking: MemoryRankingWeights,
+        fallbackRanking: MemoryRankingProfile,
         fallbackBudget: MemoryReadBudget
     ) -> MemoryQuery? {
         let selection = message.memorySelection
@@ -359,11 +371,15 @@ extension AgentRuntime {
             fallback: fallbackBudget
         )
         let text = selection?.text ?? message.text
+        let textMatchPolicy = selection?.textMatchPolicy
+            ?? threadContext?.textMatchPolicy
+            ?? defaultRuntimeTextMatchPolicy(for: text)
 
         return MemoryQuery(
             namespace: namespace,
             scopes: scopes,
             text: text,
+            textMatchPolicy: textMatchPolicy,
             categories: categories,
             tags: tags,
             relatedIDs: relatedIDs,
@@ -371,7 +387,7 @@ extension AgentRuntime {
             minImportance: minImportance,
             ranking: ranking,
             limit: budget.maxItems,
-            maxCharacters: budget.maxCharacters,
+            maxCharacters: MemoryQueryEngine.promptContentCharacterLimit(for: budget),
             includeArchived: false
         )
     }
@@ -384,6 +400,13 @@ extension AgentRuntime {
         message.memorySelection?.readBudget
             ?? thread.memoryContext?.readBudget
             ?? fallback
+    }
+
+    /// Two-token matching avoids broad OR searches for normal prompts while a
+    /// one-token prompt remains useful. Explicit host policies are never
+    /// weakened when the query contains fewer tokens than they require.
+    func defaultRuntimeTextMatchPolicy(for text: String?) -> MemoryTextMatchPolicy {
+        MemoryQueryEngine.uniqueTokens(text).count >= 2 ? .runtimeDefault : .anyToken
     }
 
     func uniqueScopes(_ scopes: [MemoryScope]) -> [MemoryScope] {

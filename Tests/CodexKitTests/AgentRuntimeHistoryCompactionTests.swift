@@ -1,4 +1,5 @@
 import CodexKit
+import CodexKitSQLite
 import CodexKitUI
 import XCTest
 
@@ -66,7 +67,7 @@ extension AgentRuntimeTests {
         XCTAssertGreaterThanOrEqual(historyCounts.count, 5)
     }
 
-    func testContextStatePersistsAcrossGRDBReload() async throws {
+    func testContextStatePersistsAcrossSQLiteReload() async throws {
         let url = temporaryRuntimeSQLiteURL()
         defer { try? FileManager.default.removeItem(at: url) }
 

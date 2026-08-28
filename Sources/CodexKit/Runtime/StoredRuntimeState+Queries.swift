@@ -1,7 +1,7 @@
 import Foundation
 
 extension StoredRuntimeState {
-    func normalized() -> StoredRuntimeState {
+    package func normalized() -> StoredRuntimeState {
         let projections = StoredRuntimeStateProjectionBuilder()
         let sortedThreads = threads.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
@@ -39,7 +39,9 @@ extension StoredRuntimeState {
         var normalizedNextSequence = nextHistorySequenceByThread
         for thread in sortedThreads {
             let history = normalizedHistory[thread.id] ?? []
-            let nextSequence = (history.last?.sequenceNumber ?? 0) + 1
+            let nextSequence = AgentHistorySequence.nextOrMaximum(
+                after: history.last?.sequenceNumber
+            )
             normalizedNextSequence[thread.id] = max(normalizedNextSequence[thread.id] ?? 0, nextSequence)
         }
 
@@ -82,7 +84,7 @@ extension StoredRuntimeState {
         )
     }
 
-    func threadSummary(id: String) throws -> AgentThreadSummary {
+    package func threadSummary(id: String) throws -> AgentThreadSummary {
         guard let thread = threads.first(where: { $0.id == id }) else {
             throw AgentRuntimeError.threadNotFound(id)
         }
@@ -90,7 +92,7 @@ extension StoredRuntimeState {
         return summariesByThread[id] ?? threadSummaryFallback(for: thread)
     }
 
-    func threadSummaryFallback(for thread: AgentThread) -> AgentThreadSummary {
+    package func threadSummaryFallback(for thread: AgentThread) -> AgentThreadSummary {
         StoredRuntimeStateProjectionBuilder().rebuildSummary(
             for: thread,
             history: historyByThread[thread.id] ?? [],
@@ -98,7 +100,7 @@ extension StoredRuntimeState {
         )
     }
 
-    func threadHistoryPage(
+    package func threadHistoryPage(
         id: String,
         query: AgentHistoryQuery
     ) throws -> AgentThreadHistoryPage {
@@ -106,7 +108,7 @@ extension StoredRuntimeState {
             throw AgentRuntimeError.threadNotFound(id)
         }
 
-        let limit = max(1, query.limit)
+        let limit = AgentStoreLimitValidator.boundedLimit(query.limit)
         let filter = query.filter ?? AgentHistoryFilter()
         let records = (historyByThread[id] ?? []).filter { filter.matches($0.item) }
         let anchor = try query.cursor?.decodedSequenceNumber(expectedThreadID: id)
@@ -129,7 +131,7 @@ extension StoredRuntimeState {
 
         case .forward:
             let startIndex = records.startIndexForForward(anchor: anchor)
-            let endIndex = min(records.count, startIndex + limit)
+            let endIndex = startIndex + min(limit, records.count - startIndex)
             let pageRecords = Array(records[startIndex ..< endIndex])
             let hasMoreBefore = startIndex > 0
             let hasMoreAfter = endIndex < records.count
@@ -144,29 +146,72 @@ extension StoredRuntimeState {
         }
     }
 
-    func applying(_ operations: [AgentStoreWriteOperation]) throws -> StoredRuntimeState {
+    package func applying(_ operations: [AgentStoreWriteOperation]) throws -> StoredRuntimeState {
         var updated = self
+
+        // Match the persistent adapters: thread upserts are established first
+        // so later operations in the same batch can satisfy their ownership
+        // constraint regardless of coalescing order.
+        for operation in operations {
+            guard case let .upsertThread(thread) = operation else { continue }
+            if let index = updated.threads.firstIndex(where: { $0.id == thread.id }) {
+                updated.threads[index] = thread
+            } else {
+                updated.threads.append(thread)
+            }
+        }
 
         for operation in operations {
             switch operation {
-            case let .upsertThread(thread):
-                if let index = updated.threads.firstIndex(where: { $0.id == thread.id }) {
-                    updated.threads[index] = thread
-                } else {
-                    updated.threads.append(thread)
-                }
+            case .upsertThread:
+                continue
 
             case let .upsertSummary(threadID, summary):
                 updated.summariesByThread[threadID] = summary
 
             case let .appendHistoryItems(threadID, items):
+                try AgentHistoryWriteValidator.validate(
+                    items,
+                    threadID: threadID,
+                    existingLastSequence: updated.historyByThread[threadID]?.last?.sequenceNumber,
+                    threadExists: updated.threads.contains { $0.id == threadID },
+                    allowInitialSequenceGap: false
+                )
                 updated.historyByThread[threadID, default: []].append(contentsOf: items)
-                let nextSequence = (updated.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1
+                let nextSequence = try AgentHistorySequence.next(
+                    after: updated.historyByThread[threadID]?.last?.sequenceNumber,
+                    threadID: threadID
+                )
+                updated.nextHistorySequenceByThread[threadID] = nextSequence
+
+            case let .restoreHistoryItems(threadID, items):
+                try AgentHistoryWriteValidator.validate(
+                    items,
+                    threadID: threadID,
+                    existingLastSequence: updated.historyByThread[threadID]?.last?.sequenceNumber,
+                    threadExists: updated.threads.contains { $0.id == threadID },
+                    allowInitialSequenceGap: true
+                )
+                updated.historyByThread[threadID, default: []].append(contentsOf: items)
+                let nextSequence = try AgentHistorySequence.next(
+                    after: updated.historyByThread[threadID]?.last?.sequenceNumber,
+                    threadID: threadID
+                )
                 updated.nextHistorySequenceByThread[threadID] = nextSequence
 
             case let .appendCompactionMarker(threadID, marker):
+                try AgentHistoryWriteValidator.validate(
+                    [marker],
+                    threadID: threadID,
+                    existingLastSequence: updated.historyByThread[threadID]?.last?.sequenceNumber,
+                    threadExists: updated.threads.contains { $0.id == threadID },
+                    allowInitialSequenceGap: false
+                )
                 updated.historyByThread[threadID, default: []].append(marker)
-                let nextSequence = (updated.historyByThread[threadID]?.last?.sequenceNumber ?? 0) + 1
+                let nextSequence = try AgentHistorySequence.next(
+                    after: updated.historyByThread[threadID]?.last?.sequenceNumber,
+                    threadID: threadID
+                )
                 updated.nextHistorySequenceByThread[threadID] = nextSequence
 
             case let .upsertThreadContextState(threadID, state):
@@ -257,12 +302,27 @@ extension StoredRuntimeState {
                 guard !itemIDs.isEmpty else {
                     continue
                 }
+                let identifierSet = Set(itemIDs)
+                let matchCount = updated.historyByThread[threadID, default: []]
+                    .lazy
+                    .filter { identifierSet.contains($0.id) }
+                    .prefix(AgentStoreLimits.maximumRedactionMatchCount + 1)
+                    .count
+                guard matchCount <= AgentStoreLimits.maximumRedactionMatchCount else {
+                    throw AgentStoreError.invalidInput(
+                        "a redaction matches more than \(AgentStoreLimits.maximumRedactionMatchCount) history records"
+                    )
+                }
                 updated.historyByThread[threadID] = updated.historyByThread[threadID]?.map { record in
-                    guard itemIDs.contains(record.id) else {
+                    guard identifierSet.contains(record.id) else {
                         return record
                     }
                     return record.redacted(reason: reason)
                 }
+                // Provider context and the compacted message window can retain the
+                // original payload. Dropping the projection forces the next activation
+                // to rebuild it from the now-redacted durable history.
+                updated.contextStateByThread.removeValue(forKey: threadID)
 
             case let .deleteThread(threadID):
                 updated.threads.removeAll { $0.id == threadID }
@@ -279,8 +339,10 @@ extension StoredRuntimeState {
     }
 }
 
-struct StoredRuntimeStateProjectionBuilder: Sendable {
-    func syntheticHistory(from messages: [AgentMessage]) -> [AgentHistoryRecord] {
+package struct StoredRuntimeStateProjectionBuilder: Sendable {
+    package init() {}
+
+    package func syntheticHistory(from messages: [AgentMessage]) -> [AgentHistoryRecord] {
         let orderedMessages = messages.enumerated().sorted { lhs, rhs in
             let left = lhs.element
             let right = rhs.element
@@ -299,7 +361,7 @@ struct StoredRuntimeStateProjectionBuilder: Sendable {
         }
     }
 
-    func rebuildSummary(
+    package func rebuildSummary(
         for thread: AgentThread,
         history: [AgentHistoryRecord],
         existing: AgentThreadSummary?
@@ -342,7 +404,11 @@ struct StoredRuntimeStateProjectionBuilder: Sendable {
                     latestTurnStatus = .completed
                 case .turnFailed:
                     latestTurnStatus = .failed
-                case .threadCreated, .threadResumed, .threadStatusChanged, .contextCompacted:
+                case .threadCreated,
+                     .threadResumed,
+                     .threadStatusChanged,
+                     .turnRecoveryCheckpointUpdated,
+                     .contextCompacted:
                     break
                 }
             }
@@ -363,7 +429,7 @@ struct StoredRuntimeStateProjectionBuilder: Sendable {
         )
     }
 
-    func latestToolState(from toolResult: AgentToolResultRecord) -> AgentLatestToolState {
+    package func latestToolState(from toolResult: AgentToolResultRecord) -> AgentLatestToolState {
         let preview = toolResult.result.primaryText
         let session = toolResult.result.session
         let status: AgentToolSessionStatus

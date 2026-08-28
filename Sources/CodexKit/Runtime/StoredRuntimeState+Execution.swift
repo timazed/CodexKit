@@ -1,7 +1,7 @@
 import Foundation
 
 extension StoredRuntimeState {
-    func execute(_ query: HistoryItemsQuery) throws -> AgentHistoryQueryResult {
+    package func execute(_ query: HistoryItemsQuery) throws -> AgentHistoryQueryResult {
         guard threads.contains(where: { $0.id == query.threadID }) else {
             return AgentHistoryQueryResult(
                 threadID: query.threadID,
@@ -31,10 +31,15 @@ extension StoredRuntimeState {
         }
 
         records = sort(records, using: query.sort)
-        return try page(records, threadID: query.threadID, with: query.page, sort: query.sort)
+        return try page(
+            records,
+            threadID: query.threadID,
+            with: query.page ?? AgentQueryPage(limit: AgentStoreLimits.defaultListResultCount),
+            sort: query.sort
+        )
     }
 
-    func execute(_ query: ThreadMetadataQuery) -> [AgentThread] {
+    package func execute(_ query: ThreadMetadataQuery) -> [AgentThread] {
         var filtered = threads
         if let threadIDs = query.threadIDs {
             filtered = filtered.filter { threadIDs.contains($0.id) }
@@ -45,14 +50,32 @@ extension StoredRuntimeState {
         if let updatedAtRange = query.updatedAtRange {
             filtered = filtered.filter { updatedAtRange.contains($0.updatedAt) }
         }
-        filtered = sort(filtered, using: query.sort)
-        if let limit = query.limit {
-            filtered = Array(filtered.prefix(max(0, limit)))
+        if let cursor = query.cursor {
+            filtered = filtered.filter { thread in
+                let date: Date
+                let order: AgentSortOrder
+                switch query.sort {
+                case let .updatedAt(sortOrder):
+                    date = thread.updatedAt
+                    order = sortOrder
+                case let .createdAt(sortOrder):
+                    date = thread.createdAt
+                    order = sortOrder
+                }
+                if date == cursor.date {
+                    return thread.id > cursor.threadID
+                }
+                return order == .ascending ? date > cursor.date : date < cursor.date
+            }
         }
+        filtered = sort(filtered, using: query.sort)
+        filtered = Array(filtered.prefix(
+            AgentStoreLimitValidator.boundedOptionalLimit(query.limit)
+        ))
         return filtered
     }
 
-    func execute(_ query: PendingStateQuery) -> [AgentPendingStateRecord] {
+    package func execute(_ query: PendingStateQuery) -> [AgentPendingStateRecord] {
         var records = summariesByThread.compactMap { threadID, summary -> AgentPendingStateRecord? in
             guard let pendingState = summary.pendingState else {
                 return nil
@@ -71,13 +94,13 @@ extension StoredRuntimeState {
             records = records.filter { kinds.contains($0.pendingState.kind) }
         }
         records = sort(records, using: query.sort)
-        if let limit = query.limit {
-            records = Array(records.prefix(max(0, limit)))
-        }
+        records = Array(records.prefix(
+            AgentStoreLimitValidator.boundedOptionalLimit(query.limit)
+        ))
         return records
     }
 
-    func execute(_ query: StructuredOutputQuery) -> [AgentStructuredOutputRecord] {
+    package func execute(_ query: StructuredOutputQuery) -> [AgentStructuredOutputRecord] {
         var records = historyByThread.values
             .flatMap { $0 }
             .compactMap { record -> AgentStructuredOutputRecord? in
@@ -109,22 +132,25 @@ extension StoredRuntimeState {
             records = records.filter { formatNames.contains($0.metadata.formatName) }
         }
 
-        records = sort(records, using: query.sort)
-
         if query.latestOnly {
-            var seen = Set<String>()
-            records = records.filter { record in
-                seen.insert(record.threadID).inserted
+            records = Dictionary(grouping: records, by: \.threadID).compactMap { _, values in
+                values.sorted { lhs, rhs in
+                    if lhs.committedAt == rhs.committedAt {
+                        return (lhs.messageID ?? "") < (rhs.messageID ?? "")
+                    }
+                    return lhs.committedAt > rhs.committedAt
+                }.first
             }
         }
+        records = sort(records, using: query.sort)
 
-        if let limit = query.limit {
-            records = Array(records.prefix(max(0, limit)))
-        }
+        records = Array(records.prefix(
+            AgentStoreLimitValidator.boundedOptionalLimit(query.limit)
+        ))
         return records
     }
 
-    func execute(_ query: ThreadSnapshotQuery) -> [AgentThreadSnapshot] {
+    package func execute(_ query: ThreadSnapshotQuery) -> [AgentThreadSnapshot] {
         var snapshots = threads.compactMap { thread -> AgentThreadSnapshot? in
             guard query.threadIDs?.contains(thread.id) ?? true else {
                 return nil
@@ -133,13 +159,13 @@ extension StoredRuntimeState {
             return summary.snapshot
         }
         snapshots = sort(snapshots, using: query.sort)
-        if let limit = query.limit {
-            snapshots = Array(snapshots.prefix(max(0, limit)))
-        }
+        snapshots = Array(snapshots.prefix(
+            AgentStoreLimitValidator.boundedOptionalLimit(query.limit)
+        ))
         return snapshots
     }
 
-    func execute(_ query: ThreadContextStateQuery) -> [AgentThreadContextState] {
+    package func execute(_ query: ThreadContextStateQuery) -> [AgentThreadContextState] {
         var records = Array(contextStateByThread.values)
         if let threadIDs = query.threadIDs {
             records = records.filter { threadIDs.contains($0.threadID) }
@@ -150,9 +176,9 @@ extension StoredRuntimeState {
             }
             return lhs.generation > rhs.generation
         }
-        if let limit = query.limit {
-            records = Array(records.prefix(max(0, limit)))
-        }
+        records = Array(records.prefix(
+            AgentStoreLimitValidator.boundedOptionalLimit(query.limit)
+        ))
         return records
     }
 }
@@ -184,7 +210,9 @@ private extension StoredRuntimeState {
             switch sort {
             case let .sequence(order):
                 if lhs.sequenceNumber == rhs.sequenceNumber {
-                    return lhs.createdAt < rhs.createdAt
+                    return order == .ascending
+                        ? lhs.createdAt < rhs.createdAt
+                        : lhs.createdAt > rhs.createdAt
                 }
                 return order == .ascending
                     ? lhs.sequenceNumber < rhs.sequenceNumber
@@ -192,7 +220,9 @@ private extension StoredRuntimeState {
 
             case let .createdAt(order):
                 if lhs.createdAt == rhs.createdAt {
-                    return lhs.sequenceNumber < rhs.sequenceNumber
+                    return order == .ascending
+                        ? lhs.sequenceNumber < rhs.sequenceNumber
+                        : lhs.sequenceNumber > rhs.sequenceNumber
                 }
                 return order == .ascending
                     ? lhs.createdAt < rhs.createdAt
@@ -207,36 +237,100 @@ private extension StoredRuntimeState {
         with page: AgentQueryPage?,
         sort: AgentHistorySort
     ) throws -> AgentHistoryQueryResult {
-        guard let page else {
-            let ordered = normalizePageRecords(records, sort: sort)
-            return AgentHistoryQueryResult(
-                threadID: threadID,
-                records: ordered,
-                nextCursor: nil,
-                previousCursor: nil,
-                hasMoreBefore: false,
-                hasMoreAfter: false
-            )
-        }
-
-        let limit = max(1, page.limit)
-        let anchor = try page.cursor?.decodedSequenceNumber(expectedThreadID: threadID)
+        let effectivePage = page ?? AgentQueryPage(
+            limit: AgentStoreLimits.defaultListResultCount
+        )
+        let limit = AgentStoreLimitValidator.boundedLimit(effectivePage.limit)
+        let anchor = try effectivePage.cursor?.decodedHistoryQueryAnchor(
+            expectedThreadID: threadID,
+            sort: sort
+        )
         let ascending = normalizePageRecords(records, sort: sort)
-        let endIndex = if let anchor {
-            ascending.firstIndex(where: { $0.sequenceNumber >= anchor }) ?? ascending.count
-        } else {
-            ascending.count
+        let startIndex: Int
+        let endIndex: Int
+        switch effectivePage.direction {
+        case .backward:
+            endIndex = if let anchor {
+                ascending.firstIndex(where: { record in
+                    historyRecord(record, isAtOrAfter: anchor, sort: sort)
+                }) ?? ascending.count
+            } else {
+                ascending.count
+            }
+            startIndex = max(0, endIndex - limit)
+        case .forward:
+            startIndex = if let anchor {
+                ascending.firstIndex(where: { record in
+                    historyRecord(record, isAfter: anchor, sort: sort)
+                }) ?? ascending.count
+            } else {
+                0
+            }
+            endIndex = min(ascending.count, startIndex + limit)
         }
-        let startIndex = max(0, endIndex - limit)
         let sliced = Array(ascending[startIndex ..< endIndex])
+        let orderedSlice = historySortOrder(sort) == .ascending
+            ? sliced
+            : Array(sliced.reversed())
         return AgentHistoryQueryResult(
             threadID: threadID,
-            records: sliced,
-            nextCursor: startIndex > 0 ? AgentHistoryCursor(threadID: threadID, sequenceNumber: sliced.first?.sequenceNumber) : nil,
-            previousCursor: endIndex < ascending.count ? AgentHistoryCursor(threadID: threadID, sequenceNumber: sliced.last?.sequenceNumber) : nil,
+            records: orderedSlice,
+            nextCursor: effectivePage.direction == .backward
+                ? startIndex > 0
+                    ? AgentHistoryCursor(threadID: threadID, record: sliced.first, sort: sort)
+                    : nil
+                : endIndex < ascending.count
+                    ? AgentHistoryCursor(threadID: threadID, record: sliced.last, sort: sort)
+                    : nil,
+            previousCursor: effectivePage.direction == .backward
+                ? endIndex < ascending.count
+                    ? AgentHistoryCursor(threadID: threadID, record: sliced.last, sort: sort)
+                    : nil
+                : startIndex > 0
+                    ? AgentHistoryCursor(threadID: threadID, record: sliced.first, sort: sort)
+                    : nil,
             hasMoreBefore: startIndex > 0,
             hasMoreAfter: endIndex < ascending.count
         )
+    }
+
+    func historyRecord(
+        _ record: AgentHistoryRecord,
+        isAtOrAfter anchor: AgentHistoryQueryCursorAnchor,
+        sort: AgentHistorySort
+    ) -> Bool {
+        switch sort {
+        case .sequence:
+            return record.sequenceNumber >= anchor.sequenceNumber
+        case .createdAt:
+            if record.createdAt == anchor.createdAt {
+                return record.sequenceNumber >= anchor.sequenceNumber
+            }
+            return record.createdAt > anchor.createdAt
+        }
+    }
+
+    func historyRecord(
+        _ record: AgentHistoryRecord,
+        isAfter anchor: AgentHistoryQueryCursorAnchor,
+        sort: AgentHistorySort
+    ) -> Bool {
+        switch sort {
+        case .sequence:
+            return record.sequenceNumber > anchor.sequenceNumber
+        case .createdAt:
+            if record.createdAt == anchor.createdAt {
+                return record.sequenceNumber > anchor.sequenceNumber
+            }
+            return record.createdAt > anchor.createdAt
+        }
+    }
+
+    func historySortOrder(_ sort: AgentHistorySort) -> AgentSortOrder {
+        switch sort {
+        case let .sequence(order), let .createdAt(order):
+            order
+        }
     }
 
     func normalizePageRecords(
@@ -328,8 +422,27 @@ struct AgentHistoryCursorPayload: Codable {
     let sequenceNumber: Int
 }
 
+package struct AgentHistoryQueryCursorAnchor: Sendable {
+    package let sequenceNumber: Int
+    package let createdAt: Date
+}
+
+private enum AgentHistoryCursorSortField: String, Codable {
+    case sequence
+    case createdAt
+}
+
+private struct AgentHistoryQueryCursorPayload: Codable {
+    let version: Int
+    let threadID: String
+    let sortField: AgentHistoryCursorSortField
+    let sortOrder: AgentSortOrder
+    let sequenceNumber: Int
+    let createdAt: Date
+}
+
 extension AgentHistoryCursor {
-    init(threadID: String, sequenceNumber: Int?) {
+    package init(threadID: String, sequenceNumber: Int?) {
         guard let sequenceNumber else {
             self.init(rawValue: "")
             return
@@ -348,7 +461,7 @@ extension AgentHistoryCursor {
         self.init(rawValue: base64)
     }
 
-    func decodedSequenceNumber(expectedThreadID: String) throws -> Int {
+    package func decodedSequenceNumber(expectedThreadID: String) throws -> Int {
         let padded = rawValue
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
@@ -364,5 +477,72 @@ extension AgentHistoryCursor {
             throw AgentRuntimeError.invalidHistoryCursor()
         }
         return payload.sequenceNumber
+    }
+
+    package init(
+        threadID: String,
+        record: AgentHistoryRecord?,
+        sort: AgentHistorySort
+    ) {
+        guard let record else {
+            self.init(rawValue: "")
+            return
+        }
+        let (sortField, sortOrder): (AgentHistoryCursorSortField, AgentSortOrder) = switch sort {
+        case let .sequence(order): (.sequence, order)
+        case let .createdAt(order): (.createdAt, order)
+        }
+        let payload = AgentHistoryQueryCursorPayload(
+            version: 2,
+            threadID: threadID,
+            sortField: sortField,
+            sortOrder: sortOrder,
+            sequenceNumber: record.sequenceNumber,
+            createdAt: record.createdAt
+        )
+        let data = (try? JSONEncoder().encode(payload)) ?? Data()
+        self.init(rawValue: Self.urlSafeBase64(data))
+    }
+
+    package func decodedHistoryQueryAnchor(
+        expectedThreadID: String,
+        sort: AgentHistorySort
+    ) throws -> AgentHistoryQueryCursorAnchor {
+        let data = try decodedCursorData()
+        let payload = try JSONDecoder().decode(AgentHistoryQueryCursorPayload.self, from: data)
+        let (expectedField, expectedOrder): (AgentHistoryCursorSortField, AgentSortOrder) = switch sort {
+        case let .sequence(order): (.sequence, order)
+        case let .createdAt(order): (.createdAt, order)
+        }
+        guard payload.version == 2,
+              payload.threadID == expectedThreadID,
+              payload.sortField == expectedField,
+              payload.sortOrder == expectedOrder
+        else {
+            throw AgentRuntimeError.invalidHistoryCursor()
+        }
+        return AgentHistoryQueryCursorAnchor(
+            sequenceNumber: payload.sequenceNumber,
+            createdAt: payload.createdAt
+        )
+    }
+
+    private static func urlSafeBase64(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private func decodedCursorData() throws -> Data {
+        let padded = rawValue
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = padded.count % 4
+        let adjusted = padded + String(repeating: "=", count: remainder == 0 ? 0 : 4 - remainder)
+        guard let data = Data(base64Encoded: adjusted) else {
+            throw AgentRuntimeError.invalidHistoryCursor()
+        }
+        return data
     }
 }

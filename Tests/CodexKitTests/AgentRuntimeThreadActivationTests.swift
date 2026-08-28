@@ -1,4 +1,5 @@
 @testable import CodexKit
+@testable import CodexKitSQLite
 import Combine
 import XCTest
 
@@ -150,7 +151,7 @@ extension AgentRuntimeTests {
         )
         let firstDiagnostics = await store.activationDiagnostics()
         let firstMetrics = try XCTUnwrap(firstDiagnostics.latestActivation)
-        XCTAssertEqual(firstMetrics.fetchedHistoryRowCount, 17)
+        XCTAssertEqual(firstMetrics.fetchedHistoryRowCount, 16)
         XCTAssertEqual(firstMetrics.decodedHistoryRowCount, 16)
         XCTAssertGreaterThan(firstMetrics.decodedHistoryByteCount, 0)
 
@@ -167,10 +168,18 @@ extension AgentRuntimeTests {
                 ))
             )
         }
-        try await store.apply([
-            .upsertThread(extraThread),
-            .appendHistoryItems(threadID: extraThread.id, items: extraHistory),
-        ])
+        try await store.apply([.upsertThread(extraThread)])
+        for start in stride(
+            from: 0,
+            to: extraHistory.count,
+            by: AgentStoreLimits.maximumHistoryWriteCount
+        ) {
+            let end = min(start + AgentStoreLimits.maximumHistoryWriteCount, extraHistory.count)
+            try await store.apply([.appendHistoryItems(
+                threadID: extraThread.id,
+                items: Array(extraHistory[start ..< end])
+            )])
+        }
         _ = try await store.loadThreadActivationState(
             id: selected.id,
             policy: .init(
@@ -222,7 +231,11 @@ extension AgentRuntimeTests {
             approvalPresenter: AutoApprovalPresenter(),
             stateStore: store
         )
-        _ = try await runtime.restore()
+        let restored = try await runtime.restore()
+        XCTAssertTrue(restored.threads.isEmpty)
+
+        let persistedThreads = try await runtime.persistedThreads()
+        XCTAssertEqual(persistedThreads.map(\.id), [thread.id])
 
         let diagnostics = await store.activationDiagnostics()
         XCTAssertEqual(diagnostics.decodedHistoryBodyCount, 0)
@@ -685,7 +698,7 @@ extension AgentRuntimeTests {
             try await runtime.setTitle("Second committed", for: thread.id)
         }
         try await waitUntil {
-            await runtime.threads().first(where: { $0.id == thread.id })?.title
+            await runtime.activeThreads().first(where: { $0.id == thread.id })?.title
                 == "Second committed"
         }
         await store.releaseBlockedApply()
@@ -696,6 +709,91 @@ extension AgentRuntimeTests {
         }
 
         XCTAssertEqual(recorder.titles(), ["First committed", "Second committed"])
+    }
+
+    func testFailedWriteCannotRecoverOverANewerSameThreadMutation() async throws {
+        let store = BlockingRuntimeStateStore(base: InMemoryRuntimeStateStore())
+        let runtime = try makeHistoryRuntime(
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: store
+        )
+        _ = try await runtime.restore()
+        _ = try await runtime.useSession(demoSession())
+        let thread = try await runtime.createThread(title: "Initial")
+
+        await store.blockAndFailNextApply()
+        let firstUpdate = Task {
+            try await runtime.setTitle("First must fail", for: thread.id)
+        }
+        await store.waitForBlockedApply()
+        let secondUpdate = Task {
+            try await runtime.setTitle("Second must win", for: thread.id)
+        }
+        try await waitUntil {
+            await runtime.activeThreads().first(where: { $0.id == thread.id })?.title
+                == "Second must win"
+        }
+        await store.releaseBlockedApply()
+
+        await XCTAssertThrowsErrorAsync(try await firstUpdate.value)
+        try await secondUpdate.value
+        let activeTitle = await runtime.activeThreads()
+            .first(where: { $0.id == thread.id })?.title
+        let persistedState = try await store.loadState()
+        let persistedTitle = persistedState.threads
+            .first(where: { $0.id == thread.id })?.title
+        XCTAssertEqual(activeTitle, "Second must win")
+        XCTAssertEqual(persistedTitle, "Second must win")
+    }
+
+    func testMiddleThreadFailureDoesNotDropLaterThreadGroups() async throws {
+        let base = InMemoryRuntimeStateStore()
+        let threads = ["blocker", "first", "middle", "last"].map {
+            AgentThread(id: $0, title: "Initial \($0)")
+        }
+        try await base.saveState(StoredRuntimeState(threads: threads))
+        let store = BlockingRuntimeStateStore(base: base)
+        let runtime = try makeHistoryRuntime(
+            backend: InMemoryAgentBackend(),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: store
+        )
+        _ = try await runtime.restore()
+
+        await store.blockNextApply()
+        let blocker = Task {
+            try await runtime.setTitle("Blocker committed", for: "blocker")
+        }
+        await store.waitForBlockedApply()
+        await store.failNextApply(for: "middle")
+
+        let first = Task { try await runtime.setTitle("First committed", for: "first") }
+        try await waitUntil {
+            await runtime.activeThreads().first(where: { $0.id == "first" })?.title
+                == "First committed"
+        }
+        let middle = Task { try await runtime.setTitle("Middle failed", for: "middle") }
+        try await waitUntil {
+            await runtime.activeThreads().first(where: { $0.id == "middle" })?.title
+                == "Middle failed"
+        }
+        let last = Task { try await runtime.setTitle("Last committed", for: "last") }
+        try await waitUntil {
+            await runtime.activeThreads().first(where: { $0.id == "last" })?.title
+                == "Last committed"
+        }
+        await store.releaseBlockedApply()
+
+        try await blocker.value
+        _ = try? await first.value
+        _ = try? await middle.value
+        _ = try? await last.value
+
+        let persisted = try await store.loadState()
+        XCTAssertEqual(persisted.threads.first(where: { $0.id == "first" })?.title, "First committed")
+        XCTAssertEqual(persisted.threads.first(where: { $0.id == "middle" })?.title, "Initial middle")
+        XCTAssertEqual(persisted.threads.first(where: { $0.id == "last" })?.title, "Last committed")
     }
 
     func testConcurrentRuntimesRetrySameThreadSequenceAllocation() async throws {
@@ -800,6 +898,8 @@ private actor BlockingRuntimeStateStore: RuntimeStateStoring {
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var blockedApplyReleased = false
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var shouldFailBlockedApply = false
+    private var threadIDToFail: String?
 
     init(base: InMemoryRuntimeStateStore) {
         self.base = base
@@ -809,6 +909,16 @@ private actor BlockingRuntimeStateStore: RuntimeStateStoring {
         shouldBlockNextApply = true
         blockedApplyStarted = false
         blockedApplyReleased = false
+        shouldFailBlockedApply = false
+    }
+
+    func blockAndFailNextApply() {
+        blockNextApply()
+        shouldFailBlockedApply = true
+    }
+
+    func failNextApply(for threadID: String) {
+        threadIDToFail = threadID
     }
 
     func waitForBlockedApply() async {
@@ -849,8 +959,11 @@ private actor BlockingRuntimeStateStore: RuntimeStateStoring {
     }
 
     func apply(_ operations: [AgentStoreWriteOperation]) async throws {
+        var mustFailAfterBlock = false
         if shouldBlockNextApply {
             shouldBlockNextApply = false
+            mustFailAfterBlock = shouldFailBlockedApply
+            shouldFailBlockedApply = false
             blockedApplyStarted = true
             let continuations = startWaiters
             startWaiters.removeAll()
@@ -860,6 +973,14 @@ private actor BlockingRuntimeStateStore: RuntimeStateStoring {
                     releaseWaiters.append(continuation)
                 }
             }
+        }
+        if mustFailAfterBlock {
+            throw InjectedRuntimeStoreError.appendFailed
+        }
+        if let threadIDToFail,
+           operations.contains(where: { $0.affectedThreadID == threadIDToFail }) {
+            self.threadIDToFail = nil
+            throw InjectedRuntimeStoreError.appendFailed
         }
         try await base.apply(operations)
     }

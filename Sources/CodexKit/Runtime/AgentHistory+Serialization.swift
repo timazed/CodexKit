@@ -128,7 +128,24 @@ extension AgentHistoryFilter {
 }
 
 extension AgentHistoryItem {
-    var kind: AgentHistoryItemKind {
+    package var threadID: String {
+        switch self {
+        case let .message(message):
+            message.threadID
+        case let .toolCall(record):
+            record.invocation.threadID
+        case let .toolResult(record):
+            record.threadID
+        case let .structuredOutput(record):
+            record.threadID
+        case let .approval(record):
+            record.request?.threadID ?? record.resolution?.threadID ?? ""
+        case let .systemEvent(record):
+            record.threadID
+        }
+    }
+
+    package var kind: AgentHistoryItemKind {
         switch self {
         case .message:
             .message
@@ -145,10 +162,10 @@ extension AgentHistoryItem {
         }
     }
 
-    var turnID: String? {
+    package var turnID: String? {
         switch self {
-        case let .message(message):
-            return message.structuredOutput == nil ? nil : nil
+        case .message:
+            return nil
         case let .toolCall(record):
             return record.invocation.turnID
         case let .toolResult(record):
@@ -162,7 +179,49 @@ extension AgentHistoryItem {
         }
     }
 
-    var defaultRecordID: String {
+    /// Stable database projection used to hydrate an all-or-nothing history
+    /// relationship without decoding or scanning unrelated records.
+    package var relationshipKey: String? {
+        switch self {
+        case let .message(message):
+            return Self.relationshipKey(kind: "message", id: message.id)
+        case let .structuredOutput(output):
+            return output.messageID.map { Self.relationshipKey(kind: "message", id: $0) }
+        case let .toolCall(call):
+            return Self.relationshipKey(kind: "tool", id: call.invocation.id)
+        case let .toolResult(result):
+            return Self.relationshipKey(kind: "tool", id: result.result.invocationID)
+        case .approval, .systemEvent:
+            return nil
+        }
+    }
+
+    private static func relationshipKey(kind: String, id: String) -> String {
+        "k\(kind.utf8.count):\(kind)i\(id.utf8.count):\(id)"
+    }
+
+    package var messageRole: AgentRole? {
+        guard case let .message(message) = self else { return nil }
+        return message.role
+    }
+
+    package var hasQueryableStructuredOutput: Bool {
+        switch self {
+        case let .message(message):
+            return message.structuredOutput != nil
+        case .structuredOutput:
+            return true
+        case .toolCall, .toolResult, .approval, .systemEvent:
+            return false
+        }
+    }
+
+    package var systemEventType: AgentSystemEventType? {
+        guard case let .systemEvent(event) = self else { return nil }
+        return event.type
+    }
+
+    package var defaultRecordID: String {
         switch self {
         case let .message(message):
             return "message:\(message.id)"
@@ -175,6 +234,10 @@ extension AgentHistoryItem {
         case let .approval(record):
             return "approval:\(record.request?.id ?? record.resolution?.requestID ?? UUID().uuidString)"
         case let .systemEvent(record):
+            if record.type == .turnRecoveryCheckpointUpdated,
+               let responseID = record.recoveryCheckpoint?.payload.objectValue?["response_id"]?.stringValue {
+                return "systemEvent:\(record.type.rawValue):\(record.turnID ?? record.threadID):\(responseID)"
+            }
             if record.type == .contextCompacted,
                let generation = record.compaction?.generation {
                 return "systemEvent:\(record.type.rawValue):\(record.threadID):\(generation)"
@@ -192,7 +255,7 @@ extension AgentHistoryItem {
 }
 
 extension AgentHistoryRecord {
-    func redacted(reason: AgentRedactionReason?) -> AgentHistoryRecord {
+    package func redacted(reason: AgentRedactionReason?) -> AgentHistoryRecord {
         AgentHistoryRecord(
             id: id,
             sequenceNumber: sequenceNumber,

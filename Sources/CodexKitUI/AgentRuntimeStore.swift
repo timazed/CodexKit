@@ -40,15 +40,26 @@ public final class AgentRuntimeStore {
         do {
             _ = try await runtime.restore()
             threads = try await loadThreadMetadata()
-            let activeThreads = await runtime.threads()
-            if let firstThread = activeThreads.first {
-                activeThreadID = firstThread.id
-                messages = await runtime.messages(for: firstThread.id)
+            session = await runtime.currentSession()
+            let activeThreads = await runtime.activeThreads()
+            let interruptedThread = session == nil
+                ? nil
+                : threads.first(where: \AgentThread.status.isPendingTurn)
+            if let selectedThread = activeThreads.first ?? interruptedThread {
+                if !activeThreads.contains(where: { $0.id == selectedThread.id }) {
+                    _ = try await runtime.resumeThread(id: selectedThread.id)
+                }
+                activeThreadID = selectedThread.id
+                messages = await runtime.messages(for: selectedThread.id)
             } else {
                 activeThreadID = nil
                 messages = []
             }
-            session = await runtime.currentSession()
+            if session != nil,
+               let activeThreadID,
+               let recoveryStream = try await runtime.resumePendingTurn(in: activeThreadID) {
+                try await consume(recoveryStream, in: activeThreadID)
+            }
         } catch {
             lastError = error.localizedDescription
         }
@@ -89,7 +100,7 @@ public final class AgentRuntimeStore {
 
     public func activateThread(id: String) async {
         do {
-            let activeThreads = await runtime.threads()
+            let activeThreads = await runtime.activeThreads()
             if !activeThreads.contains(where: { $0.id == id }) {
                 _ = try await runtime.resumeThread(id: id)
                 threads = try await loadThreadMetadata()
@@ -124,56 +135,7 @@ public final class AgentRuntimeStore {
                 in: activeThreadID
             )
             messages = await runtime.messages(for: activeThreadID)
-
-            for try await event in stream {
-                switch event {
-                case let .threadStarted(thread):
-                    threads = [thread] + threads.filter { $0.id != thread.id }
-
-                case let .threadStatusChanged(threadID, status):
-                    threads = threads.map { thread in
-                        guard thread.id == threadID else {
-                            return thread
-                        }
-
-                        var updated = thread
-                        updated.status = status
-                        updated.updatedAt = Date()
-                        return updated
-                    }
-
-                case .turnStarted:
-                    break
-
-                case let .assistantMessageDelta(_, _, delta):
-                    streamingText.append(delta)
-
-                case let .messageCommitted(message):
-                    messages.append(message)
-                    if message.role == .assistant {
-                        streamingText = ""
-                    }
-
-                case .approvalRequested:
-                    break
-
-                case .approvalResolved:
-                    break
-
-                case .toolCallStarted:
-                    break
-
-                case .toolCallFinished:
-                    break
-
-                case .turnCompleted:
-                    messages = await runtime.messages(for: activeThreadID)
-                    threads = try await loadThreadMetadata()
-
-                case let .turnFailed(error):
-                    lastError = error.message
-                }
-            }
+            try await consume(stream, in: activeThreadID)
         } catch {
             lastError = error.localizedDescription
         }
@@ -187,5 +149,60 @@ public final class AgentRuntimeStore {
         try await runtime.execute(
             ThreadMetadataQuery(limit: restoredThreadLimit)
         )
+    }
+
+    private func consume(
+        _ stream: AsyncThrowingStream<AgentEvent, Error>,
+        in activeThreadID: String
+    ) async throws {
+        for try await event in stream {
+            switch event {
+            case let .threadStarted(thread):
+                threads = [thread] + threads.filter { $0.id != thread.id }
+
+            case let .threadStatusChanged(threadID, status):
+                threads = threads.map { thread in
+                    guard thread.id == threadID else { return thread }
+                    var updated = thread
+                    updated.status = status
+                    updated.updatedAt = Date()
+                    return updated
+                }
+
+            case .turnStarted,
+                 .approvalRequested,
+                 .approvalResolved,
+                 .toolCallStarted,
+                 .toolCallFinished:
+                break
+
+            case let .assistantMessageDelta(_, _, delta):
+                streamingText.append(delta)
+
+            case let .messageCommitted(message):
+                messages.append(message)
+                if message.role == .assistant {
+                    streamingText = ""
+                }
+
+            case .turnCompleted:
+                messages = await runtime.messages(for: activeThreadID)
+                threads = try await loadThreadMetadata()
+
+            case let .turnFailed(error):
+                lastError = error.message
+            }
+        }
+    }
+}
+
+private extension AgentThreadStatus {
+    var isPendingTurn: Bool {
+        switch self {
+        case .streaming, .waitingForApproval, .waitingForToolResult:
+            true
+        case .idle, .failed:
+            false
+        }
     }
 }

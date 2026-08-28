@@ -142,7 +142,9 @@ public extension RuntimeStateStoring {
             summary: summary,
             contextState: contextState,
             nextHistorySequence: state.nextHistorySequenceByThread[id]
-                ?? ((state.historyByThread[id]?.last?.sequenceNumber ?? 0) + 1),
+                ?? AgentHistorySequence.nextOrMaximum(
+                    after: state.historyByThread[id]?.last?.sequenceNumber
+                ),
             effectiveMessages: effectiveMessages
         )
     }
@@ -168,6 +170,7 @@ public extension RuntimeStateStoring {
     }
 
     func apply(_ operations: [AgentStoreWriteOperation]) async throws {
+        try AgentStoreLimitValidator.validate(operations)
         let state = try await loadState()
         let updated = try state.applying(operations)
         try await saveState(updated)

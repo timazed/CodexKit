@@ -22,14 +22,16 @@ extension AgentRuntime {
         var assistantMessages: [AgentMessage] = []
         var sawStructuredCommit = false
         var currentTurnID: String?
+        var didCompleteTurn = false
 
         do {
             for try await backendEvent in turnStream.events {
                 switch backendEvent {
                 case let .turnStarted(turn):
                     currentTurnID = turn.id
-                    if storesTurnState {
-                        appendHistoryItem(
+                    if storesTurnState,
+                       !hasStoredTurnStart(turnID: turn.id, in: threadID) {
+                        try appendHistoryItem(
                             .systemEvent(
                                 AgentSystemEventRecord(
                                     type: .turnStarted,
@@ -57,13 +59,19 @@ extension AgentRuntime {
                     )
 
                 case let .assistantMessageCompleted(message):
-                    if storesTurnState {
+                    let isDuplicate = storesTurnState && hasCommittedMessage(
+                        id: message.id,
+                        in: threadID
+                    )
+                    if storesTurnState, !isDuplicate {
                         try await appendMessage(message)
                         if message.role == .assistant {
                             assistantMessages.append(message)
                         }
                     }
-                    continuation.yield(.messageCommitted(message))
+                    if !isDuplicate {
+                        continuation.yield(.messageCommitted(message))
+                    }
 
                 case let .structuredOutputPartial(value):
                     do {
@@ -112,10 +120,17 @@ extension AgentRuntime {
                             formatName: responseFormat.name,
                             payload: value
                         )
-                        if storesTurnState {
+                        let isDuplicate = storesTurnState && currentTurnID.map {
+                            hasStoredStructuredOutput(
+                                turnID: $0,
+                                formatName: responseFormat.name,
+                                in: threadID
+                            )
+                        } == true
+                        if storesTurnState, !isDuplicate {
                             try setLatestStructuredOutputMetadata(metadata, for: threadID)
                             try setLatestPartialStructuredOutput(nil, for: threadID)
-                            appendHistoryItem(
+                            try appendHistoryItem(
                                 .structuredOutput(
                                     AgentStructuredOutputRecord(
                                         threadID: threadID,
@@ -130,7 +145,9 @@ extension AgentRuntime {
                             updateThreadTimestamp(Date(), for: threadID)
                             try await persistState()
                         }
-                        continuation.yield(.structuredOutputCommitted(decoded))
+                        if !isDuplicate {
+                            continuation.yield(.structuredOutputCommitted(decoded))
+                        }
                     } catch {
                         let validationFailure = AgentStructuredOutputValidationFailure(
                             stage: .committed,
@@ -143,7 +160,7 @@ extension AgentRuntime {
                         )
                         if storesTurnState {
                             try? setLatestPartialStructuredOutput(nil, for: threadID)
-                            appendHistoryItem(
+                            try appendHistoryItem(
                                 .systemEvent(
                                     AgentSystemEventRecord(
                                         type: .turnFailed,
@@ -174,8 +191,12 @@ extension AgentRuntime {
                     continuation.yield(.structuredOutputValidationFailed(validationFailure))
 
                 case let .toolCallRequested(invocation):
-                    if storesTurnState {
-                        appendHistoryItem(
+                    let existingToolResult = storesTurnState
+                        ? storedToolResult(invocationID: invocation.id, in: invocation.threadID)
+                        : nil
+                    if storesTurnState,
+                       !hasStoredToolCall(invocationID: invocation.id, in: invocation.threadID) {
+                        try appendHistoryItem(
                             .toolCall(
                                 AgentToolCallRecord(
                                     invocation: invocation,
@@ -195,7 +216,10 @@ extension AgentRuntime {
                     continuation.yield(.toolCallStarted(invocation))
 
                     let result: ToolResultEnvelope
-                    if let policyTracker,
+                    if let existingToolResult {
+                        result = existingToolResult
+                        policyTracker?.recordAccepted(toolName: invocation.toolName)
+                    } else if let policyTracker,
                        let validationError = policyTracker.validate(toolName: invocation.toolName) {
                         result = .failure(
                             invocation: invocation,
@@ -212,7 +236,9 @@ extension AgentRuntime {
                         policyTracker?.recordAccepted(toolName: invocation.toolName)
                     }
 
-                    if storesTurnState, result.session?.isTerminal != false {
+                    if storesTurnState,
+                       existingToolResult == nil,
+                       result.session?.isTerminal != false {
                         appendEffectiveToolInteraction(
                             invocation: invocation,
                             result: result
@@ -233,10 +259,15 @@ extension AgentRuntime {
                     updateProviderContext(context, for: threadID)
                     try await persistState()
 
+                case let .turnRecoveryCheckpointUpdated(checkpoint):
+                    guard storesTurnState, checkpoint.turnID == currentTurnID else { break }
+                    try await persistRecoveryCheckpoint(checkpoint, for: threadID)
+
                 case let .turnCompleted(summary):
+                    didCompleteTurn = true
                     if let completionError = policyTracker?.completionError() {
                         if storesTurnState {
-                            appendHistoryItem(
+                            try appendHistoryItem(
                                 .systemEvent(
                                     AgentSystemEventRecord(
                                         type: .turnFailed,
@@ -264,7 +295,7 @@ extension AgentRuntime {
                             formatName: responseFormat.name
                         )
                         if storesTurnState {
-                            appendHistoryItem(
+                            try appendHistoryItem(
                                 .systemEvent(
                                     AgentSystemEventRecord(
                                         type: .turnFailed,
@@ -288,7 +319,7 @@ extension AgentRuntime {
                     }
 
                     if storesTurnState {
-                        appendHistoryItem(
+                        try appendHistoryItem(
                             .systemEvent(
                                 AgentSystemEventRecord(
                                     type: .turnCompleted,
@@ -317,15 +348,27 @@ extension AgentRuntime {
                 }
             }
 
+            if !didCompleteTurn {
+                try Task.checkCancellation()
+            }
             continuation.finish()
         } catch {
+            if storesTurnState,
+               shouldPreserveTurnForRecovery(
+                   error: error,
+                   threadID: threadID,
+                   turnID: currentTurnID
+               ) {
+                continuation.finish(throwing: error)
+                return
+            }
             let runtimeError = (error as? AgentRuntimeError)
                 ?? AgentRuntimeError(
                     code: "turn_failed",
                     message: error.localizedDescription
                 )
             if storesTurnState {
-                appendHistoryItem(
+                _ = try? appendHistoryItem(
                     .systemEvent(
                         AgentSystemEventRecord(
                             type: .turnFailed,

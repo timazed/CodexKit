@@ -57,7 +57,7 @@ struct SummarizeImportedContentIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let runtime = AgentDemoRuntimeFactory.makeRestorableRuntimeForSystemIntegration()
+        let runtime = try AgentDemoRuntimeFactory.makeRestorableRuntimeForSystemIntegration()
         _ = try await runtime.restore()
 
         guard await runtime.currentSession() != nil else {
@@ -86,7 +86,7 @@ struct DraftShippingSupportReplyIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let runtime = AgentDemoRuntimeFactory.makeRestorableRuntimeForSystemIntegration()
+        let runtime = try AgentDemoRuntimeFactory.makeRestorableRuntimeForSystemIntegration()
         _ = try await runtime.restore()
 
         guard await runtime.currentSession() != nil else {

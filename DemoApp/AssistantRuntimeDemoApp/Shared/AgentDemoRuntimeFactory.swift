@@ -1,4 +1,6 @@
 import CodexKit
+import CodexKitRealm
+import CodexKitSQLite
 import CodexKitUI
 import Foundation
 #if canImport(AuthenticationServices)
@@ -21,9 +23,44 @@ enum DemoAuthenticationMethod: String, CaseIterable, Identifiable {
     }
 }
 
+enum DemoPersistenceAdapter: String, CaseIterable, Identifiable, Sendable {
+    case sqlite
+    case realm
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sqlite:
+            "SQLite"
+        case .realm:
+            "Realm"
+        }
+    }
+
+    var runtimeFilename: String {
+        switch self {
+        case .sqlite:
+            "runtime-state.sqlite"
+        case .realm:
+            "runtime-state.realm"
+        }
+    }
+
+    var memoryFilename: String {
+        switch self {
+        case .sqlite:
+            "memory.sqlite"
+        case .realm:
+            "memory.realm"
+        }
+    }
+}
+
 enum AgentDemoRuntimeFactory {
     static let defaultModel = CodexModel.gpt56Sol.rawValue
     static let defaultKeychainAccount = "AssistantRuntimeDemoApp"
+    private static let persistenceAdapterDefaultsKey = "AssistantRuntimeDemoApp.persistenceAdapter"
 
     #if canImport(AuthenticationServices)
     @MainActor
@@ -33,17 +70,19 @@ enum AgentDemoRuntimeFactory {
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
         reasoningEffort: ReasoningEffort = .low,
+        persistenceAdapter: DemoPersistenceAdapter = initialPersistenceAdapter(),
         stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount
-    ) -> AgentDemoViewModel {
+    ) throws -> AgentDemoViewModel {
         let approvalInbox = ApprovalInbox()
         let deviceCodePromptCoordinator = DeviceCodePromptCoordinator()
-        let runtime = makeRuntime(
+        let runtime = try makeRuntime(
             authenticationMethod: .deviceCode,
             model: model,
             enableWebSearch: enableWebSearch,
             enableImageGeneration: enableImageGeneration,
             reasoningEffort: reasoningEffort,
+            persistenceAdapter: persistenceAdapter,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
@@ -55,6 +94,7 @@ enum AgentDemoRuntimeFactory {
             enableWebSearch: enableWebSearch,
             enableImageGeneration: enableImageGeneration,
             reasoningEffort: reasoningEffort,
+            persistenceAdapter: persistenceAdapter,
             stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
@@ -72,29 +112,39 @@ enum AgentDemoRuntimeFactory {
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
         reasoningEffort: ReasoningEffort = .low,
+        persistenceAdapter: DemoPersistenceAdapter = .sqlite,
         stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount,
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator
-    ) -> AgentRuntime {
+    ) throws -> AgentRuntime {
         let diagnostics = DemoDiagnostics()
         let sdkLogging = diagnostics.sdkLoggingConfiguration()
         let authProvider: ChatGPTAuthProvider
+        let stateStore = try makeStateStore(
+            persistenceAdapter: persistenceAdapter,
+            url: resolvedStateURL(stateURL, for: persistenceAdapter),
+            logging: sdkLogging
+        )
+        let memoryStore = try makeMemoryStore(
+            persistenceAdapter: persistenceAdapter,
+            logging: sdkLogging
+        )
 
         switch authenticationMethod {
         case .deviceCode:
-            authProvider = try! ChatGPTAuthProvider(
+            authProvider = try ChatGPTAuthProvider(
                 method: .deviceCode,
                 deviceCodePresenter: deviceCodePromptCoordinator
             )
 
         case .browserOAuth:
-            authProvider = try! ChatGPTAuthProvider(
+            authProvider = try ChatGPTAuthProvider(
                 method: .oauth
             )
         }
 
-        return try! AgentRuntime(configuration: .init(
+        return try AgentRuntime(configuration: .init(
             authProvider: authProvider,
             secureStore: KeychainSessionSecureStore(
                 service: "AssistantRuntimeDemoApp.ChatGPTSession",
@@ -110,16 +160,10 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: approvalInbox,
-            stateStore: try! SQLiteRuntimeStateStore(
-                url: stateURL ?? defaultStateURL(),
-                logging: sdkLogging
-            ),
+            stateStore: stateStore,
             logging: sdkLogging,
             memory: .init(
-                store: try! SQLiteMemoryStore(
-                    url: defaultMemoryURL(),
-                    logging: sdkLogging
-                ),
+                store: memoryStore,
                 automaticCapturePolicy: .init(
                     source: .lastTurn,
                     options: .init(
@@ -141,7 +185,8 @@ enum AgentDemoRuntimeFactory {
                     estimatedTokenThreshold: 2_000,
                     retryOnContextLimitError: true
                 )
-            )
+            ),
+            backgroundActivityProvider: interactiveBackgroundActivityProvider()
         ))
     }
     #endif
@@ -152,12 +197,22 @@ enum AgentDemoRuntimeFactory {
         enableImageGeneration: Bool = true,
         reasoningEffort: ReasoningEffort = .low,
         keychainAccount: String = defaultKeychainAccount
-    ) -> AgentRuntime {
+    ) throws -> AgentRuntime {
         let diagnostics = DemoDiagnostics()
         let sdkLogging = diagnostics.sdkLoggingConfiguration()
-        let authProvider = try! ChatGPTAuthProvider(method: .oauth)
+        let authProvider = try ChatGPTAuthProvider(method: .oauth)
+        let persistenceAdapter = initialPersistenceAdapter()
+        let stateStore = try makeStateStore(
+            persistenceAdapter: persistenceAdapter,
+            url: defaultStateURL(for: persistenceAdapter),
+            logging: sdkLogging
+        )
+        let memoryStore = try makeMemoryStore(
+            persistenceAdapter: persistenceAdapter,
+            logging: sdkLogging
+        )
 
-        return try! AgentRuntime(configuration: .init(
+        return try AgentRuntime(configuration: .init(
             authProvider: authProvider,
             secureStore: KeychainSessionSecureStore(
                 service: "AssistantRuntimeDemoApp.ChatGPTSession",
@@ -173,16 +228,10 @@ enum AgentDemoRuntimeFactory {
                 )
             ),
             approvalPresenter: NonInteractiveApprovalPresenter(),
-            stateStore: try! SQLiteRuntimeStateStore(
-                url: defaultStateURL(),
-                logging: sdkLogging
-            ),
+            stateStore: stateStore,
             logging: sdkLogging,
             memory: .init(
-                store: try! SQLiteMemoryStore(
-                    url: defaultMemoryURL(),
-                    logging: sdkLogging
-                ),
+                store: memoryStore,
                 automaticCapturePolicy: .init(
                     source: .lastTurn,
                     options: .init(
@@ -208,18 +257,61 @@ enum AgentDemoRuntimeFactory {
         ))
     }
 
-    static func defaultStateURL() -> URL {
-        let baseDirectory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-
-        return baseDirectory
-            .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
-            .appendingPathComponent("runtime-state.sqlite")
+    static func initialPersistenceAdapter(
+        userDefaults: UserDefaults = .standard
+    ) -> DemoPersistenceAdapter {
+        guard let rawValue = userDefaults.string(forKey: persistenceAdapterDefaultsKey),
+              let adapter = DemoPersistenceAdapter(rawValue: rawValue)
+        else {
+            return .sqlite
+        }
+        return adapter
     }
 
-    static func defaultMemoryURL() -> URL {
+    static func interactiveBackgroundActivityProvider() -> any AgentBackgroundActivityProviding {
+        #if os(iOS)
+        IOSBackgroundActivityProvider()
+        #else
+        NoOpAgentBackgroundActivityProvider()
+        #endif
+    }
+
+    static func persistPersistenceAdapter(
+        _ adapter: DemoPersistenceAdapter,
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.set(adapter.rawValue, forKey: persistenceAdapterDefaultsKey)
+    }
+
+    static func makeStateStore(
+        persistenceAdapter: DemoPersistenceAdapter,
+        url: URL,
+        logging: AgentLoggingConfiguration = .disabled
+    ) throws -> any RuntimeStateStoring {
+        switch persistenceAdapter {
+        case .sqlite:
+            return try SQLiteRuntimeStateStore(url: url, logging: logging)
+        case .realm:
+            return try RealmRuntimeStateStore(url: url, logging: logging)
+        }
+    }
+
+    static func makeMemoryStore(
+        persistenceAdapter: DemoPersistenceAdapter,
+        logging: AgentLoggingConfiguration = .disabled
+    ) throws -> any MemoryStoring {
+        let url = defaultMemoryURL(for: persistenceAdapter)
+        switch persistenceAdapter {
+        case .sqlite:
+            return try SQLiteMemoryStore(url: url, logging: logging)
+        case .realm:
+            return try RealmMemoryStore(url: url, logging: logging)
+        }
+    }
+
+    static func defaultStateURL(
+        for persistenceAdapter: DemoPersistenceAdapter = .sqlite
+    ) -> URL {
         let baseDirectory = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -227,7 +319,31 @@ enum AgentDemoRuntimeFactory {
 
         return baseDirectory
             .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
-            .appendingPathComponent("memory.sqlite")
+            .appendingPathComponent(persistenceAdapter.runtimeFilename)
+    }
+
+    static func resolvedStateURL(
+        _ customURL: URL?,
+        for persistenceAdapter: DemoPersistenceAdapter
+    ) -> URL {
+        guard let customURL else {
+            return defaultStateURL(for: persistenceAdapter)
+        }
+        return customURL.deletingPathExtension()
+            .appendingPathExtension(persistenceAdapter == .sqlite ? "sqlite" : "realm")
+    }
+
+    static func defaultMemoryURL(
+        for persistenceAdapter: DemoPersistenceAdapter = .sqlite
+    ) -> URL {
+        let baseDirectory = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+
+        return baseDirectory
+            .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
+            .appendingPathComponent(persistenceAdapter.memoryFilename)
     }
 }
 

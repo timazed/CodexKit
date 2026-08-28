@@ -85,7 +85,16 @@ extension AgentRuntime {
                 continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
             }
 
-            Task {
+            let cancellationHandle = AgentTurnCancellationHandle()
+            let producerTask = Task {
+                let activity = await self.backgroundActivityProvider.beginActivity(
+                    named: "CodexKit agent turn",
+                    expirationHandler: { cancellationHandle.cancel() }
+                )
+                defer {
+                    activity.end()
+                    cancellationHandle.clear()
+                }
                 do {
                     let session = try await self.sessionManager.requireSession()
                     let resolvedTurnSkills = try self.resolveTurnSkills(
@@ -146,6 +155,12 @@ extension AgentRuntime {
                         storesTurnState: storesTurnState,
                         continuation: continuation
                     )
+                }
+            }
+            cancellationHandle.install { producerTask.cancel() }
+            continuation.onTermination = { @Sendable termination in
+                if case .cancelled = termination {
+                    cancellationHandle.cancel()
                 }
             }
         }
@@ -255,7 +270,16 @@ extension AgentRuntime {
                 continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
             }
 
-            Task {
+            let cancellationHandle = AgentTurnCancellationHandle()
+            let producerTask = Task {
+                let activity = await self.backgroundActivityProvider.beginActivity(
+                    named: "CodexKit agent turn",
+                    expirationHandler: { cancellationHandle.cancel() }
+                )
+                defer {
+                    activity.end()
+                    cancellationHandle.clear()
+                }
                 do {
                     let session = try await self.sessionManager.requireSession()
                     let resolvedTurnSkills = try self.resolveTurnSkills(
@@ -312,6 +336,12 @@ extension AgentRuntime {
                         storesTurnState: storesTurnState,
                         continuation: continuation
                     )
+                }
+            }
+            cancellationHandle.install { producerTask.cancel() }
+            continuation.onTermination = { @Sendable termination in
+                if case .cancelled = termination {
+                    cancellationHandle.cancel()
                 }
             }
         }
@@ -458,7 +488,7 @@ extension AgentRuntime {
         guard storesTurnState else {
             return runtimeError
         }
-        appendHistoryItem(
+        _ = try? appendHistoryItem(
             .systemEvent(
                 AgentSystemEventRecord(
                     type: .turnFailed,

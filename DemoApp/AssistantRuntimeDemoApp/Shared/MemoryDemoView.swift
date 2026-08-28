@@ -38,6 +38,13 @@ private extension MemoryDemoView {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            Label(
+                "Using \(viewModel.persistenceAdapter.title) at \(viewModel.resolvedMemoryURL.lastPathComponent)",
+                systemImage: "externaldrive.fill"
+            )
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+
             if viewModel.session != nil {
                 Label("Signed in: prompt-injection preview can also create a live thread.", systemImage: "checkmark.seal.fill")
                     .font(.subheadline)
@@ -225,7 +232,7 @@ private extension MemoryDemoView {
             Text("Raw Store Control")
                 .font(.headline)
 
-            Text("Writes a full `MemoryRecord` directly into the SQLite store. This is the low-level escape hatch for apps that want exact IDs, scopes, compaction flows, or custom pipelines.")
+            Text("Writes a full `MemoryRecord` directly into the selected \(viewModel.persistenceAdapter.title) store. This is the low-level escape hatch for apps that want exact IDs, scopes, compaction flows, or custom pipelines.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -241,7 +248,7 @@ private extension MemoryDemoView {
 
             DemoActionTile(
                 title: viewModel.isRunningMemoryDemo ? "Saving Raw Memory..." : "Save Raw Travel Planner Memory",
-                subtitle: "Calls `SQLiteMemoryStore.upsert(...)` directly with a fully specified record.",
+                subtitle: "Calls the selected adapter's `MemoryStoring.upsert(...)` implementation with a fully specified record.",
                 systemImage: "shippingbox.circle",
                 isDisabled: viewModel.isRunningMemoryDemo
             ) {
@@ -304,7 +311,11 @@ private extension MemoryDemoView {
                                     .foregroundStyle(.secondary)
                                 Text(match.record.summary)
                                     .font(.body)
-                                Text("score \(match.explanation.totalScore.formatted(.number.precision(.fractionLength(2))))")
+                                Text(
+                                    "\(match.explanation.matchedTokenCount)/\(match.explanation.queryTokenCount) tokens • " +
+                                    "\(match.explanation.rankingProfile.rawValue) • " +
+                                    match.explanation.executionMethod.rawValue
+                                )
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

@@ -236,7 +236,11 @@ extension AgentRuntime {
         )
 
         let markerTime = Date()
-        let nextGeneration = current.generation + 1
+        let nextGeneration = try AgentCounter.incrementing(
+            current.generation,
+            field: "context generation",
+            threadID: threadID
+        )
         let markerPayload = AgentContextCompactionMarker(
             generation: nextGeneration,
             reason: reason,
@@ -244,7 +248,7 @@ extension AgentRuntime {
             effectiveMessageCountAfter: boundedCompactedMessages.count,
             debugSummaryPreview: result.summaryPreview
         )
-        let markerRecord = appendHistoryItem(
+        let markerRecord = try appendHistoryItem(
             .systemEvent(
                 AgentSystemEventRecord(
                     type: .contextCompacted,

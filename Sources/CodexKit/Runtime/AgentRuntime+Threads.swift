@@ -65,7 +65,7 @@ extension AgentRuntime {
         thread.skillIDs = skillIDs
         thread.memoryContext = memoryContext
         try await upsertThread(thread, persist: false)
-        appendHistoryItem(
+        try appendHistoryItem(
             .systemEvent(
                 AgentSystemEventRecord(
                     type: .threadCreated,
@@ -120,7 +120,7 @@ extension AgentRuntime {
         var attempt = 1
 
         while true {
-            let projection = await makeThreadResumeProjection(
+            let projection = try await makeThreadResumeProjection(
                 activation: activation,
                 backendThread: backendThread,
                 resumedAt: resumedAt
@@ -132,7 +132,10 @@ extension AgentRuntime {
                     activation,
                     thread: projection.thread,
                     summary: projection.summary,
-                    nextHistorySequence: projection.record.sequenceNumber + 1
+                    nextHistorySequence: try AgentHistorySequence.next(
+                        after: projection.record.sequenceNumber,
+                        threadID: id
+                    )
                 )
                 state.historyByThread[id] = [projection.record]
                 if let snapshot = makeThreadObservationSnapshot(for: id) {
@@ -170,7 +173,7 @@ extension AgentRuntime {
         activation: AgentThreadActivationState,
         backendThread: AgentThread,
         resumedAt: Date
-    ) async -> ThreadResumePersistenceProjection {
+    ) async throws -> ThreadResumePersistenceProjection {
         var thread = activation.thread
         if thread.title == nil {
             thread.title = backendThread.title
@@ -214,7 +217,11 @@ extension AgentRuntime {
             createdAt: activation.summary.createdAt,
             updatedAt: thread.updatedAt,
             latestItemAt: resumedAt,
-            itemCount: (activation.summary.itemCount ?? 0) + 1,
+            itemCount: try AgentCounter.incrementing(
+                activation.summary.itemCount ?? 0,
+                field: "history item count",
+                threadID: thread.id
+            ),
             latestAssistantMessagePreview: projectedSummary.latestAssistantMessagePreview,
             latestStructuredOutputMetadata: projectedSummary.latestStructuredOutputMetadata,
             latestPartialStructuredOutput: projectedSummary.latestPartialStructuredOutput,
@@ -433,7 +440,7 @@ extension AgentRuntime {
         state.threads[index].updatedAt = Date()
         enqueueStoreOperation(.upsertThread(state.threads[index]))
         if previousStatus != status {
-            appendHistoryItem(
+            try appendHistoryItem(
                 .systemEvent(
                     AgentSystemEventRecord(
                         type: .threadStatusChanged,
@@ -477,7 +484,7 @@ extension AgentRuntime {
                 requireClosedTurns: false
             )
         }
-        appendHistoryItem(
+        try appendHistoryItem(
             .message(message),
             threadID: message.threadID,
             createdAt: message.createdAt

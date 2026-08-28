@@ -1,152 +1,126 @@
 import Foundation
 
-struct RuntimeAttachmentStore: Sendable {
-    let rootURL: URL
-
-    func prepare() throws {
-        try FileManager.default.createDirectory(
-            at: rootURL,
-            withIntermediateDirectories: true
-        )
-    }
-
-    func reset() throws {
-        if FileManager.default.fileExists(atPath: rootURL.path) {
-            try FileManager.default.removeItem(at: rootURL)
-        }
-        try prepare()
-    }
-
-    func removeThread(_ threadID: String) throws {
-        let threadURL = rootURL.appendingPathComponent(sanitizedPathComponent(threadID), isDirectory: true)
-        guard FileManager.default.fileExists(atPath: threadURL.path) else {
-            return
-        }
-        try FileManager.default.removeItem(at: threadURL)
-    }
-
-    func persist(
-        _ attachment: AgentImageAttachment,
-        threadID: String,
-        recordID: String,
-        index: Int
-    ) throws -> PersistedImageAttachment {
-        try prepare()
-
-        let threadComponent = sanitizedPathComponent(threadID)
-        let recordComponent = sanitizedPathComponent(recordID)
-        let fileName = "\(index)-\(sanitizedPathComponent(attachment.id)).\(fileExtension(for: attachment.mimeType))"
-        let relativePath = threadComponent + "/" + recordComponent + "/" + fileName
-        let fileURL = rootURL
-            .appendingPathComponent(threadComponent, isDirectory: true)
-            .appendingPathComponent(recordComponent, isDirectory: true)
-            .appendingPathComponent(fileName, isDirectory: false)
-
-        try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try attachment.data.write(to: fileURL, options: .atomic)
-
-        return PersistedImageAttachment(
-            id: attachment.id,
-            mimeType: attachment.mimeType,
-            storageKey: relativePath,
-            generationMetadata: attachment.generationMetadata
-        )
-    }
-
-    func load(_ attachment: PersistedImageAttachment) throws -> AgentImageAttachment {
-        let fileURL = rootURL.appendingPathComponent(attachment.storageKey, isDirectory: false)
-        let data = try Data(contentsOf: fileURL)
-        return AgentImageAttachment(
-            id: attachment.id,
-            mimeType: attachment.mimeType,
-            data: data,
-            generationMetadata: attachment.generationMetadata
-        )
-    }
-
-    private func fileExtension(for mimeType: String) -> String {
-        switch mimeType.lowercased() {
-        case "image/jpeg", "image/jpg":
-            return "jpg"
-        case "image/png":
-            return "png"
-        case "image/gif":
-            return "gif"
-        case "image/webp":
-            return "webp"
-        case "image/heic":
-            return "heic"
-        default:
-            return "bin"
-        }
-    }
-
-    private func sanitizedPathComponent(_ value: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-        let scalars = value.unicodeScalars.map { scalar -> Character in
-            allowed.contains(scalar) ? Character(scalar) : "_"
-        }
-        let result = String(scalars)
-        return result.isEmpty ? UUID().uuidString : result
-    }
-}
-
-struct PersistedImageAttachment: Codable, Hashable {
+package struct PersistedImageAttachment: Codable, Hashable {
     let id: String
     let mimeType: String
     let storageKey: String
     let generationMetadata: AgentImageGenerationMetadata?
 }
 
-struct PersistedAgentMessage: Codable, Hashable {
+package struct PersistedAgentMessage: Codable, Hashable {
     let id: String
     let threadID: String
     let role: AgentRole
     let text: String
     let images: [PersistedImageAttachment]
     let structuredOutput: AgentStructuredOutputMetadata?
-    let toolInteraction: AgentToolInteraction?
+    let toolInteraction: PersistedAgentToolInteraction?
     let createdAt: Date
 
-    init(
+    package var attachmentStorageKeys: [String] {
+        images.map(\.storageKey) + (toolInteraction?.attachmentStorageKeys ?? [])
+    }
+
+    package init(
         message: AgentMessage,
-        attachmentStore: RuntimeAttachmentStore
+        attachmentStore: RuntimeAttachmentStore,
+        preparedAttachments: RuntimePreparedAttachments? = nil
     ) throws {
+        try attachmentStore.validateAttachments(in: [message])
         self.id = message.id
         self.threadID = message.threadID
         self.role = message.role
         self.text = message.text
         self.images = try message.images.enumerated().map { index, attachment in
-            try attachmentStore.persist(
-                attachment,
-                threadID: message.threadID,
-                recordID: message.id,
-                index: index
-            )
+            if let preparedAttachments {
+                try preparedAttachments.reference(
+                    for: attachment,
+                    threadID: message.threadID,
+                    recordID: message.id,
+                    index: index
+                )
+            } else {
+                try attachmentStore.persist(
+                    attachment,
+                    threadID: message.threadID,
+                    recordID: message.id,
+                    index: index
+                )
+            }
         }
         self.structuredOutput = message.structuredOutput
-        self.toolInteraction = message.toolInteraction
+        self.toolInteraction = try message.toolInteraction.map {
+            try PersistedAgentToolInteraction(
+                interaction: $0,
+                message: message,
+                attachmentStore: attachmentStore,
+                preparedAttachments: preparedAttachments
+            )
+        }
         self.createdAt = message.createdAt
     }
 
-    func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentMessage {
-        AgentMessage(
+    package func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentMessage {
+        try validate(using: attachmentStore)
+        return AgentMessage(
             id: id,
             threadID: threadID,
             role: role,
             text: text,
             images: try images.map { try attachmentStore.load($0) },
             structuredOutput: structuredOutput,
-            toolInteraction: toolInteraction,
+            toolInteraction: try toolInteraction?.decode(using: attachmentStore),
             createdAt: createdAt
         )
     }
+
+    package func decodeForProjection(
+        using attachmentStore: RuntimeAttachmentStore
+    ) throws -> AgentMessage {
+        try validate(using: attachmentStore)
+        return AgentMessage(
+            id: id,
+            threadID: threadID,
+            role: role,
+            text: text,
+            images: images.map {
+                AgentImageAttachment(
+                    id: $0.id,
+                    mimeType: $0.mimeType,
+                    data: Data(),
+                    generationMetadata: $0.generationMetadata
+                )
+            },
+            structuredOutput: structuredOutput,
+            toolInteraction: try toolInteraction?.decodeForProjection(),
+            createdAt: createdAt
+        )
+    }
+
+    package func validate(using attachmentStore: RuntimeAttachmentStore) throws {
+        guard !id.isEmpty,
+              id.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount,
+              !threadID.isEmpty,
+              threadID.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount,
+              text.utf8.count <= AgentStoreLimits.maximumMessageTextByteCount,
+              images.count <= AgentStoreLimits.maximumImageCountPerMessage,
+              createdAt.timeIntervalSince1970.isFinite else {
+            throw AgentStoreError.invalidInput("stored message metadata exceeds its bounded limits")
+        }
+        for image in images {
+            guard !image.id.isEmpty,
+                  image.id.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount,
+                  !image.mimeType.isEmpty,
+                  image.mimeType.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount else {
+                throw AgentStoreError.invalidInput("stored image metadata is invalid")
+            }
+            try attachmentStore.validateStorageKey(image.storageKey)
+        }
+        try toolInteraction?.result.validate(using: attachmentStore)
+    }
 }
 
-struct PersistedAgentThreadContextState: Codable, Hashable {
+package struct PersistedAgentThreadContextState: Codable, Hashable {
     let threadID: String
     let effectiveMessages: [PersistedAgentMessage]
     let providerContext: AgentProviderContext?
@@ -155,13 +129,22 @@ struct PersistedAgentThreadContextState: Codable, Hashable {
     let lastCompactionReason: AgentContextCompactionReason?
     let latestMarkerID: String?
 
-    init(
+    package var attachmentStorageKeys: [String] {
+        effectiveMessages.flatMap(\.attachmentStorageKeys)
+    }
+
+    package init(
         state: AgentThreadContextState,
-        attachmentStore: RuntimeAttachmentStore
+        attachmentStore: RuntimeAttachmentStore,
+        preparedAttachments: RuntimePreparedAttachments? = nil
     ) throws {
         self.threadID = state.threadID
         self.effectiveMessages = try state.effectiveMessages.map {
-            try PersistedAgentMessage(message: $0, attachmentStore: attachmentStore)
+            try PersistedAgentMessage(
+                message: $0,
+                attachmentStore: attachmentStore,
+                preparedAttachments: preparedAttachments
+            )
         }
         self.providerContext = state.providerContext
         self.generation = state.generation
@@ -170,8 +153,9 @@ struct PersistedAgentThreadContextState: Codable, Hashable {
         self.latestMarkerID = state.latestMarkerID
     }
 
-    func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentThreadContextState {
-        AgentThreadContextState(
+    package func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentThreadContextState {
+        try validate(using: attachmentStore)
+        return AgentThreadContextState(
             threadID: threadID,
             effectiveMessages: try effectiveMessages.map { try $0.decode(using: attachmentStore) },
             providerContext: providerContext,
@@ -181,53 +165,131 @@ struct PersistedAgentThreadContextState: Codable, Hashable {
             latestMarkerID: latestMarkerID
         )
     }
+
+    package func validate(using attachmentStore: RuntimeAttachmentStore) throws {
+        guard effectiveMessages.count <= AgentStoreLimits.maximumContextMessageCount,
+              generation >= 0,
+              lastCompactedAt?.timeIntervalSince1970.isFinite ?? true else {
+            throw AgentStoreError.invalidInput("stored context state exceeds its bounded limits")
+        }
+        for message in effectiveMessages {
+            try message.validate(using: attachmentStore)
+            guard message.threadID == threadID else {
+                throw AgentStoreError.invalidInput(
+                    "stored context message belongs to a different thread"
+                )
+            }
+        }
+    }
 }
 
-enum PersistedAgentHistoryItem: Hashable {
+package enum PersistedAgentHistoryItem: Hashable {
     case message(PersistedAgentMessage)
     case toolCall(AgentToolCallRecord)
-    case toolResult(AgentToolResultRecord)
+    case toolResult(PersistedAgentToolResultRecord)
     case structuredOutput(AgentStructuredOutputRecord)
     case approval(AgentApprovalRecord)
-    case systemEvent(AgentSystemEventRecord)
+    case systemEvent(PersistedAgentSystemEventRecord)
 
-    init(
+    package var attachmentStorageKeys: [String] {
+        switch self {
+        case let .message(message):
+            message.attachmentStorageKeys
+        case let .toolResult(record):
+            record.attachmentStorageKeys
+        case let .systemEvent(record):
+            record.attachmentStorageKeys
+        case .toolCall, .structuredOutput, .approval:
+            []
+        }
+    }
+
+    package init(
         item: AgentHistoryItem,
-        attachmentStore: RuntimeAttachmentStore
+        historyRecordID: String,
+        attachmentStore: RuntimeAttachmentStore,
+        preparedAttachments: RuntimePreparedAttachments? = nil
     ) throws {
         switch item {
         case let .message(message):
             self = .message(try PersistedAgentMessage(
                 message: message,
-                attachmentStore: attachmentStore
+                attachmentStore: attachmentStore,
+                preparedAttachments: preparedAttachments
             ))
         case let .toolCall(record):
             self = .toolCall(record)
         case let .toolResult(record):
-            self = .toolResult(record)
+            self = .toolResult(try PersistedAgentToolResultRecord(
+                record: record,
+                historyRecordID: historyRecordID,
+                attachmentStore: attachmentStore,
+                preparedAttachments: preparedAttachments
+            ))
         case let .structuredOutput(record):
             self = .structuredOutput(record)
         case let .approval(record):
             self = .approval(record)
         case let .systemEvent(record):
-            self = .systemEvent(record)
+            self = .systemEvent(try PersistedAgentSystemEventRecord(
+                record: record,
+                historyRecordID: historyRecordID,
+                attachmentStore: attachmentStore,
+                preparedAttachments: preparedAttachments
+            ))
         }
     }
 
-    func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentHistoryItem {
+    package func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentHistoryItem {
         switch self {
         case let .message(message):
             return .message(try message.decode(using: attachmentStore))
         case let .toolCall(record):
             return .toolCall(record)
         case let .toolResult(record):
-            return .toolResult(record)
+            return .toolResult(try record.decode(using: attachmentStore))
         case let .structuredOutput(record):
             return .structuredOutput(record)
         case let .approval(record):
             return .approval(record)
         case let .systemEvent(record):
-            return .systemEvent(record)
+            return .systemEvent(try record.decode(using: attachmentStore))
+        }
+    }
+
+    package func decodeForProjection(
+        using attachmentStore: RuntimeAttachmentStore
+    ) throws -> AgentHistoryItem {
+        switch self {
+        case let .message(message):
+            .message(try message.decodeForProjection(using: attachmentStore))
+        case let .toolCall(record):
+            .toolCall(record)
+        case let .toolResult(record):
+            .toolResult(try record.decodeForProjection())
+        case let .structuredOutput(record):
+            .structuredOutput(record)
+        case let .approval(record):
+            .approval(record)
+        case let .systemEvent(record):
+            .systemEvent(record.decodeForProjection())
+        }
+    }
+
+    package func validateAttachmentReferences(
+        using attachmentStore: RuntimeAttachmentStore
+    ) throws {
+        switch self {
+        case let .message(message):
+            try message.validate(using: attachmentStore)
+        case let .toolResult(record):
+            try record.result.validate(using: attachmentStore)
+        case let .systemEvent(record):
+            for storageKey in record.attachmentStorageKeys {
+                try attachmentStore.validateStorageKey(storageKey)
+            }
+        case .approval, .structuredOutput, .toolCall:
+            break
         }
     }
 }
@@ -252,7 +314,7 @@ extension PersistedAgentHistoryItem: Codable {
         case systemEvent
     }
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .kind) {
         case .message:
@@ -260,17 +322,23 @@ extension PersistedAgentHistoryItem: Codable {
         case .toolCall:
             self = .toolCall(try container.decode(AgentToolCallRecord.self, forKey: .toolCall))
         case .toolResult:
-            self = .toolResult(try container.decode(AgentToolResultRecord.self, forKey: .toolResult))
+            self = .toolResult(try container.decode(
+                PersistedAgentToolResultRecord.self,
+                forKey: .toolResult
+            ))
         case .structuredOutput:
             self = .structuredOutput(try container.decode(AgentStructuredOutputRecord.self, forKey: .structuredOutput))
         case .approval:
             self = .approval(try container.decode(AgentApprovalRecord.self, forKey: .approval))
         case .systemEvent:
-            self = .systemEvent(try container.decode(AgentSystemEventRecord.self, forKey: .systemEvent))
+            self = .systemEvent(try container.decode(
+                PersistedAgentSystemEventRecord.self,
+                forKey: .systemEvent
+            ))
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case let .message(message):
@@ -295,33 +363,113 @@ extension PersistedAgentHistoryItem: Codable {
     }
 }
 
-struct PersistedAgentHistoryRecord: Codable, Hashable {
+package struct PersistedAgentHistoryRecord: Codable, Hashable {
     let id: String
     let sequenceNumber: Int
     let createdAt: Date
     let item: PersistedAgentHistoryItem
     let redaction: AgentHistoryRedaction?
 
-    init(
+    package var projectedRecordID: String { id }
+
+    package var attachmentRecordIDs: [String] {
+        switch item {
+        case let .message(message):
+            [message.id]
+        case .toolCall, .toolResult, .structuredOutput, .approval, .systemEvent:
+            []
+        }
+    }
+
+    package var attachmentStorageKeys: [String] {
+        item.attachmentStorageKeys
+    }
+
+    package func validateAttachmentReferences(
+        using attachmentStore: RuntimeAttachmentStore
+    ) throws {
+        try item.validateAttachmentReferences(using: attachmentStore)
+    }
+
+    package var projectedTurnID: String? {
+        switch item {
+        case .message:
+            nil
+        case let .toolCall(record):
+            record.invocation.turnID
+        case let .toolResult(record):
+            record.turnID
+        case let .structuredOutput(record):
+            record.turnID
+        case let .approval(record):
+            record.request?.turnID ?? record.resolution?.turnID
+        case let .systemEvent(record):
+            record.turnID
+        }
+    }
+
+    package var projectedIsCompactionMarker: Bool {
+        guard case let .systemEvent(record) = item else {
+            return false
+        }
+        return record.type == .contextCompacted
+    }
+
+    package var projectedStructuredOutput: AgentStructuredOutputRecord? {
+        switch item {
+        case let .structuredOutput(record):
+            return record
+        case let .message(message):
+            guard let metadata = message.structuredOutput else {
+                return nil
+            }
+            return AgentStructuredOutputRecord(
+                threadID: message.threadID,
+                turnID: "",
+                messageID: message.id,
+                metadata: metadata,
+                committedAt: message.createdAt
+            )
+        case .toolCall, .toolResult, .approval, .systemEvent:
+            return nil
+        }
+    }
+
+    package init(
         record: AgentHistoryRecord,
-        attachmentStore: RuntimeAttachmentStore
+        attachmentStore: RuntimeAttachmentStore,
+        preparedAttachments: RuntimePreparedAttachments? = nil
     ) throws {
         self.id = record.id
         self.sequenceNumber = record.sequenceNumber
         self.createdAt = record.createdAt
         self.item = try PersistedAgentHistoryItem(
             item: record.item,
-            attachmentStore: attachmentStore
+            historyRecordID: record.id,
+            attachmentStore: attachmentStore,
+            preparedAttachments: preparedAttachments
         )
         self.redaction = record.redaction
     }
 
-    func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentHistoryRecord {
+    package func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentHistoryRecord {
         AgentHistoryRecord(
             id: id,
             sequenceNumber: sequenceNumber,
             createdAt: createdAt,
             item: try item.decode(using: attachmentStore),
+            redaction: redaction
+        )
+    }
+
+    package func decodeForProjection(
+        using attachmentStore: RuntimeAttachmentStore
+    ) throws -> AgentHistoryRecord {
+        AgentHistoryRecord(
+            id: id,
+            sequenceNumber: sequenceNumber,
+            createdAt: createdAt,
+            item: try item.decodeForProjection(using: attachmentStore),
             redaction: redaction
         )
     }

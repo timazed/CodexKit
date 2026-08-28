@@ -27,7 +27,7 @@ extension AgentDemoViewModel {
                 personaStack: personaStack,
                 skillIDs: skillIDs
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             activeThreadID = thread.id
             bindActiveThreadObservation(for: thread.id)
             setMessages(await runtime.messages(for: thread.id))
@@ -111,7 +111,7 @@ extension AgentDemoViewModel {
                 configuration: defaultThreadConfiguration,
                 skillIDs: [catalog.healthCoachSkill.id]
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
 
             let normalDiagnostics = try await sendRequest(
                 Request(text: probePrompt),
@@ -127,7 +127,7 @@ extension AgentDemoViewModel {
                 renderInActiveTranscript: false
             )
 
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
             streamingText = ""
             activeThreadID = skillThread.id
             setMessages(await runtime.messages(for: skillThread.id))
@@ -388,7 +388,7 @@ extension AgentDemoViewModel {
                 if renderInActiveTranscript {
                     setMessages(await runtime.messages(for: threadID))
                 }
-                threads = await runtime.threads()
+                threads = await runtime.activeThreads()
                 developerLog("Turn completed. threadID=\(threadID)")
                 await refreshThreadContextState(for: threadID)
 

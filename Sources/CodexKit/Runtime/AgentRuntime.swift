@@ -31,6 +31,7 @@ public actor AgentRuntime {
         public let definitionSourceLoader: AgentDefinitionSourceLoader
         public let contextCompaction: AgentContextCompactionConfiguration
         public let threadActivationPolicy: AgentThreadActivationPolicy
+        public let backgroundActivityProvider: any AgentBackgroundActivityProviding
 
         public init(
             authProvider: ChatGPTAuthProvider,
@@ -45,7 +46,8 @@ public actor AgentRuntime {
             skills: [AgentSkill] = [],
             definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader(),
             contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration(),
-            threadActivationPolicy: AgentThreadActivationPolicy = AgentThreadActivationPolicy()
+            threadActivationPolicy: AgentThreadActivationPolicy = AgentThreadActivationPolicy(),
+            backgroundActivityProvider: any AgentBackgroundActivityProviding = NoOpAgentBackgroundActivityProvider()
         ) {
             self.authProvider = authProvider
             self.secureStore = secureStore
@@ -60,6 +62,7 @@ public actor AgentRuntime {
             self.definitionSourceLoader = definitionSourceLoader
             self.contextCompaction = contextCompaction
             self.threadActivationPolicy = threadActivationPolicy
+            self.backgroundActivityProvider = backgroundActivityProvider
         }
     }
 
@@ -76,10 +79,14 @@ public actor AgentRuntime {
     let observationCenter: AgentRuntimeObservationCenter
     let persistenceCoordinator: AgentRuntimePersistenceCoordinator
     let threadActivationPolicy: AgentThreadActivationPolicy
+    let backgroundActivityProvider: any AgentBackgroundActivityProviding
     var skillsByID: [String: AgentSkill]
 
     var state: StoredRuntimeState = .empty
-    var pendingStoreOperations: [AgentStoreWriteOperation] = []
+    var pendingStoreOperations: [AgentRuntimePendingStoreOperation] = []
+    var nextStoreOperationGeneration: UInt64 = 0
+    var nextPersistenceTaskID: UInt64 = 0
+    var activePersistenceTask: AgentRuntimeActivePersistenceTask?
     var committedObservationSnapshotsByThread: [String: AgentRuntimeThreadObservationSnapshot] = [:]
     var lazyThreadActivationEnabled = false
     var resumingThreadIDs: Set<String> = []
@@ -190,6 +197,7 @@ public actor AgentRuntime {
         self.observationCenter = AgentRuntimeObservationCenter()
         self.persistenceCoordinator = AgentRuntimePersistenceCoordinator(store: configuration.stateStore)
         self.threadActivationPolicy = configuration.threadActivationPolicy
+        self.backgroundActivityProvider = configuration.backgroundActivityProvider
         self.skillsByID = try Self.validatedSkills(from: configuration.skills)
     }
 
@@ -255,8 +263,14 @@ public actor AgentRuntime {
 
     // MARK: - Read State
 
-    public func threads() -> [AgentThread] {
+    /// Threads currently hydrated in this runtime's bounded working set.
+    public func activeThreads() -> [AgentThread] {
         state.threads.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    @available(*, deprecated, renamed: "activeThreads()")
+    public func threads() -> [AgentThread] {
+        activeThreads()
     }
 
     public func activeThreadCount() -> Int {
@@ -285,66 +299,6 @@ public actor AgentRuntime {
 
     // MARK: - Instruction Resolution
 
-    func persistState() async throws {
-        state = state.normalized()
-        guard !pendingStoreOperations.isEmpty else { return }
-
-        let originalOperationCount = pendingStoreOperations.count
-        let operations = coalescedStoreOperations(pendingStoreOperations)
-        pendingStoreOperations.removeAll(keepingCapacity: true)
-        logger.debug(
-            .persistence,
-            "Applying incremental runtime store operations.",
-            metadata: [
-                "count": "\(operations.count)",
-                "original_count": "\(originalOperationCount)"
-            ]
-        )
-
-        var orderedThreadIDs: [String] = []
-        var seenThreadIDs = Set<String>()
-        for operation in operations where seenThreadIDs.insert(operation.affectedThreadID).inserted {
-            orderedThreadIDs.append(operation.affectedThreadID)
-        }
-        let observationSnapshots = Dictionary(
-            uniqueKeysWithValues: orderedThreadIDs.map { threadID in
-                let isDeletion = operations.contains { operation in
-                    guard operation.affectedThreadID == threadID,
-                          case .deleteThread = operation
-                    else {
-                        return false
-                    }
-                    return true
-                }
-                return (
-                    threadID,
-                    AgentRuntimeObservationBatchSnapshot(
-                        threadID: threadID,
-                        threadSnapshot: makeThreadObservationSnapshot(for: threadID),
-                        isDeletion: isDeletion
-                    )
-                )
-            }
-        )
-
-        for threadID in orderedThreadIDs {
-            let threadOperations = operations.filter { $0.affectedThreadID == threadID }
-            do {
-                try await persistenceCoordinator.apply(threadOperations)
-                if let snapshot = observationSnapshots[threadID] {
-                    await publishCommittedObservation(snapshot)
-                }
-            } catch {
-                await recoverAfterPersistenceFailure(threadIDs: [threadID])
-                throw error
-            }
-        }
-    }
-
-    func enqueueStoreOperation(_ operation: AgentStoreWriteOperation) {
-        pendingStoreOperations.append(operation)
-    }
-
     func installActivationState(
         _ activation: AgentThreadActivationState,
         thread: AgentThread? = nil,
@@ -367,27 +321,6 @@ public actor AgentRuntime {
         state.partiallyLoadedThreadIDs.insert(activatedThread.id)
     }
 
-    func recoverAfterPersistenceFailure(threadIDs: Set<String>) async {
-        pendingStoreOperations.removeAll { threadIDs.contains($0.affectedThreadID) }
-        for threadID in threadIDs {
-            do {
-                let activation = try await stateStore.loadThreadActivationState(
-                    id: threadID,
-                    policy: threadActivationPolicy
-                )
-                installActivationState(activation)
-            } catch {
-                state.threads.removeAll { $0.id == threadID }
-                state.messagesByThread.removeValue(forKey: threadID)
-                state.historyByThread.removeValue(forKey: threadID)
-                state.summariesByThread.removeValue(forKey: threadID)
-                state.contextStateByThread.removeValue(forKey: threadID)
-                state.nextHistorySequenceByThread.removeValue(forKey: threadID)
-                state.partiallyLoadedThreadIDs.remove(threadID)
-            }
-        }
-    }
-
     func acquireThreadResume(_ threadID: String) async {
         guard resumingThreadIDs.contains(threadID) else {
             resumingThreadIDs.insert(threadID)
@@ -406,29 +339,6 @@ public actor AgentRuntime {
         } else {
             resumingThreadIDs.remove(threadID)
         }
-    }
-
-    func coalescedStoreOperations(
-        _ operations: [AgentStoreWriteOperation]
-    ) -> [AgentStoreWriteOperation] {
-        var coalesced: [AgentStoreWriteOperation] = []
-
-        for operation in operations {
-            if case let .deleteThread(threadID) = operation {
-                coalesced.removeAll { $0.affectedThreadID == threadID }
-                coalesced.append(operation)
-                continue
-            }
-
-            if let key = operation.coalescingKey,
-               let existingIndex = coalesced.lastIndex(where: { $0.coalescingKey == key }) {
-                coalesced.remove(at: existingIndex)
-            }
-
-            coalesced.append(operation)
-        }
-
-        return coalesced
     }
 
     func publishAllObservations() async {

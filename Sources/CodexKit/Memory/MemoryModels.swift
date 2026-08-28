@@ -2,6 +2,9 @@ import Foundation
 
 public enum MemoryStoreError: Error, LocalizedError, Equatable, Sendable {
     case invalidNamespace
+    case invalidRecord(String)
+    case invalidQuery(String)
+    case invalidCompaction(String)
     case duplicateRecordID(String)
     case duplicateDedupeKey(String)
     case unsupportedSchemaVersion(Int)
@@ -10,6 +13,12 @@ public enum MemoryStoreError: Error, LocalizedError, Equatable, Sendable {
         switch self {
         case .invalidNamespace:
             return "Memory namespace must not be empty."
+        case let .invalidRecord(message):
+            return "Invalid memory record: \(message)"
+        case let .invalidQuery(message):
+            return "Invalid memory query: \(message)"
+        case let .invalidCompaction(message):
+            return "Invalid memory compaction: \(message)"
         case let .duplicateRecordID(id):
             return "A memory record with id \(id) already exists."
         case let .duplicateDedupeKey(key):
@@ -96,155 +105,6 @@ public struct MemoryRecord: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct MemoryRankingWeights: Codable, Hashable, Sendable {
-    public var textWeight: Double
-    public var importanceWeight: Double
-    public var recencyWeight: Double
-    public var categoryBoost: Double
-    public var tagBoost: Double
-    public var relatedIDBoost: Double
-
-    public init(
-        textWeight: Double,
-        importanceWeight: Double,
-        recencyWeight: Double,
-        categoryBoost: Double,
-        tagBoost: Double,
-        relatedIDBoost: Double
-    ) {
-        self.textWeight = textWeight
-        self.importanceWeight = importanceWeight
-        self.recencyWeight = recencyWeight
-        self.categoryBoost = categoryBoost
-        self.tagBoost = tagBoost
-        self.relatedIDBoost = relatedIDBoost
-    }
-
-    public static let `default` = MemoryRankingWeights(
-        textWeight: 0.50,
-        importanceWeight: 0.25,
-        recencyWeight: 0.15,
-        categoryBoost: 0.05,
-        tagBoost: 0.03,
-        relatedIDBoost: 0.02
-    )
-}
-
-public struct MemoryReadBudget: Codable, Hashable, Sendable {
-    public var maxItems: Int
-    public var maxCharacters: Int
-
-    public init(
-        maxItems: Int,
-        maxCharacters: Int
-    ) {
-        self.maxItems = maxItems
-        self.maxCharacters = maxCharacters
-    }
-
-    public static let runtimeDefault = MemoryReadBudget(
-        maxItems: 8,
-        maxCharacters: 1600
-    )
-}
-
-public struct MemoryQuery: Codable, Hashable, Sendable {
-    public var namespace: String
-    public var scopes: [MemoryScope]
-    public var text: String?
-    public var categories: [String]
-    public var tags: [String]
-    public var relatedIDs: [String]
-    public var recencyWindow: TimeInterval?
-    public var minImportance: Double?
-    public var ranking: MemoryRankingWeights
-    public var limit: Int
-    public var maxCharacters: Int
-    public var includeArchived: Bool
-
-    public init(
-        namespace: String,
-        scopes: [MemoryScope] = [],
-        text: String? = nil,
-        categories: [String] = [],
-        tags: [String] = [],
-        relatedIDs: [String] = [],
-        recencyWindow: TimeInterval? = nil,
-        minImportance: Double? = nil,
-        ranking: MemoryRankingWeights = .default,
-        limit: Int = MemoryReadBudget.runtimeDefault.maxItems,
-        maxCharacters: Int = MemoryReadBudget.runtimeDefault.maxCharacters,
-        includeArchived: Bool = false
-    ) {
-        self.namespace = namespace
-        self.scopes = scopes
-        self.text = text
-        self.categories = categories
-        self.tags = tags
-        self.relatedIDs = relatedIDs
-        self.recencyWindow = recencyWindow
-        self.minImportance = minImportance
-        self.ranking = ranking
-        self.limit = limit
-        self.maxCharacters = maxCharacters
-        self.includeArchived = includeArchived
-    }
-}
-
-public struct MemoryMatchExplanation: Codable, Hashable, Sendable {
-    public var totalScore: Double
-    public var textScore: Double
-    public var recencyScore: Double
-    public var importanceScore: Double
-    public var categoryBoost: Double
-    public var tagBoost: Double
-    public var relatedIDBoost: Double
-
-    public init(
-        totalScore: Double,
-        textScore: Double,
-        recencyScore: Double,
-        importanceScore: Double,
-        categoryBoost: Double,
-        tagBoost: Double,
-        relatedIDBoost: Double
-    ) {
-        self.totalScore = totalScore
-        self.textScore = textScore
-        self.recencyScore = recencyScore
-        self.importanceScore = importanceScore
-        self.categoryBoost = categoryBoost
-        self.tagBoost = tagBoost
-        self.relatedIDBoost = relatedIDBoost
-    }
-}
-
-public struct MemoryQueryMatch: Codable, Hashable, Sendable {
-    public var record: MemoryRecord
-    public var explanation: MemoryMatchExplanation
-
-    public init(
-        record: MemoryRecord,
-        explanation: MemoryMatchExplanation
-    ) {
-        self.record = record
-        self.explanation = explanation
-    }
-}
-
-public struct MemoryQueryResult: Codable, Hashable, Sendable {
-    public var matches: [MemoryQueryMatch]
-    public var truncated: Bool
-
-    public init(
-        matches: [MemoryQueryMatch],
-        truncated: Bool
-    ) {
-        self.matches = matches
-        self.truncated = truncated
-    }
-}
-
 public struct MemoryCompactionRequest: Codable, Hashable, Sendable {
     public var replacement: MemoryRecord
     public var sourceIDs: [String]
@@ -264,19 +124,59 @@ public struct MemoryRecordListQuery: Codable, Hashable, Sendable {
     public var categories: [String]
     public var includeArchived: Bool
     public var limit: Int?
+    public var offset: Int
+    public var cursor: MemoryRecordListCursor?
 
     public init(
         namespace: String,
         scopes: [MemoryScope] = [],
         categories: [String] = [],
         includeArchived: Bool = false,
-        limit: Int? = nil
+        limit: Int? = nil,
+        offset: Int = 0,
+        cursor: MemoryRecordListCursor? = nil
     ) {
         self.namespace = namespace
         self.scopes = scopes
         self.categories = categories
         self.includeArchived = includeArchived
         self.limit = limit
+        self.offset = offset
+        self.cursor = cursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case namespace
+        case scopes
+        case categories
+        case includeArchived
+        case limit
+        case offset
+        case cursor
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            namespace: try container.decode(String.self, forKey: .namespace),
+            scopes: try container.decodeIfPresent([MemoryScope].self, forKey: .scopes) ?? [],
+            categories: try container.decodeIfPresent([String].self, forKey: .categories) ?? [],
+            includeArchived: try container.decodeIfPresent(Bool.self, forKey: .includeArchived) ?? false,
+            limit: try container.decodeIfPresent(Int.self, forKey: .limit),
+            offset: try container.decodeIfPresent(Int.self, forKey: .offset) ?? 0,
+            cursor: try container.decodeIfPresent(MemoryRecordListCursor.self, forKey: .cursor)
+        )
+    }
+}
+
+/// Cursor for the list order: effective date descending, then record ID ascending.
+public struct MemoryRecordListCursor: Codable, Hashable, Sendable {
+    public var effectiveDate: Date
+    public var recordID: String
+
+    public init(effectiveDate: Date, recordID: String) {
+        self.effectiveDate = effectiveDate
+        self.recordID = recordID
     }
 }
 
@@ -319,7 +219,8 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
     public var relatedIDs: [String]
     public var recencyWindow: TimeInterval?
     public var minImportance: Double?
-    public var ranking: MemoryRankingWeights?
+    public var textMatchPolicy: MemoryTextMatchPolicy?
+    public var ranking: MemoryRankingProfile?
     public var readBudget: MemoryReadBudget?
 
     public init(
@@ -330,7 +231,8 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         relatedIDs: [String] = [],
         recencyWindow: TimeInterval? = nil,
         minImportance: Double? = nil,
-        ranking: MemoryRankingWeights? = nil,
+        textMatchPolicy: MemoryTextMatchPolicy? = nil,
+        ranking: MemoryRankingProfile? = nil,
         readBudget: MemoryReadBudget? = nil
     ) {
         self.namespace = namespace
@@ -340,6 +242,7 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         self.relatedIDs = relatedIDs
         self.recencyWindow = recencyWindow
         self.minImportance = minImportance
+        self.textMatchPolicy = textMatchPolicy
         self.ranking = ranking
         self.readBudget = readBudget
     }
@@ -353,6 +256,7 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         case relatedIDs
         case recencyWindow
         case minImportance
+        case textMatchPolicy
         case ranking
         case readBudget
     }
@@ -369,7 +273,11 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         relatedIDs = try container.decodeIfPresent([String].self, forKey: .relatedIDs) ?? []
         recencyWindow = try container.decodeIfPresent(TimeInterval.self, forKey: .recencyWindow)
         minImportance = try container.decodeIfPresent(Double.self, forKey: .minImportance)
-        ranking = try container.decodeIfPresent(MemoryRankingWeights.self, forKey: .ranking)
+        textMatchPolicy = try container.decodeIfPresent(
+            MemoryTextMatchPolicy.self,
+            forKey: .textMatchPolicy
+        )
+        ranking = try container.decodeIfPresent(MemoryRankingProfile.self, forKey: .ranking)
         readBudget = try container.decodeIfPresent(MemoryReadBudget.self, forKey: .readBudget)
     }
 
@@ -382,6 +290,7 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         try container.encode(relatedIDs, forKey: .relatedIDs)
         try container.encodeIfPresent(recencyWindow, forKey: .recencyWindow)
         try container.encodeIfPresent(minImportance, forKey: .minImportance)
+        try container.encodeIfPresent(textMatchPolicy, forKey: .textMatchPolicy)
         try container.encodeIfPresent(ranking, forKey: .ranking)
         try container.encodeIfPresent(readBudget, forKey: .readBudget)
     }
@@ -403,7 +312,8 @@ public struct MemorySelection: Codable, Hashable, Sendable {
     public var relatedIDs: [String]
     public var recencyWindow: TimeInterval?
     public var minImportance: Double?
-    public var ranking: MemoryRankingWeights?
+    public var textMatchPolicy: MemoryTextMatchPolicy?
+    public var ranking: MemoryRankingProfile?
     public var readBudget: MemoryReadBudget?
     public var text: String?
 
@@ -416,7 +326,8 @@ public struct MemorySelection: Codable, Hashable, Sendable {
         relatedIDs: [String] = [],
         recencyWindow: TimeInterval? = nil,
         minImportance: Double? = nil,
-        ranking: MemoryRankingWeights? = nil,
+        textMatchPolicy: MemoryTextMatchPolicy? = nil,
+        ranking: MemoryRankingProfile? = nil,
         readBudget: MemoryReadBudget? = nil,
         text: String? = nil
     ) {
@@ -428,6 +339,7 @@ public struct MemorySelection: Codable, Hashable, Sendable {
         self.relatedIDs = relatedIDs
         self.recencyWindow = recencyWindow
         self.minImportance = minImportance
+        self.textMatchPolicy = textMatchPolicy
         self.ranking = ranking
         self.readBudget = readBudget
         self.text = text
@@ -488,7 +400,7 @@ public struct DefaultMemoryPromptRenderer: MemoryPromptRendering, Sendable {
 
 public struct AgentMemoryConfiguration: Sendable {
     public let store: any MemoryStoring
-    public let defaultRanking: MemoryRankingWeights
+    public let defaultRanking: MemoryRankingProfile
     public let defaultReadBudget: MemoryReadBudget
     public let promptRenderer: any MemoryPromptRendering
     public let observer: (any MemoryObserving)?
@@ -496,7 +408,7 @@ public struct AgentMemoryConfiguration: Sendable {
 
     public init(
         store: any MemoryStoring,
-        defaultRanking: MemoryRankingWeights = .default,
+        defaultRanking: MemoryRankingProfile = .default,
         defaultReadBudget: MemoryReadBudget = .runtimeDefault,
         promptRenderer: any MemoryPromptRendering = DefaultMemoryPromptRenderer(),
         observer: (any MemoryObserving)? = nil,

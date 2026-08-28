@@ -201,7 +201,7 @@ extension AgentDemoViewModel {
                     generatedText = message.displayText
 
                 case .turnCompleted:
-                    threads = await runtime.threads()
+                    threads = await runtime.activeThreads()
 
                 default:
                     break

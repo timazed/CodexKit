@@ -33,7 +33,9 @@ extension AgentDemoViewModel {
                 in: thread.id
             )
 
-            let store = try SQLiteMemoryStore(url: AgentDemoRuntimeFactory.defaultMemoryURL())
+            let store = try AgentDemoRuntimeFactory.makeMemoryStore(
+                persistenceAdapter: persistenceAdapter
+            )
             let result = try await store.query(
                 MemoryQuery(
                     namespace: DemoMemoryExamples.namespace,
@@ -50,7 +52,7 @@ extension AgentDemoViewModel {
                 prompt: DemoMemoryExamples.automaticPolicyPrompt,
                 records: result.matches.map(\.record)
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
         } catch {
             reportError(error)
         }
@@ -90,7 +92,7 @@ extension AgentDemoViewModel {
                 threadTitle: thread.title ?? "Memory Demo: Automatic Capture",
                 capture: capture
             )
-            threads = await runtime.threads()
+            threads = await runtime.activeThreads()
         } catch {
             reportError(error)
         }
@@ -133,7 +135,9 @@ extension AgentDemoViewModel {
         }
 
         do {
-            let store = try SQLiteMemoryStore(url: AgentDemoRuntimeFactory.defaultMemoryURL())
+            let store = try AgentDemoRuntimeFactory.makeMemoryStore(
+                persistenceAdapter: persistenceAdapter
+            )
             try await store.upsert(
                 DemoMemoryExamples.rawRecord,
                 dedupeKey: DemoMemoryExamples.rawRecord.dedupeKey ?? DemoMemoryExamples.rawRecord.id
@@ -177,9 +181,11 @@ extension AgentDemoViewModel {
                     for: thread.id,
                     request: Request(text: DemoMemoryExamples.previewRequestText)
                 ) ?? MemoryQueryResult(matches: [], truncated: false)
-                threads = await runtime.threads()
+                threads = await runtime.activeThreads()
             } else {
-                let store = try SQLiteMemoryStore(url: AgentDemoRuntimeFactory.defaultMemoryURL())
+                let store = try AgentDemoRuntimeFactory.makeMemoryStore(
+                    persistenceAdapter: persistenceAdapter
+                )
                 result = try await store.query(
                     MemoryQuery(
                         namespace: DemoMemoryExamples.namespace,

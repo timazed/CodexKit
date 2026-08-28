@@ -186,6 +186,24 @@ func XCTAssertThrowsErrorAsync<T>(
     }
 }
 
+func regularFiles(in directory: URL) throws -> [URL] {
+    guard FileManager.default.fileExists(atPath: directory.path),
+          let enumerator = FileManager.default.enumerator(
+              at: directory,
+              includingPropertiesForKeys: [.isRegularFileKey],
+              options: [.skipsHiddenFiles]
+          )
+    else {
+        return []
+    }
+    return try enumerator.compactMap { element -> URL? in
+        guard let url = element as? URL else { return nil }
+        return try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+            ? url
+            : nil
+    }
+}
+
 private func decodeFormComponent(_ value: String) -> String {
     value
         .replacingOccurrences(of: "+", with: " ")

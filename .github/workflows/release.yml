@@ -19,7 +19,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+      RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+    steps:
+      - name: Checkout release revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 0
+
+      - name: Verify exact release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+
+      - name: Swift package tests
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Release package build
+        run: swift build -c release -Xswiftc -warnings-as-errors
+
+      - name: Build demo app (iOS Simulator)
+        run: |
+          xcodebuild \
+            -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
+            -scheme AssistantRuntimeDemoApp \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
   publish-release:
+    needs: verify
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}

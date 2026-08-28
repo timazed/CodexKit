@@ -20,9 +20,9 @@ struct AgentDemoView: View {
                     modelCard
                     quickStartCard
                     personaExamples
-                    threadWorkspaceCard
                     instructionsDebugPanel
                 }
+                threadWorkspaceCard
             }
             .padding(20)
             .contentShape(Rectangle())

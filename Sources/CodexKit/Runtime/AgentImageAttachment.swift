@@ -73,6 +73,7 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
     ) {
         let prefix = "data:"
         guard dataURLString.hasPrefix(prefix),
+              dataURLString.utf8.count <= Self.maximumDataURLByteCount,
               let separatorIndex = dataURLString.range(of: ";base64,")
         else {
             return nil
@@ -83,10 +84,11 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
         let base64Start = separatorIndex.upperBound
         let base64 = String(dataURLString[base64Start...])
 
-        self.init(id: id, mimeType: mimeType, data: Data(base64Encoded: base64) ?? Data())
-        if data.isEmpty {
+        guard mimeType.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount,
+              let data = Self.decodeBoundedBase64(base64) else {
             return nil
         }
+        self.init(id: id, mimeType: mimeType, data: data)
     }
 
     public init?(
@@ -95,10 +97,29 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
         id: String = UUID().uuidString,
         generationMetadata: AgentImageGenerationMetadata? = nil
     ) {
-        guard let data = Data(base64Encoded: base64String), !data.isEmpty else {
+        guard let data = Self.decodeBoundedBase64(base64String) else {
             return nil
         }
 
         self.init(id: id, mimeType: mimeType, data: data, generationMetadata: generationMetadata)
+    }
+
+    package static var maximumBase64ByteCount: Int {
+        ((AgentStoreLimits.maximumImageByteCount + 2) / 3) * 4
+    }
+
+    package static var maximumDataURLByteCount: Int {
+        maximumBase64ByteCount + AgentStoreLimits.maximumIdentifierByteCount + 16
+    }
+
+    private static func decodeBoundedBase64(_ value: String) -> Data? {
+        guard !value.isEmpty,
+              value.utf8.count <= maximumBase64ByteCount,
+              let data = Data(base64Encoded: value),
+              !data.isEmpty,
+              data.count <= AgentStoreLimits.maximumImageByteCount else {
+            return nil
+        }
+        return data
     }
 }
