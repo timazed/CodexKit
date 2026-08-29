@@ -10,6 +10,40 @@ final class HostApplicationRealmObject: Object {
 }
 
 final class RealmMemoryStoreBuilderTests: XCTestCase {
+    func testManagedStorageUsesBundleScopedAdapterFiles() {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/application-support")
+        let layout = CodexKitManagedStorageLayout(
+            applicationSupportDirectory: applicationSupportURL,
+            hostIdentifier: "com.example.host"
+        )
+
+        let realmRuntimeURL = layout.fileURL(for: .realmRuntime)
+        let realmMemoryURL = layout.fileURL(for: .realmMemory)
+        let sqliteRuntimeURL = layout.fileURL(for: .sqliteRuntime)
+        let sqliteMemoryURL = layout.fileURL(for: .sqliteMemory)
+
+        XCTAssertEqual(
+            realmRuntimeURL.path,
+            "/tmp/application-support/com.example.host/CodexKit/Realm/runtime-state.realm"
+        )
+        XCTAssertEqual(
+            realmMemoryURL.path,
+            "/tmp/application-support/com.example.host/CodexKit/Realm/memory.realm"
+        )
+        XCTAssertEqual(
+            sqliteRuntimeURL.path,
+            "/tmp/application-support/com.example.host/CodexKit/SQLite/runtime-state.sqlite"
+        )
+        XCTAssertEqual(
+            sqliteMemoryURL.path,
+            "/tmp/application-support/com.example.host/CodexKit/SQLite/memory.sqlite"
+        )
+        XCTAssertEqual(
+            Set([realmRuntimeURL, realmMemoryURL, sqliteRuntimeURL, sqliteMemoryURL]).count,
+            4
+        )
+    }
+
     func testBuilderCreatesPersistentMemoryStore() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

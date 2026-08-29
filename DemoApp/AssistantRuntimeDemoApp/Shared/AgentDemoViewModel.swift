@@ -369,7 +369,6 @@ final class AgentDemoViewModel {
     var model: String
     let enableWebSearch: Bool
     let enableImageGeneration: Bool
-    let stateURL: URL?
     let keychainAccount: String
     let catalog: DemoCatalog
     let diagnostics: DemoDiagnostics
@@ -400,7 +399,6 @@ final class AgentDemoViewModel {
         enableImageGeneration: Bool,
         reasoningEffort: ReasoningEffort,
         persistenceAdapter: DemoPersistenceAdapter,
-        stateURL: URL?,
         keychainAccount: String,
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator = DeviceCodePromptCoordinator()
@@ -416,7 +414,6 @@ final class AgentDemoViewModel {
         self.reasoningEffort = reasoningEffort
         self.persistenceAdapter = persistenceAdapter
         self.developerLogLevel = diagnostics.initialDeveloperLogLevel()
-        self.stateURL = stateURL
         self.keychainAccount = keychainAccount
         self.approvalInbox = approvalInbox
         self.deviceCodePromptCoordinator = deviceCodePromptCoordinator
@@ -450,16 +447,16 @@ final class AgentDemoViewModel {
             ?? ReasoningEffort.allCases
     }
 
-    var resolvedStateURL: URL {
-        AgentDemoRuntimeFactory.resolvedStateURL(stateURL, for: persistenceAdapter)
+    var stateStorageFilename: String {
+        persistenceAdapter.runtimeFilename
     }
 
-    var resolvedMemoryURL: URL {
-        AgentDemoRuntimeFactory.defaultMemoryURL(for: persistenceAdapter)
+    var memoryStorageFilename: String {
+        persistenceAdapter.memoryFilename
     }
 
-    var legacyStateURL: URL {
-        resolvedStateURL.deletingPathExtension().appendingPathExtension("json")
+    var stateStorageDescription: String {
+        "CodexKit-managed \(persistenceAdapter.title) storage"
     }
 
     var healthProgressFraction: Double {

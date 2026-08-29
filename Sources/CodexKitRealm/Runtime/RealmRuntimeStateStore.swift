@@ -22,6 +22,18 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
     }
 
     public init(
+        importingLegacyStateFrom legacyStateURL: URL? = nil,
+        logging: AgentLoggingConfiguration = .disabled
+    ) throws {
+        let layout = try CodexKitManagedStorageLayout.live()
+        try self.init(
+            url: layout.fileURL(for: .realmRuntime),
+            importingLegacyStateFrom: legacyStateURL,
+            logging: logging
+        )
+    }
+
+    package init(
         url: URL,
         importingLegacyStateFrom legacyStateURL: URL? = nil,
         logging: AgentLoggingConfiguration = .disabled

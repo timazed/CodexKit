@@ -71,7 +71,6 @@ enum AgentDemoRuntimeFactory {
         enableImageGeneration: Bool = false,
         reasoningEffort: ReasoningEffort = .low,
         persistenceAdapter: DemoPersistenceAdapter = initialPersistenceAdapter(),
-        stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount
     ) throws -> AgentDemoViewModel {
         let approvalInbox = ApprovalInbox()
@@ -83,7 +82,6 @@ enum AgentDemoRuntimeFactory {
             enableImageGeneration: enableImageGeneration,
             reasoningEffort: reasoningEffort,
             persistenceAdapter: persistenceAdapter,
-            stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
             deviceCodePromptCoordinator: deviceCodePromptCoordinator
@@ -95,7 +93,6 @@ enum AgentDemoRuntimeFactory {
             enableImageGeneration: enableImageGeneration,
             reasoningEffort: reasoningEffort,
             persistenceAdapter: persistenceAdapter,
-            stateURL: stateURL,
             keychainAccount: keychainAccount,
             approvalInbox: approvalInbox,
             deviceCodePromptCoordinator: deviceCodePromptCoordinator
@@ -113,7 +110,6 @@ enum AgentDemoRuntimeFactory {
         enableImageGeneration: Bool = false,
         reasoningEffort: ReasoningEffort = .low,
         persistenceAdapter: DemoPersistenceAdapter = .sqlite,
-        stateURL: URL? = nil,
         keychainAccount: String = defaultKeychainAccount,
         approvalInbox: ApprovalInbox,
         deviceCodePromptCoordinator: DeviceCodePromptCoordinator
@@ -123,7 +119,6 @@ enum AgentDemoRuntimeFactory {
         let authProvider: ChatGPTAuthProvider
         let stateStore = try makeStateStore(
             persistenceAdapter: persistenceAdapter,
-            url: resolvedStateURL(stateURL, for: persistenceAdapter),
             logging: sdkLogging
         )
         let memoryStore = try makeMemoryStore(
@@ -204,7 +199,6 @@ enum AgentDemoRuntimeFactory {
         let persistenceAdapter = initialPersistenceAdapter()
         let stateStore = try makeStateStore(
             persistenceAdapter: persistenceAdapter,
-            url: defaultStateURL(for: persistenceAdapter),
             logging: sdkLogging
         )
         let memoryStore = try makeMemoryStore(
@@ -285,14 +279,13 @@ enum AgentDemoRuntimeFactory {
 
     static func makeStateStore(
         persistenceAdapter: DemoPersistenceAdapter,
-        url: URL,
         logging: AgentLoggingConfiguration = .disabled
     ) throws -> any RuntimeStateStoring {
         switch persistenceAdapter {
         case .sqlite:
-            return try SQLiteRuntimeStateStore(url: url, logging: logging)
+            return try SQLiteRuntimeStateStore(logging: logging)
         case .realm:
-            return try RealmRuntimeStateStore(url: url, logging: logging)
+            return try RealmRuntimeStateStore(logging: logging)
         }
     }
 
@@ -300,50 +293,12 @@ enum AgentDemoRuntimeFactory {
         persistenceAdapter: DemoPersistenceAdapter,
         logging: AgentLoggingConfiguration = .disabled
     ) throws -> any MemoryStoring {
-        let url = defaultMemoryURL(for: persistenceAdapter)
         switch persistenceAdapter {
         case .sqlite:
-            return try SQLiteMemoryStore(url: url, logging: logging)
+            return try SQLiteMemoryStore(logging: logging)
         case .realm:
-            return try RealmMemoryStore(url: url, logging: logging)
+            return try RealmMemoryStore(logging: logging)
         }
-    }
-
-    static func defaultStateURL(
-        for persistenceAdapter: DemoPersistenceAdapter = .sqlite
-    ) -> URL {
-        let baseDirectory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-
-        return baseDirectory
-            .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
-            .appendingPathComponent(persistenceAdapter.runtimeFilename)
-    }
-
-    static func resolvedStateURL(
-        _ customURL: URL?,
-        for persistenceAdapter: DemoPersistenceAdapter
-    ) -> URL {
-        guard let customURL else {
-            return defaultStateURL(for: persistenceAdapter)
-        }
-        return customURL.deletingPathExtension()
-            .appendingPathExtension(persistenceAdapter == .sqlite ? "sqlite" : "realm")
-    }
-
-    static func defaultMemoryURL(
-        for persistenceAdapter: DemoPersistenceAdapter = .sqlite
-    ) -> URL {
-        let baseDirectory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-
-        return baseDirectory
-            .appendingPathComponent("AssistantRuntimeDemoApp", isDirectory: true)
-            .appendingPathComponent(persistenceAdapter.memoryFilename)
     }
 }
 

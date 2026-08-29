@@ -16,11 +16,22 @@ public actor RealmMemoryStore: MemoryStoring {
     private var openingGeneration: UInt64 = 0
     private var latestQueryMaterializedRecordCount = 0
 
-    public static func builder(url: URL) -> RealmMemoryStoreBuilder {
+    public static func builder() -> RealmMemoryStoreBuilder {
+        RealmMemoryStoreBuilder()
+    }
+
+    package static func builder(url: URL) -> RealmMemoryStoreBuilder {
         RealmMemoryStoreBuilder(url: url)
     }
 
     public init(
+        logging: AgentLoggingConfiguration = .disabled
+    ) throws {
+        let layout = try CodexKitManagedStorageLayout.live()
+        try self.init(url: layout.fileURL(for: .realmMemory), logging: logging)
+    }
+
+    package init(
         url: URL,
         logging: AgentLoggingConfiguration = .disabled
     ) throws {

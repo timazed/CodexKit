@@ -98,13 +98,7 @@ let runtime = try AgentRuntime(configuration: .init(
         )
     ),
     approvalPresenter: approvalInbox,
-    stateStore: try SQLiteRuntimeStateStore(
-        url: FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!
-        .appendingPathComponent("CodexKit/runtime-state.sqlite")
-    )
+    stateStore: try SQLiteRuntimeStateStore()
 ))
 
 let _ = try await runtime.signIn()
@@ -155,7 +149,7 @@ import CodexKitSQLite
 let stateStore = try GRDBRuntimeStateStore(url: stateURL)
 
 // Now
-let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
+let stateStore = try SQLiteRuntimeStateStore()
 ```
 
 ## Feature Matrix
@@ -190,9 +184,21 @@ let stateStore = try SQLiteRuntimeStateStore(url: stateURL)
 - `CodexKitSQLite`: optional SQLite runtime and memory stores backed by GRDB
 - `CodexKitRealm`: optional Realm runtime and memory stores backed by RealmSwift
 
-Only add the persistence product your application uses. Most application files continue importing only `CodexKit`; the adapter import is needed only where the concrete store is constructed.
+Only add the persistence product your application uses. Most application files continue importing only `CodexKit`; the adapter import is needed only where the concrete store is constructed. Do not add both adapter products for normal application use—link both only while running a one-time cross-store migration or in tooling that deliberately supports switching adapters.
 
-For example, an application using Realm selects these products in its own package target:
+An application using SQLite selects these products in its own package target:
+
+```swift
+.target(
+    name: "MyApp",
+    dependencies: [
+        .product(name: "CodexKit", package: "CodexKit"),
+        .product(name: "CodexKitSQLite", package: "CodexKit"),
+    ]
+)
+```
+
+An application using Realm selects Realm instead of SQLite:
 
 ```swift
 .target(
@@ -204,14 +210,24 @@ For example, an application using Realm selects these products in its own packag
 )
 ```
 
-Then import the adapter alongside the core module in the composition file:
+Then import only the selected adapter alongside the core module in the composition file:
+
+```swift
+import CodexKit
+import CodexKitSQLite
+
+let memoryStore = try SQLiteMemoryStore()
+let stateStore = try SQLiteRuntimeStateStore()
+```
+
+Or, for Realm:
 
 ```swift
 import CodexKit
 import CodexKitRealm
 
-let memoryStore = try RealmMemoryStore.builder(url: memoryURL).build()
-let stateStore = try RealmRuntimeStateStore(url: stateURL)
+let memoryStore = try RealmMemoryStore.builder().build()
+let stateStore = try RealmRuntimeStateStore()
 ```
 
 SwiftPM resolves the repository's declared dependency graph when it resolves the package, so both upstream package pins can appear in `Package.resolved`. Product selection still keeps GRDB out of `CodexKit` and out of applications that link only `CodexKitRealm`, while RealmSwift stays out of applications that link only `CodexKitSQLite`.
@@ -220,7 +236,9 @@ This is a SwiftPM resolver limitation of keeping both adapters in one package ma
 
 If the host application already uses RealmSwift through SwiftPM, keep its direct `RealmSwift` product dependency. SwiftPM identifies both requirements as the same `realm-swift` package and resolves one compatible 20.x version for the application; CodexKit does not vendor or rename a second Realm binary. An incompatible host constraint, such as a pin to an older major version, is reported by SwiftPM during dependency resolution rather than producing two Realm copies at runtime.
 
-Give each CodexKit Realm store its own file URL rather than pointing it at the host application's default Realm. A Realm file has one schema version and one migration lifecycle, so a dedicated file lets the host schema and CodexKit schema evolve independently. `RealmMemoryStore.builder(url:)` installs CodexKit's object schema and its separate migration component for that file without changing `Realm.Configuration.defaultConfiguration`.
+CodexKit does not accept host-provided file URLs for its Realm stores. It derives two fixed, separate files under the host application's Application Support directory at `<bundle-id>/CodexKit/Realm/runtime-state.realm` and `<bundle-id>/CodexKit/Realm/memory.realm`. A Realm file has one schema version and one migration lifecycle, so keeping these files separate from the host application's Realm prevents the schemas from being opened against each other. The stores install only CodexKit's object schemas and do not change `Realm.Configuration.defaultConfiguration`.
+
+SQLite stores follow the same managed-location rule. `SQLiteRuntimeStateStore()` and `SQLiteMemoryStore()` use `<bundle-id>/CodexKit/SQLite/runtime-state.sqlite` and `<bundle-id>/CodexKit/SQLite/memory.sqlite`; the public API cannot point either store at an application database. This prevents CodexKit's GRDB migrations and tables from being applied to a host-owned SQLite file. Earlier alpha releases accepted arbitrary SQLite URLs, so databases at those caller-selected locations are not discovered automatically after updating.
 
 Realm persistence is new in this unreleased line, so both Realm stores ship with schema version 1. Development iterations are intentionally folded into that initial schema rather than exposed as fictional public migrations. SQLite migrations, by contrast, advance only from previously released SQLite schema versions.
 
@@ -310,8 +328,8 @@ import CodexKitRealm
 import CodexKitSQLite
 
 let report = try await RuntimeStoreMigrator.migrate(
-    from: SQLiteRuntimeStateStore(url: sqliteURL),
-    to: RealmRuntimeStateStore(url: realmURL)
+    from: SQLiteRuntimeStateStore(),
+    to: RealmRuntimeStateStore()
 )
 print("Migrated \(report.threadCount) threads")
 ```
@@ -474,7 +492,6 @@ let backend = CodexResponsesBackend(
 )
 
 let stateStore = try SQLiteRuntimeStateStore(
-    url: stateURL,
     logging: logging
 )
 
@@ -562,13 +579,7 @@ For remote telemetry or file-backed logging, prefer a sink that buffers or enque
 - resumed SQLite threads hydrate only a bounded, turn-closed working context; durable history remains queryable without being loaded wholesale
 
 ```swift
-let stateStore = try SQLiteRuntimeStateStore(
-    url: FileManager.default.urls(
-        for: .applicationSupportDirectory,
-        in: .userDomainMask
-    ).first!
-    .appendingPathComponent("CodexKit/runtime-state.sqlite")
-)
+let stateStore = try SQLiteRuntimeStateStore()
 
 let runtime = try AgentRuntime(configuration: .init(
     authProvider: authProvider,
@@ -1045,9 +1056,9 @@ let runtime = try AgentRuntime(configuration: .init(
         configuration: .init(model: .gpt56Sol)
     ),
     approvalPresenter: approvalPresenter,
-    stateStore: try SQLiteRuntimeStateStore(url: stateURL),
+    stateStore: try SQLiteRuntimeStateStore(),
     memory: .init(
-        store: try SQLiteMemoryStore(url: memoryURL),
+        store: try SQLiteMemoryStore(),
         automaticCapturePolicy: .init(
             source: .lastTurn,
             options: .init(
@@ -1127,13 +1138,7 @@ print(result.records.count)
 If you want full control, the low-level store API is still there:
 
 ```swift
-let memoryURL = FileManager.default.urls(
-    for: .applicationSupportDirectory,
-    in: .userDomainMask
-).first!
-    .appendingPathComponent("CodexKit/memory.sqlite")
-
-let memoryStore = try SQLiteMemoryStore(url: memoryURL)
+let memoryStore = try SQLiteMemoryStore()
 
 try await memoryStore.upsert(
     MemoryRecord(
@@ -1159,13 +1164,7 @@ let runtime = try AgentRuntime(configuration: .init(
     ),
     backend: CodexResponsesBackend(),
     approvalPresenter: approvalInbox,
-    stateStore: try SQLiteRuntimeStateStore(
-        url: FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!
-        .appendingPathComponent("CodexKit/runtime-state.sqlite")
-    ),
+    stateStore: try SQLiteRuntimeStateStore(),
     memory: .init(store: memoryStore)
 ))
 

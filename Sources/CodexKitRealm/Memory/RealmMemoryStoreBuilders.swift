@@ -5,10 +5,14 @@ import RealmSwift
 /// Fluent construction for a memory store while keeping its Realm file and
 /// migration policy owned by CodexKit.
 public struct RealmMemoryStoreBuilder: Sendable {
-    private let url: URL
+    private let url: URL?
     private var loggingConfiguration: AgentLoggingConfiguration = .disabled
 
-    public init(url: URL) {
+    public init() {
+        self.url = nil
+    }
+
+    package init(url: URL) {
         self.url = url
     }
 
@@ -19,7 +23,10 @@ public struct RealmMemoryStoreBuilder: Sendable {
     }
 
     public func build() throws -> RealmMemoryStore {
-        try RealmMemoryStore(url: url, logging: loggingConfiguration)
+        if let url {
+            return try RealmMemoryStore(url: url, logging: loggingConfiguration)
+        }
+        return try RealmMemoryStore(logging: loggingConfiguration)
     }
 }
 

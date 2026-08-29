@@ -34,7 +34,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
         SQLiteRuntimeStoreQueries(attachmentStore: attachmentStore)
     }
 
-    public init(
+    package init(
         url: URL,
         importingLegacyStateFrom legacyStateURL: URL? = nil,
         logging: AgentLoggingConfiguration = .disabled

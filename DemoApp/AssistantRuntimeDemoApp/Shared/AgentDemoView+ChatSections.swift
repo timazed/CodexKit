@@ -80,7 +80,7 @@ extension AgentDemoView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("State: \(viewModel.resolvedStateURL.lastPathComponent) • Memory: \(viewModel.resolvedMemoryURL.lastPathComponent)")
+            Text("State: \(viewModel.stateStorageFilename) • Memory: \(viewModel.memoryStorageFilename)")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
 

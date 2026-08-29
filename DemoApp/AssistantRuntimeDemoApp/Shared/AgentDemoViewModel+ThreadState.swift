@@ -5,7 +5,7 @@ import Foundation
 extension AgentDemoViewModel {
     func restore() async {
         developerLog(
-            "Restore started. store=\(resolvedStateURL.path) legacyJSONPresent=\(FileManager.default.fileExists(atPath: legacyStateURL.path))"
+            "Restore started. store=\(stateStorageDescription)"
         )
         do {
             _ = try await runtime.restore()
@@ -41,7 +41,6 @@ extension AgentDemoViewModel {
                 enableImageGeneration: enableImageGeneration,
                 reasoningEffort: reasoningEffort,
                 persistenceAdapter: persistenceAdapter,
-                stateURL: stateURL,
                 keychainAccount: keychainAccount,
                 approvalInbox: approvalInbox,
                 deviceCodePromptCoordinator: deviceCodePromptCoordinator
@@ -91,7 +90,6 @@ extension AgentDemoViewModel {
                 enableImageGeneration: enableImageGeneration,
                 reasoningEffort: reasoningEffort,
                 persistenceAdapter: selectedAdapter,
-                stateURL: stateURL,
                 keychainAccount: keychainAccount,
                 approvalInbox: approvalInbox,
                 deviceCodePromptCoordinator: deviceCodePromptCoordinator
@@ -116,7 +114,7 @@ extension AgentDemoViewModel {
                 await refreshHealthCoachProgress()
             }
             developerLog(
-                "Persistence switch finished. adapter=\(persistenceAdapter.rawValue) store=\(resolvedStateURL.path)"
+                "Persistence switch finished. adapter=\(persistenceAdapter.rawValue) store=\(stateStorageDescription)"
             )
         } catch {
             reportError(error)

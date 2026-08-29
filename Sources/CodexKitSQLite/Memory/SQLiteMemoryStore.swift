@@ -15,6 +15,13 @@ public actor SQLiteMemoryStore: MemoryStoring {
     private var latestQueryMaterializedRecordCount = 0
 
     public init(
+        logging: AgentLoggingConfiguration = .disabled
+    ) throws {
+        let layout = try CodexKitManagedStorageLayout.live()
+        try self.init(url: layout.fileURL(for: .sqliteMemory), logging: logging)
+    }
+
+    package init(
         url: URL,
         logging: AgentLoggingConfiguration = .disabled
     ) throws {

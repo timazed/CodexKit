@@ -39,7 +39,7 @@ private extension MemoryDemoView {
                 .foregroundStyle(.secondary)
 
             Label(
-                "Using \(viewModel.persistenceAdapter.title) at \(viewModel.resolvedMemoryURL.lastPathComponent)",
+                "Using \(viewModel.persistenceAdapter.title) at \(viewModel.memoryStorageFilename)",
                 systemImage: "externaldrive.fill"
             )
             .font(.caption.monospaced())

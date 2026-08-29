@@ -5,6 +5,55 @@ import SQLite3
 import XCTest
 
 final class MemoryStoreTests: XCTestCase {
+    func testManagedSQLiteMemoryStoreLeavesHostDatabaseUntouched() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let hostURL = directory.appendingPathComponent("application.sqlite")
+        let layout = CodexKitManagedStorageLayout(
+            applicationSupportDirectory: directory,
+            hostIdentifier: "com.example.host"
+        )
+        let memoryURL = layout.fileURL(for: .sqliteMemory)
+
+        var hostDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(hostURL.path, &hostDatabase), SQLITE_OK)
+        XCTAssertEqual(
+            sqlite3_exec(
+                hostDatabase,
+                """
+                CREATE TABLE host_records (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+                INSERT INTO host_records VALUES ('host-record', 'owned by the host');
+                PRAGMA user_version = 47;
+                """,
+                nil,
+                nil,
+                nil
+            ),
+            SQLITE_OK
+        )
+        XCTAssertEqual(sqlite3_close(hostDatabase), SQLITE_OK)
+        let hostDatabaseBefore = try Data(contentsOf: hostURL)
+
+        let store = try SQLiteMemoryStore(url: memoryURL)
+        try await store.put(MemoryRecord(
+            id: "memory-record",
+            namespace: "assistant",
+            scope: "test",
+            category: "fact",
+            summary: "Owned by CodexKit"
+        ))
+
+        XCTAssertNotEqual(hostURL, memoryURL)
+        XCTAssertEqual(try Data(contentsOf: hostURL), hostDatabaseBefore)
+        let storedRecord = try await store.record(id: "memory-record", namespace: "assistant")
+        XCTAssertNotNil(storedRecord)
+    }
+
     func testSQLiteStorePersistsAndReloadsRecords() async throws {
         let url = temporarySQLiteURL()
         defer { try? FileManager.default.removeItem(at: url) }

@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.24] - 2026-08-29
+
 ### Added
 
 - Added the optional `CodexKitRealm` product with `RealmRuntimeStateStore` and `RealmMemoryStore`.
@@ -20,6 +22,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Context compaction now resolves active semantic skill instructions without turn-only execution-policy wording, records memory only when an instruction-aware backend applied it, skips empty pre-turn history, and never compacts the pending request before sending it.
 - Moved `SQLiteRuntimeStateStore` and `SQLiteMemoryStore` into the optional `CodexKitSQLite` product so the core `CodexKit` product no longer depends on GRDB.
 - Updated the demo and package documentation to select concrete persistence adapters only in the runtime composition layer; the demo now links both adapters and can switch its runtime and memory stores between SQLite and Realm.
+- Made Realm and SQLite store locations CodexKit-managed and removed host-provided database URLs from their public APIs, preventing application-owned databases from being opened or migrated with CodexKit schemas by mistake. Existing SQLite databases at arbitrary alpha-era locations are not discovered automatically.
 - Updated the demo's lazy-store restart path to query persisted thread metadata, keep stored threads visible while signed out, and resume a selected thread on demand.
 - Pushed SQLite memory filtering, list ordering and limits, diagnostics aggregation, and expiry pruning into indexed database queries so irrelevant records are not decoded in memory.
 - Pushed Realm runtime history and typed metadata queries, plus Realm memory structural filtering, ordering, and expiry pruning, into indexed Realm operations before result materialization; Realm memory diagnostics now use one transactionally maintained snapshot per namespace.
@@ -27,7 +30,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Added SQLite runtime query indexes for thread status and ordering, pending states, snapshots, turn-scoped history, and context generation.
 - Made generic history queries honor ascending and descending order consistently across stores, including timestamp ties and sort-bound cursors.
 - Replaced encoded memory payloads and duplicated query projections with structured adapter schemas: SQLite stores ordered evidence, tags, and related IDs in normalized tables, while Realm stores queryable collections as indexed linked entities and the remaining rule fields as native properties.
-- Split Realm memory construction, queries, diagnostics, models, and schema migration into focused components under the repository's 600-line source-file limit; `RealmMemoryStore.builder(url:)` now owns the dedicated Realm configuration and connects the standalone migration component.
+- Split Realm memory construction, queries, diagnostics, models, and schema migration into focused components under the repository's 600-line source-file limit; `RealmMemoryStore.builder()` owns the dedicated Realm configuration and connects the standalone migration component.
 - Replaced adapter-specific weighted ranking with explicit portable `importanceThenRecency` and `recencyThenImportance` profiles. Text and structural criteria are predicates and no longer change result order through adapter-specific relevance scores.
 - Added SQLite composite order indexes and normalized search-token predicates that preserve native index ordering without temporary sorts, plus a Realm-native multi-column sort with a bounded result prefix, keeping candidate scanning and ranking out of Swift.
 - Added explicit memory match explanations so persistent stores' database-native execution is not misrepresented as a weighted relevance score.
@@ -305,7 +308,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.23...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.24...HEAD
+[2.0.0-alpha.24]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.23...v2.0.0-alpha.24
 [2.0.0-alpha.23]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.22...v2.0.0-alpha.23
 [2.0.0-alpha.22]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.21...v2.0.0-alpha.22
 [2.0.0-alpha.21]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.20...v2.0.0-alpha.21
