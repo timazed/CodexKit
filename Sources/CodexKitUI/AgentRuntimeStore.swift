@@ -42,23 +42,12 @@ public final class AgentRuntimeStore {
             threads = try await loadThreadMetadata()
             session = await runtime.currentSession()
             let activeThreads = await runtime.activeThreads()
-            let interruptedThread = session == nil
-                ? nil
-                : threads.first(where: \AgentThread.status.isPendingTurn)
-            if let selectedThread = activeThreads.first ?? interruptedThread {
-                if !activeThreads.contains(where: { $0.id == selectedThread.id }) {
-                    _ = try await runtime.resumeThread(id: selectedThread.id)
-                }
+            if let selectedThread = activeThreads.first {
                 activeThreadID = selectedThread.id
                 messages = await runtime.messages(for: selectedThread.id)
             } else {
                 activeThreadID = nil
                 messages = []
-            }
-            if session != nil,
-               let activeThreadID,
-               let recoveryStream = try await runtime.resumePendingTurn(in: activeThreadID) {
-                try await consume(recoveryStream, in: activeThreadID)
             }
         } catch {
             lastError = error.localizedDescription
@@ -192,17 +181,6 @@ public final class AgentRuntimeStore {
             case let .turnFailed(error):
                 lastError = error.message
             }
-        }
-    }
-}
-
-private extension AgentThreadStatus {
-    var isPendingTurn: Bool {
-        switch self {
-        case .streaming, .waitingForApproval, .waitingForToolResult:
-            true
-        case .idle, .failed:
-            false
         }
     }
 }

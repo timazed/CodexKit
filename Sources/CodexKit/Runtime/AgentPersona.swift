@@ -23,42 +23,79 @@ public struct AgentPersonaStack: Codable, Hashable, Sendable {
 }
 
 enum AgentInstructionCompiler {
+    private struct Section {
+        enum Kind {
+            case base
+            case persona
+            case skill
+            case memory
+        }
+
+        let kind: Kind
+        let text: String
+    }
+
     static func compile(
         baseInstructions: String?,
         threadPersonaStack: AgentPersonaStack?,
         threadSkills: [AgentSkill],
         turnPersonaOverride: AgentPersonaStack?,
-        turnSkills: [AgentSkill]
+        turnSkills: [AgentSkill],
+        memoryInstructions: String? = nil,
+        memoryPlacement: MemoryInstructionPlacement = .afterSkills,
+        includesSkillExecutionPolicies: Bool = true
     ) -> String {
-        var sections: [String] = []
+        var sections: [Section] = []
         let usesPersonaOverride = turnPersonaOverride?.isEmpty == false
         let usesThreadPersona = threadPersonaStack?.isEmpty == false
 
         let trimmedBase = baseInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !usesPersonaOverride, !usesThreadPersona, !trimmedBase.isEmpty {
-            sections.append(trimmedBase)
+            sections.append(Section(kind: .base, text: trimmedBase))
         }
 
         if !usesPersonaOverride,
            let threadPersonaStack,
            let compiledThreadLayers = compile(stack: threadPersonaStack) {
-            sections.append(compiledThreadLayers)
+            sections.append(Section(kind: .persona, text: compiledThreadLayers))
         }
 
-        if let compiledThreadSkills = compile(skills: threadSkills) {
-            sections.append(compiledThreadSkills)
+        if let compiledThreadSkills = compile(
+            skills: threadSkills,
+            includesExecutionPolicies: includesSkillExecutionPolicies
+        ) {
+            sections.append(Section(kind: .skill, text: compiledThreadSkills))
         }
 
         if let turnPersonaOverride,
            let compiledOverrideLayers = compile(stack: turnPersonaOverride) {
-            sections.append(compiledOverrideLayers)
+            sections.append(Section(kind: .persona, text: compiledOverrideLayers))
         }
 
-        if let compiledTurnSkills = compile(skills: turnSkills) {
-            sections.append(compiledTurnSkills)
+        if let compiledTurnSkills = compile(
+            skills: turnSkills,
+            includesExecutionPolicies: includesSkillExecutionPolicies
+        ) {
+            sections.append(Section(kind: .skill, text: compiledTurnSkills))
         }
 
-        return sections.joined(separator: "\n\n")
+        let trimmedMemory = memoryInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedMemory.isEmpty {
+            let insertionIndex = switch memoryPlacement {
+            case .beforePersonas:
+                sections.firstIndex(where: { $0.kind != .base }) ?? sections.endIndex
+            case .beforeSkills:
+                sections.firstIndex(where: { $0.kind == .skill }) ?? sections.endIndex
+            case .afterSkills:
+                sections.endIndex
+            }
+            sections.insert(
+                Section(kind: .memory, text: trimmedMemory),
+                at: insertionIndex
+            )
+        }
+
+        return sections.map(\.text).joined(separator: "\n\n")
     }
 
     private static func compile(stack: AgentPersonaStack) -> String? {
@@ -78,10 +115,15 @@ enum AgentInstructionCompiler {
         return renderedLayers.joined(separator: "\n\n")
     }
 
-    private static func compile(skills: [AgentSkill]) -> String? {
+    private static func compile(
+        skills: [AgentSkill],
+        includesExecutionPolicies: Bool
+    ) -> String? {
         let renderedSkills = skills.compactMap { skill -> String? in
             let trimmedInstructions = skill.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            let policyLines = compilePolicyLines(skill.executionPolicy)
+            let policyLines = includesExecutionPolicies
+                ? compilePolicyLines(skill.executionPolicy)
+                : []
             guard !trimmedInstructions.isEmpty || !policyLines.isEmpty else {
                 return nil
             }

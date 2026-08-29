@@ -7,6 +7,8 @@ extension AgentRuntime {
         userMessage: AgentMessage?,
         session: ChatGPTSession,
         resolvedTurnSkills: ResolvedTurnSkills,
+        resolvedInstructions: ResolvedAgentInstructions,
+        clientRequestID: String? = nil,
         responseFormat: AgentStructuredOutputFormat,
         options: AgentStructuredStreamingOptions,
         decoder: JSONDecoder,
@@ -22,12 +24,16 @@ extension AgentRuntime {
         var assistantMessages: [AgentMessage] = []
         var sawStructuredCommit = false
         var currentTurnID: String?
-        var didCompleteTurn = false
 
         do {
             for try await backendEvent in turnStream.events {
                 switch backendEvent {
                 case let .turnStarted(turn):
+                    try validateTurnStart(
+                        turn,
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     currentTurnID = turn.id
                     if storesTurnState,
                        !hasStoredTurnStart(turnID: turn.id, in: threadID) {
@@ -49,16 +55,27 @@ extension AgentRuntime {
                     }
                     continuation.yield(.turnStarted(turn))
 
-                case let .assistantMessageDelta(threadID, turnID, delta):
+                case let .assistantMessageDelta(eventThreadID, eventTurnID, delta):
+                    try validateBackendTurnEvent(
+                        threadID: eventThreadID,
+                        turnID: eventTurnID,
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     continuation.yield(
                         .assistantMessageDelta(
-                            threadID: threadID,
-                            turnID: turnID,
+                            threadID: eventThreadID,
+                            turnID: eventTurnID,
                             delta: delta
                         )
                     )
 
                 case let .assistantMessageCompleted(message):
+                    try validateAssistantMessageEvent(
+                        message,
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     let isDuplicate = storesTurnState && hasCommittedMessage(
                         id: message.id,
                         in: threadID
@@ -74,6 +91,10 @@ extension AgentRuntime {
                     }
 
                 case let .structuredOutputPartial(value):
+                    try validateActiveTurn(
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     do {
                         let decoded = try decodeStructuredValue(
                             value,
@@ -109,6 +130,10 @@ extension AgentRuntime {
                     }
 
                 case let .structuredOutputCommitted(value):
+                    try validateActiveTurn(
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     do {
                         let decoded = try decodeStructuredValue(
                             value,
@@ -184,6 +209,10 @@ extension AgentRuntime {
                     }
 
                 case let .structuredOutputValidationFailed(validationFailure):
+                    try validateActiveTurn(
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     if storesTurnState {
                         try? setLatestPartialStructuredOutput(nil, for: threadID)
                         try? await persistState()
@@ -191,6 +220,12 @@ extension AgentRuntime {
                     continuation.yield(.structuredOutputValidationFailed(validationFailure))
 
                 case let .toolCallRequested(invocation):
+                    try validateBackendTurnEvent(
+                        threadID: invocation.threadID,
+                        turnID: invocation.turnID,
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     let existingToolResult = storesTurnState
                         ? storedToolResult(invocationID: invocation.id, in: invocation.threadID)
                         : nil
@@ -253,18 +288,22 @@ extension AgentRuntime {
                     }
 
                 case let .providerContextUpdated(eventThreadID, context):
-                    guard storesTurnState, eventThreadID == threadID else {
-                        break
-                    }
+                    try validateProviderContextEvent(
+                        threadID: eventThreadID,
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
+                    guard storesTurnState else { break }
                     updateProviderContext(context, for: threadID)
                     try await persistState()
 
-                case let .turnRecoveryCheckpointUpdated(checkpoint):
-                    guard storesTurnState, checkpoint.turnID == currentTurnID else { break }
-                    try await persistRecoveryCheckpoint(checkpoint, for: threadID)
-
                 case let .turnCompleted(summary):
-                    didCompleteTurn = true
+                    try Task.checkCancellation()
+                    try validateTurnCompletion(
+                        summary,
+                        expectedThreadID: threadID,
+                        currentTurnID: currentTurnID
+                    )
                     if let completionError = policyTracker?.completionError() {
                         if storesTurnState {
                             try appendHistoryItem(
@@ -318,6 +357,14 @@ extension AgentRuntime {
                         return
                     }
 
+                    let memoryApplication = makeMemoryApplicationSnapshot(
+                        resolvedInstructions: resolvedInstructions,
+                        threadID: threadID,
+                        turnID: summary.turnID,
+                        clientRequestID: clientRequestID,
+                        resolvedTurnSkills: resolvedTurnSkills
+                    )
+
                     if storesTurnState {
                         try appendHistoryItem(
                             .systemEvent(
@@ -326,6 +373,7 @@ extension AgentRuntime {
                                     threadID: threadID,
                                     turnID: summary.turnID,
                                     turnSummary: summary,
+                                    memoryApplication: memoryApplication,
                                     occurredAt: summary.completedAt
                                 )
                             ),
@@ -344,24 +392,16 @@ extension AgentRuntime {
                         }
                         continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     }
+                    notifyMemoryApplication(memoryApplication)
                     continuation.yield(.turnCompleted(summary))
+                    continuation.finish()
+                    return
                 }
             }
 
-            if !didCompleteTurn {
-                try Task.checkCancellation()
-            }
+            try Task.checkCancellation()
             continuation.finish()
         } catch {
-            if storesTurnState,
-               shouldPreserveTurnForRecovery(
-                   error: error,
-                   threadID: threadID,
-                   turnID: currentTurnID
-               ) {
-                continuation.finish(throwing: error)
-                return
-            }
             let runtimeError = (error as? AgentRuntimeError)
                 ?? AgentRuntimeError(
                     code: "turn_failed",

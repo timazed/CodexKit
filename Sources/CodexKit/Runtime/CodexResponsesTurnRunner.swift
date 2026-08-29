@@ -107,29 +107,6 @@ struct CodexResponsesTurnRunner {
         return try turnResult(from: state)
     }
 
-    func run(
-        resuming payload: CodexResponsesRecoveryPayload,
-        history: [AgentMessage],
-        providerAttachments: [AgentImageAttachment]
-    ) async throws -> CodexResponsesTurnResult {
-        var state = try payload.turnRunState(
-            using: CodexResponsesImageReferences.attachments(
-                in: history,
-                additional: providerAttachments
-            ),
-            pendingToolImages: providerAttachments
-        )
-        let disposition = try await resumeTurnPass(
-            responseID: payload.responseID,
-            state: &state
-        )
-        if case .needsAnotherPass = disposition {
-            try await runTurnPasses(state: &state)
-        }
-        emitPendingAssistantFallbackIfNeeded(state: &state)
-        return try turnResult(from: state)
-    }
-
     private func turnResult(
         from state: TurnRunState
     ) throws -> CodexResponsesTurnResult {
@@ -376,113 +353,22 @@ struct CodexResponsesTurnRunner {
         )
     }
 
-    func resumeTurnPass(
-        responseID: String,
-        state: inout TurnRunState
-    ) async throws -> TurnPassDisposition {
-        state.beginAttempt()
-        var retryState = RetryAttemptState()
-        let request = try requestFactory.buildResumeURLRequest(
-            responseID: responseID,
-            startingAfter: 0,
-            threadID: threadID,
-            session: session
-        )
-        return try await consumeEventStream(
-            request: request,
-            state: &state,
-            retryState: &retryState,
-            activeResponseID: responseID,
-            lastSequenceNumber: 0
-        )
-    }
-
     func consumeEventStream(
         request: URLRequest,
         state: inout TurnRunState,
-        retryState: inout RetryAttemptState,
-        activeResponseID initialResponseID: String? = nil,
-        lastSequenceNumber initialSequenceNumber: Int? = nil
+        retryState: inout RetryAttemptState
     ) async throws -> TurnPassDisposition {
-        var streamRequest = request
-        var activeResponseID = initialResponseID
-        var lastSequenceNumber = initialSequenceNumber
-        var reconnectAttempt = 0
         var passDisposition: TurnPassDisposition = .completed
-
-        while true {
-            do {
-                let stream = try await streamClient.streamEvents(request: streamRequest)
-                for try await event in stream {
-                    if case let .responseCreated(responseID) = event.kind,
-                       let responseID,
-                       !responseID.isEmpty {
-                        activeResponseID = responseID
-                    }
-                    let eventResult = try await handleStreamEvent(event, state: &state)
-                    passDisposition = passDisposition.merging(with: eventResult.passDisposition)
-                    retryState.record(eventResult)
-                    if let sequenceNumber = event.sequenceNumber {
-                        lastSequenceNumber = max(lastSequenceNumber ?? sequenceNumber, sequenceNumber)
-                    }
-                    if case .completed = event.kind {
-                        return passDisposition
-                    }
-                }
-
-                try Task.checkCancellation()
-                guard configuration.executionMode == .resumableBackground,
-                      activeResponseID != nil else {
-                    return passDisposition
-                }
-                throw AgentRuntimeError(
-                    code: "responses_stream_ended_early",
-                    message: "The background response stream ended before reaching a terminal event."
-                )
-            } catch {
-                try Task.checkCancellation()
-                guard configuration.executionMode == .resumableBackground,
-                      let activeResponseID,
-                      reconnectAttempt + 1 < configuration.requestRetryPolicy.maxAttempts,
-                      shouldReconnectResponseStream(after: error) else {
-                    throw error
-                }
-                reconnectAttempt += 1
-                logger.warning(
-                    .retry,
-                    "Reconnecting to stored background response.",
-                    metadata: [
-                        "thread_id": threadID,
-                        "turn_id": turnID,
-                        "response_id": activeResponseID,
-                        "starting_after": "\(lastSequenceNumber ?? 0)",
-                        "attempt": "\(reconnectAttempt)"
-                    ]
-                )
-                try await sleepBeforeRetry(
-                    attempt: reconnectAttempt,
-                    policy: configuration.requestRetryPolicy
-                )
-                streamRequest = try requestFactory.buildResumeURLRequest(
-                    responseID: activeResponseID,
-                    startingAfter: lastSequenceNumber ?? 0,
-                    threadID: threadID,
-                    session: session
-                )
+        let stream = try await streamClient.streamEvents(request: request)
+        for try await event in stream {
+            let eventResult = try await handleStreamEvent(event, state: &state)
+            passDisposition = passDisposition.merging(with: eventResult.passDisposition)
+            retryState.record(eventResult)
+            if case .completed = event.kind {
+                return passDisposition
             }
         }
-    }
-
-    private func shouldReconnectResponseStream(
-        after error: Error
-    ) -> Bool {
-        if let runtimeError = error as? AgentRuntimeError,
-           runtimeError.code == "responses_stream_ended_early" {
-            return true
-        }
-        return streamClient.shouldRetry(
-            error,
-            policy: configuration.requestRetryPolicy
-        )
+        try Task.checkCancellation()
+        return passDisposition
     }
 }

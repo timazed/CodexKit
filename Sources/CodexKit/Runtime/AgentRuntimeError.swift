@@ -42,6 +42,13 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
         )
     }
 
+    public static func invalidClientRequestID() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_client_request_id",
+            message: "A client request ID must be non-empty and at most 1,024 UTF-8 bytes."
+        )
+    }
+
     public static func unsupportedImageMimeType(_ mimeType: String) -> AgentRuntimeError {
         AgentRuntimeError(
             code: "unsupported_image_mime_type",
@@ -53,6 +60,34 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
         AgentRuntimeError(
             code: "assistant_response_missing",
             message: "The assistant turn completed without returning a final assistant message."
+        )
+    }
+
+    public static func turnSummaryMissing() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "turn_summary_missing",
+            message: "The assistant turn ended without a completion summary."
+        )
+    }
+
+    public static func invalidTurnCompletion() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_turn_completion",
+            message: "The backend completion does not match the active assistant thread and turn."
+        )
+    }
+
+    public static func invalidTurnStart() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_turn_start",
+            message: "The backend turn has an invalid identifier or does not belong to the active assistant thread."
+        )
+    }
+
+    public static func invalidBackendTurnEvent() -> AgentRuntimeError {
+        AgentRuntimeError(
+            code: "invalid_backend_turn_event",
+            message: "A backend event does not match the active assistant thread and turn."
         )
     }
 

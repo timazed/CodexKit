@@ -234,10 +234,6 @@ extension AgentHistoryItem {
         case let .approval(record):
             return "approval:\(record.request?.id ?? record.resolution?.requestID ?? UUID().uuidString)"
         case let .systemEvent(record):
-            if record.type == .turnRecoveryCheckpointUpdated,
-               let responseID = record.recoveryCheckpoint?.payload.objectValue?["response_id"]?.stringValue {
-                return "systemEvent:\(record.type.rawValue):\(record.turnID ?? record.threadID):\(responseID)"
-            }
             if record.type == .contextCompacted,
                let generation = record.compaction?.generation {
                 return "systemEvent:\(record.type.rawValue):\(record.threadID):\(generation)"
@@ -359,6 +355,15 @@ private extension AgentHistoryItem {
             )
 
         case let .systemEvent(record):
+            let redactedCompaction = record.compaction.map {
+                AgentContextCompactionMarker(
+                    generation: $0.generation,
+                    reason: $0.reason,
+                    effectiveMessageCountBefore: $0.effectiveMessageCountBefore,
+                    effectiveMessageCountAfter: $0.effectiveMessageCountAfter,
+                    debugSummaryPreview: nil
+                )
+            }
             return .systemEvent(
                 AgentSystemEventRecord(
                     type: record.type,
@@ -369,6 +374,7 @@ private extension AgentHistoryItem {
                     error: record.error.map {
                         AgentRuntimeError(code: $0.code, message: "[Redacted]")
                     },
+                    compaction: redactedCompaction,
                     occurredAt: record.occurredAt
                 )
             )

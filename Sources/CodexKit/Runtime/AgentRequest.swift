@@ -14,6 +14,9 @@ public enum AgentSkillSelection: Codable, Hashable, Sendable {
 public struct Request: Codable, Hashable, Sendable {
     public var text: String
     public var images: [AgentImageAttachment]
+    /// Host-owned correlation identifier. CodexKit stores it with durable
+    /// memory-application attribution but never sends it to the model.
+    public var clientRequestID: String?
     public var executionMode: RequestExecutionMode
     public var personaOverride: AgentPersonaStack?
     public var skillSelection: AgentSkillSelection
@@ -31,6 +34,7 @@ public struct Request: Codable, Hashable, Sendable {
     ) {
         self.text = text
         self.images = images
+        clientRequestID = nil
         self.executionMode = executionMode
         context = nil
         options = nil
@@ -180,9 +184,18 @@ public struct Request: Codable, Hashable, Sendable {
         executionMode == .ephemeral
     }
 
+    /// Returns a copy carrying a host-only correlation identifier. The value is
+    /// persisted with memory attribution and is not included in model input.
+    public func correlated(with clientRequestID: String?) -> Request {
+        var request = self
+        request.clientRequestID = clientRequestID
+        return request
+    }
+
     enum CodingKeys: String, CodingKey {
         case text
         case images
+        case clientRequestID
         case executionMode
         case context
         case options
@@ -195,6 +208,7 @@ public struct Request: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        clientRequestID = try container.decodeIfPresent(String.self, forKey: .clientRequestID)
         executionMode = try container.decodeIfPresent(RequestExecutionMode.self, forKey: .executionMode) ?? .threaded
         context = try container.decodeIfPresent(CompiledRequestContext.self, forKey: .context)
         options = try container.decodeIfPresent(CompiledRequestOptions.self, forKey: .options)

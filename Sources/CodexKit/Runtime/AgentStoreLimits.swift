@@ -30,6 +30,7 @@ package func validateBoundedRuntimePayload(_ data: Data, name: String) throws {
 public enum AgentStoreLimits {
     public static let defaultListResultCount = 256
     public static let maximumQueryResultCount = 256
+    public static let maximumMemoryAttributionScanCount = 4_096
     public static let maximumQueryFilterValueCount = 512
     public static let maximumWriteOperationCount = 1_024
     public static let maximumPendingWriteOperationCount = 4_096
@@ -60,6 +61,17 @@ public enum AgentStoreLimits {
     public static let maximumResponseErrorBodyByteCount = 1 * 1_024 * 1_024
     public static let maximumResponseEventByteCount =
         ((maximumImageByteCount + 2) / 3) * 4 + maximumEmbeddedPayloadByteCount
+
+    /// Keeps each attribution-history page comfortably below the aggregate
+    /// materialization limit even when snapshots approach their encoded cap.
+    package static let memoryAttributionHistoryPageSize = 8
+
+    /// A one-byte control character expands to a six-byte JSON escape. This
+    /// reserves at least as much encoded space as any validated identifier.
+    package static let maximumEncodedIdentifierPlaceholder = String(
+        repeating: "\u{0}",
+        count: maximumIdentifierByteCount
+    )
 }
 
 package enum AgentStoreLimitValidator {
@@ -419,38 +431,6 @@ package enum AgentStoreLimitValidator {
             if case let .message(message) = item.item {
                 try validateMessage(
                     message,
-                    threadID: threadID,
-                    attachmentCount: &attachmentCount,
-                    attachmentByteCount: &attachmentByteCount,
-                    messageTextByteCount: &messageTextByteCount
-                )
-            }
-            if case let .systemEvent(event) = item.item,
-               let checkpoint = event.recoveryCheckpoint {
-                let checkpointID = RuntimeAttachmentStore.safePathComponent(item.id)
-                try validateMessage(
-                    AgentMessage(
-                        id: "recovery-request-\(checkpointID)",
-                        threadID: threadID,
-                        role: .system,
-                        text: checkpoint.request.text,
-                        images: checkpoint.request.images,
-                        createdAt: checkpoint.createdAt
-                    ),
-                    threadID: threadID,
-                    attachmentCount: &attachmentCount,
-                    attachmentByteCount: &attachmentByteCount,
-                    messageTextByteCount: &messageTextByteCount
-                )
-                try validateMessage(
-                    AgentMessage(
-                        id: "recovery-provider-\(checkpointID)",
-                        threadID: threadID,
-                        role: .system,
-                        text: "",
-                        images: checkpoint.providerAttachments,
-                        createdAt: checkpoint.createdAt
-                    ),
                     threadID: threadID,
                     attachmentCount: &attachmentCount,
                     attachmentByteCount: &attachmentByteCount,

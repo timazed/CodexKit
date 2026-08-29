@@ -36,7 +36,6 @@ struct ResponsesRequestBody: Encodable {
     let toolChoice: String
     let parallelToolCalls: Bool
     let store: Bool
-    let background: Bool?
     let stream: Bool
     let include: [String]
     let previousResponseID: String?
@@ -52,7 +51,6 @@ struct ResponsesRequestBody: Encodable {
         case toolChoice = "tool_choice"
         case parallelToolCalls = "parallel_tool_calls"
         case store
-        case background
         case stream
         case include
         case previousResponseID = "previous_response_id"

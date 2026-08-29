@@ -47,6 +47,8 @@ public struct AgentHistoryRecord: Codable, Hashable, Sendable {
 
 public struct AgentThreadHistoryPage: Sendable, Hashable {
     public let threadID: String
+    /// Items are chronological within the selected window, regardless of the
+    /// paging direction used to select that window.
     public let items: [AgentHistoryItem]
     public let nextCursor: AgentHistoryCursor?
     public let previousCursor: AgentHistoryCursor?
@@ -98,7 +100,9 @@ public struct AgentHistoryQuery: Sendable, Hashable {
 }
 
 public enum AgentHistoryDirection: String, Sendable, Hashable, Codable {
+    /// Selects the oldest eligible window after the cursor and returns it chronologically.
     case forward
+    /// Selects the newest eligible window before the cursor and returns it chronologically.
     case backward
 }
 

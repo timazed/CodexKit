@@ -119,7 +119,10 @@ package enum MemoryQueryEngine {
     }
 
     package static func promptContentCharacterLimit(for budget: MemoryReadBudget) -> Int {
-        max(0, budget.maxCharacters - promptHeader.count)
+        guard budget.maxCharacters > promptHeader.count else {
+            return 0
+        }
+        return budget.maxCharacters - promptHeader.count
     }
 
     package static func matchedTokenCount(
@@ -363,7 +366,7 @@ package enum MemoryQueryEngine {
         return true
     }
 
-    private static func ordered(
+    package static func ordered(
         _ lhs: MemoryRecord,
         before rhs: MemoryRecord,
         profile: MemoryRankingProfile

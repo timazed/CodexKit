@@ -60,6 +60,18 @@ extension AgentRuntimeTests {
         )
     }
 
+    func testRequestCorrelationSurvivesCodableRoundTrip() throws {
+        let request = Request(text: "Analyse this race")
+            .correlated(with: "assessment-123")
+
+        let encoded = try JSONEncoder().encode(request)
+        let decoded = try JSONDecoder().decode(Request.self, from: encoded)
+
+        XCTAssertEqual(decoded.clientRequestID, "assessment-123")
+        XCTAssertEqual(decoded.text, "Analyse this race")
+        XCTAssertEqual(decoded, request)
+    }
+
     func testOptionsOnlyRequestDoesNotCreateValidContent() async throws {
         enum LookupMode: RequestMode {
             case enrichment

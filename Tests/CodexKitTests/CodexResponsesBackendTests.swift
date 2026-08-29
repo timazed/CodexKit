@@ -1203,6 +1203,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                 let body = try XCTUnwrap(requestBodyData(for: request))
                 let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
                 XCTAssertEqual(json["store"] as? Bool, false)
+                XCTAssertNil(json["background"])
                 XCTAssertEqual(json["include"] as? [String], ["reasoning.encrypted_content"])
                 XCTAssertNil(json["previous_response_id"])
             }
@@ -1297,6 +1298,7 @@ final class CodexResponsesBackendTests: XCTestCase {
                 let body = try XCTUnwrap(requestBodyData(for: request))
                 let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
                 XCTAssertEqual(json["store"] as? Bool, true)
+                XCTAssertNil(json["background"])
                 XCTAssertEqual(json["include"] as? [String], [])
                 XCTAssertNil(json["previous_response_id"])
             }

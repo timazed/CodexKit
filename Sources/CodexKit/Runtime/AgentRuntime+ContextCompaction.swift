@@ -92,7 +92,10 @@ extension AgentRuntime {
     func maybeCompactThreadContextBeforeTurn(
         thread: AgentThread,
         request: Request,
-        instructions: String,
+        priorHistory: [AgentMessage],
+        pendingUserMessage: AgentMessage?,
+        resolvedInstructions: ResolvedAgentInstructions,
+        resolvedTurnSkills: ResolvedTurnSkills,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws {
@@ -101,12 +104,13 @@ extension AgentRuntime {
         else {
             return
         }
+        guard !priorHistory.isEmpty else { return }
 
         let threshold = max(1, contextCompactionConfiguration.trigger.estimatedTokenThreshold)
         let estimatedTokens = approximateTokenCount(
-            for: effectiveHistory(for: thread.id),
+            for: priorHistory,
             pendingMessage: request,
-            instructions: instructions
+            instructions: resolvedInstructions.contextCompactionText
         )
         logger.debug(
             .compaction,
@@ -124,7 +128,11 @@ extension AgentRuntime {
         _ = try await compactThreadContext(
             id: thread.id,
             reason: .automaticPreTurn,
-            instructions: instructions,
+            resolvedInstructions: resolvedInstructions,
+            resolvedTurnSkills: resolvedTurnSkills,
+            clientRequestID: request.clientRequestID,
+            effectiveHistory: priorHistory,
+            pendingUserMessage: pendingUserMessage,
             tools: tools,
             session: session
         )
@@ -133,7 +141,9 @@ extension AgentRuntime {
     func maybeCompactThreadContextAfterContextFailure(
         thread: AgentThread,
         request: Request,
-        instructions: String,
+        pendingUserMessage: AgentMessage?,
+        resolvedInstructions: ResolvedAgentInstructions,
+        resolvedTurnSkills: ResolvedTurnSkills,
         tools: [ToolDefinition],
         session: ChatGPTSession,
         error: Error
@@ -146,10 +156,21 @@ extension AgentRuntime {
             return false
         }
 
+        var historyToCompact = effectiveHistory(for: thread.id)
+        if let pendingUserMessage,
+           historyToCompact.last?.id == pendingUserMessage.id {
+            historyToCompact.removeLast()
+        }
+        guard !historyToCompact.isEmpty else { return false }
+
         _ = try await compactThreadContext(
             id: thread.id,
             reason: .automaticRetry,
-            instructions: instructions,
+            resolvedInstructions: resolvedInstructions,
+            resolvedTurnSkills: resolvedTurnSkills,
+            clientRequestID: request.clientRequestID,
+            effectiveHistory: historyToCompact,
+            pendingUserMessage: pendingUserMessage,
             tools: tools,
             session: session
         )
@@ -170,24 +191,22 @@ extension AgentRuntime {
 
         let session = try await sessionManager.requireSession()
         let tools = await toolRegistry.allDefinitions()
-        let resolvedInstructions = await resolveInstructions(
+        let request = Request(text: "", images: [])
+        let resolvedTurnSkills = try resolveTurnSkills(
             thread: thread,
-            message: Request(text: "", images: []),
-            resolvedTurnSkills: ResolvedTurnSkills(
-                threadSkills: [],
-                turnSkills: [],
-                compiledToolPolicy: CompiledSkillToolPolicy(
-                    allowedToolNames: nil,
-                    requiredToolNames: [],
-                    toolSequence: nil,
-                    maxToolCalls: nil
-                )
-            )
+            message: request
+        )
+        let resolvedInstructions = try await resolveInstructions(
+            thread: thread,
+            message: request,
+            resolvedTurnSkills: resolvedTurnSkills
         )
         return try await compactThreadContext(
             id: threadID,
             reason: .manual,
-            instructions: resolvedInstructions,
+            resolvedInstructions: resolvedInstructions,
+            resolvedTurnSkills: resolvedTurnSkills,
+            clientRequestID: nil,
             tools: tools,
             session: session
         )
@@ -197,10 +216,14 @@ extension AgentRuntime {
     func compactThreadContext(
         id threadID: String,
         reason: AgentContextCompactionReason,
-        instructions: String,
+        resolvedInstructions: ResolvedAgentInstructions,
+        resolvedTurnSkills: ResolvedTurnSkills,
+        clientRequestID: String?,
+        effectiveHistory historyOverride: [AgentMessage]? = nil,
+        pendingUserMessage: AgentMessage? = nil,
         tools: [ToolDefinition],
         session: ChatGPTSession
-        ) async throws -> AgentThreadContextState {
+    ) async throws -> AgentThreadContextState {
         guard shouldUseCompaction() else {
             throw AgentRuntimeError.contextCompactionDisabled()
         }
@@ -213,24 +236,26 @@ extension AgentRuntime {
                 threadID: threadID,
                 effectiveMessages: state.messagesByThread[threadID] ?? []
             )
+        let historyToCompact = historyOverride ?? current.effectiveMessages
         logger.info(
             .compaction,
             "Compacting thread context.",
             metadata: [
                 "thread_id": threadID,
                 "reason": reason.rawValue,
-                "effective_message_count": "\(current.effectiveMessages.count)"
+                "effective_message_count": "\(historyToCompact.count)"
             ]
         )
-        let result = try await performCompaction(
+        let compaction = try await performCompaction(
             thread: thread,
-            effectiveHistory: current.effectiveMessages,
-            instructions: instructions,
+            effectiveHistory: historyToCompact,
+            instructions: resolvedInstructions.contextCompactionText,
             tools: tools,
             session: session
         )
+        try Task.checkCancellation()
         let boundedCompactedMessages = AgentThreadContextWindow.boundedMessages(
-            result.effectiveMessages,
+            compaction.result.effectiveMessages,
             policy: threadActivationPolicy,
             requireClosedTurns: false
         )
@@ -241,19 +266,38 @@ extension AgentRuntime {
             field: "context generation",
             threadID: threadID
         )
+        let effectiveMessages = pendingUserMessage.map {
+            AgentThreadContextWindow.boundedMessages(
+                boundedCompactedMessages + [$0],
+                policy: threadActivationPolicy,
+                requireClosedTurns: false
+            )
+        } ?? boundedCompactedMessages
         let markerPayload = AgentContextCompactionMarker(
             generation: nextGeneration,
             reason: reason,
-            effectiveMessageCountBefore: current.effectiveMessages.count,
-            effectiveMessageCountAfter: boundedCompactedMessages.count,
-            debugSummaryPreview: result.summaryPreview
+            effectiveMessageCountBefore: historyToCompact.count,
+            effectiveMessageCountAfter: effectiveMessages.count,
+            debugSummaryPreview: compaction.result.summaryPreview
         )
+        let memoryApplication = compaction.usedInstructions
+            ? makeMemoryCompactionApplicationSnapshot(
+                resolvedInstructions: resolvedInstructions,
+                threadID: threadID,
+                generation: nextGeneration,
+                reason: reason,
+                clientRequestID: clientRequestID,
+                resolvedTurnSkills: resolvedTurnSkills
+            )
+            : nil
         let markerRecord = try appendHistoryItem(
             .systemEvent(
                 AgentSystemEventRecord(
                     type: .contextCompacted,
                     threadID: threadID,
                     compaction: markerPayload,
+                    memoryApplication: nil,
+                    memoryCompactionApplication: memoryApplication,
                     occurredAt: markerTime
                 )
             ),
@@ -261,11 +305,16 @@ extension AgentRuntime {
             createdAt: markerTime,
         )
 
+        let preservesCompactedPrefix = if pendingUserMessage != nil {
+            Array(effectiveMessages.dropLast()) == compaction.result.effectiveMessages
+        } else {
+            effectiveMessages == compaction.result.effectiveMessages
+        }
         let updated = AgentThreadContextState(
             threadID: threadID,
-            effectiveMessages: boundedCompactedMessages,
-            providerContext: boundedCompactedMessages == result.effectiveMessages
-                ? result.providerContext
+            effectiveMessages: effectiveMessages,
+            providerContext: preservesCompactedPrefix
+                ? compaction.result.providerContext
                 : nil,
             generation: nextGeneration,
             lastCompactedAt: markerTime,
@@ -275,6 +324,7 @@ extension AgentRuntime {
         state.contextStateByThread[threadID] = updated
         enqueueStoreOperation(.upsertThreadContextState(threadID: threadID, state: updated))
         try await persistState()
+        notifyMemoryCompactionApplication(memoryApplication)
         logger.info(
             .compaction,
             "Thread context compaction completed.",
@@ -282,7 +332,7 @@ extension AgentRuntime {
                 "thread_id": threadID,
                 "reason": reason.rawValue,
                 "generation": "\(updated.generation)",
-                "effective_message_count_before": "\(current.effectiveMessages.count)",
+                "effective_message_count_before": "\(historyToCompact.count)",
                 "effective_message_count_after": "\(updated.effectiveMessages.count)"
             ]
         )
@@ -295,59 +345,88 @@ extension AgentRuntime {
         instructions: String,
         tools: [ToolDefinition],
         session: ChatGPTSession
-    ) async throws -> AgentCompactionResult {
+    ) async throws -> (result: AgentCompactionResult, usedInstructions: Bool) {
         switch contextCompactionConfiguration.strategy {
         case .preferRemoteThenLocal:
             if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
-                if let result = try? await compactingBackend.compactContext(
-                    thread: thread,
-                    effectiveHistory: effectiveHistory,
-                    providerContext: providerContext(for: thread.id),
-                    instructions: instructions,
-                    tools: tools,
-                    session: session
-                ) {
-                    return result
+                do {
+                    let result = try await compactingBackend.compactContext(
+                        thread: thread,
+                        effectiveHistory: effectiveHistory,
+                        providerContext: providerContext(for: thread.id),
+                        instructions: instructions,
+                        tools: tools,
+                        session: session
+                    )
+                    return (result, true)
+                } catch {
+                    try preserveCompactionCancellation(error)
                 }
-                return localCompactionResult(for: thread.id, from: effectiveHistory)
+                return (
+                    localCompactionResult(for: thread.id, from: effectiveHistory),
+                    false
+                )
             }
-            if let compactingBackend = backend as? any AgentBackendContextCompacting,
-               let result = try? await compactingBackend.compactContext(
-                   thread: thread,
-                   effectiveHistory: effectiveHistory,
-                   instructions: instructions,
-                   tools: tools,
-                   session: session
-               ) {
-                return result
+            if let compactingBackend = backend as? any AgentBackendContextCompacting {
+                do {
+                    let result = try await compactingBackend.compactContext(
+                        thread: thread,
+                        effectiveHistory: effectiveHistory,
+                        instructions: instructions,
+                        tools: tools,
+                        session: session
+                    )
+                    return (result, true)
+                } catch {
+                    try preserveCompactionCancellation(error)
+                }
             }
-            return localCompactionResult(for: thread.id, from: effectiveHistory)
+            return (
+                localCompactionResult(for: thread.id, from: effectiveHistory),
+                false
+            )
 
         case .remoteOnly:
             if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
-                return try await compactingBackend.compactContext(
-                    thread: thread,
-                    effectiveHistory: effectiveHistory,
-                    providerContext: providerContext(for: thread.id),
-                    instructions: instructions,
-                    tools: tools,
-                    session: session
+                return (
+                    try await compactingBackend.compactContext(
+                        thread: thread,
+                        effectiveHistory: effectiveHistory,
+                        providerContext: providerContext(for: thread.id),
+                        instructions: instructions,
+                        tools: tools,
+                        session: session
+                    ),
+                    true
                 )
             }
             guard let compactingBackend = backend as? any AgentBackendContextCompacting else {
                 throw AgentRuntimeError.contextCompactionUnsupported()
             }
-            return try await compactingBackend.compactContext(
-                thread: thread,
-                effectiveHistory: effectiveHistory,
-                instructions: instructions,
-                tools: tools,
-                session: session
+            return (
+                try await compactingBackend.compactContext(
+                    thread: thread,
+                    effectiveHistory: effectiveHistory,
+                    instructions: instructions,
+                    tools: tools,
+                    session: session
+                ),
+                true
             )
 
         case .localOnly:
-            return localCompactionResult(for: thread.id, from: effectiveHistory)
+            return (
+                localCompactionResult(for: thread.id, from: effectiveHistory),
+                false
+            )
         }
+    }
+
+    private func preserveCompactionCancellation(_ error: Error) throws {
+        if error is CancellationError {
+            throw error
+        }
+        try Task.checkCancellation()
     }
 
     private func localCompactionResult(

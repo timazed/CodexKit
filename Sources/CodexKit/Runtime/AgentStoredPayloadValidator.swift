@@ -57,39 +57,252 @@ package enum AgentStoredPayloadValidator {
             if let preview = record.compaction?.debugSummaryPreview {
                 try validateText(preview, name: "compaction preview")
             }
-            if let checkpoint = record.recoveryCheckpoint {
-                try validateRecoveryCheckpoint(
-                    checkpoint,
-                    expectedThreadID: expectedThreadID
-                )
+            if let application = record.memoryApplication {
+                guard record.type == .turnCompleted,
+                      let summary = record.turnSummary,
+                      summary.threadID == expectedThreadID,
+                      summary.turnID == record.turnID,
+                      application.threadID == expectedThreadID,
+                      application.turnID == summary.turnID else {
+                    throw invalid("memory application does not match its completed turn")
+                }
+                try validateMemoryApplication(application)
+            }
+            if let application = record.memoryCompactionApplication {
+                guard record.type == .contextCompacted,
+                      application.threadID == expectedThreadID,
+                      application.generation == record.compaction?.generation,
+                      application.reason == record.compaction?.reason else {
+                    throw invalid("memory compaction application does not match its marker")
+                }
+                try validateMemoryCompactionApplication(application)
             }
         }
     }
 
-    private static func validateRecoveryCheckpoint(
-        _ checkpoint: AgentTurnRecoveryCheckpoint,
-        expectedThreadID: String
+    package static func validateMemoryApplication(
+        _ application: MemoryApplicationSnapshot
     ) throws {
-        guard checkpoint.threadID == expectedThreadID else {
-            throw invalid("turn recovery checkpoint belongs to a different thread")
+        try validateIdentifier(application.threadID, name: "memory application threadID")
+        try validateIdentifier(application.turnID, name: "memory application turnID")
+        try validateMemoryAttribution(
+            clientRequestID: application.clientRequestID,
+            model: application.model,
+            reasoningEffort: application.reasoningEffort,
+            activeSkillIDs: application.activeSkillIDs,
+            rendererIdentifier: application.promptRendererIdentifier,
+            instructionsHash: application.compiledInstructionsSHA256,
+            query: application.query,
+            result: application.result,
+            renderedInstructions: application.renderedInstructions,
+            includedRecordIDs: application.includedRecordIDs
+        )
+        try validateMemoryAttributionEncodedSize(application)
+    }
+
+    /// Validates the bounded store result before host rendering or observation.
+    package static func validateMemoryQueryResult(
+        query: MemoryQuery,
+        result: MemoryQueryResult,
+        validatesCurrentEligibility: Bool = false
+    ) throws {
+        try MemoryQueryEngine.validate(query)
+        guard result.matches.count <= query.limit,
+              result.matches.count <= MemoryStoreLimits.maximumQueryResultCount else {
+            throw invalid("memory query result exceeds its declared result limit")
         }
-        try validateIdentifier(checkpoint.providerID, name: "recovery provider ID")
-        try validateIdentifier(checkpoint.turnID, name: "recovery turnID")
-        try validateText(checkpoint.request.text, name: "recovery request text")
-        if let context = checkpoint.request.context {
-            try validateOptionalIdentifier(context.schemaName, name: "recovery context schema")
-            try validateJSON(context.payload, name: "recovery request context")
+        guard result.nextCursor == nil || result.truncated else {
+            throw invalid("memory query result has a cursor without truncation")
         }
-        if let options = checkpoint.request.options {
-            try validateOptionalIdentifier(options.schemaName, name: "recovery options schema")
-            try validateText(options.mode, name: "recovery options mode")
-            for requirement in options.requirements {
-                try validateText(requirement, name: "recovery option requirement")
+        if let cursor = result.nextCursor {
+            var cursorQuery = query
+            cursorQuery.cursor = cursor
+            try MemoryQueryEngine.validate(cursorQuery)
+        }
+        let queryTokens = Set(MemoryQueryEngine.uniqueTokens(query.text))
+        let requiredTextMatchCount = MemoryQueryEngine.requiredTextMatchCount(
+            policy: query.textMatchPolicy,
+            queryTokenCount: queryTokens.count
+        )
+        let now = Date()
+        var renderedCharacterCount = 0
+        for (index, match) in result.matches.enumerated() {
+            try MemoryQueryEngine.validate(match.record)
+            let actualMatchedTokenCount = MemoryQueryEngine.matchedTokenCount(
+                for: match.record,
+                queryTokens: queryTokens
+            )
+            guard memoryRecord(
+                      match.record,
+                      matches: query,
+                      now: validatesCurrentEligibility ? now : nil
+                  ),
+                  match.explanation.rankingProfile == query.ranking,
+                  match.explanation.matchedTokenCount == actualMatchedTokenCount,
+                  match.explanation.queryTokenCount == queryTokens.count,
+                  actualMatchedTokenCount >= requiredTextMatchCount,
+                  match.explanation.recencyScore.isFinite,
+                  (0 ... 1).contains(match.explanation.recencyScore),
+                  match.explanation.importanceScore.isFinite,
+                  match.explanation.importanceScore == match.record.importance else {
+                throw invalid("memory query result contains invalid match metadata")
+            }
+            if let cursor = query.cursor,
+               !MemoryQueryEngine.isAfterCursor(
+                   match.record,
+                   cursor: cursor,
+                   profile: query.ranking
+                ) {
+                throw invalid("memory query result contains a record before its cursor")
+            }
+            let separatorCost = index == 0 ? 0 : 1
+            let matchCharacterCount = MemoryQueryEngine.renderedCharacterCount(
+                for: match.record
+            )
+            guard separatorCost <= query.maxCharacters - renderedCharacterCount,
+                  matchCharacterCount <= query.maxCharacters
+                    - renderedCharacterCount
+                    - separatorCost else {
+                throw invalid("memory query result exceeds its declared character budget")
+            }
+            renderedCharacterCount += matchCharacterCount + separatorCost
+        }
+        let selectedRecordIDs = Set(result.matches.map(\.record.id))
+        guard selectedRecordIDs.count == result.matches.count else {
+            throw invalid("memory query result contains duplicate record IDs")
+        }
+        for (previous, current) in zip(result.matches, result.matches.dropFirst()) {
+            guard !MemoryQueryEngine.ordered(
+                current.record,
+                before: previous.record,
+                profile: query.ranking
+            ) else {
+                throw invalid("memory query result is not in its declared ranking order")
             }
         }
-        try validateJSON(checkpoint.payload, name: "recovery provider payload")
-        guard checkpoint.createdAt.timeIntervalSince1970.isFinite else {
-            throw invalid("recovery checkpoint date must be finite")
+        if let nextCursor = result.nextCursor {
+            guard let lastRecord = result.matches.last?.record else {
+                throw invalid("memory query result has a cursor without a final record")
+            }
+            guard nextCursor == MemoryQueryEngine.cursor(for: lastRecord, query: query) else {
+                throw invalid("memory query result cursor does not match its final record")
+            }
+        }
+        let encoded = try JSONEncoder().encode(result)
+        guard encoded.count <= AgentStoreLimits.maximumEmbeddedPayloadByteCount else {
+            throw invalid("memory query result exceeds its bounded encoded payload limit")
+        }
+    }
+
+    private static func memoryRecord(
+        _ record: MemoryRecord,
+        matches query: MemoryQuery,
+        now: Date?
+    ) -> Bool {
+        guard record.namespace == query.namespace,
+              query.includeArchived || record.status != .archived,
+              query.scopes.isEmpty || query.scopes.contains(record.scope),
+              query.categories.isEmpty || query.categories.contains(record.category),
+              query.tags.isEmpty || record.tags.contains(where: query.tags.contains),
+              query.relatedIDs.isEmpty || record.relatedIDs.contains(where: query.relatedIDs.contains),
+              query.minImportance.map({ record.importance >= $0 }) ?? true else {
+            return false
+        }
+        guard let now else {
+            return true
+        }
+        if !record.isPinned,
+           let expiresAt = record.expiresAt,
+           expiresAt <= now.addingTimeInterval(-1) {
+            return false
+        }
+        if let recencyWindow = query.recencyWindow,
+           now.timeIntervalSince(record.effectiveDate) > recencyWindow + 1 {
+            return false
+        }
+        return true
+    }
+
+    private static func validateMemoryCompactionApplication(
+        _ application: MemoryCompactionApplicationSnapshot
+    ) throws {
+        try validateIdentifier(
+            application.threadID,
+            name: "memory compaction application threadID"
+        )
+        guard application.generation > 0 else {
+            throw invalid("memory compaction generation must be positive")
+        }
+        try validateMemoryAttribution(
+            clientRequestID: application.clientRequestID,
+            model: application.model,
+            reasoningEffort: application.reasoningEffort,
+            activeSkillIDs: application.activeSkillIDs,
+            rendererIdentifier: application.promptRendererIdentifier,
+            instructionsHash: application.compiledInstructionsSHA256,
+            query: application.query,
+            result: application.result,
+            renderedInstructions: application.renderedInstructions,
+            includedRecordIDs: application.includedRecordIDs
+        )
+        try validateMemoryAttributionEncodedSize(application)
+    }
+
+    private static func validateMemoryAttributionEncodedSize<Value: Encodable>(
+        _ application: Value
+    ) throws {
+        let encoded = try JSONEncoder().encode(application)
+        guard encoded.count <= AgentStoreLimits.maximumEmbeddedPayloadByteCount else {
+            throw invalid("memory attribution exceeds its bounded encoded payload limit")
+        }
+    }
+
+    private static func validateMemoryAttribution(
+        clientRequestID: String?,
+        model: String?,
+        reasoningEffort: ReasoningEffort?,
+        activeSkillIDs: [String],
+        rendererIdentifier: String,
+        instructionsHash: String,
+        query: MemoryQuery,
+        result: MemoryQueryResult,
+        renderedInstructions: String,
+        includedRecordIDs: [String]
+    ) throws {
+        if let clientRequestID {
+            guard !clientRequestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw invalid("memory client request ID must not be blank")
+            }
+            try validateIdentifier(clientRequestID, name: "memory client request ID")
+        }
+        try validateOptionalIdentifier(model, name: "memory model")
+        try validateOptionalIdentifier(
+            reasoningEffort?.rawValue,
+            name: "memory reasoning effort"
+        )
+        guard activeSkillIDs.count <= AgentStoreLimits.maximumQueryFilterValueCount else {
+            throw invalid("memory attribution contains too many active skill IDs")
+        }
+        try activeSkillIDs.forEach {
+            try validateIdentifier($0, name: "memory active skill ID")
+        }
+        try validateIdentifier(rendererIdentifier, name: "memory renderer identifier")
+        guard instructionsHash.count == 64,
+              instructionsHash.allSatisfy({ $0.isHexDigit }) else {
+            throw invalid("memory instructions hash must be a SHA-256 hex digest")
+        }
+        try validateMemoryQueryResult(query: query, result: result)
+        guard !renderedInstructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw invalid("rendered memory instructions must not be blank")
+        }
+        try validateText(renderedInstructions, name: "rendered memory instructions")
+        let selectedRecordIDs = Set(result.matches.map(\.record.id))
+        guard includedRecordIDs.count == Set(includedRecordIDs).count,
+              includedRecordIDs.allSatisfy(selectedRecordIDs.contains) else {
+            throw invalid("included memory record IDs must be unique selected results")
+        }
+        try includedRecordIDs.forEach {
+            try validateIdentifier($0, name: "included memory record ID")
         }
     }
 

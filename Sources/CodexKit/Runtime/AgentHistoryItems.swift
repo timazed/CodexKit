@@ -85,6 +85,7 @@ public struct AgentApprovalRecord: Codable, Hashable, Sendable {
         self.resolution = resolution
         self.occurredAt = occurredAt
     }
+
 }
 
 public enum AgentSystemEventType: String, Codable, Hashable, Sendable {
@@ -94,7 +95,6 @@ public enum AgentSystemEventType: String, Codable, Hashable, Sendable {
     case turnStarted
     case turnCompleted
     case turnFailed
-    case turnRecoveryCheckpointUpdated
     case contextCompacted
 }
 
@@ -105,8 +105,11 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
     public let status: AgentThreadStatus?
     public let turnSummary: AgentTurnSummary?
     public let error: AgentRuntimeError?
-    public let recoveryCheckpoint: AgentTurnRecoveryCheckpoint?
     public let compaction: AgentContextCompactionMarker?
+    /// Durable attribution for memory used by a completed threaded turn.
+    public let memoryApplication: MemoryApplicationSnapshot?
+    /// Durable attribution for memory used by a successful compaction.
+    public let memoryCompactionApplication: MemoryCompactionApplicationSnapshot?
     public let occurredAt: Date
 
     public init(
@@ -116,8 +119,9 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
         status: AgentThreadStatus? = nil,
         turnSummary: AgentTurnSummary? = nil,
         error: AgentRuntimeError? = nil,
-        recoveryCheckpoint: AgentTurnRecoveryCheckpoint? = nil,
         compaction: AgentContextCompactionMarker? = nil,
+        memoryApplication: MemoryApplicationSnapshot?,
+        memoryCompactionApplication: MemoryCompactionApplicationSnapshot? = nil,
         occurredAt: Date = Date()
     ) {
         self.type = type
@@ -126,8 +130,34 @@ public struct AgentSystemEventRecord: Codable, Hashable, Sendable {
         self.status = status
         self.turnSummary = turnSummary
         self.error = error
-        self.recoveryCheckpoint = recoveryCheckpoint
         self.compaction = compaction
+        self.memoryApplication = memoryApplication
+        self.memoryCompactionApplication = memoryCompactionApplication
         self.occurredAt = occurredAt
+    }
+
+    /// Preserves the original source-compatible initializer and defaults.
+    public init(
+        type: AgentSystemEventType,
+        threadID: String,
+        turnID: String? = nil,
+        status: AgentThreadStatus? = nil,
+        turnSummary: AgentTurnSummary? = nil,
+        error: AgentRuntimeError? = nil,
+        compaction: AgentContextCompactionMarker? = nil,
+        occurredAt: Date = Date()
+    ) {
+        self.init(
+            type: type,
+            threadID: threadID,
+            turnID: turnID,
+            status: status,
+            turnSummary: turnSummary,
+            error: error,
+            compaction: compaction,
+            memoryApplication: nil,
+            memoryCompactionApplication: nil,
+            occurredAt: occurredAt
+        )
     }
 }

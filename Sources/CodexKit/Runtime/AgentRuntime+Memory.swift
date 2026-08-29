@@ -11,10 +11,10 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        return await resolvedMemoryQuery(
+        return try await resolvedMemoryQuery(
             thread: thread,
             message: request
-        )
+        )?.result
     }
 
     // MARK: - Automatic Capture
@@ -170,12 +170,31 @@ extension AgentRuntime {
             )
         )
         let session = try await sessionManager.requireSession()
+        let noSkills = ResolvedTurnSkills(
+            threadSkills: [],
+            turnSkills: [],
+            compiledToolPolicy: CompiledSkillToolPolicy(
+                allowedToolNames: nil,
+                requiredToolNames: [],
+                toolSequence: nil,
+                maxToolCalls: nil
+            )
+        )
+        let extractionInstructions = options.instructions
+            ?? MemoryExtractionDraftResponse.instructions
         let turnStart = try await beginTurnWithUnauthorizedRecovery(
             thread: thread,
             history: [],
             providerContext: nil,
             message: request,
-            instructions: options.instructions ?? MemoryExtractionDraftResponse.instructions,
+            resolvedInstructions: ResolvedAgentInstructions(
+                text: extractionInstructions,
+                contextCompactionText: extractionInstructions,
+                memory: nil,
+                threadConfiguration: thread.configuration
+            ),
+            resolvedTurnSkills: noSkills,
+            pendingUserMessage: nil,
             responseContract: AgentResponseContract(
                 format: MemoryExtractionDraftResponse.responseFormat(
                     maxMemories: max(1, options.maxMemories)
@@ -186,7 +205,8 @@ extension AgentRuntime {
             session: session
         )
         let assistantMessage = try await collectFinalAssistantMessage(
-            from: turnStart.turnStream
+            from: turnStart.turnStream,
+            for: threadID
         )
         let payload = Data(assistantMessage.text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
 
@@ -254,10 +274,15 @@ extension AgentRuntime {
 
     // MARK: - Memory Query Resolution
 
+    struct ResolvedMemoryQuery: Sendable {
+        let query: MemoryQuery
+        let result: MemoryQueryResult
+    }
+
     func resolvedMemoryQuery(
         thread: AgentThread,
         message: Request
-    ) async -> MemoryQueryResult? {
+    ) async throws -> ResolvedMemoryQuery? {
         guard let memoryConfiguration else {
             return nil
         }
@@ -274,17 +299,31 @@ extension AgentRuntime {
         if let observer = memoryConfiguration.observer {
             await observer.handle(event: .queryStarted(query))
         }
+        try Task.checkCancellation()
 
         do {
+            try MemoryQueryEngine.validate(query)
+            try Task.checkCancellation()
             let result = try await packedMemoryQuery(
                 query,
                 store: memoryConfiguration.store
             )
+            try Task.checkCancellation()
+            try AgentStoredPayloadValidator.validateMemoryQueryResult(
+                query: query,
+                result: result,
+                validatesCurrentEligibility: true
+            )
             if let observer = memoryConfiguration.observer {
                 await observer.handle(event: .querySucceeded(query: query, result: result))
             }
-            return result
+            try Task.checkCancellation()
+            return ResolvedMemoryQuery(query: query, result: result)
         } catch {
+            if error is CancellationError {
+                throw error
+            }
+            try Task.checkCancellation()
             if let observer = memoryConfiguration.observer {
                 await observer.handle(
                     event: .queryFailed(
@@ -293,6 +332,7 @@ extension AgentRuntime {
                     )
                 )
             }
+            try Task.checkCancellation()
             return nil
         }
     }

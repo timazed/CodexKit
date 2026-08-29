@@ -422,58 +422,6 @@ public actor AgentRuntime {
         )
     }
 
-    func resolveInstructions(
-        thread: AgentThread,
-        message: Request,
-        resolvedTurnSkills: ResolvedTurnSkills
-    ) async -> String {
-        let baseInstructions: String?
-        if let configuredBaseInstructions {
-            baseInstructions = configuredBaseInstructions
-        } else {
-            baseInstructions = await backend.baseInstructions
-        }
-        let compiled = AgentInstructionCompiler.compile(
-            baseInstructions: baseInstructions,
-            threadPersonaStack: thread.personaStack,
-            threadSkills: resolvedTurnSkills.threadSkills,
-            turnPersonaOverride: message.personaOverride,
-            turnSkills: resolvedTurnSkills.turnSkills
-        )
-
-        guard let queryResult = await resolvedMemoryQuery(
-            thread: thread,
-            message: message
-        ),
-        let memoryConfiguration
-        else {
-            return compiled
-        }
-
-        let budget = resolvedMemoryBudget(
-            thread: thread,
-            message: message,
-            fallback: memoryConfiguration.defaultReadBudget
-        )
-        let renderedMemory = memoryConfiguration.promptRenderer.render(
-            result: queryResult,
-            budget: budget
-        )
-        guard !renderedMemory.isEmpty else {
-            return compiled
-        }
-
-        if compiled.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return renderedMemory
-        }
-
-        return """
-        \(compiled)
-
-        \(renderedMemory)
-        """
-    }
-
     // MARK: - Auth Recovery
 
     static func isUnauthorizedError(_ error: Error) -> Bool {

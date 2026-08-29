@@ -195,82 +195,6 @@ package struct PersistedAgentToolInteraction: Codable, Hashable {
     }
 }
 
-package struct PersistedAgentTurnRecoveryCheckpoint: Codable, Hashable {
-    let providerID: String
-    let threadID: String
-    let turnID: String
-    let request: Request
-    let requestImages: [PersistedImageAttachment]
-    let payload: JSONValue
-    let providerAttachments: [PersistedImageAttachment]
-    let createdAt: Date
-
-    init(
-        checkpoint: AgentTurnRecoveryCheckpoint,
-        historyRecordID: String,
-        attachmentStore: RuntimeAttachmentStore,
-        preparedAttachments: RuntimePreparedAttachments?
-    ) throws {
-        providerID = checkpoint.providerID
-        threadID = checkpoint.threadID
-        turnID = checkpoint.turnID
-        var requestWithoutImages = checkpoint.request
-        requestWithoutImages.images = []
-        request = requestWithoutImages
-        payload = checkpoint.payload
-        createdAt = checkpoint.createdAt
-        requestImages = try checkpoint.request.images.enumerated().map { index, attachment in
-            try persistedAttachmentReference(
-                for: attachment,
-                threadID: checkpoint.threadID,
-                carrierID: RuntimeEmbeddedAttachmentCollector.recoveryRequestCarrierID(historyRecordID),
-                index: index,
-                attachmentStore: attachmentStore,
-                preparedAttachments: preparedAttachments
-            )
-        }
-        providerAttachments = try checkpoint.providerAttachments.enumerated().map { index, attachment in
-            try persistedAttachmentReference(
-                for: attachment,
-                threadID: checkpoint.threadID,
-                carrierID: RuntimeEmbeddedAttachmentCollector.recoveryProviderCarrierID(historyRecordID),
-                index: index,
-                attachmentStore: attachmentStore,
-                preparedAttachments: preparedAttachments
-            )
-        }
-    }
-
-    var attachmentStorageKeys: [String] {
-        (requestImages + providerAttachments).map(\.storageKey)
-    }
-
-    func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentTurnRecoveryCheckpoint {
-        var restoredRequest = request
-        restoredRequest.images = try requestImages.map(attachmentStore.load)
-        return AgentTurnRecoveryCheckpoint(
-            providerID: providerID,
-            threadID: threadID,
-            turnID: turnID,
-            request: restoredRequest,
-            payload: payload,
-            providerAttachments: try providerAttachments.map(attachmentStore.load),
-            createdAt: createdAt
-        )
-    }
-
-    func decodeForProjection() -> AgentTurnRecoveryCheckpoint {
-        AgentTurnRecoveryCheckpoint(
-            providerID: providerID,
-            threadID: threadID,
-            turnID: turnID,
-            request: request,
-            payload: payload,
-            createdAt: createdAt
-        )
-    }
-}
-
 package struct PersistedAgentSystemEventRecord: Codable, Hashable {
     let type: AgentSystemEventType
     let threadID: String
@@ -278,16 +202,14 @@ package struct PersistedAgentSystemEventRecord: Codable, Hashable {
     let status: AgentThreadStatus?
     let turnSummary: AgentTurnSummary?
     let error: AgentRuntimeError?
-    let recoveryCheckpoint: PersistedAgentTurnRecoveryCheckpoint?
     let compaction: AgentContextCompactionMarker?
+    let memoryApplication: MemoryApplicationSnapshot?
+    let memoryCompactionApplication: MemoryCompactionApplicationSnapshot?
     let occurredAt: Date
 
     init(
-        record: AgentSystemEventRecord,
-        historyRecordID: String,
-        attachmentStore: RuntimeAttachmentStore,
-        preparedAttachments: RuntimePreparedAttachments?
-    ) throws {
+        record: AgentSystemEventRecord
+    ) {
         type = record.type
         threadID = record.threadID
         turnID = record.turnID
@@ -295,19 +217,9 @@ package struct PersistedAgentSystemEventRecord: Codable, Hashable {
         turnSummary = record.turnSummary
         error = record.error
         compaction = record.compaction
+        memoryApplication = record.memoryApplication
+        memoryCompactionApplication = record.memoryCompactionApplication
         occurredAt = record.occurredAt
-        recoveryCheckpoint = try record.recoveryCheckpoint.map {
-            try PersistedAgentTurnRecoveryCheckpoint(
-                checkpoint: $0,
-                historyRecordID: historyRecordID,
-                attachmentStore: attachmentStore,
-                preparedAttachments: preparedAttachments
-            )
-        }
-    }
-
-    var attachmentStorageKeys: [String] {
-        recoveryCheckpoint?.attachmentStorageKeys ?? []
     }
 
     func decode(using attachmentStore: RuntimeAttachmentStore) throws -> AgentSystemEventRecord {
@@ -318,8 +230,9 @@ package struct PersistedAgentSystemEventRecord: Codable, Hashable {
             status: status,
             turnSummary: turnSummary,
             error: error,
-            recoveryCheckpoint: try recoveryCheckpoint?.decode(using: attachmentStore),
             compaction: compaction,
+            memoryApplication: memoryApplication,
+            memoryCompactionApplication: memoryCompactionApplication,
             occurredAt: occurredAt
         )
     }
@@ -332,8 +245,9 @@ package struct PersistedAgentSystemEventRecord: Codable, Hashable {
             status: status,
             turnSummary: turnSummary,
             error: error,
-            recoveryCheckpoint: recoveryCheckpoint?.decodeForProjection(),
             compaction: compaction,
+            memoryApplication: memoryApplication,
+            memoryCompactionApplication: memoryCompactionApplication,
             occurredAt: occurredAt
         )
     }
@@ -348,24 +262,8 @@ package enum RuntimeEmbeddedAttachmentCollector {
                 threadID: result.threadID,
                 carrierID: toolResultCarrierID(record.id)
             )
-        case let .systemEvent(event):
-            guard let checkpoint = event.recoveryCheckpoint else { return [] }
-            return [
-                AgentMessage(
-                    id: recoveryRequestCarrierID(record.id),
-                    threadID: checkpoint.threadID,
-                    role: .system,
-                    text: "",
-                    images: checkpoint.request.images
-                ),
-                AgentMessage(
-                    id: recoveryProviderCarrierID(record.id),
-                    threadID: checkpoint.threadID,
-                    role: .system,
-                    text: "",
-                    images: checkpoint.providerAttachments
-                ),
-            ]
+        case .systemEvent:
+            return []
         default:
             return []
         }
@@ -386,14 +284,6 @@ package enum RuntimeEmbeddedAttachmentCollector {
 
     static func toolInteractionCarrierID(_ messageID: String) -> String {
         carrierID(messageID, kind: "tool-interaction")
-    }
-
-    static func recoveryRequestCarrierID(_ recordID: String) -> String {
-        carrierID(recordID, kind: "recovery-request")
-    }
-
-    static func recoveryProviderCarrierID(_ recordID: String) -> String {
-        carrierID(recordID, kind: "recovery-provider")
     }
 
     static func inlineAttachment(

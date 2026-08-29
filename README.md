@@ -141,6 +141,10 @@ If you are moving code forward from earlier 2.0 alpha snapshots, update these AP
   Await `observeThreads()`, `observeMessages(in:)`, and related accessors. They return `AgentRuntimeObservationPublisher`; call `eraseToAnyPublisher()` when additional Combine operators are needed.
 - memory draft resolution is actor-isolated
   Await `MemoryWriter.resolve(_:)` when validating a draft without writing it.
+- memory ranking uses portable profiles
+  Replace `MemoryRankingWeights` with `MemoryRankingProfile.importanceThenRecency` or
+  `.recencyThenImportance`. Text and structural criteria now decide eligibility independently;
+  `MemoryMatchExplanation` reports token coverage and execution method instead of weighted scores.
 
 Example rename:
 
@@ -370,71 +374,13 @@ let runtime = try AgentRuntime(configuration: .init(
 
 The provider starts one iOS background task per active turn and releases it when the
 turn completes. If iOS expires the allowance first, CodexKit cancels the turn through
-the runtime, backend, and network stream, then closes the background task. A foreground
-turn is recorded as failed; a resumable background turn with a stored response checkpoint
-remains pending so it can reconnect later. No background mode entitlement is required for
-this finite task.
+the runtime, backend, and network stream, records the turn as failed, then closes the
+background task. No background mode entitlement is required for this finite task.
 
 This improves short handoffs such as locking the screen just before a response
-finishes, but the system can still suspend or terminate the app. For Responses-compatible
-endpoints that support stored background responses, opt in to durable reconnection:
-
-```swift
-let backend = CodexResponsesBackend(
-    configuration: .init(
-        executionMode: .resumableBackground
-    )
-)
-```
-
-CodexKit creates the response with `background: true`, keeps `store: true`, and persists
-the response identifier as soon as the stream emits `response.created`. If the stream is
-interrupted, it reconnects to that response with the last received sequence number rather
-than posting the request again. The runtime retains this checkpoint across cancellation,
-transient network failures, and app relaunch.
-
-`store` and conversation history have separate jobs. With the default
-`.clientManaged` state management, the initial request still includes the locally stored
-history. `store: true` only makes that particular response available for reconnection.
-With `.serverManaged`, subsequent turns use `previous_response_id` instead of replaying
-history. In either mode, a recovery request is a `GET` for the existing response and sends
-neither the original request nor its history again.
-
-`AgentRuntimeStore.restore()` automatically resumes a pending turn for its restored active
-thread. Hosts using `AgentRuntime` directly can do the same after restoring the runtime,
-session, skills, and tools:
-
-```swift
-if let stream = try await runtime.resumePendingTurn(in: threadID) {
-    for try await event in stream {
-        // Handle events through the same path used for runtime.stream(...).
-    }
-}
-```
-
-Leave `executionMode` at its default `.foreground` unless the configured endpoint supports
-the Responses background streaming and retrieval contract. The protocol is described in
-OpenAI's
-[background streaming guide](https://developers.openai.com/api/docs/guides/background#streaming-a-background-response).
-
-To check that contract against a real ChatGPT Codex endpoint, run the opt-in live probe.
-It creates a stored background response, disconnects immediately after `response.created`,
-and reconnects by response ID with `starting_after`. The test is skipped during normal test
-runs and never prints the supplied credentials:
-
-```sh
-CODEXKIT_RUN_LIVE_RECOVERY_TEST=1 \
-CODEXKIT_LIVE_ACCESS_TOKEN="$CHATGPT_ACCESS_TOKEN" \
-CODEXKIT_LIVE_ACCOUNT_ID="$CHATGPT_ACCOUNT_ID" \
-swift test --filter CodexResponsesLiveRecoveryTests
-```
-
-`CODEXKIT_LIVE_MODEL` and `CODEXKIT_LIVE_BASE_URL` can override the default model and
-`https://chatgpt.com/backend-api/codex`. The probe makes a real model request and therefore
-uses account quota. Keep access tokens in the environment rather than source files or shell
-scripts committed to the repository. A passing result confirms exact response recovery. An
-HTTP 400 response requiring `store: false` confirms that the endpoint supports ordinary
-streaming but not stored-response recovery.
+finishes, but the system can still suspend or terminate the app. A turn interrupted after
+the background allowance expires must be submitted again by the host if the user wants to
+retry it.
 
 `CodexResponsesBackendConfiguration` also sets the default model and thinking level for new Codex-backed threads:
 
@@ -457,7 +403,7 @@ let backend = CodexResponsesBackend(
 )
 ```
 
-Server-managed mode sends `store: true` and chains turns with `previous_response_id`. Client-managed mode remains the default and, in foreground execution, sends `store: false` with `include: ["reasoning.encrypted_content"]`. Resumable background execution sets `store: true` in either state-management mode so CodexKit can reconnect to the response.
+Server-managed mode sends `store: true` and chains turns with `previous_response_id`. Client-managed mode remains the default and sends `store: false` with `include: ["reasoning.encrypted_content"]`.
 
 `CodexModel` provides typed identifiers and metadata for the current model catalog. Use `CodexModel.catalog` when internal entries matter, `CodexModel.userFacingModels` to build a picker, or a known static member directly in configuration:
 
@@ -1061,6 +1007,28 @@ for image in message.images {
 
 The SDK owns storage, retrieval, ranking, and optional prompt injection. Your app can choose how automatic or explicit memory authoring should be.
 
+Rendered memory stays inside the backend instruction string. Its placement is configurable:
+
+```swift
+let memory = AgentMemoryConfiguration(
+    store: memoryStore,
+    promptRenderer: RacingMemoryPromptRenderer(),
+    instructionPlacement: .beforeSkills,
+    automaticCapturePolicy: nil
+)
+```
+
+The default, `.afterSkills`, preserves the original CodexKit behavior. A thread can override
+the runtime default through `AgentMemoryContext.instructionPlacement`, and one request can
+override both through `MemorySelection.instructionPlacement`. `.beforePersonas`
+inserts memory after base instructions and before every persona or skill section.
+`.beforeSkills` inserts it immediately before the first active skill, so domain learnings can
+inform an analysis while the skill remains the later instruction. Placement never changes the
+relative order of existing base, persona, and skill sections. In particular, personas continue
+to replace base instructions, and an existing thread skill continues to precede a turn persona
+override. Placement is precedence signalling within one instruction string, not a security or
+validation boundary.
+
 High-level automatic capture looks like this:
 
 ```swift
@@ -1219,12 +1187,108 @@ let reply = try await runtime.send(
         memorySelection: MemorySelection(
             mode: .append,
             scopes: ["feature:travel-planner"],
-            tags: ["steps"]
+            tags: ["steps"],
+            text: "daily step adherence coaching",
+            instructionPlacement: .beforeSkills
         )
     ),
     in: thread.id
 )
 ```
+
+`MemorySelection.text` is the retrieval query override. Without it, CodexKit searches with
+`Request.text`. Typed `Request.context`, request options, and image contents are deliberately
+not converted into search text or exposed to the memory store. Applications whose visible
+prompt is generic—such as a typed race-analysis request—should build a bounded, deterministic
+query from the domain features that are safe and useful for retrieval.
+
+Memory renderers can also declare exactly which selected records contributed to their prompt.
+Existing renderers remain source compatible, but their attribution is conservatively empty.
+A custom renderer must implement `renderWithMetadata` to provide exact attribution:
+
+```swift
+struct RacingMemoryPromptRenderer: MemoryPromptRendering {
+    func render(result: MemoryQueryResult, budget: MemoryReadBudget) -> String {
+        renderWithMetadata(result: result, budget: budget).instructions
+    }
+
+    func renderWithMetadata(
+        result: MemoryQueryResult,
+        budget: MemoryReadBudget
+    ) -> RenderedMemoryPrompt {
+        let included = Array(result.matches.prefix(max(0, budget.maxItems)))
+        let instructions = included
+            .map { "- \($0.record.summary)" }
+            .joined(separator: "\n")
+        return RenderedMemoryPrompt(
+            instructions: instructions,
+            includedRecordIDs: included.map(\.record.id)
+        )
+    }
+}
+```
+
+Before memory reaches the backend, CodexKit validates the resolved query before calling even a
+custom store, verifies returned records against its scope, text, ordering, cursor, and size
+contract before rendering, requires renderer output to fit the effective
+`MemoryReadBudget.maxCharacters`, bounds renderer metadata, and reserves worst-case identifier
+encoding in the attribution snapshot. Invalid or oversized memory is omitted with a
+memory-category warning, so a successful model turn cannot fail later merely because its
+attribution record is unsafe to persist. Task cancellation is never converted into an ordinary
+memory miss, and a completion emitted after cancellation cannot create attribution.
+
+Every successful threaded runtime turn durably stores its `MemoryApplicationSnapshot` inside
+the same `turnCompleted` history event. It includes the real thread and turn IDs, optional
+host correlation ID, model and reasoning settings, active skill IDs, renderer identifier,
+SHA-256 digest of the complete compiled instructions, query result, exact rendered memory
+text, declared record IDs, and placement. Recover persisted attribution without relying on a
+callback:
+
+```swift
+let request = Request(text: "Analyse this race")
+    .correlated(with: assessmentID)
+let completed = try await runtime.sendWithSummary(
+    request,
+    in: thread.id,
+    response: RaceAssessment.self
+)
+let applied = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
+assert(applied.first?.turnID == completed.summary.turnID)
+```
+
+`sendWithSummary` requires a backend completion-summary event. The existing `send` overloads retain
+their message-only completion behavior for source and behavioral compatibility with custom backends.
+
+`MemoryObserving.handle(application:)` is a non-blocking notification of that durable record;
+it is not the source of truth and may be missed if the process exits. Query previews, empty
+rendered memory, failed or cancelled turns, and runtime-rejected completions do not produce
+application snapshots. Ephemeral requests are intentionally not persisted, so their callback
+remains best effort. A completed runtime turn means the model received the memory and the
+runtime accepted its completion; an application with additional domain validation should keep
+the snapshot pending until that validation succeeds.
+
+The runtime validates every custom-backend event against the active thread and turn, using the
+correlation fields that event exposes, before it is published, executed, or persisted. An accepted
+completion is terminal: later duplicate events or backend failures cannot add a second attribution
+record or change the completed turn to failed.
+
+The attribution convenience queries page through system history in bounded batches, reject stalled
+or malformed cursors, cap aggregate decoded payloads, and stop at
+`AgentStoreLimits.maximumMemoryAttributionScanCount`. They throw `AgentStoreError.invalidInput`
+when those safety bounds prevent the requested result from being completed. Apps that intentionally
+need older raw events can page `fetchThreadHistory(id:query:)` directly with their own cursor policy.
+
+Successful compactions performed by an instruction-aware backend similarly store
+`MemoryCompactionApplicationSnapshot` beside the `contextCompacted` marker and can be recovered with
+`fetchMemoryCompactionApplicationSnapshots(id:)`. Compaction uses the same resolved memory and
+placement but excludes turn-only skill execution-policy wording. Automatic pre-turn compaction
+only compacts prior history; it never folds the pending request into history and sends it again.
+Local-only compaction and local fallback never claim memory attribution because they do not consume
+the compiled instructions. Automatic capture remains a separate opt-in policy.
+
+Durable snapshots contain complete matched memory records, which may include evidence and
+attributes. Treat runtime history as sensitive application data and use the existing history
+redaction/deletion controls where retention is not appropriate.
 
 For debugging and tooling, memory stores also support direct inspection:
 
@@ -1486,7 +1550,9 @@ For skill sources:
 
 ## Debugging Instruction Resolution
 
-You can preview the exact compiled instructions for a specific send before starting a turn.
+You can preview the compiled instructions that would be produced from the current thread,
+memory-store, and renderer state. A preview is point-in-time: a later send resolves once again,
+so it can differ if those inputs change in between.
 
 ```swift
 let preview = try await runtime.resolvedInstructionsPreview(
@@ -1496,6 +1562,19 @@ let preview = try await runtime.resolvedInstructionsPreview(
     )
 )
 print(preview)
+```
+
+Use the detailed preview when tooling also needs the memory query, matches, rendered text,
+record IDs, and placement:
+
+```swift
+let details = try await runtime.resolvedInstructionsPreviewDetails(
+    for: thread.id,
+    request: Request(text: "Give me a strict step plan.")
+)
+
+print(details.instructions)
+print(details.memory?.includedRecordIDs ?? [])
 ```
 
 ## Production Checklist

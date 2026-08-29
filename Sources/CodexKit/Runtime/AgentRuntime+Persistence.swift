@@ -196,31 +196,6 @@ extension AgentRuntime {
         state.partiallyLoadedThreadIDs.remove(threadID)
     }
 
-    func persistRecoveryCheckpoint(
-        _ checkpoint: AgentTurnRecoveryCheckpoint,
-        for threadID: String
-    ) async throws {
-        guard checkpoint.threadID == threadID else {
-            throw AgentRuntimeError(
-                code: "turn_recovery_thread_mismatch",
-                message: "The backend recovery checkpoint belongs to a different thread."
-            )
-        }
-        try appendHistoryItem(
-            .systemEvent(AgentSystemEventRecord(
-                type: .turnRecoveryCheckpointUpdated,
-                threadID: threadID,
-                turnID: checkpoint.turnID,
-                recoveryCheckpoint: checkpoint,
-                occurredAt: checkpoint.createdAt
-            )),
-            threadID: threadID,
-            createdAt: checkpoint.createdAt
-        )
-        updateThreadTimestamp(checkpoint.createdAt, for: threadID)
-        try await persistState()
-    }
-
     /// Linear-time, last-write-wins coalescing. Thread deletion invalidates the
     /// thread's earlier slots without repeatedly scanning or shifting the array.
     func coalescedStoreOperations(

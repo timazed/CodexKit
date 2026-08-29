@@ -222,6 +222,34 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
     public var textMatchPolicy: MemoryTextMatchPolicy?
     public var ranking: MemoryRankingProfile?
     public var readBudget: MemoryReadBudget?
+    /// Overrides the runtime's placement for every turn in this thread.
+    public var instructionPlacement: MemoryInstructionPlacement?
+
+    public init(
+        namespace: String,
+        scopes: [MemoryScope] = [],
+        categories: [String] = [],
+        tags: [String] = [],
+        relatedIDs: [String] = [],
+        recencyWindow: TimeInterval? = nil,
+        minImportance: Double? = nil,
+        textMatchPolicy: MemoryTextMatchPolicy? = nil,
+        ranking: MemoryRankingProfile? = nil,
+        readBudget: MemoryReadBudget? = nil,
+        instructionPlacement: MemoryInstructionPlacement?
+    ) {
+        self.namespace = namespace
+        self.scopes = scopes
+        self.categories = categories
+        self.tags = tags
+        self.relatedIDs = relatedIDs
+        self.recencyWindow = recencyWindow
+        self.minImportance = minImportance
+        self.textMatchPolicy = textMatchPolicy
+        self.ranking = ranking
+        self.readBudget = readBudget
+        self.instructionPlacement = instructionPlacement
+    }
 
     public init(
         namespace: String,
@@ -235,16 +263,19 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         ranking: MemoryRankingProfile? = nil,
         readBudget: MemoryReadBudget? = nil
     ) {
-        self.namespace = namespace
-        self.scopes = scopes
-        self.categories = categories
-        self.tags = tags
-        self.relatedIDs = relatedIDs
-        self.recencyWindow = recencyWindow
-        self.minImportance = minImportance
-        self.textMatchPolicy = textMatchPolicy
-        self.ranking = ranking
-        self.readBudget = readBudget
+        self.init(
+            namespace: namespace,
+            scopes: scopes,
+            categories: categories,
+            tags: tags,
+            relatedIDs: relatedIDs,
+            recencyWindow: recencyWindow,
+            minImportance: minImportance,
+            textMatchPolicy: textMatchPolicy,
+            ranking: ranking,
+            readBudget: readBudget,
+            instructionPlacement: nil
+        )
     }
 
     enum CodingKeys: String, CodingKey {
@@ -259,6 +290,7 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         case textMatchPolicy
         case ranking
         case readBudget
+        case instructionPlacement
     }
 
     public init(from decoder: any Decoder) throws {
@@ -279,6 +311,10 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         )
         ranking = try container.decodeIfPresent(MemoryRankingProfile.self, forKey: .ranking)
         readBudget = try container.decodeIfPresent(MemoryReadBudget.self, forKey: .readBudget)
+        instructionPlacement = try container.decodeIfPresent(
+            MemoryInstructionPlacement.self,
+            forKey: .instructionPlacement
+        )
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -293,6 +329,7 @@ public struct AgentMemoryContext: Codable, Hashable, Sendable {
         try container.encodeIfPresent(textMatchPolicy, forKey: .textMatchPolicy)
         try container.encodeIfPresent(ranking, forKey: .ranking)
         try container.encodeIfPresent(readBudget, forKey: .readBudget)
+        try container.encodeIfPresent(instructionPlacement, forKey: .instructionPlacement)
     }
 }
 
@@ -315,7 +352,41 @@ public struct MemorySelection: Codable, Hashable, Sendable {
     public var textMatchPolicy: MemoryTextMatchPolicy?
     public var ranking: MemoryRankingProfile?
     public var readBudget: MemoryReadBudget?
+    /// Retrieval text override. Typed request context and options are never
+    /// searched automatically; without this value `Request.text` is used.
     public var text: String?
+    /// Overrides both thread and runtime placement for this request.
+    public var instructionPlacement: MemoryInstructionPlacement?
+
+    public init(
+        mode: MemorySelectionMode = .inherit,
+        namespace: String? = nil,
+        scopes: [MemoryScope] = [],
+        categories: [String] = [],
+        tags: [String] = [],
+        relatedIDs: [String] = [],
+        recencyWindow: TimeInterval? = nil,
+        minImportance: Double? = nil,
+        textMatchPolicy: MemoryTextMatchPolicy? = nil,
+        ranking: MemoryRankingProfile? = nil,
+        readBudget: MemoryReadBudget? = nil,
+        text: String? = nil,
+        instructionPlacement: MemoryInstructionPlacement?
+    ) {
+        self.mode = mode
+        self.namespace = namespace
+        self.scopes = scopes
+        self.categories = categories
+        self.tags = tags
+        self.relatedIDs = relatedIDs
+        self.recencyWindow = recencyWindow
+        self.minImportance = minImportance
+        self.textMatchPolicy = textMatchPolicy
+        self.ranking = ranking
+        self.readBudget = readBudget
+        self.text = text
+        self.instructionPlacement = instructionPlacement
+    }
 
     public init(
         mode: MemorySelectionMode = .inherit,
@@ -331,23 +402,30 @@ public struct MemorySelection: Codable, Hashable, Sendable {
         readBudget: MemoryReadBudget? = nil,
         text: String? = nil
     ) {
-        self.mode = mode
-        self.namespace = namespace
-        self.scopes = scopes
-        self.categories = categories
-        self.tags = tags
-        self.relatedIDs = relatedIDs
-        self.recencyWindow = recencyWindow
-        self.minImportance = minImportance
-        self.textMatchPolicy = textMatchPolicy
-        self.ranking = ranking
-        self.readBudget = readBudget
-        self.text = text
+        self.init(
+            mode: mode,
+            namespace: namespace,
+            scopes: scopes,
+            categories: categories,
+            tags: tags,
+            relatedIDs: relatedIDs,
+            recencyWindow: recencyWindow,
+            minImportance: minImportance,
+            textMatchPolicy: textMatchPolicy,
+            ranking: ranking,
+            readBudget: readBudget,
+            text: text,
+            instructionPlacement: nil
+        )
     }
 }
 
 public protocol MemoryPromptRendering: Sendable {
     func render(result: MemoryQueryResult, budget: MemoryReadBudget) -> String
+    func renderWithMetadata(
+        result: MemoryQueryResult,
+        budget: MemoryReadBudget
+    ) -> RenderedMemoryPrompt
 }
 
 public enum MemoryObservationEvent: Sendable {
@@ -361,6 +439,8 @@ public enum MemoryObservationEvent: Sendable {
 
 public protocol MemoryObserving: Sendable {
     func handle(event: MemoryObservationEvent) async
+    func handle(application: MemoryApplicationSnapshot) async
+    func handle(compactionApplication: MemoryCompactionApplicationSnapshot) async
 }
 
 public enum MemoryAutomaticCaptureSource: Hashable, Sendable {
@@ -396,6 +476,16 @@ public struct DefaultMemoryPromptRenderer: MemoryPromptRendering, Sendable {
             budget: budget
         )
     }
+
+    public func renderWithMetadata(
+        result: MemoryQueryResult,
+        budget: MemoryReadBudget
+    ) -> RenderedMemoryPrompt {
+        RenderedMemoryPrompt(
+            instructions: render(result: result, budget: budget),
+            includedRecordIDs: result.matches.map(\.record.id)
+        )
+    }
 }
 
 public struct AgentMemoryConfiguration: Sendable {
@@ -404,6 +494,7 @@ public struct AgentMemoryConfiguration: Sendable {
     public let defaultReadBudget: MemoryReadBudget
     public let promptRenderer: any MemoryPromptRendering
     public let observer: (any MemoryObserving)?
+    public let instructionPlacement: MemoryInstructionPlacement
     public let automaticCapturePolicy: MemoryAutomaticCapturePolicy?
 
     public init(
@@ -412,6 +503,7 @@ public struct AgentMemoryConfiguration: Sendable {
         defaultReadBudget: MemoryReadBudget = .runtimeDefault,
         promptRenderer: any MemoryPromptRendering = DefaultMemoryPromptRenderer(),
         observer: (any MemoryObserving)? = nil,
+        instructionPlacement: MemoryInstructionPlacement,
         automaticCapturePolicy: MemoryAutomaticCapturePolicy? = nil
     ) {
         self.store = store
@@ -419,6 +511,27 @@ public struct AgentMemoryConfiguration: Sendable {
         self.defaultReadBudget = defaultReadBudget
         self.promptRenderer = promptRenderer
         self.observer = observer
+        self.instructionPlacement = instructionPlacement
         self.automaticCapturePolicy = automaticCapturePolicy
+    }
+
+    /// Preserves the pre-placement initializer and defaults.
+    public init(
+        store: any MemoryStoring,
+        defaultRanking: MemoryRankingProfile = .default,
+        defaultReadBudget: MemoryReadBudget = .runtimeDefault,
+        promptRenderer: any MemoryPromptRendering = DefaultMemoryPromptRenderer(),
+        observer: (any MemoryObserving)? = nil,
+        automaticCapturePolicy: MemoryAutomaticCapturePolicy? = nil
+    ) {
+        self.init(
+            store: store,
+            defaultRanking: defaultRanking,
+            defaultReadBudget: defaultReadBudget,
+            promptRenderer: promptRenderer,
+            observer: observer,
+            instructionPlacement: .afterSkills,
+            automaticCapturePolicy: automaticCapturePolicy
+        )
     }
 }

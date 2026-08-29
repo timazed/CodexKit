@@ -6,13 +6,7 @@ extension CodexResponsesTurnRunner {
         state: inout TurnRunState
     ) async throws -> StreamEventResult {
         switch event.kind {
-        case let .responseCreated(responseID):
-            guard configuration.executionMode == .resumableBackground,
-                  let responseID,
-                  !responseID.isEmpty else {
-                return .none
-            }
-            try emitRecoveryCheckpoint(responseID: responseID, state: state)
+        case .responseCreated:
             return .none
 
         case let .assistantTextDelta(delta):
@@ -120,33 +114,6 @@ extension CodexResponsesTurnRunner {
         case .other:
             return .none
         }
-    }
-
-    func emitRecoveryCheckpoint(
-        responseID: String,
-        state: TurnRunState
-    ) throws {
-        let payload = try CodexResponsesRecoveryPayload(
-            responseID: responseID,
-            turnStartedAt: turnStartedAt,
-            instructions: instructions,
-            threadConfiguration: threadConfiguration,
-            responseContract: responseContract,
-            state: state
-        )
-        continuation.yield(
-            .turnRecoveryCheckpointUpdated(
-                AgentTurnRecoveryCheckpoint(
-                    providerID: CodexResponsesProviderState.providerID,
-                    threadID: threadID,
-                    turnID: turnID,
-                    request: request,
-                    payload: try payload.jsonValue,
-                    providerAttachments: state.pendingToolImages,
-                    createdAt: Date()
-                )
-            )
-        )
     }
 
     func handleAssistantTextDelta(

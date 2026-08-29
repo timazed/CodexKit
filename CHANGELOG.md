@@ -12,10 +12,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Added protocol-based runtime and memory store migration utilities for copying existing data between adapters.
 - Added `MemoryTextMatchPolicy` with any-token, minimum-token, and all-token eligibility, plus exact token coverage and query-execution details in match explanations.
 - Added an optional background-activity provider and an iOS implementation that gives active turns the system's finite background completion window.
-- Added opt-in resumable background Responses turns, including persisted response checkpoints, sequence-based stream reconnection, relaunch recovery, and replay-safe message and tool persistence.
+- Added configurable memory instruction placement with `.beforePersonas`, `.beforeSkills`, and backward-compatible `.afterSkills` anchors.
+- Added durable memory-attribution snapshots to completed-turn and context-compaction history, non-blocking observer notifications, host request correlation, completed-turn result APIs, detailed instruction previews, and conservative renderer attribution.
 
 ### Changed
 
+- Context compaction now resolves active semantic skill instructions without turn-only execution-policy wording, records memory only when an instruction-aware backend applied it, skips empty pre-turn history, and never compacts the pending request before sending it.
 - Moved `SQLiteRuntimeStateStore` and `SQLiteMemoryStore` into the optional `CodexKitSQLite` product so the core `CodexKit` product no longer depends on GRDB.
 - Updated the demo and package documentation to select concrete persistence adapters only in the runtime composition layer; the demo now links both adapters and can switch its runtime and memory stores between SQLite and Realm.
 - Updated the demo's lazy-store restart path to query persisted thread metadata, keep stored threads visible while signed out, and resume a selected thread on demand.
@@ -39,6 +41,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 
+- Preflight memory attribution before backend execution with conservative identifier headroom, validate queries and query-conformant custom-store results before rendering, enforce renderer and renderer-metadata budgets, propagate cancellation through memory retrieval, completion, compaction, and attribution-history paging, freeze the turn's original model settings in completed attribution, validate every backend event against the active turn, make accepted completion terminal, return durable attribution newest-first, bound attribution-history scans and aggregate payloads, clear compaction summary previews during redaction, preserve store-validation details in diagnostics, and require a matching completion summary for persisted memory applications.
 - Bounded SQLite memory ranking to an index-ordered `limit + 1` candidate window before aggregate packing, made runtime persistence failure recovery generation-safe across concurrent callers, and preserved unrelated thread groups after a batch failure.
 - Kept Realm-repaired attachments when a later promotion fails, made missing or duplicate Realm dedupe ownership fail closed, and bounded tool-image, base64-image, SSE-event, and HTTP-error-body ingestion before materialization.
 - Made attachment paths traversal-safe, content-addressed, and adapter-specific so SQLite and Realm files with the same basename cannot share or overwrite sidecars.
@@ -57,7 +60,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Replaced record-scanning SQLite diagnostics with trigger-maintained keyed snapshots and added composite ranking indexes for queries that include archived memories.
 - Pushed minimum-token matching and exact selected-record token counts into SQLite and Realm queries, keeping eligibility work in the database while materializing only the bounded result set.
 - Canonicalized signed-zero importance ordering in both persistent stores and made zero-character query behavior consistent.
-- Externalized image bytes from every durable payload, including cached file-store context, tool results, tool-interaction history, provider state, and turn-recovery checkpoints; SQLite and Realm transactions now persist only staged attachment references and remove promoted files after failed commits.
+- Externalized image bytes from durable cached context, tool results, tool-interaction history, and provider state; SQLite and Realm transactions now persist only staged attachment references and remove promoted files after failed commits.
 - Added an advisory per-store process lock around database-plus-sidecar mutations, recovered abandoned attachment staging on startup, and made generation-based file-store updates atomic across store instances.
 - Made failed Realm opening single-flight retries generation-safe.
 - Made file manifests fail closed on malformed or future versions, validated generation paths, and migrated released inline context images without risking an empty legacy-state rewrite.
@@ -77,7 +80,6 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Added indexed history relationship keys and relationship-complete activation windows so message/output and tool-call/result records cannot be split at a hydration boundary.
 - Collapsed unreleased schema iterations to release boundaries: Realm runtime and memory stores remain schema v1, SQLite runtime advances from released v2 to v3, and SQLite memory advances from released v1 to v2.
 - Added an exact-tag release gate so manually dispatched releases cannot publish an untagged or mismatched revision.
-- Made pending-turn recovery query bounded durable history directly, so lazy SQLite and Realm activation cannot hide a checkpoint after app relaunch.
 
 ## [2.0.0-alpha.23] - 2026-08-24
 

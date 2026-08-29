@@ -6,97 +6,6 @@ import SQLite3
 import XCTest
 
 final class PersistenceHardeningTests: XCTestCase {
-    func testLazyRuntimeRecoveryQueriesDurableDatabaseHistoryAfterRestart() async throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture) }
-        let stores: [any AgentRuntimeQueryableStore] = [
-            try SQLiteRuntimeStateStore(
-                url: fixture.appendingPathComponent("recovery.sqlite"),
-                importingLegacyStateFrom: fixture.appendingPathComponent("missing-sqlite.json")
-            ),
-            try RealmRuntimeStateStore(
-                url: fixture.appendingPathComponent("recovery.realm"),
-                importingLegacyStateFrom: fixture.appendingPathComponent("missing-realm.json")
-            ),
-        ]
-
-        for (index, store) in stores.enumerated() {
-            let threadID = "durable-recovery-\(index)"
-            let turnID = "durable-turn-\(index)"
-            let requestImage = AgentImageAttachment.png(
-                Data("DURABLE_RECOVERY_IMAGE_\(index)".utf8),
-                id: "durable-recovery-image"
-            )
-            let checkpoint = AgentTurnRecoveryCheckpoint(
-                providerID: "codex-responses",
-                threadID: threadID,
-                turnID: turnID,
-                request: Request(text: "Resume after restart", images: [requestImage]),
-                payload: .object(["response_id": .string("durable-response-\(index)")])
-            )
-            try await store.apply([
-                .upsertThread(AgentThread(id: threadID, status: .streaming)),
-                .appendHistoryItems(threadID: threadID, items: [
-                    AgentHistoryRecord(
-                        sequenceNumber: 1,
-                        createdAt: checkpoint.createdAt,
-                        item: .systemEvent(AgentSystemEventRecord(
-                            type: .turnStarted,
-                            threadID: threadID,
-                            turnID: turnID,
-                            occurredAt: checkpoint.createdAt
-                        ))
-                    ),
-                    AgentHistoryRecord(
-                        sequenceNumber: 2,
-                        createdAt: checkpoint.createdAt,
-                        item: .systemEvent(AgentSystemEventRecord(
-                            type: .turnRecoveryCheckpointUpdated,
-                            threadID: threadID,
-                            turnID: turnID,
-                            recoveryCheckpoint: checkpoint,
-                            occurredAt: checkpoint.createdAt
-                        ))
-                    ),
-                ]),
-            ])
-
-            let runtime = try AgentRuntime(configuration: .init(
-                authProvider: DemoChatGPTAuthProvider(),
-                secureStore: KeychainSessionSecureStore(
-                    service: "CodexKitTests.DurableRecovery",
-                    account: UUID().uuidString
-                ),
-                backend: InMemoryAgentBackend(),
-                approvalPresenter: AutoApprovalPresenter(),
-                stateStore: store
-            ))
-            _ = try await runtime.restore()
-            let initiallyActiveThreads = await runtime.activeThreads()
-            XCTAssertTrue(initiallyActiveThreads.isEmpty)
-
-            let recovered = try await runtime.pendingTurnRecoveryCheckpoint(in: threadID)
-            XCTAssertEqual(recovered?.turnID, turnID)
-            XCTAssertEqual(recovered?.request.images, [requestImage])
-            let activeThreadsAfterLookup = await runtime.activeThreads()
-            XCTAssertTrue(activeThreadsAfterLookup.isEmpty)
-
-            try await store.apply([.appendHistoryItems(threadID: threadID, items: [
-                AgentHistoryRecord(
-                    sequenceNumber: 3,
-                    createdAt: Date(),
-                    item: .systemEvent(AgentSystemEventRecord(
-                        type: .turnFailed,
-                        threadID: threadID,
-                        turnID: turnID
-                    ))
-                ),
-            ])])
-            let completedCheckpoint = try await runtime.pendingTurnRecoveryCheckpoint(in: threadID)
-            XCTAssertNil(completedCheckpoint)
-        }
-    }
-
     func testPersistentRuntimeStoresExternalizeNestedImagePayloads() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture) }
@@ -139,14 +48,6 @@ final class PersistenceHardeningTests: XCTestCase {
                 Data("RESULT_IMAGE_BYTES_\(index)".utf8),
                 id: "result-image"
             )
-            let requestImage = AgentImageAttachment.png(
-                Data("REQUEST_IMAGE_BYTES_\(index)".utf8),
-                id: "request-image"
-            )
-            let providerImage = AgentImageAttachment.png(
-                Data("PROVIDER_IMAGE_BYTES_\(index)".utf8),
-                id: "provider-image"
-            )
             let interactionResult = ToolResultEnvelope(
                 invocationID: invocation.id,
                 toolName: invocation.toolName,
@@ -169,14 +70,6 @@ final class PersistenceHardeningTests: XCTestCase {
                     result: interactionResult
                 )
             )
-            let checkpoint = AgentTurnRecoveryCheckpoint(
-                providerID: "codex-responses",
-                threadID: threadID,
-                turnID: turnID,
-                request: Request(text: "Recover", images: [requestImage]),
-                payload: .object(["response_id": .string("response-\(index)")]),
-                providerAttachments: [providerImage]
-            )
             let records = [
                 AgentHistoryRecord(
                     sequenceNumber: 1,
@@ -197,16 +90,6 @@ final class PersistenceHardeningTests: XCTestCase {
                         result: standaloneResult
                     ))
                 ),
-                AgentHistoryRecord(
-                    sequenceNumber: 4,
-                    createdAt: checkpoint.createdAt,
-                    item: .systemEvent(AgentSystemEventRecord(
-                        type: .turnRecoveryCheckpointUpdated,
-                        threadID: threadID,
-                        turnID: turnID,
-                        recoveryCheckpoint: checkpoint
-                    ))
-                ),
             ]
 
             try await configuration.0.apply([
@@ -223,21 +106,15 @@ final class PersistenceHardeningTests: XCTestCase {
                   case let .toolResult(loadedResult) = loadedRecords[2].item,
                   case let .image(loadedResultURL) = try XCTUnwrap(
                       loadedResult.result.content.first
-                  ),
-                  case let .systemEvent(loadedEvent) = loadedRecords[3].item,
-                  let loadedCheckpoint = loadedEvent.recoveryCheckpoint else {
+                  ) else {
                 return XCTFail("Nested image payloads did not round-trip through the store")
             }
             XCTAssertEqual(loadedInteractionURL.absoluteString, interactionImage.dataURLString)
             XCTAssertEqual(loadedResultURL.absoluteString, resultImage.dataURLString)
-            XCTAssertEqual(loadedCheckpoint.request.images, [requestImage])
-            XCTAssertEqual(loadedCheckpoint.providerAttachments, [providerImage])
 
             let forbiddenPayloads = [
                 interactionImage,
                 resultImage,
-                requestImage,
-                providerImage,
             ].map { Data($0.data.base64EncodedString().utf8) }
             for fileURL in try regularFiles(in: fixture) where
                 !fileURL.path.contains(".codexkit-state/attachments/")
@@ -678,6 +555,66 @@ final class PersistenceHardeningTests: XCTestCase {
             XCTAssertTrue(preserved.historyByThread[thread.id]?.allSatisfy {
                 $0.redaction == nil
             } ?? false)
+        }
+    }
+
+    func testRuntimeStoresRemoveCompactionPreviewWhenRedactingHistory() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let stores: [any RuntimeStateStoring] = [
+            InMemoryRuntimeStateStore(),
+            FileRuntimeStateStore(url: fixture.appendingPathComponent("preview-redaction.json")),
+            try SQLiteRuntimeStateStore(
+                url: fixture.appendingPathComponent("preview-redaction.sqlite"),
+                importingLegacyStateFrom: fixture.appendingPathComponent("missing-sqlite.json")
+            ),
+            try RealmRuntimeStateStore(
+                url: fixture.appendingPathComponent("preview-redaction.realm"),
+                importingLegacyStateFrom: fixture.appendingPathComponent("missing-realm.json")
+            ),
+        ]
+        let thread = AgentThread(id: "compaction-preview-redaction")
+        let record = AgentHistoryRecord(
+            id: "compaction-record",
+            sequenceNumber: 1,
+            createdAt: Date(timeIntervalSince1970: 1),
+            item: .systemEvent(AgentSystemEventRecord(
+                type: .contextCompacted,
+                threadID: thread.id,
+                compaction: AgentContextCompactionMarker(
+                    generation: 2,
+                    reason: .manual,
+                    effectiveMessageCountBefore: 12,
+                    effectiveMessageCountAfter: 3,
+                    debugSummaryPreview: "Sensitive summary text"
+                ),
+                occurredAt: Date(timeIntervalSince1970: 1)
+            ))
+        )
+
+        for store in stores {
+            try await store.apply([
+                .upsertThread(thread),
+                .appendHistoryItems(threadID: thread.id, items: [record]),
+            ])
+            try await store.apply([.redactHistoryItems(
+                threadID: thread.id,
+                itemIDs: [record.id],
+                reason: .init(code: "privacy")
+            )])
+
+            let state = try await store.loadState()
+            let redacted = try XCTUnwrap(state.historyByThread[thread.id]?.first)
+            XCTAssertNotNil(redacted.redaction)
+            guard case let .systemEvent(event) = redacted.item,
+                  let marker = event.compaction else {
+                return XCTFail("Expected the redacted compaction marker to remain available.")
+            }
+            XCTAssertEqual(marker.generation, 2)
+            XCTAssertEqual(marker.reason, .manual)
+            XCTAssertEqual(marker.effectiveMessageCountBefore, 12)
+            XCTAssertEqual(marker.effectiveMessageCountAfter, 3)
+            XCTAssertNil(marker.debugSummaryPreview)
         }
     }
 

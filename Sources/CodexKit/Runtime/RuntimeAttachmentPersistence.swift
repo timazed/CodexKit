@@ -197,8 +197,8 @@ package enum PersistedAgentHistoryItem: Hashable {
             message.attachmentStorageKeys
         case let .toolResult(record):
             record.attachmentStorageKeys
-        case let .systemEvent(record):
-            record.attachmentStorageKeys
+        case .systemEvent:
+            []
         case .toolCall, .structuredOutput, .approval:
             []
         }
@@ -231,12 +231,7 @@ package enum PersistedAgentHistoryItem: Hashable {
         case let .approval(record):
             self = .approval(record)
         case let .systemEvent(record):
-            self = .systemEvent(try PersistedAgentSystemEventRecord(
-                record: record,
-                historyRecordID: historyRecordID,
-                attachmentStore: attachmentStore,
-                preparedAttachments: preparedAttachments
-            ))
+            self = .systemEvent(PersistedAgentSystemEventRecord(record: record))
         }
     }
 
@@ -284,11 +279,7 @@ package enum PersistedAgentHistoryItem: Hashable {
             try message.validate(using: attachmentStore)
         case let .toolResult(record):
             try record.result.validate(using: attachmentStore)
-        case let .systemEvent(record):
-            for storageKey in record.attachmentStorageKeys {
-                try attachmentStore.validateStorageKey(storageKey)
-            }
-        case .approval, .structuredOutput, .toolCall:
+        case .approval, .structuredOutput, .systemEvent, .toolCall:
             break
         }
     }

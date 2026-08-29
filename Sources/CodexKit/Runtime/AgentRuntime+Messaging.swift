@@ -45,6 +45,7 @@ extension AgentRuntime {
         guard request.hasContent else {
             throw AgentRuntimeError.invalidMessageContent()
         }
+        try validateClientRequestID(request.clientRequestID)
 
         guard let thread = thread(for: threadID) else {
             throw AgentRuntimeError.threadNotFound(threadID)
@@ -101,7 +102,7 @@ extension AgentRuntime {
                         thread: thread,
                         message: request
                     )
-                    let resolvedInstructions = await self.resolveInstructions(
+                    let resolvedInstructions = try await self.resolveInstructions(
                         thread: thread,
                         message: request,
                         resolvedTurnSkills: resolvedTurnSkills
@@ -111,17 +112,27 @@ extension AgentRuntime {
                         try await self.maybeCompactThreadContextBeforeTurn(
                             thread: thread,
                             request: request,
-                            instructions: resolvedInstructions,
+                            priorHistory: turnHistory,
+                            pendingUserMessage: userMessage,
+                            resolvedInstructions: resolvedInstructions,
+                            resolvedTurnSkills: resolvedTurnSkills,
                             tools: tools,
                             session: session
                         )
                     }
                     let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
                         thread: thread,
-                        history: turnHistory,
+                        history: storesTurnState
+                            ? self.historyBeforePendingMessage(
+                                in: threadID,
+                                pendingUserMessage: userMessage
+                            )
+                            : turnHistory,
                         providerContext: storesTurnState ? self.providerContext(for: threadID) : nil,
                         message: request,
-                        instructions: resolvedInstructions,
+                        resolvedInstructions: resolvedInstructions,
+                        resolvedTurnSkills: resolvedTurnSkills,
+                        pendingUserMessage: userMessage,
                         responseContract: responseContract,
                         tools: tools,
                         session: session,
@@ -133,6 +144,8 @@ extension AgentRuntime {
                         userMessage: userMessage,
                         session: turnStart.session,
                         resolvedTurnSkills: resolvedTurnSkills,
+                        resolvedInstructions: resolvedInstructions,
+                        clientRequestID: request.clientRequestID,
                         responseFormat: responseContract.format,
                         options: options,
                         decoder: decoder,
@@ -166,62 +179,6 @@ extension AgentRuntime {
         }
     }
 
-    public func send(
-        _ request: Request,
-        in threadID: String
-    ) async throws -> String {
-        let stream = try await streamRequest(
-            request,
-            in: threadID,
-            responseContract: nil
-        )
-        let message = try await collectFinalAssistantMessage(from: stream)
-        return message.displayText
-    }
-
-    public func send<Output: AgentStructuredOutput>(
-        _ request: Request,
-        in threadID: String,
-        response outputType: Output.Type = Output.self,
-        decoder: JSONDecoder = JSONDecoder()
-    ) async throws -> Output {
-        try await send(
-            request,
-            in: threadID,
-            response: outputType,
-            responseContract: AgentResponseContract(
-                format: outputType.responseFormat,
-                deliveryMode: .oneShot
-            ),
-            decoder: decoder
-        )
-    }
-
-    func send<Output: Decodable & Sendable>(
-        _ request: Request,
-        in threadID: String,
-        response outputType: Output.Type,
-        responseContract: AgentResponseContract,
-        decoder: JSONDecoder = JSONDecoder()
-    ) async throws -> Output {
-        let stream = try await streamRequest(
-            request,
-            in: threadID,
-            responseContract: responseContract
-        )
-        let message = try await collectFinalAssistantMessage(from: stream)
-        let payload = Data(message.text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
-
-        do {
-            return try decoder.decode(Output.self, from: payload)
-        } catch {
-            throw AgentRuntimeError.structuredOutputDecodingFailed(
-                typeName: String(describing: outputType),
-                underlyingMessage: error.localizedDescription
-            )
-        }
-    }
-
     func streamRequest(
         _ request: Request,
         in threadID: String,
@@ -230,6 +187,7 @@ extension AgentRuntime {
         guard request.hasContent else {
             throw AgentRuntimeError.invalidMessageContent()
         }
+        try validateClientRequestID(request.clientRequestID)
 
         guard let thread = thread(for: threadID) else {
             throw AgentRuntimeError.threadNotFound(threadID)
@@ -286,7 +244,7 @@ extension AgentRuntime {
                         thread: thread,
                         message: request
                     )
-                    let resolvedInstructions = await self.resolveInstructions(
+                    let resolvedInstructions = try await self.resolveInstructions(
                         thread: thread,
                         message: request,
                         resolvedTurnSkills: resolvedTurnSkills
@@ -296,17 +254,27 @@ extension AgentRuntime {
                         try await self.maybeCompactThreadContextBeforeTurn(
                             thread: thread,
                             request: request,
-                            instructions: resolvedInstructions,
+                            priorHistory: turnHistory,
+                            pendingUserMessage: userMessage,
+                            resolvedInstructions: resolvedInstructions,
+                            resolvedTurnSkills: resolvedTurnSkills,
                             tools: tools,
                             session: session
                         )
                     }
                     let turnStart = try await self.beginTurnWithUnauthorizedRecovery(
                         thread: thread,
-                        history: turnHistory,
+                        history: storesTurnState
+                            ? self.historyBeforePendingMessage(
+                                in: threadID,
+                                pendingUserMessage: userMessage
+                            )
+                            : turnHistory,
                         providerContext: storesTurnState ? self.providerContext(for: threadID) : nil,
                         message: request,
-                        instructions: resolvedInstructions,
+                        resolvedInstructions: resolvedInstructions,
+                        resolvedTurnSkills: resolvedTurnSkills,
+                        pendingUserMessage: userMessage,
                         responseContract: responseContract,
                         tools: tools,
                         session: session,
@@ -318,6 +286,8 @@ extension AgentRuntime {
                         userMessage: userMessage,
                         session: turnStart.session,
                         resolvedTurnSkills: resolvedTurnSkills,
+                        resolvedInstructions: resolvedInstructions,
+                        clientRequestID: request.clientRequestID,
                         storesTurnState: storesTurnState,
                         continuation: continuation
                     )
@@ -352,7 +322,9 @@ extension AgentRuntime {
         history: [AgentMessage],
         providerContext: AgentProviderContext?,
         message: Request,
-        instructions: String,
+        resolvedInstructions: ResolvedAgentInstructions,
+        resolvedTurnSkills: ResolvedTurnSkills,
+        pendingUserMessage: AgentMessage?,
         responseContract: AgentResponseContract?,
         tools: [ToolDefinition],
         session: ChatGPTSession,
@@ -370,7 +342,7 @@ extension AgentRuntime {
                     history: history,
                     providerContext: providerContext,
                     message: message,
-                    instructions: instructions,
+                    instructions: resolvedInstructions.text,
                     responseFormat: responseContract?.textFormat,
                     streamedStructuredOutput: responseContract?.streamedRequest,
                     tools: tools,
@@ -385,7 +357,9 @@ extension AgentRuntime {
             let compacted = try await maybeCompactThreadContextAfterContextFailure(
                 thread: thread,
                 request: message,
-                instructions: instructions,
+                pendingUserMessage: pendingUserMessage,
+                resolvedInstructions: resolvedInstructions,
+                resolvedTurnSkills: resolvedTurnSkills,
                 tools: tools,
                 session: session,
                 error: error
@@ -399,10 +373,13 @@ extension AgentRuntime {
             ) { session in
                 try await self.beginBackendTurn(
                     thread: thread,
-                    history: self.effectiveHistory(for: thread.id),
+                    history: self.historyBeforePendingMessage(
+                        in: thread.id,
+                        pendingUserMessage: pendingUserMessage
+                    ),
                     providerContext: self.providerContext(for: thread.id),
                     message: message,
-                    instructions: instructions,
+                    instructions: resolvedInstructions.text,
                     responseFormat: responseContract?.textFormat,
                     streamedStructuredOutput: responseContract?.streamedRequest,
                     tools: tools,
@@ -446,28 +423,6 @@ extension AgentRuntime {
             streamedStructuredOutput: streamedStructuredOutput,
             tools: tools,
             session: session
-        )
-    }
-
-    // MARK: - Previews
-
-    public func resolvedInstructionsPreview(
-        for threadID: String,
-        request: Request
-    ) async throws -> String {
-        guard let thread = thread(for: threadID) else {
-            throw AgentRuntimeError.threadNotFound(threadID)
-        }
-
-        let resolvedTurnSkills = try resolveTurnSkills(
-            thread: thread,
-            message: request
-        )
-
-        return await resolveInstructions(
-            thread: thread,
-            message: request,
-            resolvedTurnSkills: resolvedTurnSkills
         )
     }
 

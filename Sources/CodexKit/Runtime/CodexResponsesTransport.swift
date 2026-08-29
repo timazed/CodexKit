@@ -32,9 +32,7 @@ struct CodexResponsesRequestFactory: Sendable {
             ),
             toolChoice: "auto",
             parallelToolCalls: false,
-            store: configuration.stateManagement == .serverManaged ||
-                configuration.executionMode == .resumableBackground,
-            background: configuration.executionMode == .resumableBackground ? true : nil,
+            store: configuration.stateManagement == .serverManaged,
             stream: true,
             include: configuration.stateManagement == .clientManaged
                 ? ["reasoning.encrypted_content"]
@@ -60,46 +58,6 @@ struct CodexResponsesRequestFactory: Sendable {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
-        return request
-    }
-
-    func buildResumeURLRequest(
-        responseID: String,
-        startingAfter: Int,
-        threadID: String,
-        session: ChatGPTSession
-    ) throws -> URLRequest {
-        let responseURL = configuration.baseURL
-            .appendingPathComponent("responses")
-            .appendingPathComponent(responseID)
-        guard var components = URLComponents(url: responseURL, resolvingAgainstBaseURL: false) else {
-            throw AgentRuntimeError(
-                code: "responses_resume_invalid_url",
-                message: "The response recovery URL could not be constructed."
-            )
-        }
-        components.queryItems = [
-            URLQueryItem(name: "stream", value: "true"),
-            URLQueryItem(name: "starting_after", value: String(startingAfter)),
-        ]
-        guard let url = components.url else {
-            throw AgentRuntimeError(
-                code: "responses_resume_invalid_url",
-                message: "The response recovery URL could not be constructed."
-            )
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(session.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
-        request.setValue(threadID, forHTTPHeaderField: "session_id")
-        request.setValue(threadID, forHTTPHeaderField: "x-client-request-id")
-        request.setValue(configuration.originator, forHTTPHeaderField: "originator")
-        for (header, value) in configuration.extraHeaders {
-            request.setValue(value, forHTTPHeaderField: header)
-        }
         return request
     }
 

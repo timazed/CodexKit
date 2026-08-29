@@ -407,7 +407,6 @@ package struct StoredRuntimeStateProjectionBuilder: Sendable {
                 case .threadCreated,
                      .threadResumed,
                      .threadStatusChanged,
-                     .turnRecoveryCheckpointUpdated,
                      .contextCompacted:
                     break
                 }

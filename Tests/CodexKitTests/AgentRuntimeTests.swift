@@ -372,12 +372,39 @@ actor ThrowingMemoryStore: MemoryStoring {
 
 actor RecordingMemoryObserver: MemoryObserving {
     private var observedEvents: [MemoryObservationEvent] = []
+    private var observedApplications: [MemoryApplicationSnapshot] = []
+    private var observedCompactionApplications: [MemoryCompactionApplicationSnapshot] = []
+    private var applicationWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     func handle(event: MemoryObservationEvent) async {
         observedEvents.append(event)
     }
 
+    func handle(application: MemoryApplicationSnapshot) async {
+        observedApplications.append(application)
+        let ready = applicationWaiters.filter { observedApplications.count >= $0.0 }
+        applicationWaiters.removeAll { observedApplications.count >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    func handle(compactionApplication: MemoryCompactionApplicationSnapshot) async {
+        observedCompactionApplications.append(compactionApplication)
+    }
+
     func events() -> [MemoryObservationEvent] {
         observedEvents
+    }
+
+    func applications(waitingFor count: Int = 0) async -> [MemoryApplicationSnapshot] {
+        if observedApplications.count < count {
+            await withCheckedContinuation { continuation in
+                applicationWaiters.append((count, continuation))
+            }
+        }
+        return observedApplications
+    }
+
+    func compactionApplications() -> [MemoryCompactionApplicationSnapshot] {
+        observedCompactionApplications
     }
 }

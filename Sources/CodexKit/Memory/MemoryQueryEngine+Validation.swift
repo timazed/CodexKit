@@ -86,6 +86,13 @@ extension MemoryQueryEngine {
                 )
             }
         }
+        let filterValueCount = query.scopes.count + query.categories.count
+            + query.tags.count + query.relatedIDs.count
+        guard filterValueCount <= MemoryStoreLimits.maximumQueryFilterValueCount else {
+            throw MemoryStoreError.invalidQuery(
+                "combined scope, category, tag, and related-ID filters must not exceed \(MemoryStoreLimits.maximumQueryFilterValueCount) values."
+            )
+        }
         for scope in query.scopes {
             try validateIdentifier(scope.rawValue, name: "scope filter", query: true)
         }
@@ -128,13 +135,6 @@ extension MemoryQueryEngine {
         }
         guard query.maxCharacters >= 0 else {
             throw MemoryStoreError.invalidQuery("maxCharacters must be nonnegative.")
-        }
-        let filterValueCount = query.scopes.count + query.categories.count
-            + query.tags.count + query.relatedIDs.count
-        guard filterValueCount <= MemoryStoreLimits.maximumQueryFilterValueCount else {
-            throw MemoryStoreError.invalidQuery(
-                "combined scope, category, tag, and related-ID filters must not exceed \(MemoryStoreLimits.maximumQueryFilterValueCount) values."
-            )
         }
         if case let .atLeastTokens(count) = query.textMatchPolicy {
             guard count >= 1 else {
