@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.25] - 2026-08-30
+
+### Added
+
+- Added first-class memory attribution to `AgentTurnResult`, including the exact applied snapshot, explicit omission reasons, top-level request correlation, and authoritative nonpersistent attribution for ephemeral `sendWithSummary` calls without a second memory query.
+
 ## [2.0.0-alpha.24] - 2026-08-29
 
 ### Added

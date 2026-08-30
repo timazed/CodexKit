@@ -11,10 +11,12 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        return try await resolvedMemoryQuery(
+        let outcome = try await resolvedMemoryQueryOutcome(
             thread: thread,
             message: request
-        )?.result
+        )
+        guard case let .resolved(resolution) = outcome else { return nil }
+        return resolution.result
     }
 
     // MARK: - Automatic Capture
@@ -190,7 +192,7 @@ extension AgentRuntime {
             resolvedInstructions: ResolvedAgentInstructions(
                 text: extractionInstructions,
                 contextCompactionText: extractionInstructions,
-                memory: nil,
+                memoryResolution: .notApplied(.disabled),
                 threadConfiguration: thread.configuration
             ),
             resolvedTurnSkills: noSkills,
@@ -279,12 +281,21 @@ extension AgentRuntime {
         let result: MemoryQueryResult
     }
 
-    func resolvedMemoryQuery(
+    enum ResolvedMemoryQueryOutcome: Sendable {
+        case resolved(ResolvedMemoryQuery)
+        case notApplied(MemoryApplicationOmissionReason)
+    }
+
+    func resolvedMemoryQueryOutcome(
         thread: AgentThread,
         message: Request
-    ) async throws -> ResolvedMemoryQuery? {
+    ) async throws -> ResolvedMemoryQueryOutcome {
         guard let memoryConfiguration else {
-            return nil
+            return .notApplied(.notConfigured)
+        }
+
+        guard message.memorySelection?.mode != .disable else {
+            return .notApplied(.disabled)
         }
 
         guard let query = resolvedMemoryQuery(
@@ -293,7 +304,7 @@ extension AgentRuntime {
             fallbackRanking: memoryConfiguration.defaultRanking,
             fallbackBudget: memoryConfiguration.defaultReadBudget
         ) else {
-            return nil
+            return .notApplied(.noSelectionContext)
         }
 
         if let observer = memoryConfiguration.observer {
@@ -304,21 +315,21 @@ extension AgentRuntime {
         do {
             try MemoryQueryEngine.validate(query)
             try Task.checkCancellation()
-            let result = try await packedMemoryQuery(
+        } catch {
+            return try await rejectedMemoryQueryOutcome(
+                error,
+                query: query,
+                observer: memoryConfiguration.observer
+            )
+        }
+
+        let result: MemoryQueryResult
+        do {
+            result = try await packedMemoryQuery(
                 query,
                 store: memoryConfiguration.store
             )
             try Task.checkCancellation()
-            try AgentStoredPayloadValidator.validateMemoryQueryResult(
-                query: query,
-                result: result,
-                validatesCurrentEligibility: true
-            )
-            if let observer = memoryConfiguration.observer {
-                await observer.handle(event: .querySucceeded(query: query, result: result))
-            }
-            try Task.checkCancellation()
-            return ResolvedMemoryQuery(query: query, result: result)
         } catch {
             if error is CancellationError {
                 throw error
@@ -333,8 +344,50 @@ extension AgentRuntime {
                 )
             }
             try Task.checkCancellation()
-            return nil
+            return .notApplied(.unavailable)
         }
+
+        do {
+            try AgentStoredPayloadValidator.validateMemoryQueryResult(
+                query: query,
+                result: result,
+                validatesCurrentEligibility: true
+            )
+            try Task.checkCancellation()
+        } catch {
+            return try await rejectedMemoryQueryOutcome(
+                error,
+                query: query,
+                observer: memoryConfiguration.observer
+            )
+        }
+
+        if let observer = memoryConfiguration.observer {
+            await observer.handle(event: .querySucceeded(query: query, result: result))
+        }
+        try Task.checkCancellation()
+        return .resolved(ResolvedMemoryQuery(query: query, result: result))
+    }
+
+    private func rejectedMemoryQueryOutcome(
+        _ error: Error,
+        query: MemoryQuery,
+        observer: (any MemoryObserving)?
+    ) async throws -> ResolvedMemoryQueryOutcome {
+        if error is CancellationError {
+            throw error
+        }
+        try Task.checkCancellation()
+        if let observer {
+            await observer.handle(
+                event: .queryFailed(
+                    query: query,
+                    message: error.localizedDescription
+                )
+            )
+        }
+        try Task.checkCancellation()
+        return .notApplied(.rejected)
     }
 
     /// Packing is part of the memory-store query contract. Persistent adapters

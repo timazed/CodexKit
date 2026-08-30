@@ -17,9 +17,23 @@ public enum AgentEvent: Sendable {
 public struct AgentTurnResult<Value: Sendable>: Sendable {
     public let value: Value
     public let summary: AgentTurnSummary
+    public let clientRequestID: String?
+    public let memoryApplication: MemoryApplicationOutcome
 
-    public init(value: Value, summary: AgentTurnSummary) {
+    public init(
+        value: Value,
+        summary: AgentTurnSummary,
+        clientRequestID: String? = nil,
+        memoryApplication: MemoryApplicationOutcome = .notApplied(.notReported)
+    ) {
         self.value = value
         self.summary = summary
+        self.clientRequestID = clientRequestID
+        self.memoryApplication = memoryApplication
+    }
+
+    /// The exact memory applied to this turn, when memory was applied.
+    public var memoryApplicationSnapshot: MemoryApplicationSnapshot? {
+        memoryApplication.snapshot
     }
 }

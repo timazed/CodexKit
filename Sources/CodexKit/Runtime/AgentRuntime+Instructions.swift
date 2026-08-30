@@ -5,14 +5,33 @@ extension AgentRuntime {
     struct ResolvedAgentInstructions: Sendable {
         let text: String
         let contextCompactionText: String
-        let memory: ResolvedMemoryInstructionsPreview?
+        let memoryResolution: ResolvedMemoryInstructions
         let threadConfiguration: AgentThreadConfiguration?
+
+        var memory: ResolvedMemoryInstructionsPreview? {
+            memoryResolution.preview
+        }
 
         var preview: ResolvedAgentInstructionsPreview {
             ResolvedAgentInstructionsPreview(
                 instructions: text,
                 memory: memory
             )
+        }
+    }
+
+    enum ResolvedMemoryInstructions: Sendable {
+        case applied(ResolvedMemoryInstructionsPreview)
+        case notApplied(MemoryApplicationOmissionReason)
+
+        var preview: ResolvedMemoryInstructionsPreview? {
+            guard case let .applied(preview) = self else { return nil }
+            return preview
+        }
+
+        var omissionReason: MemoryApplicationOmissionReason? {
+            guard case let .notApplied(reason) = self else { return nil }
+            return reason
         }
     }
 
@@ -40,8 +59,8 @@ extension AgentRuntime {
             threadSkills: resolvedTurnSkills.threadSkills,
             turnPersonaOverride: message.personaOverride,
             turnSkills: resolvedTurnSkills.turnSkills,
-            memoryInstructions: resolvedMemory?.renderedInstructions,
-            memoryPlacement: resolvedMemory?.placement ?? .afterSkills
+            memoryInstructions: resolvedMemory.preview?.renderedInstructions,
+            memoryPlacement: resolvedMemory.preview?.placement ?? .afterSkills
         )
         let compactionCompiled = AgentInstructionCompiler.compile(
             baseInstructions: baseInstructions,
@@ -49,8 +68,8 @@ extension AgentRuntime {
             threadSkills: resolvedTurnSkills.threadSkills,
             turnPersonaOverride: message.personaOverride,
             turnSkills: resolvedTurnSkills.turnSkills,
-            memoryInstructions: resolvedMemory?.renderedInstructions,
-            memoryPlacement: resolvedMemory?.placement ?? .afterSkills,
+            memoryInstructions: resolvedMemory.preview?.renderedInstructions,
+            memoryPlacement: resolvedMemory.preview?.placement ?? .afterSkills,
             includesSkillExecutionPolicies: false
         )
         try Task.checkCancellation()
@@ -58,7 +77,7 @@ extension AgentRuntime {
         return ResolvedAgentInstructions(
             text: compiled,
             contextCompactionText: compactionCompiled,
-            memory: resolvedMemory,
+            memoryResolution: resolvedMemory,
             threadConfiguration: thread.configuration
         )
     }
@@ -67,14 +86,21 @@ extension AgentRuntime {
         thread: AgentThread,
         message: Request,
         resolvedTurnSkills: ResolvedTurnSkills
-    ) async throws -> ResolvedMemoryInstructionsPreview? {
-        guard let memoryConfiguration,
-              let queryResolution = try await resolvedMemoryQuery(
-                  thread: thread,
-                  message: message
-              )
-        else {
-            return nil
+    ) async throws -> ResolvedMemoryInstructions {
+        guard let memoryConfiguration else {
+            return .notApplied(.notConfigured)
+        }
+
+        let queryOutcome = try await resolvedMemoryQueryOutcome(
+            thread: thread,
+            message: message
+        )
+        let queryResolution: ResolvedMemoryQuery
+        switch queryOutcome {
+        case let .resolved(resolution):
+            queryResolution = resolution
+        case let .notApplied(reason):
+            return .notApplied(reason)
         }
 
         let budget = resolvedMemoryBudget(
@@ -91,7 +117,11 @@ extension AgentRuntime {
             in: .whitespacesAndNewlines
         )
         guard !instructions.isEmpty else {
-            return nil
+            return .notApplied(
+                queryResolution.result.matches.isEmpty
+                    ? .noMatches
+                    : .rendererOmittedAll
+            )
         }
         guard instructions.count <= max(0, budget.maxCharacters) else {
             logger.warning(
@@ -102,7 +132,7 @@ extension AgentRuntime {
                     "maximum_characters": "\(max(0, budget.maxCharacters))",
                 ]
             )
-            return nil
+            return .notApplied(.rejected)
         }
 
         let preview = ResolvedMemoryInstructionsPreview(
@@ -123,9 +153,9 @@ extension AgentRuntime {
             resolvedTurnSkills: resolvedTurnSkills,
             memoryConfiguration: memoryConfiguration
         ) else {
-            return nil
+            return .notApplied(.rejected)
         }
-        return preview
+        return .applied(preview)
     }
 
     private func memoryAttributionIsPersistable(
@@ -237,6 +267,28 @@ extension AgentRuntime {
             renderedInstructions: memory.renderedInstructions,
             includedRecordIDs: memory.includedRecordIDs,
             placement: memory.placement
+        )
+    }
+
+    func makeMemoryApplicationOutcome(
+        resolvedInstructions: ResolvedAgentInstructions,
+        threadID: String,
+        turnID: String,
+        clientRequestID: String?,
+        resolvedTurnSkills: ResolvedTurnSkills
+    ) -> MemoryApplicationOutcome {
+        if let snapshot = makeMemoryApplicationSnapshot(
+            resolvedInstructions: resolvedInstructions,
+            threadID: threadID,
+            turnID: turnID,
+            clientRequestID: clientRequestID,
+            resolvedTurnSkills: resolvedTurnSkills
+        ) {
+            return .applied(snapshot)
+        }
+
+        return .notApplied(
+            resolvedInstructions.memoryResolution.omissionReason ?? .notReported
         )
     }
 

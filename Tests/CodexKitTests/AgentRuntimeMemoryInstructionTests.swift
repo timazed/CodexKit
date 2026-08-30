@@ -363,7 +363,7 @@ extension AgentRuntimeTests {
             memoryContext: testMemoryContext
         )
 
-        _ = try await runtime.send(
+        let result = try await runtime.sendWithSummary(
             Request(text: "confirmed learning"),
             in: thread.id
         )
@@ -372,6 +372,7 @@ extension AgentRuntimeTests {
         let applications = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
         XCTAssertEqual(receivedInstructions.last, "BASE")
         XCTAssertTrue(applications.isEmpty)
+        XCTAssertEqual(result.memoryApplication.omissionReason, .rejected)
     }
 
     func testOversizedMemoryResultIsSkippedBeforeBackendExecution() async throws {
@@ -1171,6 +1172,144 @@ extension AgentRuntimeTests {
         let applications = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
         XCTAssertEqual(applications.first?.turnID, result.summary.turnID)
         XCTAssertEqual(applications.first?.clientRequestID, "typed-123")
+        XCTAssertEqual(result.clientRequestID, "typed-123")
+        XCTAssertEqual(result.memoryApplicationSnapshot, applications.first)
+    }
+
+    func testEphemeralResultReturnsAppliedMemoryWithoutPersistingOrRequerying() async throws {
+        let store = ControlledMemoryStore(behavior: .matchingResult)
+        let runtime = try await makeMemoryInstructionRuntime(
+            backend: InMemoryAgentBackend(baseInstructions: "BASE"),
+            renderer: DefaultMemoryPromptRenderer(),
+            memoryStore: store
+        )
+        let thread = try await runtime.createThread(
+            title: "Ephemeral attribution",
+            memoryContext: testMemoryContext
+        )
+        let result = try await runtime.sendWithSummary(
+            Request(
+                text: "confirmed learning",
+                executionMode: .ephemeral
+            ).correlated(with: "ephemeral-123"),
+            in: thread.id
+        )
+
+        let snapshot = try XCTUnwrap(result.memoryApplicationSnapshot)
+        let durable = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
+        let queryInvocationCount = await store.queryInvocationCount()
+
+        XCTAssertEqual(result.clientRequestID, "ephemeral-123")
+        XCTAssertEqual(snapshot.clientRequestID, "ephemeral-123")
+        XCTAssertEqual(snapshot.threadID, thread.id)
+        XCTAssertEqual(snapshot.turnID, result.summary.turnID)
+        XCTAssertEqual(snapshot.includedRecordIDs, ["matching-memory"])
+        XCTAssertEqual(snapshot.result.matches.map(\.record.id), ["matching-memory"])
+        XCTAssertEqual(queryInvocationCount, 1)
+        XCTAssertTrue(durable.isEmpty)
+    }
+
+    func testSuccessfulResultDistinguishesMemoryOmissionReasons() async throws {
+        let unavailableStore = ControlledMemoryStore(behavior: .failure)
+        let unavailableRuntime = try await makeMemoryInstructionRuntime(
+            backend: InMemoryAgentBackend(baseInstructions: "BASE"),
+            renderer: MarkerMemoryRenderer(),
+            memoryStore: unavailableStore
+        )
+        let unavailableThread = try await unavailableRuntime.createThread(
+            title: "Unavailable memory",
+            memoryContext: testMemoryContext
+        )
+        let unavailable = try await unavailableRuntime.sendWithSummary(
+            Request(text: "confirmed learning"),
+            in: unavailableThread.id
+        )
+        XCTAssertEqual(unavailable.memoryApplication.omissionReason, .unavailable)
+
+        let noMatchesStore = ControlledMemoryStore(behavior: .emptyResult)
+        let noMatchesRuntime = try await makeMemoryInstructionRuntime(
+            backend: InMemoryAgentBackend(baseInstructions: "BASE"),
+            renderer: DefaultMemoryPromptRenderer(),
+            memoryStore: noMatchesStore
+        )
+        let noMatchesThread = try await noMatchesRuntime.createThread(
+            title: "No matching memory",
+            memoryContext: testMemoryContext
+        )
+        let noMatches = try await noMatchesRuntime.sendWithSummary(
+            Request(text: "confirmed learning"),
+            in: noMatchesThread.id
+        )
+        XCTAssertEqual(noMatches.memoryApplication.omissionReason, .noMatches)
+
+        let noContextRuntime = try await makeMemoryInstructionRuntime(
+            backend: InMemoryAgentBackend(baseInstructions: "BASE"),
+            renderer: MarkerMemoryRenderer()
+        )
+        let noContextThread = try await noContextRuntime.createThread(
+            title: "No memory selection context"
+        )
+        let noContext = try await noContextRuntime.sendWithSummary(
+            Request(text: "confirmed learning"),
+            in: noContextThread.id
+        )
+        XCTAssertEqual(noContext.memoryApplication.omissionReason, .noSelectionContext)
+    }
+
+    func testSuccessfulResultReportsWhenMemoryIsNotConfigured() async throws {
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(
+                service: "CodexKitTests.ChatGPTSession",
+                account: UUID().uuidString
+            ),
+            backend: InMemoryAgentBackend(baseInstructions: "BASE"),
+            approvalPresenter: AutoApprovalPresenter(),
+            stateStore: InMemoryRuntimeStateStore()
+        ))
+        _ = try await runtime.restore()
+        _ = try await runtime.useSession(demoSession())
+        let thread = try await runtime.createThread(title: "Memory not configured")
+
+        let result = try await runtime.sendWithSummary(
+            Request(text: "confirmed learning"),
+            in: thread.id
+        )
+
+        XCTAssertEqual(result.memoryApplication.omissionReason, .notConfigured)
+    }
+
+    func testRendererCanApplyInstructionsWithoutSelectedRecords() async throws {
+        let store = ControlledMemoryStore(behavior: .emptyResult)
+        let runtime = try await makeMemoryInstructionRuntime(
+            backend: InMemoryAgentBackend(baseInstructions: "BASE"),
+            renderer: MarkerMemoryRenderer(),
+            memoryStore: store
+        )
+        let thread = try await runtime.createThread(
+            title: "Renderer-owned memory instructions",
+            memoryContext: testMemoryContext
+        )
+
+        let result = try await runtime.sendWithSummary(
+            Request(text: "confirmed learning"),
+            in: thread.id
+        )
+
+        XCTAssertEqual(result.memoryApplicationSnapshot?.renderedInstructions, "MEMORY")
+        XCTAssertEqual(result.memoryApplicationSnapshot?.result.matches, [])
+    }
+
+    func testResultDefaultsPreserveExistingManualInitialization() {
+        let summary = AgentTurnSummary(
+            threadID: "thread",
+            turnID: "turn"
+        )
+        let result = AgentTurnResult(value: "value", summary: summary)
+
+        XCTAssertNil(result.clientRequestID)
+        XCTAssertNil(result.memoryApplicationSnapshot)
+        XCTAssertEqual(result.memoryApplication.omissionReason, .notReported)
     }
 
     func testExistingSendDoesNotRequireNewSummaryEvent() async throws {
@@ -1621,11 +1760,12 @@ extension AgentRuntimeTests {
         XCTAssertEqual(preview.instructions, "BASE")
         XCTAssertNil(preview.memory)
 
-        _ = try await runtime.send(request, in: thread.id)
+        let result = try await runtime.sendWithSummary(request, in: thread.id)
         let receivedInstructions = await backend.receivedInstructions()
         let applications = await observer.applications()
         XCTAssertEqual(receivedInstructions.last, "BASE")
         XCTAssertTrue(applications.isEmpty)
+        XCTAssertEqual(result.memoryApplication.omissionReason, .rendererOmittedAll)
     }
 
     func testDisabledMemoryAddsNoSectionOrApplicationSnapshot() async throws {
@@ -1653,9 +1793,10 @@ extension AgentRuntimeTests {
         XCTAssertEqual(preview.instructions, "BASE")
         XCTAssertNil(preview.memory)
 
-        _ = try await runtime.send(request, in: thread.id)
+        let result = try await runtime.sendWithSummary(request, in: thread.id)
         let applications = await observer.applications()
         XCTAssertTrue(applications.isEmpty)
+        XCTAssertEqual(result.memoryApplication.omissionReason, .disabled)
     }
 
     func testTurnStartupFailureDoesNotReportMemoryAsApplied() async throws {
@@ -2099,6 +2240,8 @@ private struct OversizedMetadataMemoryRenderer: MemoryPromptRendering {
 private actor ControlledMemoryStore: MemoryStoring {
     enum Behavior: Sendable {
         case waitForCancellation
+        case matchingResult
+        case failure
         case oversizedResult
         case outOfScopeResult
         case cursorWithoutMatch
@@ -2137,6 +2280,35 @@ private actor ControlledMemoryStore: MemoryStoring {
         case .waitForCancellation:
             try await Task.sleep(for: .seconds(60))
             return MemoryQueryResult(matches: [], truncated: false)
+
+        case .matchingResult:
+            let record = MemoryRecord(
+                id: "matching-memory",
+                namespace: query.namespace,
+                scope: query.scopes.first ?? "confirmed-learning",
+                category: "learning",
+                summary: "Confirmed learning from prior use.",
+                importance: 0.9
+            )
+            let queryTokens = Set(MemoryQueryEngine.uniqueTokens(query.text))
+            return MemoryQueryResult(
+                matches: [
+                    MemoryQueryEngine.makeMatch(
+                        record: record,
+                        query: query,
+                        now: Date(),
+                        matchedTokenCount: MemoryQueryEngine.matchedTokenCount(
+                            for: record,
+                            queryTokens: queryTokens
+                        ),
+                        queryTokenCount: queryTokens.count
+                    )
+                ],
+                truncated: false
+            )
+
+        case .failure:
+            throw AgentStoreError.queryNotSupported("Simulated unavailable memory store")
 
         case .oversizedResult:
             let matches = (0 ... query.limit).map { index in

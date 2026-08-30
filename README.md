@@ -866,6 +866,9 @@ let quickSummary = try await runtime.send(
 )
 ```
 
+Ephemeral turns may still retrieve and inject configured memory. Here, “capture memories” means
+automatic memory writes from the completed transcript, which remain disabled for ephemeral work.
+
 More specific personas replace less specific ones: a thread persona replaces the runtime/backend personality, and `personaOverride` replaces both for one request.
 
 Provide `personaOverride` when a transient execution agent should use a request-local personality:
@@ -1251,20 +1254,54 @@ let completed = try await runtime.sendWithSummary(
     in: thread.id,
     response: RaceAssessment.self
 )
-let applied = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
-assert(applied.first?.turnID == completed.summary.turnID)
+let applied = completed.memoryApplicationSnapshot
+assert(applied?.turnID == completed.summary.turnID)
+
+let durable = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
+assert(durable.first == applied)
+```
+
+`AgentTurnResult.memoryApplication` is explicit about successful turns that did not apply memory:
+
+- `.applied(snapshot)` returns the exact query result and rendered instructions used for the turn.
+- `.notApplied(.disabled)` means the request explicitly disabled memory.
+- `.notApplied(.noMatches)` means retrieval succeeded but neither the result nor renderer produced instructions.
+- `.notApplied(.unavailable)` means the memory store could not complete the query; the model turn continued without memory.
+- Other reasons distinguish missing selection context, empty renderer output, rejected unsafe data, an unconfigured runtime, and attribution omitted by manual result construction.
+
+The result also exposes `clientRequestID` at the top level, so callers can correlate a successful
+turn even when memory was not applied. CodexKit resolves memory once before backend execution and
+captures the outcome at accepted completion; returning attribution does not run another query.
+
+For an ephemeral request, `sendWithSummary` returns the same first-class outcome without writing a
+turn or attribution record:
+
+```swift
+let completed = try await runtime.sendWithSummary(
+    Request(
+        text: "Analyse this transient race payload",
+        executionMode: .ephemeral
+    ).correlated(with: assessmentID),
+    in: thread.id,
+    response: RaceAssessment.self
+)
+
+if case let .applied(snapshot) = completed.memoryApplication {
+    learningPipeline.recordEvidence(from: snapshot)
+}
 ```
 
 `sendWithSummary` requires a backend completion-summary event. The existing `send` overloads retain
-their message-only completion behavior for source and behavioral compatibility with custom backends.
+their value-only, message-completion behavior for source and behavioral compatibility with custom
+backends. Manually initialized `AgentTurnResult` values default to `.notApplied(.notReported)`.
 
 `MemoryObserving.handle(application:)` is a non-blocking notification of that durable record;
 it is not the source of truth and may be missed if the process exits. Query previews, empty
 rendered memory, failed or cancelled turns, and runtime-rejected completions do not produce
-application snapshots. Ephemeral requests are intentionally not persisted, so their callback
-remains best effort. A completed runtime turn means the model received the memory and the
-runtime accepted its completion; an application with additional domain validation should keep
-the snapshot pending until that validation succeeds.
+application snapshots. For ephemeral `sendWithSummary` calls, the returned outcome is authoritative
+for that call while the observer remains best effort. A completed runtime turn means the model
+received the attributed memory and the runtime accepted its completion; an application with
+additional domain validation should keep the snapshot pending until that validation succeeds.
 
 The runtime validates every custom-backend event against the active thread and turn, using the
 correlation fields that event exposes, before it is published, executed, or persisted. An accepted

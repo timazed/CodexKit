@@ -12,6 +12,7 @@ extension AgentRuntime {
         resolvedInstructions: ResolvedAgentInstructions,
         clientRequestID: String? = nil,
         storesTurnState: Bool = true,
+        completionCapture: AgentTurnCompletionCapture? = nil,
         continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     ) async {
         let policyTracker: TurnSkillPolicyTracker? = if resolvedTurnSkills.compiledToolPolicy.hasConstraints {
@@ -226,13 +227,14 @@ extension AgentRuntime {
                         return
                     }
 
-                    let memoryApplication = makeMemoryApplicationSnapshot(
+                    let memoryApplicationOutcome = makeMemoryApplicationOutcome(
                         resolvedInstructions: resolvedInstructions,
                         threadID: threadID,
                         turnID: summary.turnID,
                         clientRequestID: clientRequestID,
                         resolvedTurnSkills: resolvedTurnSkills
                     )
+                    let memoryApplication = memoryApplicationOutcome.snapshot
 
                     if storesTurnState {
                         try appendHistoryItem(
@@ -277,6 +279,9 @@ extension AgentRuntime {
                     if storesTurnState {
                         continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle))
                     }
+                    await completionCapture?.record(
+                        memoryApplication: memoryApplicationOutcome
+                    )
                     notifyMemoryApplication(memoryApplication)
                     continuation.yield(.turnCompleted(summary))
                     continuation.finish()

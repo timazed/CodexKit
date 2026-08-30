@@ -67,6 +67,55 @@ public struct ResolvedAgentInstructionsPreview: Codable, Hashable, Sendable {
     }
 }
 
+/// Why a successful runtime turn did not apply memory instructions.
+public enum MemoryApplicationOmissionReason: String, Codable, Hashable, Sendable {
+    /// The runtime was created without a memory configuration.
+    case notConfigured
+
+    /// Memory was explicitly disabled for this request.
+    case disabled
+
+    /// The request and thread did not provide an effective memory namespace.
+    case noSelectionContext
+
+    /// The memory query completed successfully but selected no records, and
+    /// the renderer did not produce any instructions independently.
+    case noMatches
+
+    /// Records were selected, but the renderer produced no instructions.
+    case rendererOmittedAll
+
+    /// The configured memory store could not complete the query.
+    case unavailable
+
+    /// CodexKit rejected an invalid query, result, or rendered attribution.
+    case rejected
+
+    /// Attribution was not supplied, such as by a manually initialized result.
+    case notReported
+}
+
+/// The memory attribution attached to a successfully completed runtime turn.
+public enum MemoryApplicationOutcome: Codable, Hashable, Sendable {
+    /// Memory instructions were included in the model input.
+    case applied(MemoryApplicationSnapshot)
+
+    /// No memory instructions were included in the model input.
+    case notApplied(MemoryApplicationOmissionReason)
+
+    /// The exact applied snapshot, or `nil` when memory was not applied.
+    public var snapshot: MemoryApplicationSnapshot? {
+        guard case let .applied(snapshot) = self else { return nil }
+        return snapshot
+    }
+
+    /// The reason memory was not applied, or `nil` when it was applied.
+    public var omissionReason: MemoryApplicationOmissionReason? {
+        guard case let .notApplied(reason) = self else { return nil }
+        return reason
+    }
+}
+
 /// An exact snapshot of the rendered memory attached to a successfully
 /// completed runtime turn. Failed, cancelled, and runtime-rejected turns do
 /// not produce an application snapshot.

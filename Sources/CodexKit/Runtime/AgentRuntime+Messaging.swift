@@ -182,7 +182,8 @@ extension AgentRuntime {
     func streamRequest(
         _ request: Request,
         in threadID: String,
-        responseContract: AgentResponseContract?
+        responseContract: AgentResponseContract?,
+        completionCapture: AgentTurnCompletionCapture? = nil
     ) async throws -> AsyncThrowingStream<AgentEvent, Error> {
         guard request.hasContent else {
             throw AgentRuntimeError.invalidMessageContent()
@@ -289,6 +290,7 @@ extension AgentRuntime {
                         resolvedInstructions: resolvedInstructions,
                         clientRequestID: request.clientRequestID,
                         storesTurnState: storesTurnState,
+                        completionCapture: completionCapture,
                         continuation: continuation
                     )
                 } catch {

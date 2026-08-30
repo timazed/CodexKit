@@ -18,15 +18,20 @@ extension AgentRuntime {
         _ request: Request,
         in threadID: String
     ) async throws -> AgentTurnResult<String> {
+        let completionCapture = AgentTurnCompletionCapture()
         let stream = try await streamRequest(
             request,
             in: threadID,
-            responseContract: nil
+            responseContract: nil,
+            completionCapture: completionCapture
         )
         let completed = try await collectFinalAssistantTurn(from: stream)
+        let memoryApplication = await completionCapture.memoryApplication()
         return AgentTurnResult(
             value: completed.message.displayText,
-            summary: completed.summary
+            summary: completed.summary,
+            clientRequestID: request.clientRequestID,
+            memoryApplication: memoryApplication
         )
     }
 
@@ -93,19 +98,24 @@ extension AgentRuntime {
         responseContract: AgentResponseContract,
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> AgentTurnResult<Output> {
+        let completionCapture = AgentTurnCompletionCapture()
         let stream = try await streamRequest(
             request,
             in: threadID,
-            responseContract: responseContract
+            responseContract: responseContract,
+            completionCapture: completionCapture
         )
         let completed = try await collectFinalAssistantTurn(from: stream)
+        let memoryApplication = await completionCapture.memoryApplication()
         return AgentTurnResult(
             value: try decodeOneShotResponse(
                 completed.message.text,
                 as: outputType,
                 decoder: decoder
             ),
-            summary: completed.summary
+            summary: completed.summary,
+            clientRequestID: request.clientRequestID,
+            memoryApplication: memoryApplication
         )
     }
 
