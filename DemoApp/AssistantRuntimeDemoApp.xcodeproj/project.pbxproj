@@ -31,6 +31,8 @@
 		1A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */; };
 		1A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift */; };
 		1A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */; };
+		1A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift */; };
+		1A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift */; };
 		7482123BC63AC10F104DE092 /* AssistantRuntimeDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */; };
 		84726927B752451499D9257F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 906A95007C8ECB92CFC2CE15 /* Foundation.framework */; };
 		B060448C6464C41789B56EED /* AgentDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA22585116A120BA97F76B8 /* AgentDemoView.swift */; };
@@ -68,6 +70,8 @@
 		2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThreadTurnActivityView.swift; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+Presentation.swift"; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThreadMessageViews.swift; sourceTree = "<group>"; };
+		2A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoViewModel+RuntimeFeatures.swift"; sourceTree = "<group>"; };
+		2A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RuntimeFeatureViews.swift; sourceTree = "<group>"; };
 		3CA22585116A120BA97F76B8 /* AgentDemoView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoView.swift; sourceTree = "<group>"; };
 		5A6999E6475919476E726E8C /* AssistantRuntimeDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantRuntimeDemoApp.swift; sourceTree = "<group>"; };
 		690A3E5A03E545F88FAF9A44 /* AssistantRuntimeDemoApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AssistantRuntimeDemoApp.entitlements; sourceTree = "<group>"; };
@@ -163,6 +167,8 @@
 				2A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift */,
 				2A2B3C4D5E6F70000000000F /* ThreadDetailView.swift */,
 				2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */,
+				2A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift */,
+				2A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift */,
 				2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */,
 				2A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift */,
 				2A2B3C4D5E6F700000000011 /* AgentDemoViewModel+Memory.swift */,
@@ -260,6 +266,8 @@
 				1A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift in Sources */,
 				1A2B3C4D5E6F70000000000F /* ThreadDetailView.swift in Sources */,
 				1A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift in Sources */,
+				1A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift in Sources */,
+				1A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift in Sources */,
 				1A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift in Sources */,
 				1A2B3C4D5E6F700000000011 /* AgentDemoViewModel+Memory.swift in Sources */,
 				1A2B3C4D5E6F700000000012 /* MemoryDemoView.swift in Sources */,

@@ -50,6 +50,8 @@ public struct AgentStructuredOutputValidationFailure: Error, Hashable, Sendable 
 public enum AgentStructuredStreamEvent<Output: Sendable>: Sendable {
     case threadStarted(AgentThread)
     case threadStatusChanged(threadID: String, status: AgentThreadStatus)
+    case progress(AgentTurnProgress)
+    case rateLimitsUpdated([AgentRateLimitSnapshot])
     case turnStarted(AgentTurn)
     case assistantMessageDelta(threadID: String, turnID: String, delta: String)
     case messageCommitted(AgentMessage)
@@ -61,6 +63,7 @@ public enum AgentStructuredStreamEvent<Output: Sendable>: Sendable {
     case structuredOutputCommitted(Output)
     case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
     case turnCompleted(AgentTurnSummary)
+    case turnInterrupted(AgentTurnInterruption)
     case turnFailed(AgentRuntimeError)
 }
 

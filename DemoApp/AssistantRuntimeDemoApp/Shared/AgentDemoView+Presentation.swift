@@ -6,8 +6,8 @@ extension AgentDemoView {
     @ViewBuilder
     func modelTile(for model: CodexModel) -> some View {
         DemoActionTile(
-            title: model.info?.displayName ?? model.rawValue,
-            subtitle: model.info?.summary ?? "Custom Codex model.",
+            title: viewModel.discoveredModel(model)?.displayName ?? model.info?.displayName ?? model.rawValue,
+            subtitle: viewModel.discoveredModel(model)?.summary ?? model.info?.summary ?? "Custom Codex model.",
             systemImage: model.demoSystemImage,
             isProminent: model.rawValue == viewModel.activeThreadConfiguration.model,
             isDisabled: !viewModel.canReconfigureRuntime
@@ -112,6 +112,7 @@ extension AgentDemoView {
 private extension CodexModel {
     var demoSystemImage: String {
         switch self {
+        case .gpt6Astra: "star.fill"
         case .gpt56Sol: "sun.max"
         case .gpt56Terra: "globe.americas"
         case .gpt56Luna: "moon.stars"

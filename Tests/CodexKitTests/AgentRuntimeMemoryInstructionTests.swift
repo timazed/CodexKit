@@ -706,7 +706,7 @@ extension AgentRuntimeTests {
 
         for _ in 0 ..< 100 {
             let summary = try await runtime.fetchThreadSummary(id: thread.id)
-            if summary.latestTurnStatus == .failed {
+            if summary.latestTurnStatus == .interrupted {
                 break
             }
             try await Task.sleep(for: .milliseconds(10))
@@ -714,7 +714,7 @@ extension AgentRuntimeTests {
 
         let summary = try await runtime.fetchThreadSummary(id: thread.id)
         let applications = try await runtime.fetchMemoryApplicationSnapshots(id: thread.id)
-        XCTAssertEqual(summary.latestTurnStatus, .failed)
+        XCTAssertEqual(summary.latestTurnStatus, .interrupted)
         XCTAssertTrue(applications.isEmpty)
     }
 

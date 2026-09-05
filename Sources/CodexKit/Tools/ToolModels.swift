@@ -14,19 +14,24 @@ public struct ToolDefinition: Identifiable, Hashable, Sendable {
     public let inputSchema: JSONValue
     public let approvalPolicy: ToolApprovalPolicy
     public let approvalMessage: String?
+    /// Opt in only when this tool may overlap other parallel tools safely.
+    /// Approval-gated tools always execute exclusively within a batch.
+    public let supportsParallelExecution: Bool
 
     public init(
         name: String,
         description: String,
         inputSchema: JSONValue,
         approvalPolicy: ToolApprovalPolicy = .automatic,
-        approvalMessage: String? = nil
+        approvalMessage: String? = nil,
+        supportsParallelExecution: Bool = false
     ) {
         self.name = name
         self.description = description
         self.inputSchema = inputSchema
         self.approvalPolicy = approvalPolicy
         self.approvalMessage = approvalMessage
+        self.supportsParallelExecution = supportsParallelExecution
     }
 
     public static func isValidName(_ name: String) -> Bool {

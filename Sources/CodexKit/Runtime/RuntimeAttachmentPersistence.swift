@@ -10,6 +10,7 @@ package struct PersistedImageAttachment: Codable, Hashable {
 package struct PersistedAgentMessage: Codable, Hashable {
     let id: String
     let threadID: String
+    let phase: AgentMessagePhase?
     let role: AgentRole
     let text: String
     let images: [PersistedImageAttachment]
@@ -29,6 +30,7 @@ package struct PersistedAgentMessage: Codable, Hashable {
         try attachmentStore.validateAttachments(in: [message])
         self.id = message.id
         self.threadID = message.threadID
+        self.phase = message.phase
         self.role = message.role
         self.text = message.text
         self.images = try message.images.enumerated().map { index, attachment in
@@ -68,6 +70,7 @@ package struct PersistedAgentMessage: Codable, Hashable {
             role: role,
             text: text,
             images: try images.map { try attachmentStore.load($0) },
+            phase: phase,
             structuredOutput: structuredOutput,
             toolInteraction: try toolInteraction?.decode(using: attachmentStore),
             createdAt: createdAt
@@ -91,6 +94,7 @@ package struct PersistedAgentMessage: Codable, Hashable {
                     generationMetadata: $0.generationMetadata
                 )
             },
+            phase: phase,
             structuredOutput: structuredOutput,
             toolInteraction: try toolInteraction?.decodeForProjection(),
             createdAt: createdAt

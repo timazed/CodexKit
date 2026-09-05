@@ -124,6 +124,7 @@ extension AgentDemoViewModel {
             try await registerTool(travelPlannerDefinition) { invocation, _ in
                 self.toolOutputFactory.makeTravelDayPlan(invocation: invocation)
             }
+            try await registerParallelDemoTools()
             developerLog(
                 "Registered demo tools: \(catalog.healthCoachToolName), \(catalog.travelPlannerToolName)"
             )

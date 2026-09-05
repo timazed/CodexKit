@@ -273,6 +273,7 @@ private extension AgentHistoryItem {
                     role: message.role,
                     text: "[Redacted]",
                     images: [],
+                    phase: message.phase,
                     structuredOutput: message.structuredOutput.map {
                         AgentStructuredOutputMetadata(
                             formatName: $0.formatName,

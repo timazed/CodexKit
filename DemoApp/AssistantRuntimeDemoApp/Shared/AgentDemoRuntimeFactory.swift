@@ -149,6 +149,7 @@ enum AgentDemoRuntimeFactory {
                 configuration: CodexResponsesBackendConfiguration(
                     model: model,
                     reasoningEffort: reasoningEffort,
+                    enableReasoningSummaries: true,
                     enableWebSearch: enableWebSearch,
                     enableImageGeneration: enableImageGeneration,
                     logging: sdkLogging

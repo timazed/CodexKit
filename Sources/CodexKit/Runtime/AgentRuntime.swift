@@ -26,6 +26,7 @@ public actor AgentRuntime {
         public let logging: AgentLoggingConfiguration
         public let memory: AgentMemoryConfiguration?
         public let baseInstructions: String?
+        public let maximumParallelToolCalls: Int
         public let tools: [ToolRegistration]
         public let skills: [AgentSkill]
         public let definitionSourceLoader: AgentDefinitionSourceLoader
@@ -42,6 +43,7 @@ public actor AgentRuntime {
             logging: AgentLoggingConfiguration = .disabled,
             memory: AgentMemoryConfiguration? = nil,
             baseInstructions: String? = nil,
+            maximumParallelToolCalls: Int = 4,
             tools: [ToolRegistration] = [],
             skills: [AgentSkill] = [],
             definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader(),
@@ -57,6 +59,7 @@ public actor AgentRuntime {
             self.logging = logging
             self.memory = memory
             self.baseInstructions = baseInstructions
+            self.maximumParallelToolCalls = max(1, maximumParallelToolCalls)
             self.tools = tools
             self.skills = skills
             self.definitionSourceLoader = definitionSourceLoader
@@ -70,6 +73,9 @@ public actor AgentRuntime {
     let stateStore: any RuntimeStateStoring
     let sessionManager: ChatGPTSessionManager
     let logger: AgentLogger
+    let maximumParallelToolCalls: Int
+    var activeTurnExecutions: [String: AgentActiveTurnExecution] = [:]
+    var parallelToolWaits: [String: [String: AgentPendingToolWaitState]] = [:]
     let toolRegistry: ToolRegistry
     let approvalCoordinator: ApprovalCoordinator
     let memoryConfiguration: AgentMemoryConfiguration?
@@ -178,6 +184,7 @@ public actor AgentRuntime {
     // MARK: - Lifecycle
 
     public init(configuration: Configuration) throws {
+        self.maximumParallelToolCalls = configuration.maximumParallelToolCalls
         self.backend = configuration.backend
         self.stateStore = configuration.stateStore
         self.logger = AgentLogger(configuration: configuration.logging)

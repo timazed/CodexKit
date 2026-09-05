@@ -18,6 +18,7 @@ struct TurnRunState {
     var previousResponseID: String?
     var aggregateUsage = AgentUsage()
     var pendingResponseItems: [PendingResponseItem] = []
+    var pendingFunctionCalls: [FunctionCallRecord] = []
     var pendingToolOutputs: [WorkingHistoryItem] = []
     var pendingToolImages: [AgentImageAttachment] = []
     var pendingToolFallbackTexts: [String] = []
@@ -25,6 +26,7 @@ struct TurnRunState {
     var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
 
     mutating func beginAttempt() {
+        pendingFunctionCalls.removeAll(keepingCapacity: true)
         pendingResponseItems.removeAll(keepingCapacity: true)
         pendingToolOutputs.removeAll(keepingCapacity: true)
     }

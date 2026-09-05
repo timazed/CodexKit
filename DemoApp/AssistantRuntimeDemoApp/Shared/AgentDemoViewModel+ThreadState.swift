@@ -21,7 +21,7 @@ extension AgentDemoViewModel {
     }
 
     func signIn(using authenticationMethod: DemoAuthenticationMethod) async {
-        guard !isAuthenticating else {
+        guard canReconfigureRuntime else {
             return
         }
 
@@ -45,6 +45,7 @@ extension AgentDemoViewModel {
                 approvalInbox: approvalInbox,
                 deviceCodePromptCoordinator: deviceCodePromptCoordinator
             )
+            resetRuntimeFeatures()
             configureRuntimeObservationBindings()
             _ = try await runtime.restore()
             await registerDemoTool()
@@ -106,6 +107,7 @@ extension AgentDemoViewModel {
             guidedMemoryResult = nil
             rawMemoryResult = nil
             memoryPreviewResult = nil
+            resetRuntimeFeatures()
             configureRuntimeObservationBindings()
             await registerDemoTool()
             await registerDemoSkills()
@@ -168,9 +170,11 @@ extension AgentDemoViewModel {
 
         let current = activeThread?.configuration ?? defaultThreadConfiguration
         let modelInfo = selectedModel.info
-        let resolvedReasoningEffort = modelInfo?.supports(current.reasoningEffort) != false
+        let discovered = discoveredModel(selectedModel)
+        let supported = discovered?.supportedReasoningEfforts ?? modelInfo?.supportedReasoningEfforts
+        let resolvedReasoningEffort = supported?.contains(current.reasoningEffort) != false
             ? current.reasoningEffort
-            : modelInfo?.defaultReasoningEffort ?? current.reasoningEffort
+            : discovered?.defaultReasoningEffort ?? modelInfo?.defaultReasoningEffort ?? current.reasoningEffort
 
         if let activeThreadID {
             guard current.model != selectedModel.rawValue ||
@@ -285,12 +289,14 @@ extension AgentDemoViewModel {
 
     func activateThread(id: String) async {
         do {
-            _ = try await runtime.resumeThread(id: id)
+            if !(await runtime.activeThreads()).contains(where: { $0.id == id }) {
+                _ = try await runtime.resumeThread(id: id)
+            }
             threads = await runtime.activeThreads()
+            if activeThreadID != id { streamingText = "" }
             activeThreadID = id
             bindActiveThreadObservation(for: id)
             setMessages(await runtime.messages(for: id))
-            streamingText = ""
             await refreshThreadContextState(for: id)
         } catch {
             reportError(error)
@@ -298,11 +304,13 @@ extension AgentDemoViewModel {
     }
 
     func signOut() async {
+        guard canReconfigureRuntime else { return }
         do {
             try await runtime.signOut()
             await deviceCodePromptCoordinator.clear()
             await refreshThreadCatalog()
             session = nil
+            resetRuntimeFeatures()
             activeRuntimeThreads = []
             messages = []
             streamingText = ""
@@ -346,6 +354,7 @@ extension AgentDemoViewModel {
         session = await runtime.currentSession()
         await refreshThreadCatalog()
         guard session != nil else {
+            resetRuntimeFeatures()
             clearConversationSnapshot()
             developerLog(
                 "Snapshot refreshed with no active session. persistedThreadCount=\(persistedThreads.count)"
@@ -356,6 +365,8 @@ extension AgentDemoViewModel {
         developerLog(
             "Snapshot refreshed. session=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
         )
+
+        if modelCatalog == nil { await refreshModels() }
 
         let selectedThreadID = activeThreadID
         if let selectedThreadID,

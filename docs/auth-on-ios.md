@@ -1,5 +1,7 @@
 # ChatGPT Auth on iOS
 
+[Documentation index](index.md) · [CodexKit](../README.md)
+
 ## Upstream Codex Model
 
 Codex separates:

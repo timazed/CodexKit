@@ -95,6 +95,7 @@ public enum AgentSystemEventType: String, Codable, Hashable, Sendable {
     case turnStarted
     case turnCompleted
     case turnFailed
+    case turnInterrupted
     case contextCompacted
 }
 

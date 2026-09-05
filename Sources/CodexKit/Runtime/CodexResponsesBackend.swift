@@ -10,9 +10,11 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let model: String
     public let reasoningEffort: ReasoningEffort
     public let instructions: String
+    public let modelClientVersion: String
     public let originator: String
     public let streamIdleTimeout: TimeInterval
     public let extraHeaders: [String: String]
+    public let enableReasoningSummaries: Bool
     public let enableWebSearch: Bool
     public let enableImageGeneration: Bool
     public let imageGenerationOutputFormat: String
@@ -31,9 +33,11 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         instructions: String = """
         You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
         """,
+        modelClientVersion: String = "0.153.0",
         originator: String = "codex_cli_rs",
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
+        enableReasoningSummaries: Bool = false,
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
@@ -47,9 +51,11 @@ public struct CodexResponsesBackendConfiguration: Sendable {
             ?? CodexModel(rawValue: model).info?.defaultReasoningEffort
             ?? .medium
         self.instructions = instructions
+        self.modelClientVersion = modelClientVersion
         self.originator = originator
         self.streamIdleTimeout = streamIdleTimeout
         self.extraHeaders = extraHeaders
+        self.enableReasoningSummaries = enableReasoningSummaries
         self.enableWebSearch = enableWebSearch
         self.enableImageGeneration = enableImageGeneration
         self.imageGenerationOutputFormat = imageGenerationOutputFormat
@@ -65,9 +71,11 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         instructions: String = """
         You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
         """,
+        modelClientVersion: String = "0.153.0",
         originator: String = "codex_cli_rs",
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
+        enableReasoningSummaries: Bool = false,
         enableWebSearch: Bool = false,
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
@@ -80,9 +88,11 @@ public struct CodexResponsesBackendConfiguration: Sendable {
             model: model.rawValue,
             reasoningEffort: reasoningEffort ?? model.info?.defaultReasoningEffort ?? .medium,
             instructions: instructions,
+            modelClientVersion: modelClientVersion,
             originator: originator,
             streamIdleTimeout: streamIdleTimeout,
             extraHeaders: extraHeaders,
+            enableReasoningSummaries: enableReasoningSummaries,
             enableWebSearch: enableWebSearch,
             enableImageGeneration: enableImageGeneration,
             imageGenerationOutputFormat: imageGenerationOutputFormat,
@@ -137,6 +147,9 @@ public actor CodexResponsesBackend: AgentBackend {
     let urlSession: URLSession
     let encoder = JSONEncoder()
     let decoder = JSONDecoder()
+    var modelCatalogs: [String: CodexModelCacheEntry] = [:]
+    var catalogAccountID: String?
+    let rateLimitStore = CodexRateLimitStore()
 
     public init(
         configuration: CodexResponsesBackendConfiguration = CodexResponsesBackendConfiguration(),
@@ -208,6 +221,7 @@ public actor CodexResponsesBackend: AgentBackend {
         } else {
             responseContract = nil
         }
+        catalogAccountID = session.account.id
         return CodexResponsesTurnSession(
             configuration: configuration,
             logger: logger,
@@ -221,7 +235,8 @@ public actor CodexResponsesBackend: AgentBackend {
             providerContext: providerContext,
             message: message,
             tools: tools,
-            session: session
+            session: session,
+            rateLimitStore: rateLimitStore
         ).stream
     }
 }
@@ -238,11 +253,15 @@ extension CodexResponsesBackend: AgentBackendContextWindowProviding {
     }
 
     public func modelContextWindowTokenCount(for model: String) async -> Int? {
-        configuration.modelContextWindowTokenCount(for: model)
+        if let account = catalogAccountID,
+           let remote = modelCatalogs[account]?.models.first(where: { $0.model.rawValue == model }),
+           let window = remote.contextWindowTokenCount { return window }
+        return configuration.modelContextWindowTokenCount(for: model)
     }
 
     public func usableContextWindowTokenCount(for model: String) async -> Int? {
-        configuration.usableContextWindowTokenCount(for: model)
+        guard let window = await modelContextWindowTokenCount(for: model) else { return nil }
+        return (window / 100) * 95
     }
 }
 
@@ -284,9 +303,12 @@ private struct CodexResponsesTurnSession {
         providerContext: AgentProviderContext?,
         message: Request,
         tools: [ToolDefinition],
-        session: ChatGPTSession
+        session: ChatGPTSession,
+        rateLimitStore: CodexRateLimitStore
     ) {
         let pendingToolResults = PendingToolResults()
+        let control = CodexTurnControl()
+        let cancellation = AgentTurnCancellationHandle()
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
         let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
 
@@ -308,10 +330,15 @@ private struct CodexResponsesTurnSession {
                 tools: tools,
                 session: session,
                 pendingToolResults: pendingToolResults,
+                control: control,
+                rateLimitObserver: { snapshots in
+                    await rateLimitStore.update(snapshots, accountID: session.account.id)
+                },
                 continuation: continuation
             )
 
             let producerTask = Task {
+                defer { cancellation.clear() }
                 do {
                     let result = try await runner.run(
                         history: history,
@@ -355,16 +382,24 @@ private struct CodexResponsesTurnSession {
                             "error": error.localizedDescription
                         ]
                     )
+                    await control.close()
                     continuation.finish(throwing: error)
                 }
             }
+            cancellation.install { producerTask.cancel() }
             continuation.onTermination = { @Sendable termination in
                 if case .cancelled = termination {
                     producerTask.cancel()
                 }
             }
         }
-        stream = AgentTurnStream(events: events) { result, invocationID in
+        stream = AgentTurnStream(events: events, steer: { message in
+            guard message.threadID == thread.id, message.role == .user,
+                  !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.images.isEmpty else {
+                throw AgentRuntimeError.invalidMessageContent()
+            }
+            try await control.steer(message)
+        }, interrupt: { cancellation.cancel() }) { result, invocationID in
             await pendingToolResults.resolve(result, for: invocationID)
         }
     }

@@ -20,6 +20,7 @@ struct CodexResponsesTurnRunner {
     let request: Request
     let tools: [ToolDefinition]
     let session: ChatGPTSession
+    let control: CodexTurnControl
     let pendingToolResults: PendingToolResults
     let continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
 
@@ -39,6 +40,8 @@ struct CodexResponsesTurnRunner {
         tools: [ToolDefinition],
         session: ChatGPTSession,
         pendingToolResults: PendingToolResults,
+        control: CodexTurnControl = CodexTurnControl(),
+        rateLimitObserver: @escaping @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in },
         continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
     ) {
         self.configuration = configuration
@@ -50,7 +53,8 @@ struct CodexResponsesTurnRunner {
         self.streamClient = CodexResponsesEventStreamClient(
             urlSession: urlSession,
             decoder: decoder,
-            logger: logger
+            logger: logger,
+            rateLimitObserver: rateLimitObserver
         )
         self.toolOutputAdapter = CodexResponsesToolOutputAdapter(urlSession: urlSession)
         self.threadID = threadID
@@ -59,6 +63,7 @@ struct CodexResponsesTurnRunner {
         self.request = request
         self.tools = tools
         self.session = session
+        self.control = control
         self.pendingToolResults = pendingToolResults
         self.continuation = continuation
     }
@@ -243,7 +248,16 @@ struct CodexResponsesTurnRunner {
         var nextPass: TurnPassDisposition = .needsAnotherPass
 
         while case .needsAnotherPass = nextPass {
+            try Task.checkCancellation()
             nextPass = try await runTurnPassWithRetry(state: &state)
+            let messages = await control.drain(closeIfEmpty: nextPass == .completed)
+            if !messages.isEmpty {
+                for message in messages {
+                    state.workingHistory.append(.userMessage(message))
+                    continuation.yield(.userMessageAccepted(message))
+                }
+                nextPass = .needsAnotherPass
+            }
         }
     }
 
@@ -369,6 +383,9 @@ struct CodexResponsesTurnRunner {
             }
         }
         try Task.checkCancellation()
-        return passDisposition
+        throw AgentRuntimeError(
+            code: "responses_stream_disconnected",
+            message: "The Responses stream closed before response.completed."
+        )
     }
 }

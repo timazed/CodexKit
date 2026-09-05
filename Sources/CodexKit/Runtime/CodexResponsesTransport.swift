@@ -16,7 +16,8 @@ struct CodexResponsesRequestFactory: Sendable {
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
             model: threadConfiguration.model,
-            reasoning: .init(effort: threadConfiguration.reasoningEffort),
+            reasoning: .init(effort: threadConfiguration.reasoningEffort,
+                summary: configuration.enableReasoningSummaries ? "auto" : nil),
             instructions: instructions,
             text: .init(
                 format: .init(
@@ -31,7 +32,7 @@ struct CodexResponsesRequestFactory: Sendable {
                 imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ),
             toolChoice: "auto",
-            parallelToolCalls: false,
+            parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
             store: configuration.stateManagement == .serverManaged,
             stream: true,
             include: configuration.stateManagement == .clientManaged
@@ -45,6 +46,7 @@ struct CodexResponsesRequestFactory: Sendable {
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
         request.httpMethod = "POST"
+        request.timeoutInterval = configuration.streamIdleTimeout
         request.httpBody = try encoder.encode(requestBody)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -85,6 +87,7 @@ struct CodexResponsesEventStreamClient: Sendable {
     let urlSession: URLSession
     let decoder: JSONDecoder
     let logger: AgentLogger
+    var rateLimitObserver: @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in }
 
     func streamEvents(
         request: URLRequest
@@ -117,6 +120,9 @@ struct CodexResponsesEventStreamClient: Sendable {
                 message: "The ChatGPT responses endpoint returned an invalid response."
             )
         }
+
+        let rateLimits = CodexRateLimitParser.headers(httpResponse)
+        if !rateLimits.isEmpty { await rateLimitObserver(rateLimits) }
 
         if !(200 ..< 300).contains(httpResponse.statusCode) {
             let bodyData = try await readAll(
@@ -153,6 +159,9 @@ struct CodexResponsesEventStreamClient: Sendable {
         )
 
         return AsyncThrowingStream { continuation in
+            if !rateLimits.isEmpty {
+                continuation.yield(.init(kind: .rateLimits(rateLimits), sequenceNumber: nil))
+            }
             let producerTask = Task {
                 var parser = SSEEventParser()
 
@@ -226,6 +235,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         policy: RequestRetryPolicy
     ) -> Bool {
         if let runtimeError = error as? AgentRuntimeError {
+            if runtimeError.code == "responses_stream_disconnected" { return true }
             if runtimeError.code == AgentRuntimeError.unauthorized().code {
                 return false
             }
@@ -317,6 +327,9 @@ struct CodexResponsesEventStreamClient: Sendable {
         }
 
         let payloadData = Data(payload.data.utf8)
+        if let snapshot = CodexRateLimitParser.event(payloadData) {
+            return CodexResponsesStreamEvent(kind: .rateLimits([snapshot]), sequenceNumber: nil)
+        }
         let envelope: StreamEnvelope
         do {
             envelope = try decoder.decode(
@@ -355,6 +368,25 @@ struct CodexResponsesEventStreamClient: Sendable {
 
         let kind: CodexResponsesStreamEvent.Kind
         switch envelope.type {
+        case "response.output_item.added":
+            guard let object = envelope.item?.rawValue.objectValue,
+                  let id = object["id"]?.stringValue else { kind = .other; break }
+            if object["type"]?.stringValue == "message" {
+                kind = .progress(.messageStarted(itemID: id,
+                    phase: object["phase"]?.stringValue.map(AgentMessagePhase.init(rawValue:))))
+            } else if object["type"]?.stringValue == "web_search_call" {
+                kind = .progress(.webSearch(itemID: id,
+                    status: object["status"]?.stringValue ?? "in_progress", action: object["action"]))
+            } else { kind = .other }
+        case "response.reasoning_summary_text.delta":
+            guard let id = envelope.itemID, let delta = envelope.delta else { kind = .other; break }
+            kind = .progress(.reasoningSummaryDelta(itemID: id,
+                summaryIndex: envelope.summaryIndex ?? 0, delta: delta))
+        case "response.web_search_call.in_progress", "response.web_search_call.searching",
+             "response.web_search_call.completed":
+            guard let id = envelope.itemID else { kind = .other; break }
+            kind = .progress(.webSearch(itemID: id,
+                status: String(envelope.type.split(separator: ".").last ?? ""), action: nil))
         case "response.created":
             kind = .responseCreated(responseID: envelope.response?.id)
         case "response.output_text.delta":

@@ -12,11 +12,12 @@ extension AgentDemoViewModel {
         var assistantReply: String?
     }
 
+    @discardableResult
     func createThreadInternal(
         title: String?,
         personaStack: AgentPersonaStack?,
         skillIDs: [String] = []
-    ) async {
+    ) async -> String? {
         do {
             developerLog(
                 "Creating thread. title=\(title ?? "<untitled>") skills=\(skillIDs.joined(separator: ",")) personaLayers=\(personaStack?.layers.count ?? 0)"
@@ -34,8 +35,10 @@ extension AgentDemoViewModel {
             developerLog(
                 "Created thread. id=\(thread.id) title=\(thread.title ?? "<untitled>") totalThreads=\(threads.count)"
             )
+            return thread.id
         } catch {
             reportError(error)
+            return nil
         }
     }
 
@@ -249,8 +252,25 @@ extension AgentDemoViewModel {
         _ request: Request,
         in threadID: String,
         captureResolvedInstructions: Bool,
-        renderInActiveTranscript: Bool
+        renderInActiveTranscript shouldRenderTranscript: Bool
     ) async throws -> SendDiagnostics {
+        let tracksTurn = !request.isEphemeral
+        var terminalNotice = "Turn failed"
+        if tracksTurn {
+            guard sendingThreadIDs.insert(threadID).inserted else {
+                throw AgentRuntimeError(code: "thread_busy", message: "This thread already has a running turn.")
+            }
+            turnActivities[threadID] = DemoTurnActivity()
+        }
+        defer {
+            if tracksTurn {
+                sendingThreadIDs.remove(threadID)
+                runningTurnIDs[threadID] = nil
+                stoppingThreadIDs.remove(threadID)
+                turnActivities[threadID]?.runningTools = [:]
+                turnActivities[threadID]?.notice = terminalNotice
+            }
+        }
         if captureResolvedInstructions {
             do {
                 lastResolvedInstructions = try await runtime.resolvedInstructionsPreview(
@@ -272,6 +292,7 @@ extension AgentDemoViewModel {
             lastResolvedInstructionsThreadTitle = nil
         }
 
+        var renderInActiveTranscript: Bool { shouldRenderTranscript && activeThreadID == threadID }
         var diagnostics = SendDiagnostics()
         if renderInActiveTranscript {
             streamingText = ""
@@ -330,7 +351,8 @@ extension AgentDemoViewModel {
                 }
                 developerLog("Thread status changed. threadID=\(threadID) status=\(status.rawValue)")
 
-            case .turnStarted:
+            case let .turnStarted(turn):
+                if tracksTurn { runningTurnIDs[threadID] = turn.id }
                 developerLog("Turn started. threadID=\(threadID)")
 
             case let .assistantMessageDelta(_, _, delta):
@@ -364,12 +386,14 @@ extension AgentDemoViewModel {
                 developerLog("Approval resolved. threadID=\(threadID)")
 
             case let .toolCallStarted(invocation):
+                if tracksTurn { receiveToolStart(invocation) }
                 diagnostics.sawToolCall = true
                 developerLog(
                     "Tool call requested. threadID=\(threadID) tool=\(invocation.toolName) arguments=\(String(describing: invocation.arguments))"
                 )
 
             case let .toolCallFinished(result):
+                if tracksTurn { receiveToolFinish(result, threadID: threadID) }
                 diagnostics.sawToolCall = true
                 if result.success {
                     diagnostics.sawSuccessfulToolResult = true
@@ -383,7 +407,22 @@ extension AgentDemoViewModel {
                     "Tool call finished. threadID=\(threadID) tool=\(result.toolName) success=\(result.success) output=\(result.primaryText ?? result.errorMessage ?? "<no text result>")"
                 )
 
+            case let .progress(progress):
+                if tracksTurn { receiveProgress(progress) }
+
+            case let .rateLimitsUpdated(limits):
+                mergeRateLimits(limits)
+
+            case .turnInterrupted:
+                bufferedStreamingText = ""
+                if renderInActiveTranscript { streamingText = "" }
+                terminalNotice = "Turn stopped"
+                if tracksTurn { turnActivities[threadID]?.notice = terminalNotice }
+                threads = await runtime.activeThreads()
+
             case .turnCompleted:
+                terminalNotice = "Turn completed"
+                if tracksTurn { turnActivities[threadID]?.notice = terminalNotice }
                 flushStreamingText(force: true)
                 if renderInActiveTranscript {
                     setMessages(await runtime.messages(for: threadID))
@@ -393,6 +432,7 @@ extension AgentDemoViewModel {
                 await refreshThreadContextState(for: threadID)
 
             case let .turnFailed(error):
+                if tracksTurn { turnActivities[threadID]?.notice = "Turn failed" }
                 flushStreamingText(force: true)
                 diagnostics.turnFailedCode = error.code
                 developerErrorLog(

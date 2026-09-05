@@ -76,6 +76,15 @@ extension AgentRuntime {
 
         for try await event in turnStream.events {
             switch event {
+            case .progress, .rateLimitsUpdated, .userMessageAccepted:
+                break
+            case let .toolCallsRequested(invocations):
+                for invocation in invocations {
+                    try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
+                        expectedThreadID: threadID, currentTurnID: currentTurnID)
+                    try await turnStream.submitToolResult(.failure(invocation: invocation,
+                        message: "Automatic memory capture does not allow tool calls."), for: invocation.id)
+                }
             case let .turnStarted(turn):
                 try validateTurnStart(
                     turn,

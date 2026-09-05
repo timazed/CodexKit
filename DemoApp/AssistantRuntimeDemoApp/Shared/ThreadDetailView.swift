@@ -27,6 +27,9 @@ struct ThreadDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 threadHeaderCard
+                if let activity = viewModel.turnActivities[threadID] {
+                    DemoLiveTurnView(activity: activity, isRunning: viewModel.sendingThreadIDs.contains(threadID))
+                }
                 observationCard
                 compactionCard
                 transcriptCard
@@ -320,6 +323,19 @@ private extension ThreadDetailView {
                 }
             }
 
+            if viewModel.sendingThreadIDs.contains(threadID) {
+                HStack {
+                    Text("Add details for the next step, or stop this turn.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(viewModel.stoppingThreadIDs.contains(threadID) ? "Stopping…" : "Stop", role: .destructive) {
+                        Task { await viewModel.stopTurn(in: threadID) }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.runningTurnIDs[threadID] == nil || viewModel.stoppingThreadIDs.contains(threadID))
+                }
+            }
+
             HStack(spacing: 12) {
                 PhotosPicker(
                     selection: $selectedPhotoItem,
@@ -335,6 +351,7 @@ private extension ThreadDetailView {
 
                 TextField("Message the agent", text: $viewModel.composerText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(viewModel.session == nil || viewModel.activeThreadID != threadID)
                     .lineLimit(1 ... 4)
                     .focused($isComposerFocused)
                     .onSubmit {
@@ -344,7 +361,7 @@ private extension ThreadDetailView {
                         }
                     }
 
-                Button("Send") {
+                Button(viewModel.sendingThreadIDs.contains(threadID) ? "Add to turn" : "Send") {
                     isComposerFocused = false
                     Task {
                         await viewModel.sendComposerText()
@@ -352,7 +369,10 @@ private extension ThreadDetailView {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
-                    viewModel.session == nil ||
+                    viewModel.session == nil || viewModel.activeThreadID != threadID ||
+                        viewModel.stoppingThreadIDs.contains(threadID) ||
+                        viewModel.steeringThreadIDs.contains(threadID) ||
+                        (viewModel.sendingThreadIDs.contains(threadID) && viewModel.runningTurnIDs[threadID] == nil) ||
                         (
                             viewModel.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                                 viewModel.pendingComposerImages.isEmpty

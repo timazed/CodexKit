@@ -21,19 +21,39 @@ extension AgentRuntime {
         } else {
             nil
         }
+        let toolSink = AgentToolEventSink { event in
+            switch event {
+            case let .toolCallStarted(value): continuation.yield(.toolCallStarted(value))
+            case let .toolCallFinished(value): continuation.yield(.toolCallFinished(value))
+            case let .approvalRequested(value): continuation.yield(.approvalRequested(value))
+            case let .approvalResolved(value): continuation.yield(.approvalResolved(value))
+            case let .threadStatusChanged(id, status): continuation.yield(.threadStatusChanged(threadID: id, status: status))
+            default: break
+            }
+        }
         var assistantMessages: [AgentMessage] = []
         var sawStructuredCommit = false
         var currentTurnID: String?
 
+        defer { turnStream.interrupt() }
         do {
             for try await backendEvent in turnStream.events {
                 switch backendEvent {
+                case let .progress(progress):
+                    try validateBackendTurnEvent(threadID: progress.threadID, turnID: progress.turnID,
+                        expectedThreadID: threadID, currentTurnID: currentTurnID)
+                    continuation.yield(.progress(progress))
+
+                case let .rateLimitsUpdated(snapshots):
+                    continuation.yield(.rateLimitsUpdated(snapshots))
+
                 case let .turnStarted(turn):
                     try validateTurnStart(
                         turn,
                         expectedThreadID: threadID,
                         currentTurnID: currentTurnID
                     )
+                    if storesTurnState { activeTurnExecutions[threadID]?.turnID = turn.id }
                     currentTurnID = turn.id
                     if storesTurnState,
                        !hasStoredTurnStart(turnID: turn.id, in: threadID) {
@@ -220,72 +240,26 @@ extension AgentRuntime {
                     continuation.yield(.structuredOutputValidationFailed(validationFailure))
 
                 case let .toolCallRequested(invocation):
-                    try validateBackendTurnEvent(
-                        threadID: invocation.threadID,
-                        turnID: invocation.turnID,
-                        expectedThreadID: threadID,
-                        currentTurnID: currentTurnID
-                    )
-                    let existingToolResult = storesTurnState
-                        ? storedToolResult(invocationID: invocation.id, in: invocation.threadID)
-                        : nil
-                    if storesTurnState,
-                       !hasStoredToolCall(invocationID: invocation.id, in: invocation.threadID) {
-                        try appendHistoryItem(
-                            .toolCall(
-                                AgentToolCallRecord(
-                                    invocation: invocation,
-                                    requestedAt: Date()
-                                )
-                            ),
-                            threadID: invocation.threadID,
-                            createdAt: Date()
-                        )
-                        try setLatestToolState(
-                            latestToolState(for: invocation, result: nil, updatedAt: Date()),
-                            for: invocation.threadID
-                        )
-                        updateThreadTimestamp(Date(), for: invocation.threadID)
-                        try await persistState()
-                    }
-                    continuation.yield(.toolCallStarted(invocation))
+                    try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
+                        expectedThreadID: threadID, currentTurnID: currentTurnID)
+                    try await consumeToolInvocations([invocation], turnStream: turnStream, session: session,
+                        policyTracker: policyTracker, storesTurnState: storesTurnState, sink: toolSink)
 
-                    let result: ToolResultEnvelope
-                    if let existingToolResult {
-                        result = existingToolResult
-                        policyTracker?.recordAccepted(toolName: invocation.toolName)
-                    } else if let policyTracker,
-                       let validationError = policyTracker.validate(toolName: invocation.toolName) {
-                        result = .failure(
-                            invocation: invocation,
-                            message: validationError.message
-                        )
-                    } else {
-                        let resolvedResult = try await resolveToolInvocation(
-                            invocation,
-                            session: session,
-                            storesTurnState: storesTurnState,
-                            continuation: continuation
-                        )
-                        result = resolvedResult
-                        policyTracker?.recordAccepted(toolName: invocation.toolName)
+                case let .toolCallsRequested(invocations):
+                    for invocation in invocations {
+                        try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
+                            expectedThreadID: threadID, currentTurnID: currentTurnID)
                     }
+                    try await consumeToolInvocations(invocations, turnStream: turnStream, session: session,
+                        policyTracker: policyTracker, storesTurnState: storesTurnState, sink: toolSink)
 
-                    if storesTurnState,
-                       existingToolResult == nil,
-                       result.session?.isTerminal != false {
-                        appendEffectiveToolInteraction(
-                            invocation: invocation,
-                            result: result
-                        )
-                        try await persistState()
+                case let .userMessageAccepted(message):
+                    try validateActiveTurn(expectedThreadID: threadID, currentTurnID: currentTurnID)
+                    guard message.threadID == threadID, message.role == .user else {
+                        throw AgentRuntimeError.invalidMessageContent()
                     }
-                    try await turnStream.submitToolResult(result, for: invocation.id)
-                    continuation.yield(.toolCallFinished(result))
-                    if storesTurnState {
-                        try await setThreadStatus(.streaming, for: threadID)
-                        continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
-                    }
+                    if storesTurnState { try await appendMessage(message) }
+                    continuation.yield(.messageCommitted(message))
 
                 case let .providerContextUpdated(eventThreadID, context):
                     try validateProviderContextEvent(
@@ -299,6 +273,7 @@ extension AgentRuntime {
 
                 case let .turnCompleted(summary):
                     try Task.checkCancellation()
+                    if storesTurnState { activeTurnExecutions[threadID]?.isFinishing = true }
                     try validateTurnCompletion(
                         summary,
                         expectedThreadID: threadID,
@@ -402,6 +377,13 @@ extension AgentRuntime {
             try Task.checkCancellation()
             continuation.finish()
         } catch {
+            if error is CancellationError || Task.isCancelled {
+                let interruption = await recordInterruption(in: threadID, turnID: currentTurnID, storesTurnState: storesTurnState)
+                if storesTurnState { continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle)) }
+                continuation.yield(.turnInterrupted(interruption))
+                continuation.finish(throwing: CancellationError())
+                return
+            }
             let runtimeError = (error as? AgentRuntimeError)
                 ?? AgentRuntimeError(
                     code: "turn_failed",

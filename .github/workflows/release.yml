@@ -63,9 +63,37 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Extract changelog entry
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          marker = f"## [{version}]"
+          lines = Path("CHANGELOG.md").read_text().splitlines()
+          start = next((i for i, line in enumerate(lines)
+                        if line == marker or line.startswith(marker + " - ")), None)
+          if start is None:
+              raise SystemExit(f"Missing changelog entry for {version}")
+          end = next((i for i in range(start + 1, len(lines))
+                      if lines[i].startswith("## ")), len(lines))
+          notes = "\n".join(lines[start + 1:end]).strip()
+          if not notes:
+              raise SystemExit(f"Empty changelog entry for {version}")
+          (Path(os.environ["RUNNER_TEMP"]) / "release-notes.md").write_text(notes + "\n")
+          PYTHON
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
+          body_path: ${{ runner.temp }}/release-notes.md
           generate_release_notes: true
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}

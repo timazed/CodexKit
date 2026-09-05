@@ -60,7 +60,7 @@ final class AgentBackgroundActivityTests: XCTestCase {
         let counts = await provider.counts()
         let status = await runtime.activeThreads().first?.status
         XCTAssertEqual(counts, ActivityCounts(begun: 1, ended: 1))
-        XCTAssertEqual(status, .failed)
+        XCTAssertEqual(status, .idle)
     }
 
     private func makeRuntime(

@@ -6,6 +6,7 @@ final class CodexModelTests: XCTestCase {
         XCTAssertEqual(
             CodexModel.knownModels,
             [
+                .gpt6Astra,
                 .gpt56Sol,
                 .gpt56Terra,
                 .gpt56Luna,
@@ -28,6 +29,7 @@ final class CodexModelTests: XCTestCase {
         XCTAssertEqual(
             CodexModel.userFacingModels,
             [
+                .gpt6Astra,
                 .gpt56Sol,
                 .gpt56Terra,
                 .gpt56Luna,

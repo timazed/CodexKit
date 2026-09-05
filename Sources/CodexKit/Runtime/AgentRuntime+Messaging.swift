@@ -52,6 +52,11 @@ extension AgentRuntime {
         }
 
         let storesTurnState = !request.isEphemeral
+        let execution = storesTurnState ? try reserveTurn(in: threadID) : nil
+        var handedOff = false
+        defer {
+            if !handedOff, let execution { releaseTurn(in: threadID, executionID: execution.id) }
+        }
         let userMessage = storesTurnState
             ? makeVisibleUserMessage(for: request, in: threadID)
             : nil
@@ -78,6 +83,7 @@ extension AgentRuntime {
             try await setThreadStatus(.streaming, for: threadID)
         }
 
+        handedOff = true
         return AsyncThrowingStream { continuation in
             if let userMessage {
                 continuation.yield(.messageCommitted(userMessage))
@@ -86,7 +92,7 @@ extension AgentRuntime {
                 continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
             }
 
-            let cancellationHandle = AgentTurnCancellationHandle()
+            let cancellationHandle = execution?.cancellation ?? AgentTurnCancellationHandle()
             let producerTask = Task {
                 let activity = await self.backgroundActivityProvider.beginActivity(
                     named: "CodexKit agent turn",
@@ -95,6 +101,7 @@ extension AgentRuntime {
                 defer {
                     activity.end()
                     cancellationHandle.clear()
+                    if let execution { self.releaseTurn(in: threadID, executionID: execution.id) }
                 }
                 do {
                     let session = try await self.sessionManager.requireSession()
@@ -138,6 +145,11 @@ extension AgentRuntime {
                         session: session,
                         allowsContextCompaction: storesTurnState
                     )
+                    if let execution, self.activeTurnExecutions[threadID]?.id == execution.id {
+                        self.activeTurnExecutions[threadID]?.stream = turnStart.turnStream
+                    }
+                    if Task.isCancelled { turnStart.turnStream.interrupt() }
+                    try Task.checkCancellation()
                     await self.consumeStructuredTurnStream(
                         turnStart.turnStream,
                         for: threadID,
@@ -195,6 +207,11 @@ extension AgentRuntime {
         }
 
         let storesTurnState = !request.isEphemeral
+        let execution = storesTurnState ? try reserveTurn(in: threadID) : nil
+        var handedOff = false
+        defer {
+            if !handedOff, let execution { releaseTurn(in: threadID, executionID: execution.id) }
+        }
         let userMessage = storesTurnState
             ? makeVisibleUserMessage(for: request, in: threadID)
             : nil
@@ -221,6 +238,7 @@ extension AgentRuntime {
             try await setThreadStatus(.streaming, for: threadID)
         }
 
+        handedOff = true
         return AsyncThrowingStream { continuation in
             if let userMessage {
                 continuation.yield(.messageCommitted(userMessage))
@@ -229,7 +247,7 @@ extension AgentRuntime {
                 continuation.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
             }
 
-            let cancellationHandle = AgentTurnCancellationHandle()
+            let cancellationHandle = execution?.cancellation ?? AgentTurnCancellationHandle()
             let producerTask = Task {
                 let activity = await self.backgroundActivityProvider.beginActivity(
                     named: "CodexKit agent turn",
@@ -238,6 +256,7 @@ extension AgentRuntime {
                 defer {
                     activity.end()
                     cancellationHandle.clear()
+                    if let execution { self.releaseTurn(in: threadID, executionID: execution.id) }
                 }
                 do {
                     let session = try await self.sessionManager.requireSession()
@@ -281,6 +300,11 @@ extension AgentRuntime {
                         session: session,
                         allowsContextCompaction: storesTurnState
                     )
+                    if let execution, self.activeTurnExecutions[threadID]?.id == execution.id {
+                        self.activeTurnExecutions[threadID]?.stream = turnStart.turnStream
+                    }
+                    if Task.isCancelled { turnStart.turnStream.interrupt() }
+                    try Task.checkCancellation()
                     await self.consumeTurnStream(
                         turnStart.turnStream,
                         for: threadID,
@@ -469,6 +493,13 @@ extension AgentRuntime {
         storesTurnState: Bool,
         continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     ) async {
+        if error is CancellationError || Task.isCancelled {
+            let interruption = await recordInterruption(in: threadID, turnID: nil, storesTurnState: storesTurnState)
+            if storesTurnState { continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle)) }
+            continuation.yield(.turnInterrupted(interruption))
+            continuation.finish(throwing: CancellationError())
+            return
+        }
         let runtimeError = await recordTurnStartupFailure(error, for: threadID, storesTurnState: storesTurnState)
         if storesTurnState {
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))
@@ -483,6 +514,13 @@ extension AgentRuntime {
         storesTurnState: Bool,
         continuation: AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error>.Continuation
     ) async {
+        if error is CancellationError || Task.isCancelled {
+            let interruption = await recordInterruption(in: threadID, turnID: nil, storesTurnState: storesTurnState)
+            if storesTurnState { continuation.yield(.threadStatusChanged(threadID: threadID, status: .idle)) }
+            continuation.yield(.turnInterrupted(interruption))
+            continuation.finish(throwing: CancellationError())
+            return
+        }
         let runtimeError = await recordTurnStartupFailure(error, for: threadID, storesTurnState: storesTurnState)
         if storesTurnState {
             continuation.yield(.threadStatusChanged(threadID: threadID, status: .failed))

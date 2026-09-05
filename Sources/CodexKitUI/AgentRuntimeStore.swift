@@ -10,6 +10,8 @@ public final class AgentRuntimeStore {
     public private(set) var messages: [AgentMessage] = []
     public private(set) var streamingText = ""
     public private(set) var lastError: String?
+    public private(set) var latestProgress: AgentTurnProgress?
+    public private(set) var rateLimits: [AgentRateLimitSnapshot] = []
 
     public let approvalInbox: ApprovalInbox?
     public let deviceCodeCoordinator: DeviceCodePromptCoordinator?
@@ -67,6 +69,8 @@ public final class AgentRuntimeStore {
         do {
             try await runtime.signOut()
             session = nil
+            rateLimits = []
+            latestProgress = nil
             threads = []
             messages = []
             streamingText = ""
@@ -117,6 +121,7 @@ public final class AgentRuntimeStore {
         }
 
         streamingText = ""
+        latestProgress = nil
 
         do {
             let stream = try await runtime.stream(
@@ -125,9 +130,24 @@ public final class AgentRuntimeStore {
             )
             messages = await runtime.messages(for: activeThreadID)
             try await consume(stream, in: activeThreadID)
+        } catch is CancellationError {
+            streamingText = ""
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    public func steer(_ text: String) async {
+        guard let activeThreadID, let turnID = await runtime.activeTurnID(in: activeThreadID) else { return }
+        do {
+            try await runtime.steer(text, in: activeThreadID, expectedTurnID: turnID)
+        } catch { lastError = error.localizedDescription }
+    }
+
+    public func interrupt() async {
+        guard let activeThreadID else { return }
+        do { try await runtime.interrupt(in: activeThreadID) }
+        catch { lastError = error.localizedDescription }
     }
 
     public func dismissError() {
@@ -158,6 +178,18 @@ public final class AgentRuntimeStore {
                     return updated
                 }
 
+            case let .progress(progress):
+                latestProgress = progress
+            case let .rateLimitsUpdated(snapshots):
+                for snapshot in snapshots {
+                    rateLimits.removeAll { $0.limitID == snapshot.limitID }
+                    rateLimits.append(snapshot)
+                }
+            case .turnInterrupted:
+                latestProgress = nil
+                streamingText = ""
+                messages = await runtime.messages(for: activeThreadID)
+                threads = try await loadThreadMetadata()
             case .turnStarted,
                  .approvalRequested,
                  .approvalResolved,
@@ -175,6 +207,7 @@ public final class AgentRuntimeStore {
                 }
 
             case .turnCompleted:
+                latestProgress = nil
                 messages = await runtime.messages(for: activeThreadID)
                 threads = try await loadThreadMetadata()
 

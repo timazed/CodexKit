@@ -11,6 +11,12 @@ extension AgentDemoViewModel {
             return
         }
 
+        guard session != nil else { return }
+        if let threadID = activeThreadID, sendingThreadIDs.contains(threadID) {
+            await addComposerToTurn(text: outgoingText, images: outgoingImages, threadID: threadID)
+            return
+        }
+
         composerText = ""
         pendingComposerImages = []
         await sendMessageInternal(

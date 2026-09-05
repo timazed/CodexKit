@@ -70,6 +70,8 @@ struct StreamEnvelope: Decodable {
     let response: StreamResponsePayload?
     let outputIndex: Int?
     let sequenceNumber: Int?
+    let itemID: String?
+    let summaryIndex: Int?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -78,6 +80,8 @@ struct StreamEnvelope: Decodable {
         case response
         case outputIndex = "output_index"
         case sequenceNumber = "sequence_number"
+        case itemID = "item_id"
+        case summaryIndex = "summary_index"
     }
 }
 
@@ -117,6 +121,7 @@ enum StreamItemKind: Sendable {
 struct StreamMessageItem: Decodable, Sendable {
     let id: String?
     let role: String
+    let phase: AgentMessagePhase?
     let content: [StreamMessageContent]
 }
 

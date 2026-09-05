@@ -1,8 +1,10 @@
 # Runtime Architecture
 
+[Documentation index](index.md) · [CodexKit](../README.md)
+
 ## Goals
 
-`CodexKit` is an embedded agent runtime for iOS apps that can:
+`CodexKit` is an embedded agent runtime for iOS and macOS apps that can:
 
 - authenticate with ChatGPT
 - restore auth state securely
@@ -58,7 +60,9 @@ It owns:
 - thread creation and resume
 - per-thread model and reasoning defaults
 - message send
-- event streaming
+- event streaming, including provider progress and account-limit updates
+- model discovery through capable backends
+- active-turn steering and interruption
 - tool invocation routing
 - approval pauses and resume
 - persisted runtime state
@@ -70,7 +74,7 @@ It is initialized from `AgentRuntime.Configuration`, which contains:
 - `backend`
 - `approvalPresenter`
 - `stateStore`
-- optional `tools`
+- optional `tools` and `maximumParallelToolCalls` (defaults to four)
 
 The old dependency-bag setup is intentionally replaced by this single configuration object.
 
@@ -166,12 +170,15 @@ Turn lifecycle:
 
 - `turnStarted`
 - `turnCompleted`
+- `turnInterrupted`
 - `turnFailed`
 
 Streaming:
 
 - `assistantMessageDelta`
-- `messageCommitted`
+- `messageCommitted` (including optional message phase)
+- `progress` (message lifecycle, reasoning summaries, and web-search activity)
+- `rateLimitsUpdated` (latest account allowance snapshots, separate from turn token usage)
 
 Tooling:
 
@@ -194,6 +201,7 @@ Each tool provides:
 - JSON input schema
 - approval policy
 - optional approval copy
+- `supportsParallelExecution` (defaults to false)
 - executor
 
 Registration happens either:
@@ -209,6 +217,18 @@ Execution flow:
 4. runtime executes the host-provided tool
 5. runtime returns a normalized `ToolResultEnvelope`
 6. backend continues the active turn
+
+Consecutive independent calls from the same batch may overlap when their tool definitions opt in. Serial tools and tools requiring approval form barriers; skill tool-policy constraints preserve serial execution. Results retain provider order even when lifecycle events finish out of order.
+
+## Turn control and discovery
+
+One persistent turn may run on a thread at a time. Hosts capture its ID from `turnStarted` or `activeTurnID(in:)`, then use `steer(_:images:in:expectedTurnID:)` to queue input for the next model request, or `interrupt(in:expectedTurnID:)` to cancel it. Interruption records an interrupted turn, returns the thread to idle, clears pending waits, and ends the stream with `CancellationError`. Ephemeral turns remain independent.
+
+`listModels(policy:)` delegates to `AgentBackendModelDiscovering` when supported and otherwise returns bundled metadata. The built-in Responses backend caches account catalogs in memory, supports ETag refresh, and exposes stale/bundled fallback provenance. `rateLimits()` returns the latest observed account limits without issuing a quota request. Typed identifiers include `CodexModel.gpt6Astra`; strings remain open to future server-provided identifiers.
+
+The built-in Responses backend requires `response.completed` before successful completion. Premature stream endings enter the existing safe-retry path; completed messages or tool effects prevent unsafe replay.
+
+See [Runtime progress, tools, and turn control](upstream-runtime-features.md) for examples and compatibility details.
 
 ## Recommended iOS Integration Path
 
@@ -233,5 +253,10 @@ The demo app validates the intended setup:
 - streamed output
 - app-defined tool registration
 - approval-gated tool execution
+- account model refresh and reported usage allowances
+- live progress and message phases
+- parallel sample lookups, adding input to a running chat turn, and stopping it
+
+Follow the [demo walkthrough](../DemoApp/README.md#try-the-runtime-features) to exercise these paths.
 
 The demo target should be treated as example integration code, not as required plumbing for host apps.

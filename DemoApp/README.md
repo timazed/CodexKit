@@ -12,6 +12,15 @@ open DemoApp/AssistantRuntimeDemoApp.xcodeproj
 
 The Xcode project is the source of truth for the demo app. Edit it directly in Xcode and commit project changes normally.
 
+## App overview
+
+![CodexKit demo](../preview-220526-1.png)
+
+- **Assistant:** chat, authentication, model discovery, usage limits, turn controls, tools, personas, and skills.
+- **Structured:** typed shipping drafts, imported-content summaries, and streamed structured output.
+- **Memory:** automatic capture, guided writing, raw record management, and retrieval previews.
+- **Health Coach:** tools and memory combined with HealthKit context and local notifications.
+
 ## What the app does
 
 - launches a SwiftUI chat screen
@@ -22,6 +31,12 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - lets you attach a photo from the library and send it with or without text
 - renders attached user images in the transcript
 - streams assistant output into the UI
+- discovers account models, with bundled fallback choices including GPT-6 Astra, and uses model-specific reasoning levels
+- displays model catalog source/fetch time and a `Refresh Models` action
+- shows account usage allowances, reset times, and credit information when reported
+- displays live reasoning summaries, web-search activity, message phases, and concurrent tool activity
+- offers `Add to turn` and `Stop` controls while an ordinary chat turn is running
+- includes a `Parallel Lookups` quick start with two independent sample tools
 - demonstrates live Combine observation of thread, message, summary, context-state, and context-usage updates
 - lets you rename the active thread from the thread detail screen using `setTitle(_:for:)`
 - includes a thread-level `Context Compaction` card so you can compact effective prompt state without removing visible transcript history
@@ -40,7 +55,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - supports switchable coaching tone (`Hardcore Personal` or `Firm Coach`)
 - proactively generates AI coach feedback in a dedicated persona-pinned thread as steps, goal, or tone change
 
-The checked-in demo registers deterministic skill-specific tools (`health_coach_fetch_progress` and `travel_planner_build_day_plan`), and the Xcode console logs when each tool is requested, executed, and completed so you can verify tool usage during a run.
+The checked-in demo registers skill-specific tools (`health_coach_fetch_progress` and `travel_planner_build_day_plan`) plus independent sample lookups (`demo_lookup_weather` and `demo_lookup_transport`), and the Xcode console logs when each tool is requested, executed, and completed so you can verify tool usage during a run.
 
 The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, size, quality, format, and status come from `AgentImageAttachment.generationMetadata`.
 
@@ -86,6 +101,20 @@ Use that card to verify that:
 - context compaction updates the observed context state live
 - effective prompt usage updates live in estimated tokens
 
+## Try the runtime features
+
+1. Sign in, then find **Thread Model And Reasoning** on the Assistant screen. Model metadata loads automatically after session restoration or sign-in. Use **Refresh Models** to request fresh account metadata; the source and last successful fetch time appear beside it. A failed explicit refresh shows an error and retains the displayed choices.
+2. Select **GPT-6 Astra** if the account catalog includes it, then choose a supported thinking level. Before discovery, the bundled fallback also includes Astra. Selecting a bundled identifier does not grant account access. The selected model applies to future turns in the active thread and to new threads; the demo's initial default remains GPT-5.6 Sol.
+3. Under **Quick Starts**, tap **Parallel Lookups**, then **Open Current Thread**. The demo asks for two independent lookups in the same batch. The activity card lists running tools and retains the peak overlap after completion. Both tools opt into parallel execution and pause briefly to make overlap visible. Weather and transport results are fixed sample data. The model can still choose separate calls; a peak-overlap label appears only when overlap actually occurred.
+4. During a reply, enter more text or attach an image and tap **Add to turn**. The activity card confirms acceptance. Added input is consumed on the next model request within that turn, potentially adding a further request after the current response; it cannot change a response already being generated. Rejected input stays in the composer. Ordinary sends on that thread are unavailable while it is running.
+5. Tap **Stop** to interrupt the current turn. A pending tool-approval sheet also offers **Stop** for these chat turns. The activity card shows **Turn stopped**, pending approvals are dismissed, and the thread can accept a fresh message. Already completed tool actions remain completed.
+6. Expand **Reasoning summary** when one arrives, or watch web-search status during a search request. The interactive demo requests summaries, but their availability and message phases depend on the provider. Committed commentary is labeled **Assistant · Progress** and a marked final response **Assistant · Answer**. Activity summaries are transient UI state; committed message phases survive restoration.
+7. Return to **Account Usage** to inspect the latest reported allowances and reset times. Values arrive from model-discovery response headers or streamed account-limit updates. Missing limits display an unavailable message rather than zero remaining. These values are separate from conversation token usage; this card does not poll a quota endpoint.
+
+The controls and activity card above cover ordinary chat and the Parallel Lookups quick start. The specialized structured-output, ephemeral, and Health Coach examples retain their own result displays. Runtime replacement and sign-out clear the account catalog, usage snapshots, and transient activity state.
+
+Implementation examples live in `AgentDemoViewModel+RuntimeFeatures.swift`, `RuntimeFeatureViews.swift`, and `AgentDemoViewModel+Messaging.swift`. For API signatures, completion/retry behavior, concurrency barriers, and migration notes, see [Runtime progress, tools, and turn control](../docs/upstream-runtime-features.md).
+
 ## Files
 
 - `DemoApp/AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.swift`
@@ -94,6 +123,8 @@ Use that card to verify that:
 - `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoView.swift`
 - `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoViewModel.swift`
 - `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoRuntimeFactory.swift`
+- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoViewModel+RuntimeFeatures.swift`
+- `DemoApp/AssistantRuntimeDemoApp/Shared/RuntimeFeatureViews.swift`
 - `Sources/CodexKitUI/AgentRuntimeStore.swift`
 - `Sources/CodexKitUI/ApprovalInbox.swift`
 - `Sources/CodexKitUI/DeviceCodePromptCoordinator.swift`

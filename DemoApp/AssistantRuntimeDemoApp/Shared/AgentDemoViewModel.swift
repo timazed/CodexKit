@@ -367,6 +367,15 @@ final class AgentDemoViewModel {
     let approvalInbox: ApprovalInbox
     let deviceCodePromptCoordinator: DeviceCodePromptCoordinator
     var model: String
+    var modelCatalog: CodexModelCatalogSnapshot?
+    var accountRateLimits: [AgentRateLimitSnapshot] = []
+    var isRefreshingModels = false
+    var runtimeFeaturesGeneration = UUID()
+    var turnActivities: [String: DemoTurnActivity] = [:]
+    var runningTurnIDs: [String: String] = [:]
+    var sendingThreadIDs: Set<String> = []
+    var stoppingThreadIDs: Set<String> = []
+    var steeringThreadIDs: Set<String> = []
     let enableWebSearch: Bool
     let enableImageGeneration: Bool
     let keychainAccount: String
@@ -443,7 +452,8 @@ final class AgentDemoViewModel {
     }
 
     var supportedReasoningEfforts: [ReasoningEffort] {
-        activeThreadConfiguration.codexModel.info?.supportedReasoningEfforts
+        discoveredModel(activeThreadConfiguration.codexModel)?.supportedReasoningEfforts
+            ?? activeThreadConfiguration.codexModel.info?.supportedReasoningEfforts
             ?? ReasoningEffort.allCases
     }
 
@@ -475,7 +485,7 @@ final class AgentDemoViewModel {
     }
 
     var canReconfigureRuntime: Bool {
-        !isAuthenticating && !isSwitchingPersistenceAdapter && activeRuntimeThreads.allSatisfy { thread in
+        sendingThreadIDs.isEmpty && !isAuthenticating && !isSwitchingPersistenceAdapter && activeRuntimeThreads.allSatisfy { thread in
             switch thread.status {
             case .idle, .failed:
                 true

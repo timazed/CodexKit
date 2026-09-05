@@ -6,28 +6,37 @@ import Observation
 @Observable
 public final class ApprovalInbox: ApprovalPresenting {
     public private(set) var currentRequest: ApprovalRequest?
-
-    private var continuation: CheckedContinuation<ApprovalDecision, Error>?
+    private var requests: [ApprovalRequest] = []
+    private var continuations: [String: CheckedContinuation<ApprovalDecision, Error>] = [:]
 
     public init() {}
 
     public func requestApproval(_ request: ApprovalRequest) async throws -> ApprovalDecision {
-        currentRequest = request
-
-        return try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                requests.append(request)
+                continuations[request.id] = continuation
+                currentRequest = requests.first
+            }
+        } onCancel: {
+            Task { @MainActor in self.cancel(request.id) }
         }
     }
 
-    public func approveCurrent() {
-        continuation?.resume(returning: .approved)
-        continuation = nil
-        currentRequest = nil
+    public func approveCurrent() { resolveCurrent(.approved) }
+    public func denyCurrent() { resolveCurrent(.denied) }
+
+    private func resolveCurrent(_ decision: ApprovalDecision) {
+        guard let id = currentRequest?.id else { return }
+        continuations.removeValue(forKey: id)?.resume(returning: decision)
+        requests.removeAll { $0.id == id }
+        currentRequest = requests.first
     }
 
-    public func denyCurrent() {
-        continuation?.resume(returning: .denied)
-        continuation = nil
-        currentRequest = nil
+    private func cancel(_ id: String) {
+        continuations.removeValue(forKey: id)?.resume(throwing: CancellationError())
+        requests.removeAll { $0.id == id }
+        currentRequest = requests.first
     }
 }

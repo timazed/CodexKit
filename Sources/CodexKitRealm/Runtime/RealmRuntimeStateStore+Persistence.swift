@@ -476,6 +476,7 @@ extension RealmRuntimeStateStore {
                         AgentSystemEventType.turnStarted.rawValue,
                         AgentSystemEventType.turnCompleted.rawValue,
                         AgentSystemEventType.turnFailed.rawValue,
+                        AgentSystemEventType.turnInterrupted.rawValue,
                     ]
                 )
                 .sorted(byKeyPath: "sequenceNumber", ascending: false)

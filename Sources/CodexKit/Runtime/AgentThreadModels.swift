@@ -17,6 +17,7 @@ public enum AgentThreadStatus: String, Codable, Hashable, Sendable {
 
 public enum AgentTurnStatus: String, Codable, Hashable, Sendable {
     case running
+    case interrupted
     case completed
     case failed
 }
@@ -145,6 +146,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
     public var role: AgentRole
     public var text: String
     public var images: [AgentImageAttachment]
+    public var phase: AgentMessagePhase?
     public var structuredOutput: AgentStructuredOutputMetadata?
     /// A complete historical tool call/result relationship represented as one
     /// atomic context item. Backends that understand tool history can replay
@@ -159,6 +161,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         role: AgentRole,
         text: String,
         images: [AgentImageAttachment] = [],
+        phase: AgentMessagePhase? = nil,
         structuredOutput: AgentStructuredOutputMetadata? = nil,
         toolInteraction: AgentToolInteraction? = nil,
         createdAt: Date = Date()
@@ -168,6 +171,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         self.role = role
         self.text = text
         self.images = images
+        self.phase = phase
         self.structuredOutput = structuredOutput
         self.toolInteraction = toolInteraction
         self.createdAt = createdAt
@@ -195,6 +199,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         case role
         case text
         case images
+        case phase
         case structuredOutput
         case toolInteraction
         case createdAt
@@ -207,6 +212,7 @@ public struct AgentMessage: Identifiable, Codable, Hashable, Sendable {
         role = try container.decode(AgentRole.self, forKey: .role)
         text = try container.decode(String.self, forKey: .text)
         images = try container.decodeIfPresent([AgentImageAttachment].self, forKey: .images) ?? []
+        phase = try container.decodeIfPresent(AgentMessagePhase.self, forKey: .phase)
         structuredOutput = try container.decodeIfPresent(
             AgentStructuredOutputMetadata.self,
             forKey: .structuredOutput

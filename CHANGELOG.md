@@ -6,6 +6,29 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.26] - 2026-09-05
+
+### Added
+
+- Added `CodexModel.gpt6Astra` with bundled reasoning, modality, and default context-window metadata.
+- Added opt-in parallel tool execution with bounded concurrency, serial/approval barriers, and ordered provider results.
+- Added message-phase metadata, reasoning-summary and web-search progress events, and account-scoped usage-limit snapshots.
+- Added model discovery with account-scoped in-memory caching, ETag revalidation, and bundled fallback metadata.
+- Added active-turn steering, explicit interruption, interrupted history/status, and SwiftUI store helpers.
+- Added demo model refresh and account usage, live progress and message-phase displays, chat steering/stop controls, and parallel sample lookups, with a documented walkthrough.
+
+### Fixed
+
+- Responses streams ending before `response.completed` now fail and follow the existing safe-retry policy.
+- Cancellation releases pending tool-result continuations and approval-inbox requests.
+
+### Changed
+
+- GitHub releases now include the matching changelog entry alongside generated release notes.
+- Shortened the README to installation, a streaming quickstart, and guide navigation; moved detailed examples into topic guides with a documentation index.
+- Persistent turns on one thread are serialized; concurrent sends fail with `thread_busy`.
+- Cancelled turns now record `interrupted` rather than `failed`; exhaustive event/status switches need the new cases.
+
 ## [2.0.0-alpha.25] - 2026-08-30
 
 ### Added

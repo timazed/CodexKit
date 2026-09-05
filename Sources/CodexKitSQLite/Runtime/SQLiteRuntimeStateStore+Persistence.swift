@@ -499,12 +499,13 @@ struct SQLiteRuntimeStorePersistence: Sendable {
                 ]
             ),
             latestRow(
-                where: "kind = ? AND systemEventType IN (?, ?, ?)",
+                where: "kind = ? AND systemEventType IN (?, ?, ?, ?)",
                 arguments: [
                     AgentHistoryItemKind.systemEvent.rawValue,
                     AgentSystemEventType.turnStarted.rawValue,
                     AgentSystemEventType.turnCompleted.rawValue,
                     AgentSystemEventType.turnFailed.rawValue,
+                    AgentSystemEventType.turnInterrupted.rawValue,
                 ]
             ),
         ]

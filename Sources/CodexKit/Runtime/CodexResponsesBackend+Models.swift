@@ -82,8 +82,10 @@ struct ResponsesCompactRequestBody: Encodable {
 
 struct ResponsesReasoningConfiguration: Encodable {
     let effort: String
+    let summary: String?
 
-    init(effort: ReasoningEffort) {
+    init(effort: ReasoningEffort, summary: String? = nil) {
+        self.summary = summary
         self.effort = effort.apiValue
     }
 }
@@ -194,11 +196,15 @@ enum WorkingHistoryItem: Sendable {
             }
         }
 
-        return .object([
+        var object: [String: JSONValue] = [
             "type": .string("message"),
             "role": .string(roleValue),
             "content": .array(content),
-        ])
+        ]
+        if message.role == .assistant, let phase = message.phase {
+            object["phase"] = .string(phase.rawValue)
+        }
+        return .object(object)
     }
 
     private static func developerMessageJSONValue(text: String) -> JSONValue {
@@ -322,6 +328,8 @@ struct FunctionCallRecord: Sendable {
 
 struct CodexResponsesStreamEvent: Sendable {
     enum Kind: Sendable {
+        case progress(AgentProgress)
+        case rateLimits([AgentRateLimitSnapshot])
         case responseCreated(responseID: String?)
         case assistantTextDelta(String)
         case outputItem(StreamItem, outputIndex: Int)
@@ -334,41 +342,6 @@ struct CodexResponsesStreamEvent: Sendable {
 
     let kind: Kind
     let sequenceNumber: Int?
-}
-
-struct PendingToolResults: Sendable {
-    private actor Storage {
-        private var waiting: [String: CheckedContinuation<ToolResultEnvelope, Error>] = [:]
-        private var resolved: [String: ToolResultEnvelope] = [:]
-
-        func wait(for invocationID: String) async throws -> ToolResultEnvelope {
-            if let resolved = resolved.removeValue(forKey: invocationID) {
-                return resolved
-            }
-
-            return try await withCheckedThrowingContinuation { continuation in
-                waiting[invocationID] = continuation
-            }
-        }
-
-        func resolve(_ result: ToolResultEnvelope, for invocationID: String) {
-            if let continuation = waiting.removeValue(forKey: invocationID) {
-                continuation.resume(returning: result)
-            } else {
-                resolved[invocationID] = result
-            }
-        }
-    }
-
-    private let storage = Storage()
-
-    func wait(for invocationID: String) async throws -> ToolResultEnvelope {
-        try await storage.wait(for: invocationID)
-    }
-
-    func resolve(_ result: ToolResultEnvelope, for invocationID: String) async {
-        await storage.resolve(result, for: invocationID)
-    }
 }
 
 extension ToolDefinition {

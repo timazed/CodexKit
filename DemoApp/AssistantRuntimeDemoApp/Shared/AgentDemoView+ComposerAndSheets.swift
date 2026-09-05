@@ -51,6 +51,13 @@ extension AgentDemoView {
             }
 
             HStack {
+                if viewModel.runningTurnIDs[request.toolInvocation.threadID] != nil {
+                    Button("Stop", role: .destructive) {
+                        Task { await viewModel.stopTurn(in: request.toolInvocation.threadID) }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.stoppingThreadIDs.contains(request.toolInvocation.threadID))
+                }
                 Button("Deny") {
                     viewModel.denyPendingRequest()
                 }

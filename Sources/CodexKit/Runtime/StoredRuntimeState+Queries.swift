@@ -402,6 +402,8 @@ package struct StoredRuntimeStateProjectionBuilder: Sendable {
                     latestTurnStatus = .running
                 case .turnCompleted:
                     latestTurnStatus = .completed
+                case .turnInterrupted:
+                    latestTurnStatus = .interrupted
                 case .turnFailed:
                     latestTurnStatus = .failed
                 case .threadCreated,

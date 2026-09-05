@@ -105,7 +105,8 @@ extension AgentDemoView {
                     DemoActionTile(
                         title: "Log Out",
                         subtitle: "End the current session. Saved threads stay on this device.",
-                        systemImage: "rectangle.portrait.and.arrow.right"
+                        systemImage: "rectangle.portrait.and.arrow.right",
+                        isDisabled: !viewModel.canReconfigureRuntime
                     ) {
                         Task {
                             await viewModel.signOut()
@@ -133,8 +134,24 @@ extension AgentDemoView {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.modelCatalogDescription).font(.caption).foregroundStyle(.secondary)
+                    if let fetchedAt = viewModel.modelCatalog?.fetchedAt {
+                        Text("Updated \(fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button(viewModel.isRefreshingModels ? "Refreshing…" : "Refresh Models") {
+                    Task { await viewModel.refreshModels(force: true) }
+                }
+                .font(.caption)
+                .disabled(viewModel.session == nil || viewModel.isRefreshingModels)
+            }
+
             LazyVGrid(columns: tileColumns, spacing: 12) {
-                ForEach(CodexModel.userFacingModels) { model in
+                ForEach(viewModel.selectableModels) { model in
                     modelTile(for: model)
                 }
             }
@@ -144,6 +161,9 @@ extension AgentDemoView {
                     reasoningEffortTile(for: effort)
                 }
             }
+
+            Divider()
+            DemoAccountLimitsView(limits: viewModel.accountRateLimits)
         }
     }
 
@@ -185,6 +205,15 @@ extension AgentDemoView {
                     Task {
                         await viewModel.createTravelPlannerSkillThread()
                     }
+                }
+
+                DemoActionTile(
+                    title: "Parallel Lookups",
+                    subtitle: "Try two independent sample tools, then inspect their activity in the thread.",
+                    systemImage: "arrow.triangle.branch",
+                    isDisabled: viewModel.session == nil || !viewModel.canReconfigureRuntime
+                ) {
+                    Task { await viewModel.runParallelToolsDemo() }
                 }
 
                 DemoActionTile(

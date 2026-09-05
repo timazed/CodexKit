@@ -6,6 +6,15 @@ extension CodexResponsesTurnRunner {
         state: inout TurnRunState
     ) async throws -> StreamEventResult {
         switch event.kind {
+        case let .progress(progress):
+            continuation.yield(.progress(.init(threadID: threadID, turnID: turnID, content: progress)))
+            return .assistantDelta
+
+        case let .rateLimits(snapshots):
+            await streamClient.rateLimitObserver(snapshots)
+            continuation.yield(.rateLimitsUpdated(snapshots))
+            return .none
+
         case .responseCreated:
             return .none
 
@@ -22,6 +31,17 @@ extension CodexResponsesTurnRunner {
                     value: item.rawValue
                 )
             )
+            if let object = item.rawValue.objectValue, let id = object["id"]?.stringValue {
+                if object["type"]?.stringValue == "message" {
+                    continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
+                        content: .messageCompleted(itemID: id,
+                            phase: object["phase"]?.stringValue.map(AgentMessagePhase.init(rawValue:))))))
+                } else if object["type"]?.stringValue == "web_search_call" {
+                    continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
+                        content: .webSearch(itemID: id, status: object["status"]?.stringValue ?? "completed",
+                            action: object["action"])) ))
+                }
+            }
             switch item.kind {
             case let .message(messageItem):
                 let text = messageItem.content
@@ -38,7 +58,8 @@ extension CodexResponsesTurnRunner {
                         threadID: "",
                         role: .assistant,
                         text: text,
-                        images: images
+                        images: images,
+                        phase: messageItem.phase
                     ),
                     state: &state
                 )
@@ -59,7 +80,11 @@ extension CodexResponsesTurnRunner {
                         "tool_name": functionCall.name
                     ]
                 )
-                try await handleFunctionCall(functionCall, state: &state)
+                if tools.contains(where: \.supportsParallelExecution) {
+                    state.pendingFunctionCalls.append(functionCall)
+                } else {
+                    try await handleFunctionCall(functionCall, state: &state)
+                }
                 return .toolCall
 
             case let .imageGenerationCall(imageGenerationCall):
@@ -95,6 +120,7 @@ extension CodexResponsesTurnRunner {
             return .none
 
         case let .completed(usage, responseID):
+            try await resolvePendingFunctionCalls(state: &state)
             state.aggregateUsage.inputTokens += usage.inputTokens
             state.aggregateUsage.cachedInputTokens += usage.cachedInputTokens
             state.aggregateUsage.outputTokens += usage.outputTokens
@@ -177,6 +203,7 @@ extension CodexResponsesTurnRunner {
             role: .assistant,
             text: assistantText,
             images: mergedImages,
+            phase: normalizedMessage.phase,
             structuredOutput: state.pendingStructuredOutputMetadata
                 ?? CodexResponsesBackend.structuredMetadata(
                     from: assistantText,
@@ -200,7 +227,8 @@ extension CodexResponsesTurnRunner {
                 threadID: threadID,
                 role: .assistant,
                 text: messageTemplate.text,
-                images: messageTemplate.images
+                images: messageTemplate.images,
+                phase: messageTemplate.phase
             )
         }
 
@@ -228,7 +256,8 @@ extension CodexResponsesTurnRunner {
             threadID: threadID,
             role: .assistant,
             text: extraction.visibleText,
-            images: messageTemplate.images
+            images: messageTemplate.images,
+                phase: messageTemplate.phase
         )
     }
 
@@ -256,6 +285,10 @@ extension CodexResponsesTurnRunner {
         )
 
         continuation.yield(.toolCallRequested(invocation))
+        try await collectToolResult(invocation, state: &state)
+    }
+
+    func collectToolResult(_ invocation: ToolInvocation, state: inout TurnRunState) async throws {
         logger.debug(
             .tools,
             "Waiting for tool result submission.",

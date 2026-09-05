@@ -85,6 +85,7 @@ public struct CodexModelInfo: Codable, Hashable, Sendable, Identifiable {
 }
 
 public extension CodexModel {
+    static let gpt6Astra = CodexModel(rawValue: "gpt-6-astra")
     static let gpt56Sol = CodexModel(rawValue: "gpt-5.6-sol")
     static let gpt56Terra = CodexModel(rawValue: "gpt-5.6-terra")
     static let gpt56Luna = CodexModel(rawValue: "gpt-5.6-luna")
@@ -97,6 +98,15 @@ public extension CodexModel {
 
     /// Models described by this CodexKit release, including internal entries.
     static let catalog: [CodexModelInfo] = [
+        CodexModelInfo(
+            model: .gpt6Astra,
+            displayName: "GPT-6-Astra",
+            summary: "Our most capable model for complex, demanding work.",
+            defaultReasoningEffort: .low,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image]
+        ),
         CodexModelInfo(
             model: .gpt56Sol,
             displayName: "GPT-5.6-Sol",
@@ -189,6 +199,7 @@ public extension CodexModel {
     /// Catalog models intended for user selection.
     static var userFacingModels: [CodexModel] {
         [
+            .gpt6Astra,
             .gpt56Sol,
             .gpt56Terra,
             .gpt56Luna,

@@ -31,7 +31,7 @@ struct ThreadMessageBubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(message.role.rawValue.capitalized)
+            Text(messageLabel)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             if shouldShowVisibleText {
@@ -57,6 +57,15 @@ struct ThreadMessageBubble: View {
                         : Color.primary.opacity(0.04)
                 )
         )
+    }
+
+    private var messageLabel: String {
+        guard message.role == .assistant else { return message.role.rawValue.capitalized }
+        switch message.phase {
+        case .commentary: return "Assistant · Progress"
+        case .finalAnswer: return "Assistant · Answer"
+        default: return "Assistant"
+        }
     }
 
     private var shouldShowVisibleText: Bool {

@@ -1,6 +1,8 @@
 public enum AgentEvent: Sendable {
     case threadStarted(AgentThread)
     case threadStatusChanged(threadID: String, status: AgentThreadStatus)
+    case progress(AgentTurnProgress)
+    case rateLimitsUpdated([AgentRateLimitSnapshot])
     case turnStarted(AgentTurn)
     case assistantMessageDelta(threadID: String, turnID: String, delta: String)
     case messageCommitted(AgentMessage)
@@ -9,6 +11,7 @@ public enum AgentEvent: Sendable {
     case toolCallStarted(ToolInvocation)
     case toolCallFinished(ToolResultEnvelope)
     case turnCompleted(AgentTurnSummary)
+    case turnInterrupted(AgentTurnInterruption)
     case turnFailed(AgentRuntimeError)
 }
 

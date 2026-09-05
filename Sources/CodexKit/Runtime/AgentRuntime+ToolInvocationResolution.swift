@@ -45,6 +45,16 @@ extension AgentRuntime {
         )
     }
 
+    func resolveToolInvocation(
+        _ invocation: ToolInvocation, session: ChatGPTSession, storesTurnState: Bool,
+        sink: AgentToolEventSink
+    ) async throws -> ToolResultEnvelope {
+        try await resolveToolInvocationImpl(invocation, session: session, storesTurnState: storesTurnState,
+            yieldThreadStatusChanged: { sink.yield(.threadStatusChanged(threadID: $0, status: $1)) },
+            yieldApprovalRequested: { sink.yield(.approvalRequested($0)) },
+            yieldApprovalResolved: { sink.yield(.approvalResolved($0)) })
+    }
+
     private func resolveToolInvocationImpl(
         _ invocation: ToolInvocation,
         session: ChatGPTSession,
@@ -109,6 +119,7 @@ extension AgentRuntime {
             )
 
             let decision = try await approvalCoordinator.requestApproval(approval)
+            try Task.checkCancellation()
             let resolution = ApprovalResolution(
                 requestID: approval.id,
                 threadID: approval.threadID,
@@ -199,6 +210,7 @@ extension AgentRuntime {
         }
 
         let result = await toolRegistry.execute(invocation, session: session)
+        try Task.checkCancellation()
         let resultDate = Date()
         logger.info(
             .tools,
@@ -235,7 +247,9 @@ extension AgentRuntime {
                     for: invocation.threadID
                 )
             } else {
-                try setPendingState(nil, for: invocation.threadID)
+                parallelToolWaits[invocation.turnID]?[invocation.id] = nil
+                let remaining = parallelToolWaits[invocation.turnID]?.values.sorted { $0.invocationID < $1.invocationID }.first
+                try setPendingState(remaining.map(AgentThreadPendingState.toolWait), for: invocation.threadID)
                 try appendHistoryItem(
                     .toolResult(
                         AgentToolResultRecord(
