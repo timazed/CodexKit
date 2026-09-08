@@ -9,34 +9,8 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  diagnose-prior-failure:
-    name: Diagnose minimum-compiler failure
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Read the minimum-compiler diagnostic context
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          curl --fail --location --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/jobs/101949322678/logs" \
-            --output "$RUNNER_TEMP/prior-job.log"
-          python3 - <<'PYTHON'
-          import os, re
-          from pathlib import Path
-
-          lines = (Path(os.environ["RUNNER_TEMP"]) / "prior-job.log").read_text(errors="replace").splitlines()
-          start = next((index for index, line in enumerate(lines)
-                        if "error: sending 'realm' risks causing data races" in line), None)
-          message = "\n".join(lines[max(0, start - 3):start + 38])[:12000] if start is not None else "No matching diagnostic was found."
-          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-          print(f"::notice title=Minimum compiler diagnostic::{message}")
-          PYTHON
-
   test-and-build:
     name: Verify (${{ matrix.profile }})
     strategy:

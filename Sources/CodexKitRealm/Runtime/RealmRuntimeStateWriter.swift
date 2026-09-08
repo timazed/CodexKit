@@ -2,8 +2,13 @@ import CodexKit
 import Foundation
 import RealmSwift
 
-extension RealmRuntimeStateStore {
-    func applyIncrementally(
+// Transaction logic owns only values passed in by the store. Keeping actor state
+// out of Realm's synchronous write closure also supports Swift 6.1's isolation checks.
+struct RealmRuntimeStateWriter {
+    let codec: RealmRuntimeStateStoreCodec
+    private(set) var decodedHistoryRecordCount = 0
+
+    mutating func applyIncrementally(
         _ operations: [AgentStoreWriteOperation],
         codec writeCodec: RealmRuntimeStateStoreCodec,
         in realm: Realm
@@ -92,7 +97,7 @@ extension RealmRuntimeStateStore {
                     ofType: RealmRuntimeContextObject.self,
                     forPrimaryKey: threadID
                 )
-                let previousStorageKeys = try attachmentReferenceStorageKeys(
+                let previousStorageKeys = try RealmRuntimeAttachmentReferences.storageKeys(
                     ownerType: "context",
                     ownerKey: threadID,
                     in: realm
@@ -101,7 +106,7 @@ extension RealmRuntimeStateStore {
                     let object = try writeCodec.makeContextObject(from: state)
                     let newStorageKeys = try writeCodec.attachmentStorageKeys(from: object)
                     realm.add(object, update: .modified)
-                    replaceAttachmentReferences(
+                    RealmRuntimeAttachmentReferences.replace(
                         ownerType: "context",
                         ownerKey: threadID,
                         threadID: threadID,
@@ -113,7 +118,7 @@ extension RealmRuntimeStateStore {
                     if let previousObject {
                         realm.delete(previousObject)
                     }
-                    deleteAttachmentReferences(ownerType: "context", ownerKey: threadID, in: realm)
+                    RealmRuntimeAttachmentReferences.delete(ownerType: "context", ownerKey: threadID, in: realm)
                     attachmentCleanup.formUnion(previousStorageKeys)
                 }
 
@@ -122,13 +127,13 @@ extension RealmRuntimeStateStore {
                     ofType: RealmRuntimeContextObject.self,
                     forPrimaryKey: threadID
                 ) {
-                    attachmentCleanup.formUnion(try attachmentReferenceStorageKeys(
+                    attachmentCleanup.formUnion(try RealmRuntimeAttachmentReferences.storageKeys(
                         ownerType: "context",
                         ownerKey: threadID,
                         in: realm
                     ))
                     realm.delete(object)
-                    deleteAttachmentReferences(ownerType: "context", ownerKey: threadID, in: realm)
+                    RealmRuntimeAttachmentReferences.delete(ownerType: "context", ownerKey: threadID, in: realm)
                 }
 
             case let .setPendingState(threadID, pendingState):
@@ -218,7 +223,7 @@ extension RealmRuntimeStateStore {
                 deletePersistedThread(threadID, from: realm)
             }
         }
-        enqueueAttachmentCleanup(attachmentCleanup, in: realm)
+        RealmRuntimeAttachmentReferences.enqueueCleanup(attachmentCleanup, in: realm)
     }
 
     func appendHistoryItems(
@@ -280,7 +285,7 @@ extension RealmRuntimeStateStore {
         for record in items {
             let object = try writeCodec.makeHistoryObject(from: record, threadID: threadID)
             realm.add(object)
-            replaceAttachmentReferences(
+            RealmRuntimeAttachmentReferences.replace(
                 ownerType: "history",
                 ownerKey: object.key,
                 threadID: threadID,
@@ -364,7 +369,7 @@ extension RealmRuntimeStateStore {
         }
     }
 
-    func redactHistoryItems(
+    mutating func redactHistoryItems(
         _ itemIDs: [String],
         in threadID: String,
         reason: AgentRedactionReason?,
@@ -399,10 +404,10 @@ extension RealmRuntimeStateStore {
                 total: &payloadByteCount
             )
             let redacted = try codec.decodeHistoryRecordForProjection(from: object).redacted(reason: reason)
-            latestApplyDecodedHistoryRecordCount += 1
+            decodedHistoryRecordCount += 1
             let redactedObject = try writeCodec.makeHistoryObject(from: redacted, threadID: threadID)
             realm.add(redactedObject, update: .modified)
-            replaceAttachmentReferences(
+            RealmRuntimeAttachmentReferences.replace(
                 ownerType: "history",
                 ownerKey: redactedObject.key,
                 threadID: threadID,
@@ -420,19 +425,19 @@ extension RealmRuntimeStateStore {
             ofType: RealmRuntimeContextObject.self,
             forPrimaryKey: threadID
         ) {
-            attachmentStorageKeys.formUnion(try attachmentReferenceStorageKeys(
+            attachmentStorageKeys.formUnion(try RealmRuntimeAttachmentReferences.storageKeys(
                 ownerType: "context",
                 ownerKey: threadID,
                 in: realm
             ))
             realm.delete(context)
-            deleteAttachmentReferences(ownerType: "context", ownerKey: threadID, in: realm)
+            RealmRuntimeAttachmentReferences.delete(ownerType: "context", ownerKey: threadID, in: realm)
         }
         try rebuildSummary(threadID: threadID, in: realm)
         return attachmentStorageKeys
     }
 
-    func rebuildSummary(threadID: String, in realm: Realm) throws {
+    mutating func rebuildSummary(threadID: String, in realm: Realm) throws {
         guard let threadObject = realm.object(
             ofType: RealmRuntimeThreadObject.self,
             forPrimaryKey: threadID
@@ -488,7 +493,7 @@ extension RealmRuntimeStateStore {
         let history = try latestObjects.values
             .sorted { $0.sequenceNumber < $1.sequenceNumber }
             .map(codec.decodeHistoryRecordForProjection)
-        latestApplyDecodedHistoryRecordCount += history.count
+        decodedHistoryRecordCount += history.count
         let baseline = AgentThreadSummary(
             threadID: thread.id,
             createdAt: thread.createdAt,

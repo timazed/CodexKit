@@ -63,7 +63,7 @@ extension RealmMemoryStore {
 
             try await realm.asyncWrite(_isolation: self) {
                 for namespace in namespaces {
-                    try rebuildDiagnosticsSnapshot(for: namespace, in: realm)
+                    try Self.rebuildDiagnosticsSnapshot(for: namespace, in: realm)
                 }
             }
             lastNamespace = namespaces.last
@@ -79,7 +79,7 @@ extension RealmMemoryStore {
         }
     }
 
-    private func rebuildDiagnosticsSnapshot(
+    private static func rebuildDiagnosticsSnapshot(
         for namespace: String,
         in realm: Realm
     ) throws {

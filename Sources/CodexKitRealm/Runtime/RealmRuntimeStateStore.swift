@@ -195,7 +195,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
                 realm.add(contextObjects, update: .modified)
                 realm.add(structuredOutputObjects, update: .modified)
                 for object in historyObjects {
-                    replaceAttachmentReferences(
+                    RealmRuntimeAttachmentReferences.replace(
                         ownerType: "history",
                         ownerKey: object.key,
                         threadID: object.threadID,
@@ -204,7 +204,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
                     )
                 }
                 for object in contextObjects {
-                    replaceAttachmentReferences(
+                    RealmRuntimeAttachmentReferences.replace(
                         ownerType: "context",
                         ownerKey: object.threadID,
                         threadID: object.threadID,
@@ -263,11 +263,14 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
             preparedAttachments: attachmentBatch.preparedAttachments
         )
         latestApplyDecodedHistoryRecordCount = 0
+        var writer = RealmRuntimeStateWriter(codec: codec)
         do {
             try await realm.asyncWrite(_isolation: self) {
-                try applyIncrementally(operations, codec: writeCodec, in: realm)
+                try writer.applyIncrementally(operations, codec: writeCodec, in: realm)
             }
+            latestApplyDecodedHistoryRecordCount = writer.decodedHistoryRecordCount
         } catch {
+            latestApplyDecodedHistoryRecordCount = writer.decodedHistoryRecordCount
             try? await removeUnreferencedPromotedAttachments(
                 attachmentBatch.newlyPromotedStorageKeys,
                 in: realm

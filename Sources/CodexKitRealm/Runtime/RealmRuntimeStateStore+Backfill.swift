@@ -52,7 +52,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.threadID))
             guard !ids.isEmpty else { return }
-            try await realm.asyncWrite(_isolation: self) {
+            try await realm.asyncWrite(_isolation: self) { [codec] in
                 var payloadByteCount = 0
                 for id in ids {
                     guard let object = realm.object(
@@ -83,7 +83,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.threadID))
             guard !ids.isEmpty else { return }
-            try await realm.asyncWrite(_isolation: self) {
+            try await realm.asyncWrite(_isolation: self) { [codec] in
                 var payloadByteCount = 0
                 for id in ids {
                     guard let object = realm.object(
@@ -96,7 +96,7 @@ extension RealmRuntimeStateStore {
                         total: &payloadByteCount
                     )
                     object.generation = try codec.decodeContextState(from: object).generation
-                    replaceAttachmentReferences(
+                    RealmRuntimeAttachmentReferences.replace(
                         ownerType: "context",
                         ownerKey: object.threadID,
                         threadID: object.threadID,
@@ -118,7 +118,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.key))
             guard !keys.isEmpty else { return }
-            try await realm.asyncWrite(_isolation: self) {
+            try await realm.asyncWrite(_isolation: self) { [codec] in
                 var payloadByteCount = 0
                 for key in keys {
                     guard let object = realm.object(
@@ -138,7 +138,7 @@ extension RealmRuntimeStateStore {
                     object.messageRole = projection.messageRole
                     object.hasStructuredOutput = projection.hasStructuredOutput
                     object.systemEventType = projection.systemEventType
-                    replaceAttachmentReferences(
+                    RealmRuntimeAttachmentReferences.replace(
                         ownerType: "history",
                         ownerKey: object.key,
                         threadID: object.threadID,
