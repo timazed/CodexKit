@@ -49,6 +49,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Changed
 
+- Declared the Swift 6.1 compiler requirement already imposed by GRDB 7.10; deployment targets remain iOS 17 and macOS 14.
 - Batched compact-response byte accumulation and validated retained image references without allocating expanded base64 payloads.
 - Read consecutive Realm history windows by primary key, with filtered-query fallback for excluded or missing rows, and avoided counting entire result sets for paging existence checks.
 - Stopped automatic retry after text, progress, or structured output has been emitted; consumers no longer accumulate replayed output after a disconnect.

@@ -20,6 +20,8 @@ Your app owns the tools and user interface. The built-in backend uses ChatGPT ac
 
 ## Installation
 
+Swift 6.1 or newer is required. The deployment targets remain iOS 17 and macOS 14.
+
 Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and select the products your app needs:
 
 | Product | Purpose |

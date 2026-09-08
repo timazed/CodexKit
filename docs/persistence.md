@@ -59,7 +59,7 @@ let stateStore = try RealmRuntimeStateStore()
 
 SwiftPM resolves the repository's declared dependency graph when it resolves the package, so both upstream package pins can appear in `Package.resolved`. Product selection still keeps GRDB out of `CodexKit` and out of applications that link only `CodexKitRealm`, while RealmSwift stays out of applications that link only `CodexKitSQLite`.
 
-This is a SwiftPM resolver limitation of keeping both adapters in one package manifest: choosing one product controls what the application compiles and links, but does not make the other package declaration disappear during dependency resolution. Completely independent resolution would require publishing the adapters as separate Swift packages; it cannot be expressed as conditional target dependencies in one Swift 6.0 manifest.
+This is a SwiftPM resolver limitation of keeping both adapters in one package manifest: choosing one product controls what the application compiles and links, but does not make the other package declaration disappear during dependency resolution. Completely independent resolution would require publishing the adapters as separate Swift packages; it cannot be expressed as conditional target dependencies in this manifest.
 
 If the host application already uses RealmSwift through SwiftPM, keep its direct `RealmSwift` product dependency. SwiftPM identifies both requirements as the same `realm-swift` package and resolves one compatible 20.x version for the application; CodexKit does not vendor or rename a second Realm binary. An incompatible host constraint, such as a pin to an older major version, is reported by SwiftPM during dependency resolution rather than producing two Realm copies at runtime.
 
