@@ -156,27 +156,36 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
             throw AgentRuntimeError(code: "models_invalid_catalog", message: "Model catalog has no models array.")
         }
         var seen: Set<String> = []
-        return models.compactMap { model in
+        var catalog: [CodexAvailableModel] = []
+        catalog.reserveCapacity(models.count)
+        for model in models {
             guard let m = model.objectValue, let slug = m["slug"]?.stringValue,
-                  !slug.isEmpty, seen.insert(slug).inserted else { return nil }
-            let known = CodexModel(rawValue: slug).info
-            let levels = m["supported_reasoning_levels"]?.arrayValue?.compactMap {
+                  !slug.isEmpty, seen.insert(slug).inserted else { continue }
+            let identifier = CodexModel(rawValue: slug)
+            let known = identifier.info
+            let remoteLevels: [ReasoningEffort]? = m["supported_reasoning_levels"]?.arrayValue?.compactMap {
                 $0.objectValue?["effort"]?.stringValue.flatMap(ReasoningEffort.init(rawValue:))
-            } ?? known?.supportedReasoningEfforts ?? []
+            }
+            let levels = remoteLevels ?? known?.supportedReasoningEfforts ?? []
+            let defaultEffort: ReasoningEffort = m["default_reasoning_level"]?.stringValue
+                .flatMap(ReasoningEffort.init(rawValue:)) ?? .medium
+            let modalities: [CodexModelInputModality] = m["input_modalities"]?.arrayValue?.compactMap {
+                $0.stringValue.flatMap(CodexModelInputModality.init(rawValue:))
+            } ?? [.text, .image]
             let context: Int? = {
                 guard case let .number(n) = m["context_window"], n > 0 else { return known?.contextWindowTokenCount }
                 return Int(exactly: n)
             }()
             let parallel: Bool? = { if case let .bool(b) = m["supports_parallel_tool_calls"] { return b }; return nil }()
-            return .init(model: .init(rawValue: slug), displayName: m["display_name"]?.stringValue ?? slug,
-                         summary: m["description"]?.stringValue ?? "",
-                         defaultReasoningEffort: m["default_reasoning_level"]?.stringValue.flatMap(ReasoningEffort.init(rawValue:)) ?? .medium,
-                         supportedReasoningEfforts: levels,
-                         inputModalities: m["input_modalities"]?.arrayValue?.compactMap {
-                            $0.stringValue.flatMap(CodexModelInputModality.init(rawValue:))
-                         } ?? [.text, .image], contextWindowTokenCount: context,
-                         hidden: m["visibility"]?.stringValue != "list", supportsParallelToolCalls: parallel)
+            catalog.append(CodexAvailableModel(
+                model: identifier, displayName: m["display_name"]?.stringValue ?? slug,
+                summary: m["description"]?.stringValue ?? "", defaultReasoningEffort: defaultEffort,
+                supportedReasoningEfforts: levels, inputModalities: modalities,
+                contextWindowTokenCount: context, hidden: m["visibility"]?.stringValue != "list",
+                supportsParallelToolCalls: parallel
+            ))
         }
+        return catalog
     }
 }
 

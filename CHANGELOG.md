@@ -21,6 +21,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 
+- Simplified model-catalog decoding so the SDK builds with Swift 6.1 without exceeding the compiler's type-checking limit.
 - Made contended storage-lock waits cancellable without blocking executor workers, closed cancelled leases, preserved queue ordering after cancelled waiters, and protected database/attachment commits already underway.
 - Kept shared SQLite/Realm preparation alive for other callers and drained accepted runtime writes/interruption records after startup waiters cancel.
 - Coordinated manual compaction, persistent turns, and thread activation so stale compaction cannot replace newer context; deactivation waits for active work and restoration reports busy while context operations are running.

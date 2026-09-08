@@ -124,10 +124,12 @@ jobs:
               if not path.is_file():
                   continue
               lines = path.read_text(errors="replace").splitlines()
-              errors = [line for line in lines if "error:" in line.lower() or "failed" in line.lower()]
+              errors = list(dict.fromkeys(line for line in lines
+                            if "error:" in line.lower() or "failed" in line.lower()))
               if not errors:
                   continue
-              message = "\n".join(errors[-12:])[:6000]
+              excerpt = errors if len(errors) <= 12 else errors[:6] + errors[-6:]
+              message = "\n".join(excerpt)[:6000]
               message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
               print(f"::error title={name}::{message}")
           PYTHON
