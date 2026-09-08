@@ -4,26 +4,79 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
+  workflow_dispatch:
 
 jobs:
   test-and-build:
-    runs-on: macos-latest
+    name: Verify (${{ matrix.profile }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: current
+            runner: macos-latest
+            simulator: ""
+          - profile: minimum
+            runner: macos-14
+            simulator: "17.0.1"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Swift version
-        run: swift --version
+      - name: Select Swift 6 on macOS 14
+        if: matrix.profile == 'minimum'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_16.2.app/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Host and Swift versions
+        run: |
+          sw_vers
+          swift --version
+
+      - name: Production source size
+        run: python3 Scripts/check_source_size.py
+
+      - name: Verification harness checks
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Verification
 
       - name: Swift package tests
-        run: swift test
+        run: swift test -Xswiftc -warnings-as-errors
 
-      - name: Build demo app (iOS Simulator)
+      - name: Release package build
+        run: swift build -c release -Xswiftc -warnings-as-errors
+
+      - name: Optimized regression and concurrency checks
+        if: matrix.profile == 'current'
+        shell: bash
+        env:
+          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
+          CODEXKIT_STRESS_ROUNDS: "40"
         run: |
-          xcodebuild \
-            -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
-            -scheme AssistantRuntimeDemoApp \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          set -euo pipefail
+          swift test -c release -Xswiftc -warnings-as-errors \
+            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests|RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests' \
+            2>&1 | tee "$RUNNER_TEMP/codexkit-optimized.log"
+
+      - name: Verify demo app (iOS Simulator)
+        shell: bash
+        env:
+          SIMULATOR_VERSION: ${{ matrix.simulator }}
+        run: |
+          args=(--output-dir "$RUNNER_TEMP/codexkit-verification")
+          if [[ -n "$SIMULATOR_VERSION" ]]; then
+            args+=(--runtime "$SIMULATOR_VERSION")
+          fi
+          python3 Scripts/verify_ios_simulator.py "${args[@]}"
+
+      - name: Verification reports and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-verification-${{ matrix.profile }}
+          path: |
+            ${{ runner.temp }}/codexkit-verification
+            ${{ runner.temp }}/codexkit-optimized.log
+          if-no-files-found: ignore
+          retention-days: 14

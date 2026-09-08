@@ -21,6 +21,8 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - **Memory:** automatic capture, guided writing, raw record management, and retrieval previews.
 - **Health Coach:** tools and memory combined with HealthKit context and local notifications.
 
+The shared `AgentRuntimeStore` keeps replies scoped to the selected conversation and upserts committed messages by ID during streaming. Interrupted streams can now fail after visible output instead of automatically replaying it. See the [streaming contract](../docs/messaging.md#streaming-validation-and-backend-completion).
+
 ## What the app does
 
 - launches a SwiftUI chat screen
@@ -76,6 +78,12 @@ The app links `CodexKit`, `CodexKitSQLite`, `CodexKitRealm`, and `CodexKitUI` fr
 Both persistent adapters use lazy thread activation. On launch, the demo queries lightweight persisted thread metadata for the thread list without decoding full histories. Selecting a stored thread resumes and hydrates only that thread. Persisted thread rows remain visible when signed out, but must be signed in before they can be resumed.
 
 On iOS, the interactive demo installs `IOSBackgroundActivityProvider`. Active turns request the system's finite background completion window and are cancelled cleanly if that allowance expires. This helps a nearly finished response survive a brief screen lock or app switch; it does not provide durable execution after suspension or process termination.
+
+The demo also inherits the runtime's five-minute turn duration and 128-tool-call limit. The duration includes approval waits; reaching a budget shows a turn failure and clears pending approval. Hosts can adjust these defaults through `AgentRuntime.Configuration.turnLimits`; see [execution limits](../docs/messaging.md#event-buffering-and-execution-limits).
+
+Run `python3 Scripts/verify_ios_simulator.py` from the repository root for the same signed simulator verification used by CI. It creates and removes a temporary simulator, verifies SQLite/Realm completion, reopening, and cancellation, and saves reports in `.build/verification`. For a manually launched Debug app, add `--verify-runtime`; also add `--verify-local-only` to skip live-session lookup. Verification launches bypass ordinary demo setup. See [verification instructions](../docs/verification.md) for scope, session requirements, and report retrieval.
+
+Keep signing enabled when running this check on a simulator: the unsigned CI build can compile successfully while Keychain access fails. The verification guide includes a local ad-hoc signing command.
 
 The checked-in demo enables context compaction in automatic mode. In a thread detail screen, the `Context Compaction` card shows:
 

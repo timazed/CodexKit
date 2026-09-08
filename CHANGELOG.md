@@ -6,6 +6,61 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Added a repeatable concurrency workload across file, SQLite, and Realm stores, combining six overlapping operations, cancellation, compaction, slow consumers, shared image blobs, and database/runtime reopening with independent transcript checks.
+- Added release compilation, warnings-as-errors, and optimized performance/SDK/storage regression checks to CI; CI also verifies macOS 14 and iOS 17.0.1, while current-host CI and release verification run 40 concurrency rounds per adapter and retain the optimized test log.
+- Added signed simulator execution to CI and release verification, with per-adapter results, database reopen checks, fresh-report validation, retained diagnostic artifacts, and a production source-size guard.
+- Added opt-in image/compaction/reopen checks across SQLite/Realm and both provider-state modes, plus realistic image/history/cancellation benchmarks.
+- Added a reproducible core/UI public API comparison and compatibility tests for prior-release initializer call shapes.
+- Added injectable `AgentSessionProviding` and optional `AgentSessionManaging`, with a provider-based runtime configuration that requires no Keychain or interactive auth setup.
+- Added `AgentExecution` handles through `runtime.start`, including independent readiness, cancellation, steering, and ephemeral execution ownership.
+- Added async observation through `publisher.values`, with explicit latest-snapshot or bounded notification policies and subscription cleanup on cancellation/release.
+- Added typed HTTP and retry details to `AgentRuntimeError`, preserving status, provider codes, request IDs, server retry delays, and replay safety.
+- Added opt-in live/pipeline test harnesses and a debug demo verifier for device/simulator checks.
+
+### Fixed
+
+- Made contended storage-lock waits cancellable without blocking executor workers, closed cancelled leases, preserved queue ordering after cancelled waiters, and protected database/attachment commits already underway.
+- Kept shared SQLite/Realm preparation alive for other callers and drained accepted runtime writes/interruption records after startup waiters cancel.
+- Coordinated manual compaction, persistent turns, and thread activation so stale compaction cannot replace newer context; deactivation waits for active work and restoration reports busy while context operations are running.
+- Expanded persisted image references before compact requests and retained image attachments from compact responses as disk blobs, including after SQLite/Realm reopening.
+- Applied unauthorized-session recovery and typed HTTP failures to remote compaction, with same-account enforcement and no local fallback after failed authentication recovery.
+- Bounded compact response ingestion, applied the configured timeout, cancelled rejected downloads, and skipped payload formatting when debug logging is disabled.
+- Rejected already-cancelled starts before storing or launching work; cancellation during preparation records interruption and releases the thread.
+- Validated one-shot structured schemas and decoded Swift output before committing assistant replies or marking turns successful; returned the validated value without decoding twice.
+- Rejected unknown top-level skill fields, including misspelled execution-policy keys.
+- Rejected malformed JSON skill definitions and invalid execution policies instead of silently dropping restrictions; an empty tool allowlist now disallows every tool.
+- Preserved all tool-result text blocks in provider requests, fallback replies, and compaction context while keeping first-block previews.
+- Rejected failed HTTP image downloads and invalid image payloads; accepted downloads use the detected image type and retain their original bytes.
+- Bounded persona/skill files and downloads before decoding with a configurable 1 MiB default and explicit `definition_too_large` errors.
+- Ensured cancellation and deadlines interrupt an accepted custom backend even when the caller has not started consuming the initial runtime events; centralized backend cleanup in execution ownership.
+- Rejected unsolicited, duplicate, mismatched, and late Responses tool results; custom executor identity mismatches now become failures of the original call before persistence. Completion and cancellation release pending results.
+- Prevented late refresh/sign-in results from restoring signed-out sessions or overwriting supplied sessions; concurrent refreshes share one request.
+- Recovered initial Responses HTTP authentication and context-limit failures before consuming the turn, without replaying later tool effects.
+- Kept the selected conversation isolated from other in-flight replies and prevented duplicate user messages in `AgentRuntimeStore`.
+- Preserved configured message working-set limits for newly created SQLite threads, including creation without an initial restore.
+- Kept existing per-thread subscriptions connected across deactivation and reactivation while releasing inactive, unobserved subjects.
+- Required backend completion for both plain and structured turns; premature EOF now fails with `turn_summary_missing` and updates stored status.
+- Validated streamed structured commits against their declared schema before decoding, persisting, or publishing them.
+- Captured tool definitions and executors together per turn so tool replacement during approval cannot change the approved execution.
+- Bounded retained live history for SQLite/Realm threads while preserving durable tool-result deduplication, including across runtime reloads and with a zero-record cache.
+- Prevented unauthorized recovery from replaying an existing request under a replacement account, bounded standalone image-generation response ingestion, and normalized non-finite retry delays.
+
+### Changed
+
+- Batched compact-response byte accumulation and validated retained image references without allocating expanded base64 payloads.
+- Read consecutive Realm history windows by primary key, with filtered-query fallback for excluded or missing rows, and avoided counting entire result sets for paging existence checks.
+- Stopped automatic retry after text, progress, or structured output has been emitted; consumers no longer accumulate replayed output after a disconnect.
+- Added an optional `AgentTurnStream.waitUntilReady` startup boundary for asynchronous custom backends.
+- Consolidated plain and structured turn preparation, completion, cancellation, and failure handling.
+- Removed global state normalization from incremental persistence and avoided response-payload sanitization when its log level is disabled.
+- Replaced repeated structured-buffer decoding with incremental boundary detection and a 4 MiB framed-payload limit. Unsupported raw-schema assertions now fail explicitly for streamed structured output; see [messaging](docs/messaging.md#streaming-validation-and-backend-completion).
+- Added lossless producer backpressure through the HTTP, backend, and runtime event queues, configurable with `maximumBufferedEvents` (default 64). Terminal lifecycle events retain reserved capacity.
+- Added runtime `AgentTurnLimits` (128 tool calls and 300 seconds by default), backend model-pass/response-byte budgets (32 passes and 256 MiB), and typed execution-limit errors. Long approval workflows may need a larger duration or `nil`; see [messaging](docs/messaging.md#event-buffering-and-execution-limits).
+- Bounded accumulated provider output items and pending steering input; added indexed `HistoryItemsQuery.relationship` filters across stores.
+- Responses retries now honor `Retry-After`; recovery prefers typed HTTP metadata. Configuration's auth/secure-store inspection properties are optional for host-managed providers; existing initializer calls remain valid. See [SDK integration](docs/sdk-integration.md).
+
 ## [2.0.0-alpha.26] - 2026-09-05
 
 ### Added
@@ -337,7 +392,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.24...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.26...HEAD
+[2.0.0-alpha.26]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.25...v2.0.0-alpha.26
+[2.0.0-alpha.25]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.24...v2.0.0-alpha.25
 [2.0.0-alpha.24]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.23...v2.0.0-alpha.24
 [2.0.0-alpha.23]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.22...v2.0.0-alpha.23
 [2.0.0-alpha.22]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.21...v2.0.0-alpha.22

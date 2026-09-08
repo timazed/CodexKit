@@ -21,6 +21,7 @@ concurrency:
 jobs:
   verify:
     runs-on: macos-latest
+    timeout-minutes: 45
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
       RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
@@ -42,13 +43,40 @@ jobs:
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
 
+      - name: Production source size
+        if: hashFiles('Scripts/check_source_size.py') != ''
+        run: python3 Scripts/check_source_size.py
+
+      - name: Verification harness checks
+        if: hashFiles('Tests/Verification/*.py') != ''
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Verification
+
       - name: Swift package tests
         run: swift test -Xswiftc -warnings-as-errors
 
       - name: Release package build
         run: swift build -c release -Xswiftc -warnings-as-errors
 
-      - name: Build demo app (iOS Simulator)
+      - name: Optimized regression and concurrency checks
+        if: hashFiles('Tests/CodexKitTests/RuntimeConcurrencyStressTests.swift') != ''
+        shell: bash
+        env:
+          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
+          CODEXKIT_STRESS_ROUNDS: "40"
+        run: |
+          set -euo pipefail
+          swift test -c release -Xswiftc -warnings-as-errors \
+            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests|RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests' \
+            2>&1 | tee "$RUNNER_TEMP/codexkit-optimized.log"
+
+      - name: Verify demo app (iOS Simulator)
+        if: hashFiles('Scripts/verify_ios_simulator.py') != ''
+        run: |
+          python3 Scripts/verify_ios_simulator.py \
+            --output-dir "$RUNNER_TEMP/codexkit-verification"
+
+      - name: Build legacy release without a runtime verifier
+        if: hashFiles('Scripts/verify_ios_simulator.py') == ''
         run: |
           xcodebuild \
             -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
@@ -56,6 +84,17 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Verification reports and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-runtime-verification
+          path: |
+            ${{ runner.temp }}/codexkit-verification
+            ${{ runner.temp }}/codexkit-optimized.log
+          if-no-files-found: ignore
+          retention-days: 14
 
   publish-release:
     needs: verify

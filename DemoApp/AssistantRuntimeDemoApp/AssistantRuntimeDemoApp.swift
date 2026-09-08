@@ -13,7 +13,20 @@ struct AssistantRuntimeDemoApp: App {
     @State private var setupError: String?
     @State private var selectedTab: DemoTab = .assistant
 
+    private static var verifiesRuntime: Bool {
+        #if DEBUG
+        CommandLine.arguments.contains("--verify-runtime")
+        #else
+        false
+        #endif
+    }
+
     init() {
+        if Self.verifiesRuntime {
+            _viewModel = State(initialValue: nil)
+            _setupError = State(initialValue: nil)
+            return
+        }
         do {
             let viewModel = try AgentDemoRuntimeFactory.makeLive(
                 enableWebSearch: true,
@@ -30,7 +43,12 @@ struct AssistantRuntimeDemoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let viewModel {
+            if Self.verifiesRuntime {
+                ProgressView("Verifying runtime…")
+                    #if DEBUG
+                    .task { await DemoRuntimeVerification.runIfRequested() }
+                    #endif
+            } else if let viewModel {
                 TabView(selection: $selectedTab) {
                     NavigationStack {
                         AgentDemoView(viewModel: viewModel)

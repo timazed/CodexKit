@@ -8,15 +8,19 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 
 | Guide | Topics |
 | --- | --- |
-| [Backend configuration and models](backend-configuration.md) | Account auth, retries, GPT-6 Astra, reasoning, response state |
+| [Backend configuration and models](backend-configuration.md) | Account auth, retries, response budgets, GPT-6 Astra, reasoning, response state |
 | [Runtime progress, tools, and turn control](upstream-runtime-features.md) | Parallel tools, progress, model discovery, usage limits, steering, interruption |
-| [Messaging and images](messaging.md) | Typed context, request options, structured replies, image input and generation |
+| [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
+| [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
 | [Persistence and observation](persistence.md) | SQLite/Realm integration, migration, queries, Combine, context compaction |
 | [Memory](memory.md) | Capture, retrieval, guided writing, raw stores, attribution |
 | [Personas and skills](personas-and-skills.md) | Layered instructions, tool policies, dynamic definitions, previews |
 | [Apple app integrations](apple-integrations.md) | Background completion, share extensions, App Intents, Shortcuts |
 | [Logging and troubleshooting](logging-and-troubleshooting.md) | Diagnostics, production checks, common failures |
 | [Migration and releases](migration.md) | Changes between alpha versions and release conventions |
+| [Verification](verification.md) | CI simulator execution, opt-in live tests, performance checks |
+| [Release readiness](release-readiness-2026-09-08.md) | API compatibility review and remaining release gates |
+| [Workload measurements](performance-2026-09-08.md) | Images, database paging, cancellation, optimized pipeline |
 | [Demo app](../DemoApp/README.md) | Setup and a walkthrough of the runtime features |
 
 ## Core Concepts
@@ -103,5 +107,9 @@ flowchart LR
 ## Design notes
 
 - [Runtime architecture](runtime-architecture.md)
+- [Runtime performance verification](performance-2026-09-07.md)
+- [Follow-up codebase audit and fixes](followup-audit-2026-09-07.md)
+- [Deeper audit and remaining edge cases](deep-audit-2026-09-07.md)
+- [Test, live-provider, and device verification](verification.md)
 - [ChatGPT authentication on iOS](auth-on-ios.md)
 - [Upstream extraction audit](extraction-audit.md)
