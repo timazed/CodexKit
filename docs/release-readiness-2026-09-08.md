@@ -8,21 +8,29 @@ The [storage-lock cancellation issue](storage-lock-audit-2026-09-08.md) is fixed
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| Full package suite, warnings as errors | 524 executed: 518 passed, 6 opt-in skips, zero failures | Core, UI, SQLite, Realm, compatibility and regression tests, including six waves per adapter in the new concurrency harness |
+| Full package suite, warnings as errors | 527 executed: 521 passed, 6 opt-in skips, zero failures | Core, UI, SQLite, Realm, compatibility and regression tests, including six waves per adapter in the new concurrency harness |
 | Optimized release build, warnings as errors | Passed | All four SwiftPM library products |
 | Optimized performance/SDK/storage selection, warnings as errors | 29 passed, zero failures | Image-heavy compaction, large histories, cancellation, parser, pipeline, SDK ownership, all ten storage regressions and three concurrent lifecycle tests |
 | Sustained concurrent lifecycle workload | Passed on all three disk adapters | 40 waves per adapter: 720 overlapping operations, 120 reader reopens, 60 owning-runtime replacements, and independently checked transcripts/attachments |
 | Signed simulator execution | Passed | iOS 26.5 / iPhone 17 Pro; plain/structured completion, SQLite/Realm reopening, cancellation |
-| Verification harness | 4 passed | Runtime selection and stale/incomplete/failed report rejection |
-| Source-size guard | 210 production files passed | 207 Swift files and three verification scripts, each at most 600 physical lines |
+| Verification harness | 7 passed | Build/run mode separation, portable build settings, failure details, runtime selection and report validation |
+| Source-size guard | 211 production files passed | 208 Swift files and three verification scripts, each at most 600 physical lines |
 | Source-size boundary checks | Passed | 600 lines accepted; 601 rejected in an isolated fixture repository |
 | Workflow YAML and whitespace | Passed | Both workflows parse; `git diff --check` clean |
 | Optimized workflow failure propagation | Passed | The exact CI/release shell steps preserve success and failure exit codes through log capture using a local stub command |
 | Live tests explicitly enabled | 2 skipped | Neither known SDK/demo Mac Keychain entry contained a current session |
 
-The six ordinary-suite skips are two live tests and four opt-in performance workloads. The performance workloads passed in the separate optimized run. The final simulator report's run ID was `07411767-8846-46df-ad37-474d2fed776d`, recorded after the storage-lock fix. The later concurrency/CI additions change no production Swift code, so that simulator check was not repeated for them.
+The six ordinary-suite skips are two live tests and four opt-in performance workloads. The latest local package run completed after the cursor and Realm compiler fixes with zero failures in 152.749 seconds. The optimized 29-test selection then passed in 118.035 seconds, and all four library products passed a separate release build with warnings treated as errors. The signed iOS 26.5 simulator check was repeated after the cursor and Realm compiler fixes; run ID `84a31735-7d67-4ece-bdc2-8323af0d6b8b` passed SQLite and Realm completion, reopening, and cancellation on 8 September at 06:13:55 UTC. Live-account access was disabled for that run.
 
-The configured current-host CI checks have been exercised locally: warnings-as-errors, release compilation, the optimized regression selection, the 40-wave concurrency workload, and the simulator script. CI also has a minimum-OS profile using macOS 14, Xcode 16.2 SDKs with the official Swift 6.1.3 toolchain, and exactly iOS 17.0.1; that combination is unavailable on this Mac and still requires hosted verification. A hosted GitHub Actions run remains required on the release revision. CI retains separate current/minimum simulator reports and logs; the current and release jobs also retain the optimized test log, and log capture preserves test failures. The simulator verifier fails on missing, stale, incomplete, or failed local-adapter reports, creates and removes its own simulator, and skips live-session access explicitly. Manual release dispatch skips the new stress selection for older tags without those tests and retains the original compilation-only simulator fallback for tags that predate the verifier.
+The configured current-host CI checks have been exercised locally: warnings-as-errors, release compilation, the optimized regression selection, the 40-wave concurrency workload, and the simulator script. The hosted macOS 14 package tests and release build passed with Swift 6.1.3. The iOS 17 app is built separately with Xcode 16.4 on macOS 15, then installed and executed on the macOS 14 runner's iOS 17.0.1 simulator; Xcode 16.2's embedded package resolver cannot load Swift 6.1 packages. Hosted completion of the revised simulator handoff remains required. CI retains separate current/minimum package logs and iOS 17 build/runtime reports; the current and release jobs also retain the optimized test log, and log capture preserves test failures. The simulator verifier fails on missing, stale, incomplete, or failed local-adapter reports, creates and removes its own simulator, and skips live-session access explicitly. Manual release dispatch skips the new stress selection for older tags without those tests and retains the original compilation-only simulator fallback for tags that predate the verifier.
+
+## Hosted-verification fixes
+
+Hosted checks exposed two additional SDK issues. History-page equality could fail intermittently because identical cursor payloads used different JSON key orders. Cursor generation now uses canonical key ordering for both cursor versions; three new tests verify stable output and continued decoding of previously issued cursors.
+
+Swift 6.1 also rejected transaction closures that captured Realm values alongside the store actor. Synchronous persistence and attachment-reference helpers now operate on explicit inputs, and memory transactions capture their helper values directly. Realm opening and asynchronous writes stay on the owning actor. No `Sendable` checks were disabled, no dependency sources were edited, and no public adapter API or database schema changed. The complete local suite passed after this extraction.
+
+The minimum profile uses Swift 6.1.3 because GRDB 7.10 already requires Swift 6.1. Model-catalog decoding was simplified to fit that compiler's type-checking budget. Xcode's Apple Clang builds Realm's C++20 dependency modules; the standalone Swift toolchain's Clang could not import `s2geometry` in this configuration.
 
 ## Public API compatibility
 
@@ -43,7 +51,7 @@ Behavioral changes also require attention: one-shot output now validates before 
 ## Remaining release gates
 
 1. Supply a current SDK/demo session and pass the live plain/structured and image → compaction → database reopen → follow-up checks. The complete image matrix currently runs on the Mac package-test host; signing into a separate iOS device does not populate its Keychain.
-2. Commit the reviewed changes and pass both current-host and minimum-OS profiles in hosted CI for the revision intended for release.
+2. Pass both package profiles and the separate iOS 17 runtime job in hosted CI for the committed revision intended for release. The reviewed changes are on `codex/release-validation`.
 3. Choose the next release version, move the `Unreleased` notes to that version, and create its tag through the normal release process.
 
 The [performance follow-up](performance-2026-09-08.md#implemented-performance-follow-up) batches compact-response bytes, validates image references without expansion, and reads consecutive Realm history windows by primary key. Eight new regression tests passed. The observed eight-image compaction and 20,000-record paging times decreased by 48% and 79% respectively; these local measurements introduce no performance-based release blocker and make no live-provider or physical-device energy claim. These changes add no public API or database schema migration.

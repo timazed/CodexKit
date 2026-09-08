@@ -19,10 +19,8 @@ jobs:
         include:
           - profile: current
             runner: macos-latest
-            simulator: ""
           - profile: minimum
             runner: macos-14
-            simulator: "17.0.1"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
@@ -95,15 +93,10 @@ jobs:
 
       - name: Verify demo app (iOS Simulator)
         id: simulator
+        if: matrix.profile == 'current'
         shell: bash
-        env:
-          SIMULATOR_VERSION: ${{ matrix.simulator }}
         run: |
-          args=(--output-dir "$RUNNER_TEMP/codexkit-verification")
-          if [[ -n "$SIMULATOR_VERSION" ]]; then
-            args+=(--runtime "$SIMULATOR_VERSION")
-          fi
-          python3 Scripts/verify_ios_simulator.py "${args[@]}"
+          python3 Scripts/verify_ios_simulator.py --output-dir "$RUNNER_TEMP/codexkit-verification"
 
       - name: Failure diagnostics
         if: failure()
@@ -151,5 +144,75 @@ jobs:
             ${{ runner.temp }}/codexkit-package-tests.log
             ${{ runner.temp }}/codexkit-release-build.log
             ${{ runner.temp }}/codexkit-optimized.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build-minimum-simulator:
+    name: Build iOS 17 verifier (Swift 6.1)
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host and Swift versions
+        run: |
+          sw_vers
+          xcrun swift --version
+      - name: Build the signed simulator app
+        run: |
+          set -euo pipefail
+          python3 Scripts/verify_ios_simulator.py --build-only \
+            --output-dir "$RUNNER_TEMP/minimum-simulator-build" \
+            --derived-data "$RUNNER_TEMP/minimum-simulator-derived"
+          products="$RUNNER_TEMP/minimum-simulator-derived/Build/Products/Debug-iphonesimulator"
+          lipo "$products/AssistantRuntimeDemoApp.app/AssistantRuntimeDemoApp" -verify_arch arm64 x86_64
+          tar -czf "$RUNNER_TEMP/minimum-simulator-app.tar.gz" \
+            -C "$products" AssistantRuntimeDemoApp.app
+      - name: Signed simulator app
+        uses: actions/upload-artifact@v7
+        with:
+          name: minimum-simulator-app
+          path: ${{ runner.temp }}/minimum-simulator-app.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - name: Build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: minimum-simulator-build
+          path: ${{ runner.temp }}/minimum-simulator-build
+          if-no-files-found: ignore
+          retention-days: 14
+
+  verify-minimum-simulator:
+    name: Verify iOS 17 runtime
+    needs: build-minimum-simulator
+    runs-on: macos-14
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the signed simulator app
+        uses: actions/download-artifact@v8
+        with:
+          name: minimum-simulator-app
+          path: ${{ runner.temp }}/minimum-simulator-download
+      - name: Verify on iOS 17
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/minimum-simulator-download"
+          tar -xzf "$archive/minimum-simulator-app.tar.gz" -C "$archive"
+          python3 Scripts/verify_ios_simulator.py --runtime 17.0.1 \
+            --app "$archive/AssistantRuntimeDemoApp.app" \
+            --output-dir "$RUNNER_TEMP/minimum-simulator-verification"
+      - name: Simulator report and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: minimum-simulator-verification
+          path: ${{ runner.temp }}/minimum-simulator-verification
           if-no-files-found: ignore
           retention-days: 14

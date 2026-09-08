@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build, run, and validate the local SDK verifier in a disposable iPhone simulator."""
 import argparse
+from collections import deque
 import json
 import os
 from pathlib import Path
@@ -18,8 +19,13 @@ def run(args, *, log=None, timeout=60, env=None):
     result = subprocess.run(args, cwd=ROOT, env=env, timeout=timeout, text=True,
                             stdout=log or subprocess.PIPE, stderr=subprocess.STDOUT)
     if result.returncode:
+        details = result.stdout or ""
+        if log:
+            log.flush()
+            with Path(log.name).open(errors="replace") as source:
+                details = "".join(deque(source, maxlen=60))[-12000:]
         raise RuntimeError(f"{args[0]} {args[1]} failed ({result.returncode}). "
-                           + (result.stdout or "See verification logs."))
+                           + (details or "See verification logs."))
     return (result.stdout or "").strip()
 
 
@@ -51,6 +57,9 @@ def main():
     parser.add_argument("--derived-data", type=Path, default=ROOT / ".build/simulator-verification")
     parser.add_argument("--runtime", help="Installed iOS version or runtime identifier; defaults to newest available.")
     parser.add_argument("--report-timeout", type=int, default=180)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--build-only", action="store_true", help="Build a signed universal simulator app without launching it.")
+    mode.add_argument("--app", type=Path, help="Install and verify an already-built signed simulator app.")
     options = parser.parse_args()
     if options.report_timeout <= 0:
         parser.error("--report-timeout must be positive")
@@ -68,17 +77,28 @@ def main():
 
     signal.signal(signal.SIGTERM, interrupted)
     try:
-        runtimes = json.loads(run(["xcrun", "simctl", "list", "runtimes", "--json"]))["runtimes"]
-        runtime, device = select_simulator(runtimes, options.runtime)
-        print(f"Building signed Debug demo for {runtime['name']} / {device['name']}.", flush=True)
-        with (output / "build.log").open("w") as log:
-            run(["xcodebuild", "-project", "DemoApp/AssistantRuntimeDemoApp.xcodeproj",
-                 "-scheme", "AssistantRuntimeDemoApp", "-configuration", "Debug",
-                 "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", str(derived),
-                 "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_IDENTITY=-", "build"], log=log, timeout=1800)
-        app = derived / "Build/Products/Debug-iphonesimulator/AssistantRuntimeDemoApp.app"
+        if not options.build_only:
+            runtimes = json.loads(run(["xcrun", "simctl", "list", "runtimes", "--json"]))["runtimes"]
+            runtime, device = select_simulator(runtimes, options.runtime)
+            print(f"Verifying on {runtime['name']} / {device['name']}.", flush=True)
+        if options.app:
+            app = options.app.resolve()
+        else:
+            print("Building the signed Debug simulator app.", flush=True)
+            command = ["xcodebuild", "-project", "DemoApp/AssistantRuntimeDemoApp.xcodeproj",
+                       "-scheme", "AssistantRuntimeDemoApp", "-configuration", "Debug",
+                       "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", str(derived),
+                       "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_IDENTITY=-"]
+            if options.build_only:
+                command += ["ONLY_ACTIVE_ARCH=NO", "ARCHS=arm64 x86_64"]
+            with (output / "build.log").open("w") as log:
+                run(command + ["build"], log=log, timeout=1800)
+            app = derived / "Build/Products/Debug-iphonesimulator/AssistantRuntimeDemoApp.app"
         with (app / "Info.plist").open("rb") as source:
             bundle_id = plistlib.load(source)["CFBundleIdentifier"]
+        if options.build_only:
+            print(f"Signed universal simulator app built: {app}", flush=True)
+            return 0
         simulator = run(["xcrun", "simctl", "create", f"CodexKit verification {run_id}",
                          device["identifier"], runtime["identifier"]])
         (output / "run.json").write_text(json.dumps({"runID": run_id, "runtime": runtime["name"],
@@ -108,6 +128,9 @@ def main():
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         (output / "failure.txt").write_text(str(error) + "\n")
         print(str(error), file=sys.stderr)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            message = str(error)[:12000].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::error title=Simulator verification::{message}")
         return 1
     except KeyboardInterrupt:
         print("Simulator verification interrupted.", file=sys.stderr)
