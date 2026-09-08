@@ -5,7 +5,7 @@ extension RealmRuntimeStateStore {
     private static var queryProjectionBackfillBatchSize: Int { 4 }
 
     func backfillQueryProjectionsInBatches(in realm: Realm) async throws {
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             realm.delete(realm.objects(RealmRuntimeAttachmentReferenceObject.self))
         }
         try await backfillThreads(in: realm)
@@ -23,7 +23,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.id))
             guard !ids.isEmpty else { return }
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 for id in ids {
                     guard let object = realm.object(
                         ofType: RealmRuntimeThreadObject.self,
@@ -52,7 +52,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.threadID))
             guard !ids.isEmpty else { return }
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 var payloadByteCount = 0
                 for id in ids {
                     guard let object = realm.object(
@@ -83,7 +83,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.threadID))
             guard !ids.isEmpty else { return }
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 var payloadByteCount = 0
                 for id in ids {
                     guard let object = realm.object(
@@ -118,7 +118,7 @@ extension RealmRuntimeStateStore {
                 .prefix(Self.queryProjectionBackfillBatchSize)
                 .map(\.key))
             guard !keys.isEmpty else { return }
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 var payloadByteCount = 0
                 for key in keys {
                     guard let object = realm.object(

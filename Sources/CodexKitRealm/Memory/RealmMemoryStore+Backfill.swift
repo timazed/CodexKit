@@ -23,7 +23,7 @@ extension RealmMemoryStore {
                 .sorted(byKeyPath: "key")
                 .prefix(Self.recordProjectionBackfillBatchSize))
             guard !objects.isEmpty else { break }
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 for object in objects {
                     try projectionBuilder.rebuildProjections(on: object)
                 }
@@ -31,7 +31,7 @@ extension RealmMemoryStore {
             lastKey = objects.last?.key
         }
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             let metadata = realm.object(
                 ofType: RealmMemoryMetadata.self,
                 forPrimaryKey: "memory"
@@ -61,7 +61,7 @@ extension RealmMemoryStore {
             ).map(\.namespace)
             guard !namespaces.isEmpty else { break }
 
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 for namespace in namespaces {
                     try rebuildDiagnosticsSnapshot(for: namespace, in: realm)
                 }
@@ -69,7 +69,7 @@ extension RealmMemoryStore {
             lastNamespace = namespaces.last
         }
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             let metadata = realm.object(
                 ofType: RealmMemoryMetadata.self,
                 forPrimaryKey: "memory"

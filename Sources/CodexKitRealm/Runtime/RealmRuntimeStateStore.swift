@@ -172,7 +172,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
             }
             try attachmentStore.markFullReconciliationRequired()
 
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 realm.delete(realm.objects(RealmRuntimeAttachmentReferenceObject.self))
                 realm.delete(realm.objects(RealmRuntimeDeletedThreadAttachmentObject.self))
                 realm.delete(realm.objects(RealmRuntimeThreadObject.self))
@@ -264,7 +264,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
         )
         latestApplyDecodedHistoryRecordCount = 0
         do {
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 try applyIncrementally(operations, codec: writeCodec, in: realm)
             }
         } catch {
@@ -358,10 +358,14 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
                 max(0, policy.maximumHistoryRecordCount),
                 AgentStoreLimits.maximumActivationHistoryRecordCount
             )
-            let recent = contiguousHistoryWindow(in: realm, threadID: id, anchor: nil,
-                ascending: false, limit: historyLimit) ?? Array(historyObjects
-                .sorted(byKeyPath: "sequenceNumber", ascending: false)
-                .prefix(historyLimit))
+            let recent: [RealmRuntimeHistoryObject]
+            if let adjacent = contiguousHistoryWindow(in: realm, threadID: id, anchor: nil,
+                ascending: false, limit: historyLimit) {
+                recent = adjacent
+            } else {
+                recent = Array(historyObjects.sorted(byKeyPath: "sequenceNumber", ascending: false)
+                    .prefix(historyLimit))
+            }
             let relationshipKeys = Set(recent.compactMap(\.relationshipKey))
             let candidateLimit = historyLimit * 2 + 1
             let companions: [RealmRuntimeHistoryObject]

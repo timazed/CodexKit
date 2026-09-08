@@ -13,7 +13,7 @@ extension RealmRuntimeStateStore {
             .prefix(257))
         let batch = Array(references.prefix(256))
         let storageKeys = Set(batch.map(\.storageKey))
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             realm.delete(batch)
             enqueueAttachmentCleanup(storageKeys, in: realm)
             if references.count <= 256 {
@@ -165,7 +165,7 @@ extension RealmRuntimeStateStore {
             )
             guard !referencedStorageKeys.isEmpty else { break }
             try attachmentStore.migrate(referencedStorageKeys)
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 realm.delete(realm.objects(RealmRuntimeAttachmentCleanupObject.self)
                     .filter("storageKey IN %@", referencedStorageKeys))
             }
@@ -183,7 +183,7 @@ extension RealmRuntimeStateStore {
             )
             let orphaned = storageKeySet.subtracting(referenced)
             if !orphaned.isEmpty {
-                try await realm.asyncWrite {
+                try await realm.asyncWrite(_isolation: self) {
                     enqueueAttachmentCleanup(orphaned, in: realm)
                 }
             }
@@ -227,7 +227,7 @@ extension RealmRuntimeStateStore {
         try attachmentStore.remove(
             storageKeys: queuedStorageKeys.subtracting(referencedStorageKeys)
         )
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             realm.delete(realm.objects(RealmRuntimeAttachmentCleanupObject.self)
                 .filter("storageKey IN %@", Array(queuedStorageKeys)))
         }

@@ -39,10 +39,13 @@ extension RealmRuntimeStateStore {
             let adjacent = kinds == nil ? contiguousHistoryWindow(in: realm, threadID: id,
                 anchor: anchor, ascending: false, limit: overfetchLimit,
                 includeCompactionEvents: includeCompactionEvents) : nil
-            let fetched = adjacent ?? Array(
-                window.sorted(byKeyPath: "sequenceNumber", ascending: false)
-                    .prefix(overfetchLimit)
-            )
+            let fetched: [RealmRuntimeHistoryObject]
+            if let adjacent {
+                fetched = adjacent
+            } else {
+                fetched = Array(window.sorted(byKeyPath: "sequenceNumber", ascending: false)
+                    .prefix(overfetchLimit))
+            }
             let pageObjects = Array(fetched.prefix(limit).reversed())
             let records = try decodeHistory(pageObjects)
             let hasMoreAfter = if let anchor {
@@ -72,10 +75,13 @@ extension RealmRuntimeStateStore {
             let adjacent = kinds == nil ? contiguousHistoryWindow(in: realm, threadID: id,
                 anchor: anchor, ascending: true, limit: overfetchLimit,
                 includeCompactionEvents: includeCompactionEvents) : nil
-            let fetched = adjacent ?? Array(
-                window.sorted(byKeyPath: "sequenceNumber", ascending: true)
-                    .prefix(overfetchLimit)
-            )
+            let fetched: [RealmRuntimeHistoryObject]
+            if let adjacent {
+                fetched = adjacent
+            } else {
+                fetched = Array(window.sorted(byKeyPath: "sequenceNumber", ascending: true)
+                    .prefix(overfetchLimit))
+            }
             let pageObjects = Array(fetched.prefix(limit))
             let records = try decodeHistory(pageObjects)
             let hasMoreBefore = if let anchor {

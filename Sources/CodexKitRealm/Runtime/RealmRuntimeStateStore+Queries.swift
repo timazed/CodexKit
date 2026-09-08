@@ -66,10 +66,13 @@ extension RealmRuntimeStateStore {
             }
             let adjacent = unfilteredSequenceWindow(query, in: realm, anchor: anchor?.sequenceNumber,
                 ascending: true, limit: agentOverfetchLimit(limit))
-            let fetched = adjacent ?? Array(
-                sortHistory(window, using: query.sort, ascending: true)
-                    .prefix(agentOverfetchLimit(limit))
-            )
+            let fetched: [RealmRuntimeHistoryObject]
+            if let adjacent {
+                fetched = adjacent
+            } else {
+                fetched = Array(sortHistory(window, using: query.sort, ascending: true)
+                    .prefix(agentOverfetchLimit(limit)))
+            }
             let pageObjects = Array(fetched.prefix(limit))
             let recordsAscending = try decodeHistory(pageObjects)
             let records = historySortOrder(query.sort) == .ascending
@@ -111,10 +114,13 @@ extension RealmRuntimeStateStore {
         }
         let adjacent = unfilteredSequenceWindow(query, in: realm, anchor: anchor?.sequenceNumber,
             ascending: false, limit: agentOverfetchLimit(limit))
-        let fetched = adjacent ?? Array(
-            sortHistory(window, using: query.sort, ascending: false)
-                .prefix(agentOverfetchLimit(limit))
-        )
+        let fetched: [RealmRuntimeHistoryObject]
+        if let adjacent {
+            fetched = adjacent
+        } else {
+            fetched = Array(sortHistory(window, using: query.sort, ascending: false)
+                .prefix(agentOverfetchLimit(limit)))
+        }
         let pageObjects = Array(fetched.prefix(limit).reversed())
         let recordsAscending = try decodeHistory(pageObjects)
         let records = historySortOrder(query.sort) == .ascending

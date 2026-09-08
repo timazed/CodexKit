@@ -6,7 +6,8 @@ extension RealmRuntimeStateStore {
         if let realm {
             return realm
         }
-        let openedRealm = try await Realm.open(configuration: configuration)
+        // Keep the owning actor explicit across Realm's imported async APIs.
+        let openedRealm = try await Realm.open(configuration: configuration, _isolation: self)
         realm = openedRealm
         return openedRealm
     }
@@ -61,7 +62,7 @@ extension RealmRuntimeStateStore {
         )?.storeSchemaVersion ?? 0
         if storedVersion < Int(RealmRuntimeSchema.version) {
             try await backfillQueryProjectionsInBatches(in: realm)
-            try await realm.asyncWrite {
+            try await realm.asyncWrite(_isolation: self) {
                 let metadata = realm.object(
                     ofType: RealmRuntimeMetadataObject.self,
                     forPrimaryKey: "runtime"

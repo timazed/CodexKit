@@ -69,7 +69,7 @@ public actor RealmMemoryStore: MemoryStoring {
         diagnosticsDelta.add(record, by: 1)
         let realm = try await openRealm()
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             try constraintsBuilder.ensureAvailable(constraints, in: realm)
             writeBatch.add(to: realm)
             try diagnosticsWriter.apply(diagnosticsDelta, in: realm)
@@ -94,7 +94,7 @@ public actor RealmMemoryStore: MemoryStoring {
         }
         let realm = try await openRealm()
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             try constraintsBuilder.ensureAvailable(constraints, in: realm)
             writeBatch.add(to: realm)
             try diagnosticsWriter.apply(diagnosticsDelta, in: realm)
@@ -119,7 +119,7 @@ public actor RealmMemoryStore: MemoryStoring {
         let writeBatch = try recordBuilder.buildBatch(from: [replacement])
         let realm = try await openRealm()
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             var diagnosticsDelta = RealmMemoryDiagnosticsDelta()
             let claimKey = RealmMemoryKey.make(
                 namespace: record.namespace,
@@ -302,7 +302,7 @@ public actor RealmMemoryStore: MemoryStoring {
         )
         let realm = try await openRealm()
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             var diagnosticsDelta = RealmMemoryDiagnosticsDelta()
             try constraintsBuilder.ensureAvailable(constraints, in: realm)
             diagnosticsDelta.add(request.replacement, by: 1)
@@ -350,7 +350,7 @@ public actor RealmMemoryStore: MemoryStoring {
         guard !keys.isEmpty else { return }
         let realm = try await openRealm()
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             var diagnosticsDelta = RealmMemoryDiagnosticsDelta()
             let records = realm.objects(RealmMemoryRecord.self).filter("key IN %@", keys)
             let activeRecords = records.filter(
@@ -392,7 +392,7 @@ public actor RealmMemoryStore: MemoryStoring {
         guard !keys.isEmpty else { return }
         let realm = try await openRealm()
 
-        try await realm.asyncWrite {
+        try await realm.asyncWrite(_isolation: self) {
             let records = realm.objects(RealmMemoryRecord.self)
                 .filter("key IN %@", keys)
             let claims = realm.objects(RealmMemoryDedupeClaim.self)
@@ -424,7 +424,7 @@ public actor RealmMemoryStore: MemoryStoring {
         try MemoryQueryEngine.validateNamespace(namespace)
         let realm = try await openRealm()
 
-        return try await realm.asyncWrite {
+        return try await realm.asyncWrite(_isolation: self) {
             let expired = realm.objects(RealmMemoryRecord.self).filter(
                 "namespace == %@ AND status == %@ AND isPinned == false AND expiresAt != nil AND expiresAt <= %@",
                 namespace,
@@ -493,7 +493,7 @@ public actor RealmMemoryStore: MemoryStoring {
 
     private func performOpen() async throws {
         guard realm == nil else { return }
-        let openedRealm = try await Realm.open(configuration: configuration)
+        let openedRealm = try await Realm.open(configuration: configuration, _isolation: self)
         try await backfillRecordProjectionsIfNeeded(in: openedRealm)
         try await backfillDiagnosticsIfNeeded(in: openedRealm)
         realm = openedRealm

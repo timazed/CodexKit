@@ -7,6 +7,10 @@ on:
     branches: [main, "codex/**"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   test-and-build:
     name: Verify (${{ matrix.profile }})
@@ -56,6 +60,28 @@ jobs:
         run: |
           sw_vers
           swift --version
+
+      - name: Diagnose the earlier current-OS test failure
+        if: matrix.profile == 'current'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/jobs/101942695648/logs" \
+            --output "$RUNNER_TEMP/prior-job.log"
+          python3 - <<'PYTHON'
+          import os, re
+          from pathlib import Path
+
+          lines = (Path(os.environ["RUNNER_TEMP"]) / "prior-job.log").read_text(errors="replace").splitlines()
+          failures = [line for line in lines if (".swift:" in line and "error:" in line)
+                      or re.search(r"Test Case .* failed \(", line)]
+          message = "\n".join(dict.fromkeys(failures))[:6000] or "No source/test failure lines were found."
+          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::notice title=Earlier current-OS failure::{message}")
+          PYTHON
 
       - name: Production source size
         run: python3 Scripts/check_source_size.py
@@ -108,7 +134,7 @@ jobs:
           CHECK_OUTCOMES: ${{ toJSON(steps) }}
         run: |
           python3 - <<'PYTHON'
-          import json, os
+          import json, os, re
           from pathlib import Path
 
           root = Path(os.environ["RUNNER_TEMP"])
@@ -128,6 +154,10 @@ jobs:
                             if "error:" in line.lower() or "failed" in line.lower()))
               if not errors:
                   continue
+              source_errors = [line for line in errors
+                               if re.search(r"\.(?:swift|cpp|cc|c|mm|m|h):\d+", line)
+                               or (line.startswith("Test Case ") and " failed (" in line)]
+              errors = source_errors or errors
               excerpt = errors if len(errors) <= 12 else errors[:6] + errors[-6:]
               message = "\n".join(excerpt)[:6000]
               message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
