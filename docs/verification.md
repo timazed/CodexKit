@@ -62,6 +62,8 @@ CI runs on pull requests to `main`, pushes to `main` or `codex/**`, and manual d
 - `current` uses `macos-latest` and its newest available iPhone simulator. It also runs the optimized selection above with performance workloads enabled and 40 concurrency waves per adapter.
 - `minimum` uses `macos-14`, Xcode 16.2's SDKs, the official Swift 6.1.3 toolchain, and exactly iOS 17.0.1. GRDB 7.10 requires Swift 6.1, so Xcode 16.2's bundled compiler is insufficient. CI verifies the Swift.org installer signature and selects that toolchain for both SwiftPM and Xcode builds. The verifier fails if the requested runtime is unavailable instead of substituting a newer version. The [runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-14-Readme.md) supplies Xcode and the simulator; [Swift.org](https://www.swift.org/install/macos/) supplies the compiler. The job logs the actual host and Swift versions.
 
+The minimum profile selects Xcode's Apple Clang for SwiftPM's C/C++ dependencies: the standalone Swift toolchain's Clang fails to import Realm's `s2geometry` module under C++20. This compiler selection is confined to verification and changes no dependency sources or SDK build flags.
+
 The release workflow runs the current-host checks. A failing optimized test fails the job even though output is also captured for diagnostics. The release workflow skips the new selection when manually dispatched against an older tag without its stress-test source; its existing release-build and legacy simulator checks remain in place.
 
 CI and release revisions containing the verifier run:

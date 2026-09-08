@@ -47,6 +47,10 @@ jobs:
           echo "TOOLCHAINS=$toolchain_id" >> "$GITHUB_ENV"
           echo "DEVELOPER_DIR=/Applications/Xcode_16.2.app/Contents/Developer" >> "$GITHUB_ENV"
           echo "$toolchain/usr/bin" >> "$GITHUB_PATH"
+          # Realm's C++20 modules need Apple's Clang when built by SwiftPM.
+          apple_tools="/Applications/Xcode_16.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin"
+          echo "CC=$apple_tools/clang" >> "$GITHUB_ENV"
+          echo "CXX=$apple_tools/clang++" >> "$GITHUB_ENV"
 
       - name: Host and Swift versions
         run: |
