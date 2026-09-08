@@ -66,6 +66,29 @@ Custom backends can continue emitting `toolCallRequested` for one call, or emit
 `toolCallsRequested` for a batch and accept results by invocation ID. The existing
 `AgentTurnStream(events:submitToolResult:)` initializer remains available.
 
+Every tool result must preserve the requested invocation ID and tool name. If a
+custom executor returns a different identity, the runtime records a failed result
+for the original call before saving history or publishing the result.
+
+Direct Responses backend callers must submit one result per announced call.
+Out-of-order results for an announced batch are supported. Unknown, duplicate,
+mismatched, and late submissions throw `AgentRuntimeError` with code
+`invalid_tool_result`, without replacing a previously accepted result. Completion
+and cancellation release outstanding result buffers and waiters. The shared
+`AgentTurnStream` API also checks that the envelope ID matches its submission ID;
+custom backends remain responsible for tracking their own pending calls.
+
+All nonempty tool-result text blocks are joined in order with blank-line separators
+for provider requests, fallback replies, and compaction context. `primaryText`
+continues to expose the first block for concise previews.
+
+Remote tool images require a successful HTTP response and a decodable PNG, JPEG,
+GIF, WebP, HEIC, or HEIF payload. The image bytes determine the media type, even if
+the server omits or mislabels it. HTTP errors, HTML, and truncated image data are
+omitted from attachments. Existing download byte limits and cancellation still
+apply. Validation leaves accepted bytes unchanged; SQLite and Realm retain
+attachment references while the original bytes remain in disk blobs.
+
 ## Progress and message phases
 
 Both ordinary and structured streams expose:

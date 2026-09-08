@@ -22,7 +22,8 @@ struct CodexResponsesTurnRunner {
     let session: ChatGPTSession
     let control: CodexTurnControl
     let pendingToolResults: PendingToolResults
-    let continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
+    let continuation: AgentEventChannel<AgentBackendEvent>
+    let streamReady: @Sendable () async -> Void
 
     init(
         configuration: CodexResponsesBackendConfiguration,
@@ -42,7 +43,8 @@ struct CodexResponsesTurnRunner {
         pendingToolResults: PendingToolResults,
         control: CodexTurnControl = CodexTurnControl(),
         rateLimitObserver: @escaping @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in },
-        continuation: AsyncThrowingStream<AgentBackendEvent, Error>.Continuation
+        streamReady: @escaping @Sendable () async -> Void = {},
+        continuation: AgentEventChannel<AgentBackendEvent>
     ) {
         self.configuration = configuration
         self.logger = logger
@@ -54,6 +56,8 @@ struct CodexResponsesTurnRunner {
             urlSession: urlSession,
             decoder: decoder,
             logger: logger,
+            maximumBufferedEvents: configuration.maximumBufferedEvents,
+            responseBudget: CodexResponseBudget(maximumBytes: configuration.maximumResponseBytes),
             rateLimitObserver: rateLimitObserver
         )
         self.toolOutputAdapter = CodexResponsesToolOutputAdapter(urlSession: urlSession)
@@ -66,6 +70,7 @@ struct CodexResponsesTurnRunner {
         self.control = control
         self.pendingToolResults = pendingToolResults
         self.continuation = continuation
+        self.streamReady = streamReady
     }
 
     func run(
@@ -96,7 +101,7 @@ struct CodexResponsesTurnRunner {
         )
 
         try await runTurnPasses(state: &state)
-        emitPendingAssistantFallbackIfNeeded(state: &state)
+        try await emitPendingAssistantFallbackIfNeeded(state: &state)
         logger.info(
             .network,
             "Backend turn runner finished.",
@@ -246,15 +251,20 @@ struct CodexResponsesTurnRunner {
         state: inout TurnRunState
     ) async throws {
         var nextPass: TurnPassDisposition = .needsAnotherPass
+        var passesRemaining = configuration.maximumModelPasses
 
         while case .needsAnotherPass = nextPass {
             try Task.checkCancellation()
+            if let remaining = passesRemaining {
+                guard remaining > 0 else { throw AgentRuntimeError.executionLimitExceeded(.modelPasses) }
+                passesRemaining = remaining - 1
+            }
             nextPass = try await runTurnPassWithRetry(state: &state)
             let messages = await control.drain(closeIfEmpty: nextPass == .completed)
             if !messages.isEmpty {
                 for message in messages {
                     state.workingHistory.append(.userMessage(message))
-                    continuation.yield(.userMessageAccepted(message))
+                    try await continuation.yield(.userMessageAccepted(message))
                 }
                 nextPass = .needsAnotherPass
             }
@@ -331,6 +341,11 @@ struct CodexResponsesTurnRunner {
                             "error": error.localizedDescription
                         ]
                     )
+                    if let error = error as? AgentRuntimeError {
+                        throw error.withRetryInformation(.init(attempt: attempt, maximumAttempts: retryPolicy.maxAttempts,
+                            isRetryable: retryDecision.retryableError,
+                            safety: retryState.hasVisibleOutput ? .outputAlreadyEmitted : .beforeOutput))
+                    }
                     throw error
                 }
                 logger.warning(
@@ -345,7 +360,7 @@ struct CodexResponsesTurnRunner {
                         "error": error.localizedDescription
                     ]
                 )
-                try await sleepBeforeRetry(attempt: attempt, policy: retryPolicy)
+                try await sleepBeforeRetry(attempt: attempt, policy: retryPolicy, error: error)
             }
         }
 
@@ -374,6 +389,7 @@ struct CodexResponsesTurnRunner {
     ) async throws -> TurnPassDisposition {
         var passDisposition: TurnPassDisposition = .completed
         let stream = try await streamClient.streamEvents(request: request)
+        await streamReady()
         for try await event in stream {
             let eventResult = try await handleStreamEvent(event, state: &state)
             passDisposition = passDisposition.merging(with: eventResult.passDisposition)

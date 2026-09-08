@@ -30,24 +30,37 @@ struct CodexResponsesStructuredStreamParser {
     private var pending = ""
     private var structuredBuffer = ""
     private var lastPartial: JSONValue?
+    private var structuredByteCount = 0
+    private var boundary = StructuredJSONBoundary()
+    private var attemptedSnapshot = false
+    private(set) var snapshotDecodeAttempts = 0
+    private let maximumPayloadBytes: Int
 
-    mutating func consume(delta: String) -> [StructuredStreamParsingEvent] {
+    init(maximumPayloadBytes: Int = AgentStoreLimits.maximumEmbeddedPayloadByteCount) {
+        self.maximumPayloadBytes = max(0, maximumPayloadBytes)
+    }
+
+    mutating func consume(delta: String) throws -> [StructuredStreamParsingEvent] {
         pending.append(delta)
         var events: [StructuredStreamParsingEvent] = []
 
-        while consumeAvailableContent(into: &events) {
+        while try consumeAvailableContent(into: &events) {
         }
 
         return events
     }
 
-    func finalize(rawMessage: String) -> StructuredStreamExtraction {
-        Self.extractFinal(from: rawMessage)
+    mutating func finalize(rawMessage: String) -> StructuredStreamExtraction {
+        defer { self = Self(maximumPayloadBytes: maximumPayloadBytes) }
+        return Self.extractFinal(from: rawMessage, maximumPayloadBytes: maximumPayloadBytes)
     }
 
     private mutating func snapshotEvents(
         stage: AgentStructuredOutputValidationStage
     ) -> [StructuredStreamParsingEvent] {
+        guard !attemptedSnapshot else { return [] }
+        attemptedSnapshot = true
+        snapshotDecodeAttempts += 1
         guard let data = structuredBuffer.data(using: .utf8) else {
             return []
         }
@@ -77,12 +90,12 @@ struct CodexResponsesStructuredStreamParser {
 
     private mutating func consumeAvailableContent(
         into events: inout [StructuredStreamParsingEvent]
-    ) -> Bool {
+    ) throws -> Bool {
         switch mode {
         case .visible:
             return consumeVisibleContent(into: &events)
         case .structured:
-            return consumeStructuredContent(into: &events)
+            return try consumeStructuredContent(into: &events)
         }
     }
 
@@ -116,9 +129,9 @@ struct CodexResponsesStructuredStreamParser {
 
     private mutating func consumeStructuredContent(
         into events: inout [StructuredStreamParsingEvent]
-    ) -> Bool {
+    ) throws -> Bool {
         if let range = pending.range(of: Self.closeTag) {
-            structuredBuffer.append(contentsOf: pending[..<range.lowerBound])
+            try appendStructured(pending[..<range.lowerBound])
             events.append(contentsOf: snapshotEvents(stage: .partial))
             pending.removeSubrange(pending.startIndex..<range.upperBound)
             mode = .visible
@@ -132,10 +145,20 @@ struct CodexResponsesStructuredStreamParser {
         }
 
         let index = pending.index(pending.startIndex, offsetBy: emitCount)
-        structuredBuffer.append(contentsOf: pending[..<index])
+        try appendStructured(pending[..<index])
         pending.removeSubrange(pending.startIndex..<index)
-        events.append(contentsOf: snapshotEvents(stage: .partial))
+        if boundary.isComplete { events.append(contentsOf: snapshotEvents(stage: .partial)) }
         return true
+    }
+
+    private mutating func appendStructured(_ fragment: Substring) throws {
+        let count = fragment.utf8.count
+        guard count <= maximumPayloadBytes - structuredByteCount else {
+            throw AgentRuntimeError(code: "structured_output_too_large", message: "Structured output exceeded its byte limit.")
+        }
+        structuredByteCount += count
+        structuredBuffer.append(contentsOf: fragment)
+        boundary.consume(fragment.utf8)
     }
 
     private static func trailingMatchLength(
@@ -157,7 +180,7 @@ struct CodexResponsesStructuredStreamParser {
         return 0
     }
 
-    private static func extractFinal(from rawMessage: String) -> StructuredStreamExtraction {
+    private static func extractFinal(from rawMessage: String, maximumPayloadBytes: Int) -> StructuredStreamExtraction {
         guard let openRange = rawMessage.range(of: openTag) else {
             return StructuredStreamExtraction(
                 visibleText: rawMessage.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -173,7 +196,7 @@ struct CodexResponsesStructuredStreamParser {
                     AgentStructuredOutputValidationFailure(
                         stage: .committed,
                         message: "The structured output block was never closed.",
-                        rawPayload: String(remaining)
+                        rawPayload: remaining.utf8.count <= maximumPayloadBytes ? String(remaining) : nil
                     )
                 )
             )
@@ -183,6 +206,11 @@ struct CodexResponsesStructuredStreamParser {
         let suffix = remaining[closeRange.upperBound...]
         let visibleText = (String(rawMessage[..<openRange.lowerBound]) + String(suffix))
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard payload.utf8.count <= maximumPayloadBytes else {
+            return StructuredStreamExtraction(visibleText: visibleText, finalResult: .invalid(.init(
+                stage: .committed, message: "Structured output exceeded its byte limit."
+            )))
+        }
 
         let trailing = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
         if trailing.contains(openTag) {
@@ -228,6 +256,41 @@ struct CodexResponsesStructuredStreamParser {
                     )
                 )
             )
+        }
+    }
+}
+
+/// A lexical boundary check only; JSONDecoder remains the authority on syntax.
+/// Every byte is visited once, instead of decoding every incomplete prefix.
+private struct StructuredJSONBoundary {
+    private var started = false
+    private var depth = 0
+    private var inString = false
+    private var escaped = false
+    private var scalar = false
+    private(set) var isComplete = false
+
+    mutating func consume<Bytes: Sequence>(_ bytes: Bytes) where Bytes.Element == UInt8 {
+        for byte in bytes {
+            guard !isComplete else { return }
+            let whitespace = byte == 32 || byte == 9 || byte == 10 || byte == 13
+            if !started {
+                if whitespace { continue }
+                started = true
+                scalar = byte != 123 && byte != 91 && byte != 34
+            }
+            if inString {
+                if escaped { escaped = false }
+                else if byte == 92 { escaped = true }
+                else if byte == 34 { inString = false; if depth == 0 { isComplete = true } }
+            } else {
+                switch byte {
+                case 34: inString = true
+                case 123, 91: depth += 1
+                case 125, 93: depth -= 1; if depth <= 0 { isComplete = true }
+                default: if scalar && whitespace { isComplete = true }
+                }
+            }
         }
     }
 }

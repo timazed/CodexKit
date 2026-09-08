@@ -17,64 +17,18 @@ public actor AgentRuntime {
         }
     }
 
-    public struct Configuration: Sendable {
-        public let authProvider: ChatGPTAuthProvider
-        public let secureStore: KeychainSessionSecureStore
-        public let backend: any AgentBackend
-        public let approvalPresenter: any ApprovalPresenting
-        public let stateStore: any RuntimeStateStoring
-        public let logging: AgentLoggingConfiguration
-        public let memory: AgentMemoryConfiguration?
-        public let baseInstructions: String?
-        public let maximumParallelToolCalls: Int
-        public let tools: [ToolRegistration]
-        public let skills: [AgentSkill]
-        public let definitionSourceLoader: AgentDefinitionSourceLoader
-        public let contextCompaction: AgentContextCompactionConfiguration
-        public let threadActivationPolicy: AgentThreadActivationPolicy
-        public let backgroundActivityProvider: any AgentBackgroundActivityProviding
-
-        public init(
-            authProvider: ChatGPTAuthProvider,
-            secureStore: KeychainSessionSecureStore,
-            backend: any AgentBackend,
-            approvalPresenter: any ApprovalPresenting,
-            stateStore: any RuntimeStateStoring,
-            logging: AgentLoggingConfiguration = .disabled,
-            memory: AgentMemoryConfiguration? = nil,
-            baseInstructions: String? = nil,
-            maximumParallelToolCalls: Int = 4,
-            tools: [ToolRegistration] = [],
-            skills: [AgentSkill] = [],
-            definitionSourceLoader: AgentDefinitionSourceLoader = AgentDefinitionSourceLoader(),
-            contextCompaction: AgentContextCompactionConfiguration = AgentContextCompactionConfiguration(),
-            threadActivationPolicy: AgentThreadActivationPolicy = AgentThreadActivationPolicy(),
-            backgroundActivityProvider: any AgentBackgroundActivityProviding = NoOpAgentBackgroundActivityProvider()
-        ) {
-            self.authProvider = authProvider
-            self.secureStore = secureStore
-            self.backend = backend
-            self.approvalPresenter = approvalPresenter
-            self.stateStore = stateStore
-            self.logging = logging
-            self.memory = memory
-            self.baseInstructions = baseInstructions
-            self.maximumParallelToolCalls = max(1, maximumParallelToolCalls)
-            self.tools = tools
-            self.skills = skills
-            self.definitionSourceLoader = definitionSourceLoader
-            self.contextCompaction = contextCompaction
-            self.threadActivationPolicy = threadActivationPolicy
-            self.backgroundActivityProvider = backgroundActivityProvider
-        }
-    }
 
     let backend: any AgentBackend
     let stateStore: any RuntimeStateStoring
-    let sessionManager: ChatGPTSessionManager
+    let sessionManager: any AgentSessionProviding
     let logger: AgentLogger
     let maximumParallelToolCalls: Int
+    let maximumBufferedEvents: Int
+    let turnLimits: AgentTurnLimits
     var activeTurnExecutions: [String: AgentActiveTurnExecution] = [:]
+    var threadOperations: [String: UUID] = [:]
+    var deferredThreadDeactivations: Set<String> = []
+    var isRestoring = false
     var parallelToolWaits: [String: [String: AgentPendingToolWaitState]] = [:]
     let toolRegistry: ToolRegistry
     let approvalCoordinator: ApprovalCoordinator
@@ -185,14 +139,13 @@ public actor AgentRuntime {
 
     public init(configuration: Configuration) throws {
         self.maximumParallelToolCalls = configuration.maximumParallelToolCalls
+        self.maximumBufferedEvents = configuration.maximumBufferedEvents
+        try configuration.turnLimits.validate()
+        self.turnLimits = configuration.turnLimits
         self.backend = configuration.backend
         self.stateStore = configuration.stateStore
         self.logger = AgentLogger(configuration: configuration.logging)
-        self.sessionManager = ChatGPTSessionManager(
-            authProvider: configuration.authProvider,
-            secureStore: configuration.secureStore,
-            logging: configuration.logging
-        )
+        self.sessionManager = configuration.makeSessionProvider()
         self.toolRegistry = try ToolRegistry(initialTools: configuration.tools)
         self.approvalCoordinator = ApprovalCoordinator(
             presenter: configuration.approvalPresenter
@@ -217,6 +170,13 @@ public actor AgentRuntime {
 
     @discardableResult
     public func restore() async throws -> StoredRuntimeState {
+        try Task.checkCancellation()
+        guard !isRestoring, threadOperations.isEmpty, resumingThreadIDs.isEmpty,
+              activePersistenceTask == nil, pendingStoreOperations.isEmpty else {
+            throw AgentRuntimeError(code: "runtime_busy", message: "Wait for active runtime operations before restoring state.")
+        }
+        isRestoring = true
+        defer { isRestoring = false }
         logger.info(.runtime, "Restoring runtime state.")
         _ = try await sessionManager.restore()
         let metadata = try await stateStore.prepare()
@@ -241,7 +201,8 @@ public actor AgentRuntime {
     @discardableResult
     public func signIn() async throws -> ChatGPTSession {
         logger.info(.auth, "Starting interactive sign-in.")
-        let session = try await sessionManager.signIn()
+        guard let manager = sessionManager as? any AgentSessionManaging else { throw AgentRuntimeError.sessionManagementUnsupported() }
+        let session = try await manager.signIn()
         logger.info(
             .auth,
             "Interactive sign-in completed.",
@@ -256,7 +217,8 @@ public actor AgentRuntime {
     @discardableResult
     public func useSession(_ session: ChatGPTSession) async throws -> ChatGPTSession {
         logger.info(.auth, "Loading supplied ChatGPT session.")
-        return try await sessionManager.useSession(session)
+        guard let manager = sessionManager as? any AgentSessionManaging else { throw AgentRuntimeError.sessionManagementUnsupported() }
+        return try await manager.useSession(session)
     }
 
     public func currentSession() async -> ChatGPTSession? {
@@ -265,7 +227,8 @@ public actor AgentRuntime {
 
     public func signOut() async throws {
         logger.info(.auth, "Signing out current session.")
-        try await sessionManager.signOut()
+        guard let manager = sessionManager as? any AgentSessionManaging else { throw AgentRuntimeError.sessionManagementUnsupported() }
+        try await manager.signOut()
     }
 
     // MARK: - Read State
@@ -432,7 +395,9 @@ public actor AgentRuntime {
     // MARK: - Auth Recovery
 
     static func isUnauthorizedError(_ error: Error) -> Bool {
-        (error as? AgentRuntimeError)?.code == AgentRuntimeError.unauthorized().code
+        guard let error = error as? AgentRuntimeError else { return false }
+        if let status = error.http?.statusCode { return status == 401 || status == 403 }
+        return error.code == AgentRuntimeError.unauthorized().code
     }
 
     func withUnauthorizedRecovery<Result: Sendable>(
@@ -452,6 +417,8 @@ public actor AgentRuntime {
             let recoveredSession = try await sessionManager.recoverUnauthorizedSession(
                 previousAccessToken: initialSession.accessToken
             )
+            try Task.checkCancellation()
+            guard recoveredSession.account.id == initialSession.account.id else { throw CancellationError() }
             return (try await operation(recoveredSession), recoveredSession)
         }
     }

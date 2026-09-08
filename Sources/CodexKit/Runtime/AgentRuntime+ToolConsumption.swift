@@ -1,7 +1,7 @@
 import Foundation
 
 struct AgentToolEventSink: Sendable {
-    let yield: @Sendable (AgentEvent) -> Void
+    let yield: @Sendable (AgentEvent) async throws -> Void
 }
 
 extension AgentRuntime {
@@ -10,16 +10,17 @@ extension AgentRuntime {
         turnStream: AgentTurnStream,
         session: ChatGPTSession,
         policyTracker: TurnSkillPolicyTracker?,
+        registration: ToolRegistry.Entry?,
         storesTurnState: Bool,
         sink: AgentToolEventSink
     ) async throws {
         try Task.checkCancellation()
         let threadID = invocation.threadID
         let existingToolResult = storesTurnState
-            ? storedToolResult(invocationID: invocation.id, in: invocation.threadID)
+            ? try await storedToolResult(invocationID: invocation.id, in: invocation.threadID)
             : nil
         if storesTurnState,
-           !hasStoredToolCall(invocationID: invocation.id, in: invocation.threadID) {
+           !(try await hasStoredToolCall(invocationID: invocation.id, in: invocation.threadID)) {
             try appendHistoryItem(
                 .toolCall(
                     AgentToolCallRecord(
@@ -37,7 +38,7 @@ extension AgentRuntime {
             updateThreadTimestamp(Date(), for: invocation.threadID)
             try await persistState()
         }
-        sink.yield(.toolCallStarted(invocation))
+        try await sink.yield(.toolCallStarted(invocation))
 
         let result: ToolResultEnvelope
         if let existingToolResult {
@@ -53,6 +54,7 @@ extension AgentRuntime {
             let resolvedResult = try await resolveToolInvocation(
                 invocation,
                 session: session,
+                registration: registration,
                 storesTurnState: storesTurnState,
                 sink: sink
             )
@@ -70,13 +72,13 @@ extension AgentRuntime {
             try await persistState()
         }
         try await turnStream.submitToolResult(result, for: invocation.id)
-        sink.yield(.toolCallFinished(result))
+        try await sink.yield(.toolCallFinished(result))
         if storesTurnState {
             parallelToolWaits[invocation.turnID]?[invocation.id] = nil
         }
         if storesTurnState, parallelToolWaits[invocation.turnID]?.isEmpty != false {
             try await setThreadStatus(.streaming, for: threadID)
-            sink.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
+            try await sink.yield(.threadStatusChanged(threadID: threadID, status: .streaming))
         }
     }
 }

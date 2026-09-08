@@ -184,6 +184,7 @@ public struct HistoryItemsQuery: AgentQuerySpec {
     public var kinds: Set<AgentHistoryItemKind>?
     public var createdAtRange: ClosedRange<Date>?
     public var turnID: String?
+    public var relationship: AgentHistoryRelationship?
     public var includeRedacted: Bool
     public var includeCompactionEvents: Bool
     public var sort: AgentHistorySort
@@ -196,6 +197,7 @@ public struct HistoryItemsQuery: AgentQuerySpec {
         kinds: Set<AgentHistoryItemKind>? = nil,
         createdAtRange: ClosedRange<Date>? = nil,
         turnID: String? = nil,
+        relationship: AgentHistoryRelationship? = nil,
         includeRedacted: Bool = true,
         includeCompactionEvents: Bool = false,
         sort: AgentHistorySort = .sequence(.ascending),
@@ -205,6 +207,7 @@ public struct HistoryItemsQuery: AgentQuerySpec {
         self.kinds = kinds
         self.createdAtRange = createdAtRange
         self.turnID = turnID
+        self.relationship = relationship
         self.includeRedacted = includeRedacted
         self.includeCompactionEvents = includeCompactionEvents
         self.sort = sort

@@ -5,8 +5,8 @@ struct CodexResponsesToolOutputAdapter: Sendable {
 
     func text(from result: ToolResultEnvelope) -> String {
         var segments: [String] = []
-        if let primaryText = result.primaryText, !primaryText.isEmpty {
-            segments.append(primaryText)
+        if let text = result.combinedText {
+            segments.append(text)
         }
         let imageURLs = result.content.compactMap { content -> URL? in
             guard case let .image(url) = content else { return nil }
@@ -27,6 +27,7 @@ struct CodexResponsesToolOutputAdapter: Sendable {
     func images(from result: ToolResultEnvelope) async -> [AgentImageAttachment] {
         var attachments: [AgentImageAttachment] = []
         for content in result.content {
+            guard !Task.isCancelled else { break }
             guard case let .image(url) = content else { continue }
             if let attachment = await imageAttachment(from: url) {
                 attachments.append(attachment)
@@ -54,6 +55,9 @@ struct CodexResponsesToolOutputAdapter: Sendable {
 
         do {
             let (bytes, response) = try await urlSession.bytes(from: url)
+            defer { bytes.task.cancel() }
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200 ... 299).contains(httpResponse.statusCode) else { return nil }
             guard response.expectedContentLength < 0 ||
                     response.expectedContentLength <= AgentStoreLimits.maximumImageByteCount else {
                 return nil
@@ -64,15 +68,11 @@ struct CodexResponsesToolOutputAdapter: Sendable {
             }
             for try await byte in bytes {
                 guard data.count < AgentStoreLimits.maximumImageByteCount else { return nil }
+                if data.count % 16_384 == 0 { try Task.checkCancellation() }
                 data.append(byte)
             }
-            guard !data.isEmpty else { return nil }
-            let mimeType = RuntimeImageMimeType(
-                responseMimeType: response.mimeType,
-                pathExtension: url.pathExtension
-            ) ?? .png
-            guard mimeType.isImage else { return nil }
-            return AgentImageAttachment(mimeType: mimeType.rawValue, data: data)
+            guard !Task.isCancelled, let mimeType = RuntimeDownloadedImage.mimeType(for: data) else { return nil }
+            return AgentImageAttachment(mimeType: mimeType, data: data)
         } catch {
             return nil
         }
@@ -110,16 +110,4 @@ private enum RuntimeImageMimeType: String {
         default: return nil
         }
     }
-
-    init?(responseMimeType: String?, pathExtension: String) {
-        if let responseMimeType,
-           let normalized = Self(rawValue: responseMimeType.lowercased()) {
-            self = normalized
-            return
-        }
-        guard let inferred = Self(pathExtension: pathExtension) else { return nil }
-        self = inferred
-    }
-
-    var isImage: Bool { rawValue.hasPrefix("image/") }
 }

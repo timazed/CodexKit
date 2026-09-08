@@ -23,6 +23,9 @@ extension StoredRuntimeState {
         if let turnID = query.turnID {
             records = records.filter { $0.item.turnID == turnID }
         }
+        if let relationship = query.relationship {
+            records = records.filter { $0.item.relationshipKey == relationship.storageKey }
+        }
         if !query.includeRedacted {
             records = records.filter { $0.redaction == nil }
         }

@@ -15,7 +15,7 @@ package actor RuntimeStoreMutationCoordinator {
 
     private struct PendingMutation {
         let id: UUID
-        let completion: Task<Void, Never>
+        let completion: RuntimeStoreTask<Void>
     }
 
     private var pendingByStore: [String: PendingMutation] = [:]
@@ -24,6 +24,7 @@ package actor RuntimeStoreMutationCoordinator {
         for attachmentRootURL: URL,
         operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
+        try Task.checkCancellation()
         let canonicalRootURL = RuntimeStoreInterprocessLock.canonicalRootURL(
             for: attachmentRootURL
         )
@@ -32,34 +33,35 @@ package actor RuntimeStoreMutationCoordinator {
             return try await operation()
         }
         let predecessor = pendingByStore[key]?.completion
-        let operationTask = Task<Result, Error> {
-            await predecessor?.value
+        let operationTask = RuntimeStoreTask<Result> {
+            _ = try await predecessor?.value
             let lock = try await RuntimeStoreInterprocessLock.acquire(
                 for: canonicalRootURL
             )
             defer { lock.release() }
+            try RuntimeStoreCommitScope.begin()
             return try await operation()
         }
         let mutationID = UUID()
+        let completion = RuntimeStoreTask<Void>(preservingCommits: false, inheritingCommitScope: false) {
+            _ = try? await predecessor?.uninterruptibleValue
+            _ = try? await operationTask.uninterruptibleValue
+            await self.removePendingMutation(key: key, id: mutationID)
+        }
         pendingByStore[key] = PendingMutation(
             id: mutationID,
-            completion: Task { _ = try? await operationTask.value }
+            completion: completion
         )
-
-        do {
-            let result = try await operationTask.value
-            removePendingMutation(key: key, id: mutationID)
-            return result
-        } catch {
-            removePendingMutation(key: key, id: mutationID)
-            throw error
-        }
+        return try await withTaskCancellationHandler {
+            try await operationTask.uninterruptibleValue
+        } onCancel: { operationTask.cancel() }
     }
 
     package func performExclusively<Result: Sendable>(
         for attachmentRootURLs: [URL],
         operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
+        try Task.checkCancellation()
         let rootsByKey = Dictionary(
             attachmentRootURLs.map {
                 let canonical = RuntimeStoreInterprocessLock.canonicalRootURL(for: $0)
@@ -80,8 +82,8 @@ package actor RuntimeStoreMutationCoordinator {
         let keys = requestedKeys
 
         let predecessors = keys.compactMap { pendingByStore[$0]?.completion }
-        let operationTask = Task<Result, Error> {
-            for predecessor in predecessors { await predecessor.value }
+        let operationTask = RuntimeStoreTask<Result> {
+            for predecessor in predecessors { try await predecessor.value }
             let uniqueLockRoots = Dictionary(
                 keys.compactMap { rootsByKey[$0] }.map {
                     (RuntimeStoreInterprocessLock.lockURL(for: $0).path, $0)
@@ -99,6 +101,7 @@ package actor RuntimeStoreMutationCoordinator {
                 }
             }
             defer { locks.reversed().forEach { $0.release() } }
+            try RuntimeStoreCommitScope.begin()
             return try await Self.$exclusivelyHeldStoreKeys.withValue(
                 Self.exclusivelyHeldStoreKeys.union(requestedKeySet)
             ) {
@@ -106,19 +109,18 @@ package actor RuntimeStoreMutationCoordinator {
             }
         }
         let mutationID = UUID()
-        let completion = Task { _ = try? await operationTask.value }
+        let completion = RuntimeStoreTask<Void>(preservingCommits: false, inheritingCommitScope: false) {
+            for predecessor in predecessors { _ = try? await predecessor.uninterruptibleValue }
+            _ = try? await operationTask.uninterruptibleValue
+            for key in keys { await self.removePendingMutation(key: key, id: mutationID) }
+        }
         for key in keys {
             pendingByStore[key] = PendingMutation(id: mutationID, completion: completion)
         }
 
-        do {
-            let result = try await operationTask.value
-            for key in keys { removePendingMutation(key: key, id: mutationID) }
-            return result
-        } catch {
-            for key in keys { removePendingMutation(key: key, id: mutationID) }
-            throw error
-        }
+        return try await withTaskCancellationHandler {
+            try await operationTask.uninterruptibleValue
+        } onCancel: { operationTask.cancel() }
     }
 
     private func removePendingMutation(key: String, id: UUID) {

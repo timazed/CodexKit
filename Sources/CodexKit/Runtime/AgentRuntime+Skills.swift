@@ -133,8 +133,7 @@ extension AgentRuntime {
                 continue
             }
 
-            if let allowed = executionPolicy.allowedToolNames,
-               !allowed.isEmpty {
+            if let allowed = executionPolicy.allowedToolNames {
                 let allowedSet = Set(allowed)
                 if let existingAllowed = allowedToolNames {
                     allowedToolNames = existingAllowed.intersection(allowedSet)

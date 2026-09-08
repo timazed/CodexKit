@@ -114,6 +114,14 @@ in adapter-specific sidecar directories. Promotion, deletion, orphan reconciliat
 and crash recovery process bounded batches so a large thread does not require an
 unbounded in-memory attachment set.
 
+### Cancellation and commits
+
+Waiting for a runtime-store lock suspends without occupying an executor worker. Cancelling a direct store mutation before it acquires its leases removes that queued operation; it will not write later when the lock becomes available. Cancelling a queued read also stops its wait, while later operations retain their original ordering.
+
+Once a database/attachment commit has started, it finishes atomically and reports its result. Cancelling one caller waiting for shared SQLite/Realm preparation does not cancel or restart preparation needed by other callers. Custom state stores do not expose a commit boundary, so the runtime conservatively allows an entered `apply` call to finish.
+
+The runtime owns writes it has already accepted into its in-memory state. Cancelling startup while its disk lease is unavailable returns promptly and marks the thread interrupted/idle without starting a backend. Accepted input and its interruption record stay queued in order and flush when storage becomes available, even if the original caller stops waiting. Cancellation after a preparation write has begun allows that write and its interruption cleanup to finish.
+
 The bundled persistent memory stores are:
 
 - `SQLiteMemoryStore` from `CodexKitSQLite`
@@ -157,7 +165,7 @@ The source store is left untouched. Runtime thread metadata, histories, and memo
 - use `fetchThreadHistory(id:query:)` and `fetchLatestStructuredOutputMetadata(id:)` for common thread inspection
 - use the typed `execute(_:)` query surface when you need more control over filtering, sorting, paging, or cross-thread reads
 - use hidden context compaction when you want to optimize future turns without removing preserved thread history from UI or inspection APIs
-- resumed SQLite threads hydrate only a bounded, turn-closed working context; durable history remains queryable without being loaded wholesale
+- new and resumed SQLite/Realm threads keep bounded message and history working sets; durable history remains queryable without being loaded wholesale
 
 ```swift
 let stateStore = try SQLiteRuntimeStateStore()
@@ -187,6 +195,20 @@ let snapshots = try await runtime.execute(
     ThreadSnapshotQuery(limit: 20)
 )
 ```
+
+`maximumHistoryRecordCount` bounds retained history throughout live execution, including fresh threads created without `restore()`. Values are clamped to 0–2,048; zero retains no live history records. Eviction preserves durable records, summaries, and sequence allocation. Deduplication flushes pending writes and consults durable history when a message, tool result, or structured commit is absent from the live cache. A failed lookup fails the turn instead of executing a potentially completed tool again. Snapshot-based file and in-memory adapters remain suitable for smaller workloads.
+
+Use relationship filters to retrieve linked records without loading unrelated history:
+
+```swift
+let toolRecords = try await runtime.execute(HistoryItemsQuery(
+    threadID: thread.id,
+    kinds: [.toolCall, .toolResult],
+    relationship: .toolInvocation(id: invocationID)
+))
+```
+
+`.message(id:)` selects a message and its linked structured output; combine it with `kinds` to narrow the result. Relationship queries use existing database indexes in SQLite and Realm and have matching semantics in the file and in-memory stores.
 
 This path also supports explicit history redaction and whole-thread deletion without forcing hosts to replay raw event streams themselves.
 

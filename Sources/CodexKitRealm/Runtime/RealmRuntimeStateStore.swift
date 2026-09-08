@@ -11,7 +11,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
     let configuration: Realm.Configuration
     var realm: Realm?
     var isPrepared = false
-    var preparationTask: Task<Void, Error>?
+    var preparationTask: RuntimeStoreTask<Void>?
     var preparationGeneration: UInt64 = 0
     var latestApplyDecodedHistoryRecordCount = 0
     var latestQueryDecodedHistoryRecordCount = 0
@@ -358,7 +358,8 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
                 max(0, policy.maximumHistoryRecordCount),
                 AgentStoreLimits.maximumActivationHistoryRecordCount
             )
-            let recent = Array(historyObjects
+            let recent = contiguousHistoryWindow(in: realm, threadID: id, anchor: nil,
+                ascending: false, limit: historyLimit) ?? Array(historyObjects
                 .sorted(byKeyPath: "sequenceNumber", ascending: false)
                 .prefix(historyLimit))
             let relationshipKeys = Set(recent.compactMap(\.relationshipKey))

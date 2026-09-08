@@ -216,6 +216,10 @@ struct SQLiteRuntimeStoreQueries: Sendable {
             clauses.append("turnID = ?")
             arguments.append(turnID)
         }
+        if let relationship = query.relationship {
+            clauses.append("relationshipKey = ?")
+            arguments.append(relationship.storageKey)
+        }
         if !query.includeRedacted {
             clauses.append("isRedacted = 0")
         }

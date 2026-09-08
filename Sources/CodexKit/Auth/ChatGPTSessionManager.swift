@@ -5,6 +5,8 @@ public actor ChatGPTSessionManager {
     private let secureStore: KeychainSessionSecureStore
     private let logger: AgentLogger
     private var session: ChatGPTSession?
+    private var generation = UUID()
+    private var pendingRefresh: (generation: UUID, task: Task<ChatGPTSession, Error>)?
 
     public init(
         authProvider: ChatGPTAuthProvider,
@@ -19,6 +21,7 @@ public actor ChatGPTSessionManager {
     @discardableResult
     public func restore() throws -> ChatGPTSession? {
         let restored = try secureStore.loadSession()
+        invalidatePendingAuthentication()
         session = restored
         logger.debug(
             .auth,
@@ -38,6 +41,7 @@ public actor ChatGPTSessionManager {
     @discardableResult
     public func useSession(_ session: ChatGPTSession) throws -> ChatGPTSession {
         try secureStore.saveSession(session)
+        invalidatePendingAuthentication()
         self.session = session
         logger.info(
             .auth,
@@ -53,8 +57,13 @@ public actor ChatGPTSessionManager {
 
     @discardableResult
     public func signIn() async throws -> ChatGPTSession {
+        invalidatePendingAuthentication()
+        let startedGeneration = generation
         let signedInSession = try await authProvider.signInInteractively()
+        try Task.checkCancellation()
+        guard generation == startedGeneration else { throw CancellationError() }
         try secureStore.saveSession(signedInSession)
+        invalidatePendingAuthentication()
         session = signedInSession
         logger.info(
             .auth,
@@ -70,6 +79,13 @@ public actor ChatGPTSessionManager {
     @discardableResult
     public func refresh(reason: ChatGPTAuthRefreshReason) async throws -> ChatGPTSession {
         let current = try requireStoredSession()
+        let startedGeneration = generation
+        if let pendingRefresh, pendingRefresh.generation == startedGeneration {
+            let refreshed = try await waitForRefresh(pendingRefresh.task)
+            try Task.checkCancellation()
+            guard generation == startedGeneration else { throw CancellationError() }
+            return refreshed
+        }
         logger.info(
             .auth,
             "Refreshing session.",
@@ -78,19 +94,34 @@ public actor ChatGPTSessionManager {
                 "account_id": current.account.id
             ]
         )
-        let refreshed = try await authProvider.refresh(session: current, reason: reason)
-        try secureStore.saveSession(refreshed)
-        session = refreshed
+        let authProvider = authProvider
+        let task = Task {
+            defer {
+                if self.pendingRefresh?.generation == startedGeneration { self.pendingRefresh = nil }
+            }
+            do {
+                let refreshed = try await authProvider.refresh(session: current, reason: reason)
+                return try self.commitRefresh(refreshed, generation: startedGeneration)
+            } catch {
+                try Task.checkCancellation()
+                throw error
+            }
+        }
+        pendingRefresh = (startedGeneration, task)
+        let refreshed = try await waitForRefresh(task)
+        guard generation == startedGeneration else { throw CancellationError() }
         logger.info(
             .auth,
             "Session refresh completed.",
             metadata: ["account_id": refreshed.account.id]
         )
+        try Task.checkCancellation()
         return refreshed
     }
 
     public func signOut() async throws {
         let current = session
+        invalidatePendingAuthentication()
         session = nil
         try secureStore.deleteSession()
         await authProvider.signOut(session: current)
@@ -117,16 +148,21 @@ public actor ChatGPTSessionManager {
     public func recoverUnauthorizedSession(
         previousAccessToken: String?
     ) async throws -> ChatGPTSession {
+        // Recovery is only valid for the active account, never after sign-out.
+        let current = try requireStoredSession()
         logger.warning(
             .auth,
             "Attempting unauthorized-session recovery.",
             metadata: ["had_previous_access_token": "\(previousAccessToken != nil)"]
         )
-        if let restored = try secureStore.loadSession() {
-            session = restored
+        if let restored = try secureStore.loadSession(), restored.account.id == current.account.id {
             if let previousAccessToken,
                restored.accessToken != previousAccessToken,
                !restored.requiresRefresh() {
+                if restored != session {
+                    invalidatePendingAuthentication()
+                    session = restored
+                }
                 logger.info(
                     .auth,
                     "Recovered session from secure store after unauthorized response.",
@@ -137,6 +173,39 @@ public actor ChatGPTSessionManager {
         }
 
         return try await refresh(reason: .unauthorized)
+    }
+
+    /// Cancelling a caller stops its wait without cancelling refreshes needed by
+    /// other turns. The shared task, rather than any waiter, owns cache cleanup.
+    private func waitForRefresh(_ task: Task<ChatGPTSession, Error>) async throws -> ChatGPTSession {
+        let values = AsyncThrowingStream<ChatGPTSession, Error> { continuation in
+            let waiter = Task {
+                do {
+                    continuation.yield(try await task.value)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in waiter.cancel() }
+        }
+        var iterator = values.makeAsyncIterator()
+        guard let value = try await iterator.next() else { throw CancellationError() }
+        try Task.checkCancellation()
+        return value
+    }
+
+    private func invalidatePendingAuthentication() {
+        generation = UUID()
+        pendingRefresh?.task.cancel()
+        pendingRefresh = nil
+    }
+
+    private func commitRefresh(_ refreshed: ChatGPTSession, generation expected: UUID) throws -> ChatGPTSession {
+        guard generation == expected else { throw CancellationError() }
+        try secureStore.saveSession(refreshed)
+        session = refreshed
+        return refreshed
     }
 
     private func requireStoredSession() throws -> ChatGPTSession {

@@ -3,95 +3,6 @@ import Foundation
 import RealmSwift
 
 extension RealmRuntimeStateStore {
-    func fetchHistoryPage(
-        id: String,
-        query: AgentHistoryQuery,
-        from realm: Realm
-    ) throws -> AgentThreadHistoryPage {
-        let limit = AgentStoreLimitValidator.boundedLimit(query.limit)
-        let kinds = historyKinds(from: query.filter)
-        if let kinds, kinds.isEmpty {
-            return AgentThreadHistoryPage(
-                threadID: id,
-                items: [],
-                nextCursor: nil,
-                previousCursor: nil,
-                hasMoreBefore: false,
-                hasMoreAfter: false
-            )
-        }
-        let includeCompactionEvents = query.filter?.includeCompactionEvents ?? false
-        let anchor = try query.cursor?.decodedSequenceNumber(expectedThreadID: id)
-        let base = filteredHistory(
-            in: realm,
-            threadID: id,
-            kinds: kinds,
-            includeCompactionEvents: includeCompactionEvents
-        )
-
-        switch query.direction {
-        case .backward:
-            let overfetchLimit = agentOverfetchLimit(limit)
-            var window = base
-            if let anchor {
-                window = window.filter("sequenceNumber < %d", anchor)
-            }
-            let fetched = Array(
-                window.sorted(byKeyPath: "sequenceNumber", ascending: false)
-                    .prefix(overfetchLimit)
-            )
-            let pageObjects = Array(fetched.prefix(limit).reversed())
-            let records = try decodeHistory(pageObjects)
-            let hasMoreAfter = if let anchor {
-                !base.filter("sequenceNumber >= %d", anchor).isEmpty
-            } else {
-                false
-            }
-            return AgentThreadHistoryPage(
-                threadID: id,
-                items: records.map(\.item),
-                nextCursor: fetched.count > limit
-                    ? AgentHistoryCursor(threadID: id, sequenceNumber: records.first?.sequenceNumber)
-                    : nil,
-                previousCursor: hasMoreAfter
-                    ? AgentHistoryCursor(threadID: id, sequenceNumber: records.last?.sequenceNumber)
-                    : nil,
-                hasMoreBefore: fetched.count > limit,
-                hasMoreAfter: hasMoreAfter
-            )
-
-        case .forward:
-            let overfetchLimit = agentOverfetchLimit(limit)
-            var window = base
-            if let anchor {
-                window = window.filter("sequenceNumber > %d", anchor)
-            }
-            let fetched = Array(
-                window.sorted(byKeyPath: "sequenceNumber", ascending: true)
-                    .prefix(overfetchLimit)
-            )
-            let pageObjects = Array(fetched.prefix(limit))
-            let records = try decodeHistory(pageObjects)
-            let hasMoreBefore = if let anchor {
-                !base.filter("sequenceNumber <= %d", anchor).isEmpty
-            } else {
-                false
-            }
-            return AgentThreadHistoryPage(
-                threadID: id,
-                items: records.map(\.item),
-                nextCursor: fetched.count > limit
-                    ? AgentHistoryCursor(threadID: id, sequenceNumber: records.last?.sequenceNumber)
-                    : nil,
-                previousCursor: hasMoreBefore
-                    ? AgentHistoryCursor(threadID: id, sequenceNumber: records.first?.sequenceNumber)
-                    : nil,
-                hasMoreBefore: hasMoreBefore,
-                hasMoreAfter: fetched.count > limit
-            )
-        }
-    }
-
     func executeHistoryQuery(
         _ query: HistoryItemsQuery,
         in realm: Realm
@@ -122,6 +33,9 @@ extension RealmRuntimeStateStore {
         if let turnID = query.turnID {
             base = base.filter("turnID == %@", turnID)
         }
+        if let relationship = query.relationship {
+            base = base.filter("relationshipKey == %@", relationship.storageKey)
+        }
         if !query.includeRedacted {
             base = base.filter("isRedacted == false")
         }
@@ -135,12 +49,11 @@ extension RealmRuntimeStateStore {
             sort: query.sort
         )
         if let anchor {
-            guard let anchorObject = realm.objects(RealmRuntimeHistoryObject.self)
-                .filter(
-                    "threadID == %@ AND sequenceNumber == %d",
-                    query.threadID,
-                    anchor.sequenceNumber
-                ).first,
+            guard let anchorObject = realm.object(ofType: RealmRuntimeHistoryObject.self,
+                forPrimaryKey: RealmRuntimeStateStoreCodec.historyKey(
+                    threadID: query.threadID, sequenceNumber: anchor.sequenceNumber)),
+                anchorObject.threadID == query.threadID,
+                anchorObject.sequenceNumber == anchor.sequenceNumber,
                 anchorObject.createdAt == anchor.createdAt
             else {
                 throw AgentRuntimeError.invalidHistoryCursor()
@@ -151,7 +64,9 @@ extension RealmRuntimeStateStore {
             if let anchor {
                 window = try historyAfterAnchor(anchor, sort: query.sort, in: window)
             }
-            let fetched = Array(
+            let adjacent = unfilteredSequenceWindow(query, in: realm, anchor: anchor?.sequenceNumber,
+                ascending: true, limit: agentOverfetchLimit(limit))
+            let fetched = adjacent ?? Array(
                 sortHistory(window, using: query.sort, ascending: true)
                     .prefix(agentOverfetchLimit(limit))
             )
@@ -194,7 +109,9 @@ extension RealmRuntimeStateStore {
                 in: window
             )
         }
-        let fetched = Array(
+        let adjacent = unfilteredSequenceWindow(query, in: realm, anchor: anchor?.sequenceNumber,
+            ascending: false, limit: agentOverfetchLimit(limit))
+        let fetched = adjacent ?? Array(
             sortHistory(window, using: query.sort, ascending: false)
                 .prefix(agentOverfetchLimit(limit))
         )
@@ -538,14 +455,14 @@ extension RealmRuntimeStateStore {
     ) throws -> Bool {
         switch sort {
         case .sequence:
-            return !results.filter("sequenceNumber >= %d", anchor.sequenceNumber).isEmpty
+            return results.filter("sequenceNumber >= %d", anchor.sequenceNumber).first != nil
         case .createdAt:
-            return !results.filter(
+            return results.filter(
                 "createdAt > %@ OR (createdAt == %@ AND sequenceNumber >= %d)",
                 anchor.createdAt,
                 anchor.createdAt,
                 anchor.sequenceNumber
-            ).isEmpty
+            ).first != nil
         }
     }
 
@@ -556,14 +473,14 @@ extension RealmRuntimeStateStore {
     ) throws -> Bool {
         switch sort {
         case .sequence:
-            return !results.filter("sequenceNumber <= %d", anchor.sequenceNumber).isEmpty
+            return results.filter("sequenceNumber <= %d", anchor.sequenceNumber).first != nil
         case .createdAt:
-            return !results.filter(
+            return results.filter(
                 "createdAt < %@ OR (createdAt == %@ AND sequenceNumber <= %d)",
                 anchor.createdAt,
                 anchor.createdAt,
                 anchor.sequenceNumber
-            ).isEmpty
+            ).first != nil
         }
     }
 

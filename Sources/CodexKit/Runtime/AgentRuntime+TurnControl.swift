@@ -13,7 +13,7 @@ public struct AgentTurnInterruption: Sendable {
 }
 
 struct AgentActiveTurnExecution {
-    let id = UUID()
+    let id: UUID
     let cancellation = AgentTurnCancellationHandle()
     var isFinishing = false
     var turnID: String?
@@ -48,10 +48,7 @@ extension AgentRuntime {
     }
 
     func reserveTurn(in threadID: String) throws -> AgentActiveTurnExecution {
-        guard activeTurnExecutions[threadID] == nil else {
-            throw AgentRuntimeError(code: "thread_busy", message: "This thread already has an active turn. Use steer or interrupt.")
-        }
-        let execution = AgentActiveTurnExecution()
+        let execution = AgentActiveTurnExecution(id: try reserveThreadOperation(in: threadID))
         activeTurnExecutions[threadID] = execution
         return execution
     }
@@ -59,9 +56,11 @@ extension AgentRuntime {
     func releaseTurn(in threadID: String, executionID: UUID) {
         guard activeTurnExecutions[threadID]?.id == executionID else { return }
         activeTurnExecutions[threadID] = nil
+        releaseThreadOperation(in: threadID, id: executionID)
     }
 
-    func recordInterruption(in threadID: String, turnID: String?, storesTurnState: Bool) async -> AgentTurnInterruption {
+    func recordInterruption(in threadID: String, turnID: String?, storesTurnState: Bool,
+        waitForPersistence: Bool = true) async -> AgentTurnInterruption {
         if storesTurnState { activeTurnExecutions[threadID]?.isFinishing = true }
         let interruption = AgentTurnInterruption(threadID: threadID, turnID: turnID)
         if storesTurnState {
@@ -71,7 +70,7 @@ extension AgentRuntime {
             try? setLatestTurnStatus(.interrupted, for: threadID)
             try? setPendingState(nil, for: threadID)
             try? setLatestPartialStructuredOutput(nil, for: threadID)
-            try? await setThreadStatus(.idle, for: threadID)
+            try? await setThreadStatus(.idle, for: threadID, waitDespiteCancellation: waitForPersistence)
         }
         return interruption
     }

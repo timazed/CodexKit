@@ -1,6 +1,7 @@
 import Foundation
 
 public struct AgentSkillExecutionPolicy: Codable, Hashable, Sendable {
+    /// `nil` leaves tools unrestricted; an empty array disallows every tool.
     public var allowedToolNames: [String]? = nil
     public var requiredToolNames: [String] = []
     public var toolSequence: [String]? = nil

@@ -87,12 +87,14 @@ struct CodexResponsesEventStreamClient: Sendable {
     let urlSession: URLSession
     let decoder: JSONDecoder
     let logger: AgentLogger
+    var maximumBufferedEvents = 64
+    var responseBudget: CodexResponseBudget?
     var rateLimitObserver: @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in }
 
     func streamEvents(
         request: URLRequest
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
-        if let bodyData = request.httpBody {
+        if let bodyData = request.httpBody, logger.isEnabled(.debug, for: .network) {
             logger.debug(
                 .network,
                 "Responses request payload.",
@@ -139,11 +141,7 @@ struct CodexResponsesEventStreamClient: Sendable {
                     "body": body
                 ]
             )
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                throw AgentRuntimeError.unauthorized(body)
-            }
-            throw AgentRuntimeError(
-                code: "responses_http_status_\(httpResponse.statusCode)",
+            throw AgentRuntimeError.httpFailure(response: httpResponse, body: bodyData, prefix: "responses",
                 message: "The ChatGPT responses request failed with status \(httpResponse.statusCode): \(body)"
             )
         }
@@ -158,18 +156,20 @@ struct CodexResponsesEventStreamClient: Sendable {
             ]
         )
 
-        return AsyncThrowingStream { continuation in
-            if !rateLimits.isEmpty {
-                continuation.yield(.init(kind: .rateLimits(rateLimits), sequenceNumber: nil))
-            }
+        let (events, continuation) = AgentEventChannel<CodexResponsesStreamEvent>.makeStream(capacity: maximumBufferedEvents)
+        do {
             let producerTask = Task {
                 var parser = SSEEventParser()
 
                 do {
+                    if !rateLimits.isEmpty {
+                        try await continuation.yield(.init(kind: .rateLimits(rateLimits), sequenceNumber: nil))
+                    }
                     var lineBuffer = Data()
 
                     for try await byte in bytes {
                         if byte == UInt8(ascii: "\n") {
+                            try responseBudget?.consume(lineBuffer.count + 1)
                             var line = String(decoding: lineBuffer, as: UTF8.self)
                             if line.hasSuffix("\r") {
                                 line.removeLast()
@@ -178,7 +178,7 @@ struct CodexResponsesEventStreamClient: Sendable {
 
                             if let payload = try parser.consume(line: line),
                                let event = try parseStreamEvent(from: payload) {
-                                continuation.yield(event)
+                                try await continuation.yield(event)
                             }
                             continue
                         }
@@ -194,19 +194,20 @@ struct CodexResponsesEventStreamClient: Sendable {
 
                     try Task.checkCancellation()
                     if !lineBuffer.isEmpty {
+                        try responseBudget?.consume(lineBuffer.count)
                         var line = String(decoding: lineBuffer, as: UTF8.self)
                         if line.hasSuffix("\r") {
                             line.removeLast()
                         }
                         if let payload = try parser.consume(line: line),
                            let event = try parseStreamEvent(from: payload) {
-                            continuation.yield(event)
+                            try await continuation.yield(event)
                         }
                     }
 
                     if let payload = parser.finish(),
                        let event = try parseStreamEvent(from: payload) {
-                        continuation.yield(event)
+                        try await continuation.yield(event)
                     }
 
                     logger.debug(
@@ -222,12 +223,9 @@ struct CodexResponsesEventStreamClient: Sendable {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable termination in
-                if case .cancelled = termination {
-                    producerTask.cancel()
-                }
-            }
+            continuation.onCancellation { producerTask.cancel() }
         }
+        return events
     }
 
     func shouldRetry(
@@ -239,7 +237,7 @@ struct CodexResponsesEventStreamClient: Sendable {
             if runtimeError.code == AgentRuntimeError.unauthorized().code {
                 return false
             }
-            if let statusCode = httpStatusCode(from: runtimeError.code) {
+            if let statusCode = runtimeError.http?.statusCode ?? httpStatusCode(from: runtimeError.code) {
                 let shouldRetry = policy.retryableHTTPStatusCodes.contains(statusCode)
                 logger.debug(
                     .retry,
@@ -347,7 +345,9 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
             throw error
         }
-        let sanitizedPayload = sanitizedResponsesJSONString(from: payloadData)
+        let logsPayload = logger.isVerboseEnabled(for: .network)
+            || (shouldLogResponsePayload(for: envelope.type) && logger.isEnabled(.debug, for: .network))
+        let sanitizedPayload = logsPayload ? sanitizedResponsesJSONString(from: payloadData) : ""
         if logger.isVerboseEnabled(for: .network) {
             logger.verbose(
                 .network,
@@ -409,7 +409,9 @@ struct CodexResponsesEventStreamClient: Sendable {
             kind = .completed(usage, responseID: envelope.response?.id)
         case "response.failed":
             let message = envelope.response?.error?.message ?? "The ChatGPT responses stream failed."
-            throw AgentRuntimeError(code: "responses_stream_failed", message: message)
+            throw AgentRuntimeError(code: "responses_stream_failed", message: message,
+                http: .init(statusCode: 200, providerCode: envelope.response?.error?.code,
+                    providerType: envelope.response?.error?.type))
         case "response.incomplete":
             let reason = envelope.response?.incompleteDetails?.reason ?? "unknown"
             throw AgentRuntimeError(

@@ -1312,18 +1312,19 @@ extension AgentRuntimeTests {
         XCTAssertEqual(result.memoryApplication.omissionReason, .notReported)
     }
 
-    func testExistingSendDoesNotRequireNewSummaryEvent() async throws {
+    func testEverySendRequiresBackendCompletion() async throws {
         let runtime = try await makeMemoryInstructionRuntime(
             backend: MemoryMissingSummaryBackend(),
             renderer: MarkerMemoryRenderer()
         )
         let legacyThread = try await runtime.createThread(title: "Legacy send")
 
-        let response = try await runtime.send(
-            Request(text: "Use the existing behavior"),
-            in: legacyThread.id
-        )
-        XCTAssertEqual(response, "Completed without a summary")
+        do {
+            _ = try await runtime.send(Request(text: "Require completion"), in: legacyThread.id)
+            XCTFail("Expected send to reject an unfinished turn.")
+        } catch {
+            XCTAssertEqual((error as? AgentRuntimeError)?.code, "turn_summary_missing")
+        }
 
         let summaryThread = try await runtime.createThread(title: "Summary send")
         do {

@@ -12,33 +12,35 @@ extension RealmRuntimeStateStore {
     }
 
     func ensurePrepared() async throws {
+        try Task.checkCancellation()
         if isPrepared { return }
-
-        let task: Task<Void, Error>
-        let generation: UInt64
         if let preparationTask {
-            task = preparationTask
-            generation = preparationGeneration
-        } else {
-            preparationGeneration &+= 1
-            generation = preparationGeneration
-            let created = Task { try await self.performPreparation() }
-            preparationTask = created
-            task = created
+            try await preparationTask.value
+            try Task.checkCancellation()
+            return
         }
+        preparationGeneration &+= 1
+        let generation = preparationGeneration
+        let task = RuntimeStoreTask<Void>(preservingCommits: false, inheritingCommitScope: false) {
+            do {
+                try await self.performPreparation()
+                await self.finishPreparation(generation: generation, succeeded: true)
+            } catch {
+                await self.finishPreparation(generation: generation, succeeded: false)
+                throw error
+            }
+        }
+        preparationTask = task
+        // Cancelling a waiter must not cancel or replace preparation shared by
+        // another caller. The task owns state cleanup, even if every waiter leaves.
+        try await task.value
+        try Task.checkCancellation()
+    }
 
-        do {
-            try await task.value
-            if preparationGeneration == generation {
-                isPrepared = true
-                preparationTask = nil
-            }
-        } catch {
-            if preparationGeneration == generation {
-                preparationTask = nil
-            }
-            throw error
-        }
+    private func finishPreparation(generation: UInt64, succeeded: Bool) {
+        guard preparationGeneration == generation else { return }
+        isPrepared = succeeded
+        preparationTask = nil
     }
 
     func performPreparation() async throws {

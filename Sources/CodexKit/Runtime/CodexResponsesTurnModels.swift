@@ -26,6 +26,8 @@ struct TurnRunState {
     var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
 
     mutating func beginAttempt() {
+        structuredParser = CodexResponsesStructuredStreamParser()
+        pendingStructuredOutputMetadata = nil
         pendingFunctionCalls.removeAll(keepingCapacity: true)
         pendingResponseItems.removeAll(keepingCapacity: true)
         pendingToolOutputs.removeAll(keepingCapacity: true)

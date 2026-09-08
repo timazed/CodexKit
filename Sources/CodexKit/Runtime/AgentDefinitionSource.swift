@@ -52,21 +52,67 @@ public struct AgentDefinitionSourceError: Error, LocalizedError, Equatable, Send
             message: "The skill ID \(skillID) is invalid. Skill IDs must match ^[a-zA-Z0-9_-]+$."
         )
     }
+
+    public static func invalidSkillDefinition() -> AgentDefinitionSourceError {
+        .init(code: "invalid_skill_definition", message: "The JSON skill definition or its execution policy is invalid. Check field names, value types, tool names, and nonnegative tool-call limits.")
+    }
+
+    public static func definitionTooLarge(maximumBytes: Int) -> AgentDefinitionSourceError {
+        .init(code: "definition_too_large", message: "Definition content exceeds the configured limit of \(maximumBytes) bytes.")
+    }
 }
 
 public actor AgentDefinitionSourceLoader {
-    private struct SkillDocument: Codable {
+    private struct SkillDocument: Decodable {
         var id: String?
         var name: String?
         var instructions: String
         var executionPolicy: AgentSkillExecutionPolicy?
+
+        private enum CodingKeys: String, CodingKey { case id, name, instructions, executionPolicy }
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: DefinitionField.self).allKeys
+            guard fields.allSatisfy({ CodingKeys(rawValue: $0.stringValue) != nil }) else {
+                throw AgentDefinitionSourceError.invalidSkillDefinition()
+            }
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeIfPresent(String.self, forKey: .id)
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            instructions = try container.decode(String.self, forKey: .instructions)
+            if container.contains(.executionPolicy), try !container.decodeNil(forKey: .executionPolicy) {
+                let policyDecoder = try container.superDecoder(forKey: .executionPolicy)
+                let fields = try policyDecoder.container(keyedBy: DefinitionField.self).allKeys
+                let supported = Set(["allowedToolNames", "requiredToolNames", "toolSequence", "maxToolCalls"])
+                guard fields.allSatisfy({ supported.contains($0.stringValue) }) else {
+                    throw AgentDefinitionSourceError.invalidSkillDefinition()
+                }
+                let policy = try AgentSkillExecutionPolicy(from: policyDecoder)
+                let names = (policy.allowedToolNames ?? []) + policy.requiredToolNames + (policy.toolSequence ?? [])
+                guard policy.maxToolCalls.map({ $0 >= 0 }) ?? true,
+                      names.allSatisfy(ToolDefinition.isValidName) else {
+                    throw AgentDefinitionSourceError.invalidSkillDefinition()
+                }
+                executionPolicy = policy
+            }
+        }
+    }
+
+    private struct DefinitionField: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
     }
 
     private let urlSession: URLSession
     private let decoder = JSONDecoder()
+    public let maximumDefinitionBytes: Int
 
-    public init(urlSession: URLSession = .shared) {
+    /// Applies to both files and remote bodies, before text or JSON decoding.
+    public init(urlSession: URLSession = .shared, maximumDefinitionBytes: Int = 1_024 * 1_024) {
         self.urlSession = urlSession
+        self.maximumDefinitionBytes = maximumDefinitionBytes
     }
 
     public func loadPersonaStack(
@@ -96,7 +142,7 @@ public actor AgentDefinitionSourceLoader {
         name: String? = nil
     ) async throws -> AgentSkill {
         let text = try await loadText(from: source)
-        let decodedDocument = decodeSkillDocument(from: text)
+        let decodedDocument = try decodeSkillDocument(from: text)
 
         let resolvedInstructions = (decodedDocument?.instructions ?? text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -125,19 +171,19 @@ public actor AgentDefinitionSourceLoader {
     }
 
     public func loadText(from source: AgentDefinitionSource) async throws -> String {
+        try Task.checkCancellation()
+        guard maximumDefinitionBytes > 0 else {
+            throw AgentDefinitionSourceError(code: "invalid_definition_limit", message: "The definition byte limit must be positive.")
+        }
         let data: Data
         switch source {
         case let .file(url):
-            data = try Data(contentsOf: url)
+            data = try readFile(url)
         case let .remote(url):
-            let (responseData, response) = try await urlSession.data(from: url)
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200 ... 299).contains(httpResponse.statusCode) {
-                throw AgentDefinitionSourceError.unsupportedRemoteResponse(httpResponse.statusCode)
-            }
-            data = responseData
+            data = try await readRemote(url)
         }
 
+        try Task.checkCancellation()
         guard let text = String(data: data, encoding: .utf8) else {
             throw AgentDefinitionSourceError.unreadableContent()
         }
@@ -145,36 +191,53 @@ public actor AgentDefinitionSourceLoader {
         return text
     }
 
-    private func decodeSkillDocument(from text: String) -> SkillDocument? {
-        guard let data = text.data(using: .utf8) else {
-            return nil
-        }
+    private func decodeSkillDocument(from text: String) throws -> SkillDocument? {
+        // JSON object definitions must not fall back to unrestricted plain text.
+        let jsonText = text.first == "\u{FEFF}" ? text.dropFirst() : text[...]
+        guard jsonText.first(where: { !$0.isWhitespace }) == "{" else { return nil }
+        do { return try decoder.decode(SkillDocument.self, from: Data(jsonText.utf8)) }
+        catch { throw AgentDefinitionSourceError.invalidSkillDefinition() }
+    }
 
-        if let decoded = try? decoder.decode(SkillDocument.self, from: data) {
-            return decoded
+    private func readFile(_ url: URL) throws -> Data {
+        guard url.isFileURL else {
+            throw AgentDefinitionSourceError(code: "invalid_definition_file", message: "A file definition must be a regular local file.")
         }
-
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            return nil
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else {
+            throw AgentDefinitionSourceError(code: "invalid_definition_file", message: "A file definition must be a regular local file.")
         }
-
-        guard let instructions = object["instructions"] as? String else {
-            return nil
+        guard (values.fileSize ?? 0) <= maximumDefinitionBytes else { throw sizeError() }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var data = Data()
+        while true {
+            try Task.checkCancellation()
+            let remaining = maximumDefinitionBytes - data.count
+            let chunk = try handle.read(upToCount: max(1, min(65_536, remaining))) ?? Data()
+            if chunk.isEmpty { return data }
+            guard chunk.count <= remaining else { throw sizeError() }
+            data.append(chunk)
         }
+    }
 
-        let executionPolicy: AgentSkillExecutionPolicy? = if let policyObject = object["executionPolicy"],
-                                                             JSONSerialization.isValidJSONObject(policyObject),
-                                                             let policyData = try? JSONSerialization.data(withJSONObject: policyObject) {
-            try? decoder.decode(AgentSkillExecutionPolicy.self, from: policyData)
-        } else {
-            nil
+    private func readRemote(_ url: URL) async throws -> Data {
+        let (bytes, response) = try await urlSession.bytes(from: url)
+        defer { bytes.task.cancel() }
+        if let response = response as? HTTPURLResponse, !(200 ... 299).contains(response.statusCode) {
+            throw AgentDefinitionSourceError.unsupportedRemoteResponse(response.statusCode)
         }
+        guard response.expectedContentLength <= Int64(maximumDefinitionBytes) else { throw sizeError() }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < maximumDefinitionBytes else { throw sizeError() }
+            if data.count % 16_384 == 0 { try Task.checkCancellation() }
+            data.append(byte)
+        }
+        return data
+    }
 
-        return SkillDocument(
-            id: object["id"] as? String,
-            name: object["name"] as? String,
-            instructions: instructions,
-            executionPolicy: executionPolicy
-        )
+    private func sizeError() -> AgentDefinitionSourceError {
+        .definitionTooLarge(maximumBytes: maximumDefinitionBytes)
     }
 }

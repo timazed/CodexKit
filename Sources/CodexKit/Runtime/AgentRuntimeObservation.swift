@@ -54,11 +54,11 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
     private let lock = NSLock()
     private let subject = PassthroughSubject<AgentRuntimeObservation, Never>()
     private let threadsSubject = CurrentValueSubject<[AgentThread], Never>([])
-    private var threadSubjects: [String: CurrentValueSubject<AgentThread?, Never>] = [:]
-    private var messageSubjects: [String: CurrentValueSubject<[AgentMessage], Never>] = [:]
-    private var summarySubjects: [String: CurrentValueSubject<AgentThreadSummary?, Never>] = [:]
-    private var contextStateSubjects: [String: CurrentValueSubject<AgentThreadContextState?, Never>] = [:]
-    private var contextUsageSubjects: [String: CurrentValueSubject<AgentThreadContextUsage?, Never>] = [:]
+    private var threadSubjects = AgentObservationSubjects<AgentThread?>(initialValue: nil)
+    private var messageSubjects = AgentObservationSubjects<[AgentMessage]>(initialValue: [])
+    private var summarySubjects = AgentObservationSubjects<AgentThreadSummary?>(initialValue: nil)
+    private var contextStateSubjects = AgentObservationSubjects<AgentThreadContextState?>(initialValue: nil)
+    private var contextUsageSubjects = AgentObservationSubjects<AgentThreadContextUsage?>(initialValue: nil)
 
     public init() {}
 
@@ -149,19 +149,19 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
     func deactivateThread(id threadID: String, activeThreads: [AgentThread]) {
         var updates: [() -> Void] = []
         withLock {
-            if let threadSubject = threadSubjects.removeValue(forKey: threadID) {
+            if let threadSubject = threadSubjects.deactivate(threadID) {
                 updates.append { threadSubject.send(nil) }
             }
-            if let messageSubject = messageSubjects.removeValue(forKey: threadID) {
+            if let messageSubject = messageSubjects.deactivate(threadID) {
                 updates.append { messageSubject.send([]) }
             }
-            if let summarySubject = summarySubjects.removeValue(forKey: threadID) {
+            if let summarySubject = summarySubjects.deactivate(threadID) {
                 updates.append { summarySubject.send(nil) }
             }
-            if let contextStateSubject = contextStateSubjects.removeValue(forKey: threadID) {
+            if let contextStateSubject = contextStateSubjects.deactivate(threadID) {
                 updates.append { contextStateSubject.send(nil) }
             }
-            if let contextUsageSubject = contextUsageSubjects.removeValue(forKey: threadID) {
+            if let contextUsageSubject = contextUsageSubjects.deactivate(threadID) {
                 updates.append { contextUsageSubject.send(nil) }
             }
             updates.append { self.threadsSubject.send(activeThreads) }
@@ -174,48 +174,23 @@ public final class AgentRuntimeObservationCenter: @unchecked Sendable {
     }
 
     private func threadSubject(for threadID: String) -> CurrentValueSubject<AgentThread?, Never> {
-        if let subject = threadSubjects[threadID] {
-            return subject
-        }
-        let subject = CurrentValueSubject<AgentThread?, Never>(nil)
-        threadSubjects[threadID] = subject
-        return subject
+        threadSubjects.subject(for: threadID)
     }
 
     private func messageSubject(for threadID: String) -> CurrentValueSubject<[AgentMessage], Never> {
-        if let subject = messageSubjects[threadID] {
-            return subject
-        }
-        let subject = CurrentValueSubject<[AgentMessage], Never>([])
-        messageSubjects[threadID] = subject
-        return subject
+        messageSubjects.subject(for: threadID)
     }
 
     private func summarySubject(for threadID: String) -> CurrentValueSubject<AgentThreadSummary?, Never> {
-        if let subject = summarySubjects[threadID] {
-            return subject
-        }
-        let subject = CurrentValueSubject<AgentThreadSummary?, Never>(nil)
-        summarySubjects[threadID] = subject
-        return subject
+        summarySubjects.subject(for: threadID)
     }
 
     private func contextStateSubject(for threadID: String) -> CurrentValueSubject<AgentThreadContextState?, Never> {
-        if let subject = contextStateSubjects[threadID] {
-            return subject
-        }
-        let subject = CurrentValueSubject<AgentThreadContextState?, Never>(nil)
-        contextStateSubjects[threadID] = subject
-        return subject
+        contextStateSubjects.subject(for: threadID)
     }
 
     private func contextUsageSubject(for threadID: String) -> CurrentValueSubject<AgentThreadContextUsage?, Never> {
-        if let subject = contextUsageSubjects[threadID] {
-            return subject
-        }
-        let subject = CurrentValueSubject<AgentThreadContextUsage?, Never>(nil)
-        contextUsageSubjects[threadID] = subject
-        return subject
+        contextUsageSubjects.subject(for: threadID)
     }
 
     private func withLock<T>(_ body: () -> T) -> T {

@@ -20,6 +20,9 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let imageGenerationOutputFormat: String
     public let stateManagement: CodexResponsesStateManagement
     public let requestRetryPolicy: RequestRetryPolicy
+    public let maximumBufferedEvents: Int
+    public let maximumModelPasses: Int?
+    public let maximumResponseBytes: Int?
     public let logging: AgentLoggingConfiguration
 
     public var codexModel: CodexModel {
@@ -43,6 +46,9 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         imageGenerationOutputFormat: String = "png",
         stateManagement: CodexResponsesStateManagement = .clientManaged,
         requestRetryPolicy: RequestRetryPolicy = .default,
+        maximumBufferedEvents: Int = 64,
+        maximumModelPasses: Int? = 32,
+        maximumResponseBytes: Int? = 256 * 1_024 * 1_024,
         logging: AgentLoggingConfiguration = .disabled
     ) {
         self.baseURL = baseURL
@@ -61,6 +67,9 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.imageGenerationOutputFormat = imageGenerationOutputFormat
         self.stateManagement = stateManagement
         self.requestRetryPolicy = requestRetryPolicy
+        self.maximumBufferedEvents = max(1, min(maximumBufferedEvents, 4_096))
+        self.maximumModelPasses = maximumModelPasses.map { max(0, $0) }
+        self.maximumResponseBytes = maximumResponseBytes.map { max(0, $0) }
         self.logging = logging
     }
 
@@ -81,6 +90,9 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         imageGenerationOutputFormat: String = "png",
         stateManagement: CodexResponsesStateManagement = .clientManaged,
         requestRetryPolicy: RequestRetryPolicy = .default,
+        maximumBufferedEvents: Int = 64,
+        maximumModelPasses: Int? = 32,
+        maximumResponseBytes: Int? = 256 * 1_024 * 1_024,
         logging: AgentLoggingConfiguration = .disabled
     ) {
         self.init(
@@ -98,6 +110,9 @@ public struct CodexResponsesBackendConfiguration: Sendable {
             imageGenerationOutputFormat: imageGenerationOutputFormat,
             stateManagement: stateManagement,
             requestRetryPolicy: requestRetryPolicy,
+            maximumBufferedEvents: maximumBufferedEvents,
+            maximumModelPasses: maximumModelPasses,
+            maximumResponseBytes: maximumResponseBytes,
             logging: logging
         )
     }
@@ -309,11 +324,12 @@ private struct CodexResponsesTurnSession {
         let pendingToolResults = PendingToolResults()
         let control = CodexTurnControl()
         let cancellation = AgentTurnCancellationHandle()
+        let readiness = AgentTurnReadiness()
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
         let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
 
-        let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
-            continuation.yield(.turnStarted(turn))
+        let (events, continuation) = AgentEventChannel<AgentBackendEvent>.makeStream(capacity: configuration.maximumBufferedEvents)
+        do {
             let runner = CodexResponsesTurnRunner(
                 configuration: configuration,
                 logger: logger,
@@ -334,12 +350,14 @@ private struct CodexResponsesTurnSession {
                 rateLimitObserver: { snapshots in
                     await rateLimitStore.update(snapshots, accountID: session.account.id)
                 },
+                streamReady: { await readiness.resolve(.success(())) },
                 continuation: continuation
             )
 
             let producerTask = Task {
                 defer { cancellation.clear() }
                 do {
+                    try await continuation.yield(.turnStarted(turn))
                     let result = try await runner.run(
                         history: history,
                         providerContext: providerContext
@@ -355,14 +373,14 @@ private struct CodexResponsesTurnSession {
                         ]
                     )
 
-                    continuation.yield(
+                    try await continuation.yield(
                         .providerContextUpdated(
                             threadID: thread.id,
                             context: result.providerContext
                         )
                     )
 
-                    continuation.yield(
+                    try await continuation.yield(
                         .turnCompleted(
                             AgentTurnSummary(
                                 threadID: thread.id,
@@ -371,8 +389,10 @@ private struct CodexResponsesTurnSession {
                             )
                         )
                     )
+                    await pendingToolResults.close()
                     continuation.finish()
                 } catch {
+                    await readiness.resolve(.failure(error))
                     logger.error(
                         .network,
                         "Backend turn failed.",
@@ -383,15 +403,12 @@ private struct CodexResponsesTurnSession {
                         ]
                     )
                     await control.close()
+                    await pendingToolResults.close()
                     continuation.finish(throwing: error)
                 }
             }
             cancellation.install { producerTask.cancel() }
-            continuation.onTermination = { @Sendable termination in
-                if case .cancelled = termination {
-                    producerTask.cancel()
-                }
-            }
+            continuation.onCancellation { producerTask.cancel() }
         }
         stream = AgentTurnStream(events: events, steer: { message in
             guard message.threadID == thread.id, message.role == .user,
@@ -399,8 +416,11 @@ private struct CodexResponsesTurnSession {
                 throw AgentRuntimeError.invalidMessageContent()
             }
             try await control.steer(message)
-        }, interrupt: { cancellation.cancel() }) { result, invocationID in
-            await pendingToolResults.resolve(result, for: invocationID)
+        }, interrupt: {
+            cancellation.cancel()
+            Task { await readiness.resolve(.failure(CancellationError())) }
+        }, waitUntilReady: { try await readiness.wait() }) { result, invocationID in
+            try await pendingToolResults.resolve(result, for: invocationID)
         }
     }
 }

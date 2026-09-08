@@ -7,8 +7,10 @@ extension AgentRuntime {
         from stream: AsyncThrowingStream<AgentEvent, Error>
     ) async throws -> AgentMessage {
         var latestAssistantMessage: AgentMessage?
+        var didComplete = false
 
         for try await event in stream {
+            if case .turnCompleted = event { didComplete = true }
             guard case let .messageCommitted(message) = event,
                   message.role == .assistant else {
                 continue
@@ -17,6 +19,7 @@ extension AgentRuntime {
         }
 
         try Task.checkCancellation()
+        guard didComplete else { throw AgentRuntimeError.turnSummaryMissing() }
         guard let latestAssistantMessage else {
             throw AgentRuntimeError.assistantResponseMissing()
         }
@@ -154,10 +157,6 @@ extension AgentRuntime {
         }
 
         try Task.checkCancellation()
-        guard let latestAssistantMessage else {
-            throw AgentRuntimeError.assistantResponseMissing()
-        }
-
-        return latestAssistantMessage
+        throw AgentRuntimeError.turnSummaryMissing()
     }
 }

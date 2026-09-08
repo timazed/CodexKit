@@ -138,7 +138,7 @@ struct StreamMessageContent: Decodable, Sendable {
         imageAttachment = Self.parseImageAttachment(from: object)
     }
 
-    private static func parseImageAttachment(from object: [String: JSONValue]) -> AgentImageAttachment? {
+    static func parseImageAttachment(from object: [String: JSONValue]) -> AgentImageAttachment? {
         if let dataURL = object["image_url"]?.stringValue,
            let attachment = AgentImageAttachment(dataURLString: dataURL) {
             return attachment
@@ -262,6 +262,8 @@ struct StreamInputTokenDetails: Decodable {
 
 struct StreamErrorPayload: Decodable {
     let message: String?
+    let code: String?
+    let type: String?
 }
 
 struct StreamIncompleteDetails: Decodable {

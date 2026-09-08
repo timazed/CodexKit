@@ -15,7 +15,7 @@ public enum ToolRegistryError: Error, LocalizedError, Sendable {
 }
 
 actor ToolRegistry {
-    private struct Entry: Sendable {
+    struct Entry: Sendable {
         let definition: ToolDefinition
         let executor: AnyToolExecutor
     }
@@ -75,31 +75,25 @@ actor ToolRegistry {
             .sorted { $0.name < $1.name }
     }
 
-    func execute(
-        _ invocation: ToolInvocation,
-        session: ChatGPTSession?
-    ) async -> ToolResultEnvelope {
-        guard let entry = entries[invocation.toolName] else {
-            return .failure(
-                invocation: invocation,
-                message: "No tool named \(invocation.toolName) is registered."
-            )
-        }
+    /// Definition and executor are captured atomically for the entire turn.
+    func snapshot() -> [String: Entry] { entries }
+}
 
+extension ToolRegistry.Entry {
+    func execute(_ invocation: ToolInvocation, session: ChatGPTSession?) async -> ToolResultEnvelope {
         do {
-            return try await entry.executor.execute(
+            try Task.checkCancellation()
+            let result = try await executor.execute(
                 invocation: invocation,
-                context: ToolExecutionContext(
-                    threadID: invocation.threadID,
-                    turnID: invocation.turnID,
-                    session: session
-                )
+                context: ToolExecutionContext(threadID: invocation.threadID,
+                    turnID: invocation.turnID, session: session)
             )
+            guard result.invocationID == invocation.id, result.toolName == invocation.toolName else {
+                return .failure(invocation: invocation, message: "The tool executor returned a result for a different invocation or tool.")
+            }
+            return result
         } catch {
-            return .failure(
-                invocation: invocation,
-                message: error.localizedDescription
-            )
+            return .failure(invocation: invocation, message: error.localizedDescription)
         }
     }
 }

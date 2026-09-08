@@ -113,9 +113,13 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
                 return cachedSnapshot(updated, stale: false)
             }
             guard (200..<300).contains(response.statusCode) else {
-                if response.statusCode == 401 || response.statusCode == 403 { throw AgentRuntimeError.unauthorized() }
-                throw AgentRuntimeError(code: "models_http_status_\(response.statusCode)",
-                                        message: "Model discovery failed with status \(response.statusCode).")
+                var errorBody = Data()
+                for try await byte in bytes {
+                    if errorBody.count == AgentStoreLimits.maximumResponseErrorBodyByteCount { break }
+                    errorBody.append(byte)
+                }
+                throw AgentRuntimeError.httpFailure(response: response, body: errorBody, prefix: "models",
+                    message: "Model discovery failed with status \(response.statusCode).")
             }
             var data = Data()
             for try await byte in bytes {

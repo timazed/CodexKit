@@ -44,6 +44,8 @@ Personas follow runtime → thread → turn precedence. A thread persona replace
 
 `CodexKit` skills are behavior modules, not just tone layers. They can carry both instructions and execution policy (tool allow/require/sequence/call limits).
 
+An omitted or `nil` `allowedToolNames` leaves tools unrestricted by that skill. An explicit empty array disallows every tool. Multiple skill allowlists are intersected, and tool-call limits must be nonnegative.
+
 ```swift
 let healthCoachSkill = AgentSkill(
     id: "health_coach",
@@ -126,6 +128,28 @@ For skill sources:
 
 - JSON supports `{ "id": "...", "name": "...", "instructions": "...", "executionPolicy": { ... } }`
 - plain text is supported when you pass `id` and `name` in `registerSkill(from:id:name:)`
+
+The only supported JSON root fields are `id`, `name`, `instructions`, and `executionPolicy`. Unknown fields, including `executionPolciy` or an unrecognized `metadata` object, throw `invalid_skill_definition`. There is no permissive metadata extension namespace.
+
+A skill source beginning with `{` after leading whitespace (and an optional UTF-8 byte-order mark) is treated as a JSON object definition. Invalid JSON, incorrect field types, unknown root or execution-policy keys, invalid tool names, and negative tool-call limits throw `AgentDefinitionSourceError` with code `invalid_skill_definition`. Such definitions never fall back to plain text or silently lose their policy. An absent, `null`, or empty execution-policy object remains valid.
+
+Both persona and skill sources default to a **1 MiB (1,048,576 byte)** limit. Files and remote responses are read with this limit before UTF-8 or JSON decoding; an oversized body throws `definition_too_large`, including when a server omits or understates `Content-Length`. Configure a larger positive limit when your definitions need it:
+
+```swift
+let definitionLoader = AgentDefinitionSourceLoader(
+    maximumDefinitionBytes: 2 * 1_024 * 1_024
+)
+
+let configuration = AgentRuntime.Configuration(
+    sessionProvider: sessionProvider,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore,
+    definitionSourceLoader: definitionLoader
+)
+```
+
+The same limit applies when calling the loader directly. Zero or negative limits throw `invalid_definition_limit` on loading. File sources must be regular local files, and cancellation stops reading or downloading.
 
 ## Debugging Instruction Resolution
 

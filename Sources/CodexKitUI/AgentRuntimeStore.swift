@@ -18,6 +18,9 @@ public final class AgentRuntimeStore {
 
     private let runtime: AgentRuntime
     private var activeThreadID: String?
+    private var selectionGeneration = UUID()
+    private var accountGeneration = UUID()
+    private var sendingThreadIDs: Set<String> = []
     private let restoredThreadLimit = 50
 
     public init(
@@ -39,70 +42,83 @@ public final class AgentRuntimeStore {
     }
 
     public func restore() async {
+        let selection = beginSelection(id: nil)
+        let account = accountGeneration
         do {
             _ = try await runtime.restore()
-            threads = try await loadThreadMetadata()
-            session = await runtime.currentSession()
+            let restoredThreads = try await loadThreadMetadata()
+            let restoredSession = await runtime.currentSession()
             let activeThreads = await runtime.activeThreads()
+            guard selectionGeneration == selection, accountGeneration == account else { return }
+            threads = restoredThreads
+            session = restoredSession
             if let selectedThread = activeThreads.first {
                 activeThreadID = selectedThread.id
-                messages = await runtime.messages(for: selectedThread.id)
-            } else {
-                activeThreadID = nil
-                messages = []
+                await refreshMessages(in: selectedThread.id, account: account)
             }
         } catch {
-            lastError = error.localizedDescription
+            if selectionGeneration == selection, accountGeneration == account { lastError = error.localizedDescription }
         }
     }
 
     public func signIn() async {
+        accountGeneration = UUID()
+        let account = accountGeneration
         do {
-            session = try await runtime.signIn()
-            threads = try await loadThreadMetadata()
+            let signedIn = try await runtime.signIn()
+            let metadata = try await loadThreadMetadata()
+            guard accountGeneration == account else { return }
+            session = signedIn
+            threads = metadata
         } catch {
-            lastError = error.localizedDescription
+            if accountGeneration == account { lastError = error.localizedDescription }
         }
     }
 
     public func signOut() async {
+        accountGeneration = UUID()
+        let account = accountGeneration
+        _ = beginSelection(id: nil)
+        session = nil
+        rateLimits = []
+        threads = []
         do {
             try await runtime.signOut()
-            session = nil
-            rateLimits = []
-            latestProgress = nil
-            threads = []
-            messages = []
-            streamingText = ""
-            activeThreadID = nil
         } catch {
-            lastError = error.localizedDescription
+            if accountGeneration == account { lastError = error.localizedDescription }
         }
     }
 
     public func createThread(title: String? = nil) async {
+        let selection = beginSelection(id: nil)
+        let account = accountGeneration
         do {
             let thread = try await runtime.createThread(title: title)
-            threads = try await loadThreadMetadata()
+            let metadata = try await loadThreadMetadata()
+            guard selectionGeneration == selection, accountGeneration == account else { return }
+            threads = metadata
             activeThreadID = thread.id
-            messages = await runtime.messages(for: thread.id)
+            await refreshMessages(in: thread.id, account: account)
         } catch {
-            lastError = error.localizedDescription
+            if selectionGeneration == selection, accountGeneration == account { lastError = error.localizedDescription }
         }
     }
 
     public func activateThread(id: String) async {
+        let selection = beginSelection(id: id)
+        let account = accountGeneration
         do {
             let activeThreads = await runtime.activeThreads()
+            guard selectionGeneration == selection, accountGeneration == account else { return }
             if !activeThreads.contains(where: { $0.id == id }) {
                 _ = try await runtime.resumeThread(id: id)
-                threads = try await loadThreadMetadata()
             }
-            activeThreadID = id
-            messages = await runtime.messages(for: id)
-            streamingText = ""
+            let metadata = try await loadThreadMetadata()
+            guard selectionGeneration == selection, accountGeneration == account else { return }
+            threads = metadata
+            await refreshMessages(in: id, account: account)
         } catch {
-            lastError = error.localizedDescription
+            if selectionGeneration == selection, accountGeneration == account { lastError = error.localizedDescription }
         }
     }
 
@@ -119,6 +135,9 @@ public final class AgentRuntimeStore {
             lastError = "No active thread is available."
             return
         }
+        guard sendingThreadIDs.insert(activeThreadID).inserted else { return }
+        defer { sendingThreadIDs.remove(activeThreadID) }
+        let account = accountGeneration
 
         streamingText = ""
         latestProgress = nil
@@ -128,26 +147,35 @@ public final class AgentRuntimeStore {
                 Request(text: text),
                 in: activeThreadID
             )
-            messages = await runtime.messages(for: activeThreadID)
-            try await consume(stream, in: activeThreadID)
+            await refreshMessages(in: activeThreadID, account: account)
+            try await consume(stream, in: activeThreadID, account: account)
         } catch is CancellationError {
-            streamingText = ""
+            if self.activeThreadID == activeThreadID, accountGeneration == account { streamingText = "" }
         } catch {
-            lastError = error.localizedDescription
+            if self.activeThreadID == activeThreadID, accountGeneration == account { lastError = error.localizedDescription }
         }
     }
 
     public func steer(_ text: String) async {
-        guard let activeThreadID, let turnID = await runtime.activeTurnID(in: activeThreadID) else { return }
+        let selection = selectionGeneration
+        let account = accountGeneration
+        guard let activeThreadID, let turnID = await runtime.activeTurnID(in: activeThreadID),
+              selectionGeneration == selection, accountGeneration == account else { return }
         do {
             try await runtime.steer(text, in: activeThreadID, expectedTurnID: turnID)
-        } catch { lastError = error.localizedDescription }
+        } catch {
+            if selectionGeneration == selection, accountGeneration == account { lastError = error.localizedDescription }
+        }
     }
 
     public func interrupt() async {
         guard let activeThreadID else { return }
+        let selection = selectionGeneration
+        let account = accountGeneration
         do { try await runtime.interrupt(in: activeThreadID) }
-        catch { lastError = error.localizedDescription }
+        catch {
+            if selectionGeneration == selection, accountGeneration == account { lastError = error.localizedDescription }
+        }
     }
 
     public func dismissError() {
@@ -162,9 +190,11 @@ public final class AgentRuntimeStore {
 
     private func consume(
         _ stream: AsyncThrowingStream<AgentEvent, Error>,
-        in activeThreadID: String
+        in threadID: String,
+        account: UUID
     ) async throws {
         for try await event in stream {
+            guard accountGeneration == account else { continue }
             switch event {
             case let .threadStarted(thread):
                 threads = [thread] + threads.filter { $0.id != thread.id }
@@ -179,17 +209,19 @@ public final class AgentRuntimeStore {
                 }
 
             case let .progress(progress):
-                latestProgress = progress
+                if activeThreadID == threadID { latestProgress = progress }
             case let .rateLimitsUpdated(snapshots):
                 for snapshot in snapshots {
                     rateLimits.removeAll { $0.limitID == snapshot.limitID }
                     rateLimits.append(snapshot)
                 }
             case .turnInterrupted:
-                latestProgress = nil
-                streamingText = ""
-                messages = await runtime.messages(for: activeThreadID)
-                threads = try await loadThreadMetadata()
+                if activeThreadID == threadID {
+                    latestProgress = nil
+                    streamingText = ""
+                }
+                await refreshMessages(in: threadID, account: account)
+                try await refreshThreadMetadata(account: account)
             case .turnStarted,
                  .approvalRequested,
                  .approvalResolved,
@@ -198,22 +230,52 @@ public final class AgentRuntimeStore {
                 break
 
             case let .assistantMessageDelta(_, _, delta):
-                streamingText.append(delta)
+                if activeThreadID == threadID { streamingText.append(delta) }
 
             case let .messageCommitted(message):
-                messages.append(message)
+                guard activeThreadID == threadID else { continue }
+                if let index = messages.firstIndex(where: { $0.id == message.id }) {
+                    messages[index] = message
+                } else {
+                    messages.append(message)
+                }
                 if message.role == .assistant {
                     streamingText = ""
                 }
 
             case .turnCompleted:
-                latestProgress = nil
-                messages = await runtime.messages(for: activeThreadID)
-                threads = try await loadThreadMetadata()
+                if activeThreadID == threadID {
+                    latestProgress = nil
+                    streamingText = ""
+                }
+                await refreshMessages(in: threadID, account: account)
+                try await refreshThreadMetadata(account: account)
 
             case let .turnFailed(error):
-                lastError = error.message
+                if activeThreadID == threadID { lastError = error.message }
             }
         }
+    }
+
+    private func beginSelection(id: String?) -> UUID {
+        selectionGeneration = UUID()
+        activeThreadID = id
+        messages = []
+        streamingText = ""
+        latestProgress = nil
+        return selectionGeneration
+    }
+
+    private func refreshMessages(in threadID: String, account: UUID) async {
+        guard activeThreadID == threadID, accountGeneration == account else { return }
+        let selection = selectionGeneration
+        let snapshot = await runtime.messages(for: threadID)
+        guard activeThreadID == threadID, selectionGeneration == selection, accountGeneration == account else { return }
+        messages = snapshot
+    }
+
+    private func refreshThreadMetadata(account: UUID) async throws {
+        let metadata = try await loadThreadMetadata()
+        if accountGeneration == account { threads = metadata }
     }
 }

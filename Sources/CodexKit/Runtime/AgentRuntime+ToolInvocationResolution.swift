@@ -4,64 +4,9 @@ extension AgentRuntime {
     func resolveToolInvocation(
         _ invocation: ToolInvocation,
         session: ChatGPTSession,
-        storesTurnState: Bool = true,
-        continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
-    ) async throws -> ToolResultEnvelope {
-        try await resolveToolInvocationImpl(
-            invocation,
-            session: session,
-            storesTurnState: storesTurnState,
-            yieldThreadStatusChanged: { threadID, status in
-                continuation.yield(.threadStatusChanged(threadID: threadID, status: status))
-            },
-            yieldApprovalRequested: { approval in
-                continuation.yield(.approvalRequested(approval))
-            },
-            yieldApprovalResolved: { resolution in
-                continuation.yield(.approvalResolved(resolution))
-            }
-        )
-    }
-
-    func resolveToolInvocation<Output: Sendable>(
-        _ invocation: ToolInvocation,
-        session: ChatGPTSession,
-        storesTurnState: Bool = true,
-        continuation: AsyncThrowingStream<AgentStructuredStreamEvent<Output>, Error>.Continuation
-    ) async throws -> ToolResultEnvelope {
-        try await resolveToolInvocationImpl(
-            invocation,
-            session: session,
-            storesTurnState: storesTurnState,
-            yieldThreadStatusChanged: { threadID, status in
-                continuation.yield(.threadStatusChanged(threadID: threadID, status: status))
-            },
-            yieldApprovalRequested: { approval in
-                continuation.yield(.approvalRequested(approval))
-            },
-            yieldApprovalResolved: { resolution in
-                continuation.yield(.approvalResolved(resolution))
-            }
-        )
-    }
-
-    func resolveToolInvocation(
-        _ invocation: ToolInvocation, session: ChatGPTSession, storesTurnState: Bool,
-        sink: AgentToolEventSink
-    ) async throws -> ToolResultEnvelope {
-        try await resolveToolInvocationImpl(invocation, session: session, storesTurnState: storesTurnState,
-            yieldThreadStatusChanged: { sink.yield(.threadStatusChanged(threadID: $0, status: $1)) },
-            yieldApprovalRequested: { sink.yield(.approvalRequested($0)) },
-            yieldApprovalResolved: { sink.yield(.approvalResolved($0)) })
-    }
-
-    private func resolveToolInvocationImpl(
-        _ invocation: ToolInvocation,
-        session: ChatGPTSession,
+        registration: ToolRegistry.Entry?,
         storesTurnState: Bool,
-        yieldThreadStatusChanged: (String, AgentThreadStatus) -> Void,
-        yieldApprovalRequested: (ApprovalRequest) -> Void,
-        yieldApprovalResolved: (ApprovalResolution) -> Void
+        sink: AgentToolEventSink
     ) async throws -> ToolResultEnvelope {
         logger.info(
             .tools,
@@ -72,7 +17,7 @@ extension AgentRuntime {
                 "tool_name": invocation.toolName
             ]
         )
-        if let definition = await toolRegistry.definition(named: invocation.toolName),
+        if let definition = registration?.definition,
            definition.approvalPolicy == .requiresApproval {
             let approval = ApprovalRequest(
                 threadID: invocation.threadID,
@@ -105,9 +50,9 @@ extension AgentRuntime {
                     for: invocation.threadID
                 )
                 try await setThreadStatus(.waitingForApproval, for: invocation.threadID)
-                yieldThreadStatusChanged(invocation.threadID, .waitingForApproval)
+                try await sink.yield(.threadStatusChanged(threadID: invocation.threadID, status: .waitingForApproval))
             }
-            yieldApprovalRequested(approval)
+            try await sink.yield(.approvalRequested(approval))
             logger.info(
                 .approvals,
                 "Tool invocation requires approval.",
@@ -141,7 +86,7 @@ extension AgentRuntime {
                 )
                 try setPendingState(nil, for: invocation.threadID)
             }
-            yieldApprovalResolved(resolution)
+            try await sink.yield(.approvalResolved(resolution))
             logger.info(
                 .approvals,
                 "Tool approval resolved.",
@@ -206,10 +151,16 @@ extension AgentRuntime {
                 for: invocation.threadID
             )
             try await setThreadStatus(.waitingForToolResult, for: invocation.threadID)
-            yieldThreadStatusChanged(invocation.threadID, .waitingForToolResult)
+            try await sink.yield(.threadStatusChanged(threadID: invocation.threadID, status: .waitingForToolResult))
         }
 
-        let result = await toolRegistry.execute(invocation, session: session)
+        try Task.checkCancellation()
+        let result: ToolResultEnvelope
+        if let registration {
+            result = await registration.execute(invocation, session: session)
+        } else {
+            result = .failure(invocation: invocation, message: "No tool named \(invocation.toolName) was registered for this turn.")
+        }
         try Task.checkCancellation()
         let resultDate = Date()
         logger.info(

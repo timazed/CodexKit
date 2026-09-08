@@ -222,11 +222,15 @@ Consecutive independent calls from the same batch may overlap when their tool de
 
 ## Turn control and discovery
 
-One persistent turn may run on a thread at a time. Hosts capture its ID from `turnStarted` or `activeTurnID(in:)`, then use `steer(_:images:in:expectedTurnID:)` to queue input for the next model request, or `interrupt(in:expectedTurnID:)` to cancel it. Interruption records an interrupted turn, returns the thread to idle, clears pending waits, and ends the stream with `CancellationError`. Ephemeral turns remain independent.
+Applications can supply `AgentSessionProviding` for host-managed credentials. `AgentExecution` handles add explicit ownership of persistent and ephemeral work, and observation publishers offer bounded async sequences alongside Combine. See [SDK integration](sdk-integration.md) for these interfaces and typed HTTP retry metadata.
+
+One persistent turn may run on a thread at a time. Manual compaction and activation share the same operation reservation: conflicting calls report `thread_busy`. Compaction also rejects a changed context before installing its marker or saving a result. Deactivation during an operation is deferred until it finishes; runtime restoration reports `runtime_busy` while an operation or write is pending. Hosts capture its ID from `turnStarted` or `activeTurnID(in:)`, then use `steer(_:images:in:expectedTurnID:)` to queue input for the next model request, or `interrupt(in:expectedTurnID:)` to cancel it. Interruption records an interrupted turn, returns the thread to idle, clears pending waits, and ends the stream with `CancellationError`. Ephemeral turns remain independent.
 
 `listModels(policy:)` delegates to `AgentBackendModelDiscovering` when supported and otherwise returns bundled metadata. The built-in Responses backend caches account catalogs in memory, supports ETag refresh, and exposes stale/bundled fallback provenance. `rateLimits()` returns the latest observed account limits without issuing a quota request. Typed identifiers include `CodexModel.gpt6Astra`; strings remain open to future server-provided identifiers.
 
-The built-in Responses backend requires `response.completed` before successful completion. Premature stream endings enter the existing safe-retry path; completed messages or tool effects prevent unsafe replay.
+The built-in Responses backend requires `response.completed` before successful completion. Premature stream endings enter the existing safe-retry path only before any visible output or tool effects. The runtime separately requires a valid `turnCompleted` from custom backends.
+
+HTTP events, backend events, and public runtime events use bounded asynchronous queues. Producers await capacity, while a small reserved tail preserves terminal lifecycle events. Runtime tool/time budgets and backend model-pass/response budgets bound continued work. See [messaging limits](messaging.md#event-buffering-and-execution-limits) for defaults and ownership semantics, and the [performance verification](performance-2026-09-07.md) for measured parser results and capacity coverage.
 
 See [Runtime progress, tools, and turn control](upstream-runtime-features.md) for examples and compatibility details.
 
@@ -234,10 +238,10 @@ See [Runtime progress, tools, and turn control](upstream-runtime-features.md) fo
 
 For a normal production iOS app, the recommended live stack is:
 
-- `ChatGPTDeviceCodeAuthProvider`
+- `ChatGPTAuthProvider` configured for device-code authentication
 - `KeychainSessionSecureStore`
 - `CodexResponsesBackend`
-- `FileRuntimeStateStore`
+- `SQLiteRuntimeStateStore` from `CodexKitSQLite`
 - `ApprovalInbox` and `DeviceCodePromptCoordinator` from `CodexKitUI`
 - `AgentRuntimeStore` when the app wants a ready-made SwiftUI-friendly state model
 
@@ -260,3 +264,7 @@ The demo app validates the intended setup:
 Follow the [demo walkthrough](../DemoApp/README.md#try-the-runtime-features) to exercise these paths.
 
 The demo target should be treated as example integration code, not as required plumbing for host apps.
+
+SQLite is the default scalable persistence choice; Realm is also available for apps using that adapter. `FileRuntimeStateStore` remains useful for small snapshots and simple integrations, but rewrites the full snapshot for incremental mutations.
+
+Plain and structured streams share one internal prepared-turn context and lifecycle consumer. Structured validation is an additional event handler. Each turn snapshots its tool registrations before opening the backend request; subsequent `registerTool`/`replaceTool` calls affect future turns. The snapshot binds approval policy, parallel-execution policy, and executor together.

@@ -221,6 +221,10 @@ package struct AgentLogger: Sendable {
         configuration.allows(level: .verbose, category: category)
     }
 
+    package func isEnabled(_ level: AgentLogLevel, for category: AgentLogCategory) -> Bool {
+        configuration.allows(level: level, category: category)
+    }
+
     private func log(
         _ level: AgentLogLevel,
         _ category: AgentLogCategory,

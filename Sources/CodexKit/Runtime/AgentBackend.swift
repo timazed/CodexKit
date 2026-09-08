@@ -30,6 +30,7 @@ public struct AgentTurnStream: Sendable {
     public let events: AsyncThrowingStream<AgentBackendEvent, Error>
     private let steerHandler: (@Sendable (AgentMessage) async throws -> Void)?
     private let interruptHandler: @Sendable () -> Void
+    private let readinessHandler: @Sendable () async throws -> Void
     public var supportsSteering: Bool { steerHandler != nil }
     private let submitToolResultHandler: @Sendable (ToolResultEnvelope, String) async throws -> Void
 
@@ -44,15 +45,29 @@ public struct AgentTurnStream: Sendable {
         events: AsyncThrowingStream<AgentBackendEvent, Error>,
         steer: (@Sendable (AgentMessage) async throws -> Void)?,
         interrupt: @escaping @Sendable () -> Void = {},
+        waitUntilReady: @escaping @Sendable () async throws -> Void = {},
         submitToolResult: @escaping @Sendable (ToolResultEnvelope, String) async throws -> Void = { _, _ in }
     ) {
         self.steerHandler = steer
         self.interruptHandler = interrupt
+        self.readinessHandler = waitUntilReady
         self.events = events
         self.submitToolResultHandler = submitToolResult
     }
 
     public func interrupt() { interruptHandler() }
+
+    /// Waits until the initial request is accepted. Custom backends can supply
+    /// a startup handler; the default considers an already-created stream ready.
+    public func waitUntilReady() async throws {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await readinessHandler()
+            try Task.checkCancellation()
+        } onCancel: {
+            interruptHandler()
+        }
+    }
 
     public func steer(_ message: AgentMessage) async throws {
         guard let steerHandler else {
@@ -62,6 +77,9 @@ public struct AgentTurnStream: Sendable {
     }
 
     public func submitToolResult(_ result: ToolResultEnvelope, for invocationID: String) async throws {
+        guard result.invocationID == invocationID else {
+            throw AgentRuntimeError(code: "invalid_tool_result", message: "The result must identify the requested invocation.")
+        }
         try await submitToolResultHandler(result, invocationID)
     }
 }

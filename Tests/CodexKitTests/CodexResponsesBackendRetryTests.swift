@@ -57,7 +57,9 @@ extension CodexResponsesBackendTests {
         let turnStream = try await backend.beginTurn(thread: AgentThread(id: "thread-no-retry"), history: [], message: Request(text: "Hi"), instructions: "Resolved instructions", responseFormat: nil, streamedStructuredOutput: nil, tools: [], session: session)
 
         await XCTAssertThrowsErrorAsync(try await drainEvents(turnStream.events)) { error in
-            XCTAssertEqual(error as? AgentRuntimeError, AgentRuntimeError(code: "responses_http_status_400", message: "The ChatGPT responses request failed with status 400: {\"error\":\"bad request\"}"))
+            XCTAssertEqual(error as? AgentRuntimeError, AgentRuntimeError(code: "responses_http_status_400",
+                message: "The ChatGPT responses request failed with status 400: {\"error\":\"bad request\"}",
+                http: .init(statusCode: 400), retry: .init(attempt: 1, maximumAttempts: 3, isRetryable: false, safety: .beforeOutput)))
         }
     }
 

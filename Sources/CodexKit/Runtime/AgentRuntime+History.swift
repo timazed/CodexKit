@@ -192,6 +192,13 @@ extension AgentRuntime {
             metadata: metadata
         )
         state.historyByThread[threadID, default: []].append(record)
+        if state.partiallyLoadedThreadIDs.contains(threadID) {
+            let limit = min(max(0, threadActivationPolicy.maximumHistoryRecordCount),
+                AgentStoreLimits.maximumActivationHistoryRecordCount)
+            if let count = state.historyByThread[threadID]?.count, count > limit {
+                state.historyByThread[threadID]?.removeFirst(count - limit)
+            }
+        }
         state.nextHistorySequenceByThread[threadID] = try AgentHistorySequence.next(
             after: nextSequence,
             threadID: threadID

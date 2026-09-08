@@ -17,6 +17,34 @@ For most apps, there are four common send paths:
 - `send(..., response:)`
   Return a typed `Decodable` value from a structured response.
 
+### Event buffering and execution limits
+
+`AgentRuntime.Configuration.maximumBufferedEvents` defaults to 64 and is clamped to 1–4,096. The runtime uses a bounded, lossless queue: when a reader pauses, producers await capacity. Completion and failure can reserve up to four additional lifecycle events so a full queue cannot hide the terminal outcome. Events already admitted to the queue retain their order. The built-in backend and HTTP event parser use the same policy, configured separately through `CodexResponsesBackendConfiguration.maximumBufferedEvents`.
+
+A caller cancelled before `start`, `stream`, or `send` begins preparation cannot reserve a thread, persist input, or launch backend work. If cancellation arrives during storage preparation, accepted input is retained, the turn is recorded as interrupted, and the thread returns to idle. A startup waiter can leave promptly while a disk lock is unavailable; accepted writes and interruption records then flush in order when storage is available. A commit already underway finishes safely. See [storage cancellation](persistence.md#cancellation-and-commits). Cancelling a readiness waiter for an accepted execution only cancels that waiter.
+
+Consume each stream from one task. Cancelling that consumer or releasing the stream and its iterator cancels its producer. If you keep the stream alive after leaving a loop, use `runtime.interrupt(in:)` to end a persistent turn. `send` consumes the stream for you. Custom backends are responsible for their own internal buffering; these bounds cover SDK-owned event queues, not URLSession internals or total process memory.
+
+Runtime turns now default to 128 requested tool calls and 300 seconds:
+
+```swift
+let runtime = try AgentRuntime(configuration: .init(
+    authProvider: authProvider,
+    secureStore: secureStore,
+    backend: backend,
+    approvalPresenter: approvalPresenter,
+    stateStore: stateStore,
+    maximumBufferedEvents: 64,
+    turnLimits: .init(maximumToolCalls: 128, maximumDuration: 300)
+))
+```
+
+These limits apply to plain, structured, and ephemeral turns. A tool batch must fit the remaining budget before any executor in that batch starts; requested calls count even when denied or satisfied from stored results. The duration runs from producer launch until a valid completion is accepted, including session resolution, approvals, tools, and waiting for event consumers. Final persistence and cleanup complete afterward. Cancellation is cooperative: custom backends, tools, and activity providers must honor it for prompt shutdown.
+
+Pass `nil` for either limit to remove it, or `turnLimits: .unlimited` to remove both runtime budgets. Invalid tool counts or non-finite/nonpositive durations fail runtime construction; finite durations may be at most one year. The [backend's model-pass and response limits](backend-configuration.md#response-and-model-pass-limits) remain independently configured.
+
+Budget exhaustion emits `turnFailed`, throws an `AgentRuntimeError`, clears pending waits, and marks persistent turns failed. Inspect `error.executionLimit` for `.toolCalls`, `.duration`, `.modelPasses`, `.responseBytes`, or `.responseItems`. Ordinary user cancellation still records interruption. Increasing the duration is appropriate for workflows that intentionally wait longer for human approval.
+
 ### Typed request context
 
 If you need to send host-app context or fulfillment policy separately from human prompt text, use `Request` with `context` and `options`. CodexKit keeps both in developer-message space so the model can see them without pretending they are user-authored text.
@@ -269,7 +297,7 @@ for try await event in stream {
 
 The structured payload is delivered out-of-band from assistant prose. CodexKit keeps request-time structured metadata separate from runtime instructions, strips its internal framing before emitting text deltas or committed assistant messages, and persists the final committed payload metadata with the assistant message for later restore/inspection.
 
-`CodexKit` sends that through the OpenAI Responses structured-output path and stores the assistant's final JSON reply in thread history like any other assistant turn.
+One-shot structured replies use the Responses `json_schema` format. Streamed structured replies use a framed JSON block alongside prose. Both paths validate the declared schema locally before accepting output.
 
 If you need something more specialized, `AgentStructuredOutputFormat` still supports a raw-schema escape hatch via `rawSchema: JSONValue`.
 
@@ -329,3 +357,22 @@ for image in message.images {
     render(data: image.data, mimeType: image.mimeType)
 }
 ```
+
+### Structured validation and backend completion
+
+`send(..., response:)`, `sendWithSummary(..., response:)`, and `stream(..., response:)` check the declared schema before starting a turn. It validates JSON before decoding into the Swift output type or storing/emitting a structured commit. This enforces enums, required properties, and `additionalProperties`, even when Swift decoding alone would accept the value. Partial snapshots relax missing-required and minimum-size checks; type, enum, additional-property, and maximum-size checks still apply. A partial must also decode into the requested Swift type to be emitted.
+
+One-shot replies also decode into the requested Swift type before the assistant message is saved or the turn is marked successful. Schema or decoding failures fail the turn and do not commit the invalid reply. Explicit `.commentary` messages may contain prose; at least one valid non-commentary response is required. The caller receives the already-decoded value, preserving custom decoder behavior and integer precision. One-shot JSON payloads are limited to 4 MiB.
+
+All `JSONSchema` builder cases are supported. Raw schemas use the same supported subset for one-shot and streaming output, including Boolean schemas and these assertion keywords:
+
+- `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`
+- `anyOf`, `oneOf`, `allOf`, `not`, `$defs`, `definitions`, and root-local JSON-pointer `$ref`
+- `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
+- `minLength`, `maxLength`, `minItems`, `maxItems`, `uniqueItems`, `minProperties`, `maxProperties`
+
+Common annotations (`$schema`, `$id`, `$comment`, `title`, `description`, `default`, `examples`, `deprecated`, `readOnly`, `writeOnly`) do not assert validity. Other keywords, including `pattern`, `format`, and remote references, are rejected rather than silently ignored. This is a supported subset, not a complete JSON Schema implementation. Validation has nesting/work bounds; the built-in framed-stream parser also caps a structured payload at 4 MiB and avoids decoding every incomplete prefix.
+
+Custom backends must emit a valid `turnCompleted` event for a successful turn. EOF alone is insufficient, including after an assistant message: `send` and both stream forms fail with `turn_summary_missing`, and persistent turns move to failed status.
+
+Backends that start network requests asynchronously can supply `waitUntilReady` in the full `AgentTurnStream` initializer. Resolve readiness once the initial request is accepted, before publishing response content or starting tool effects. Fail readiness only when it is safe for the runtime to recover/retry the initial request. Once ready, later failures belong to the event stream and must not cause whole-turn replay. The default readiness handler returns immediately for existing custom backends.

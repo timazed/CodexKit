@@ -29,6 +29,10 @@ extension AgentRuntime {
         memoryContext: AgentMemoryContext? = nil
     ) async throws -> AgentThread {
         try assertSkillsExist(skillIDs)
+        if state.threads.isEmpty {
+            let metadata = try await stateStore.prepare()
+            lazyThreadActivationEnabled = metadata.capabilities.supportsLazyThreadActivation
+        }
         let resolvedPersonaStack: AgentPersonaStack?
         if let personaStack {
             resolvedPersonaStack = personaStack
@@ -90,6 +94,14 @@ extension AgentRuntime {
     public func resumeThread(id: String) async throws -> AgentThread {
         await acquireThreadResume(id)
         defer { releaseThreadResume(id) }
+        try Task.checkCancellation()
+        if lazyThreadActivationEnabled, let activeThread = thread(for: id) {
+            deferredThreadDeactivations.remove(id)
+            return activeThread
+        }
+        let operationID = try reserveThreadOperation(in: id)
+        deferredThreadDeactivations.remove(id)
+        defer { releaseThreadOperation(in: id, id: operationID) }
 
         logger.info(.runtime, "Resuming thread.", metadata: ["thread_id": id])
         let metadata = try await stateStore.prepare()
@@ -243,7 +255,12 @@ extension AgentRuntime {
     }
 
     /// Releases one thread's hydrated working set without changing durable state.
+    /// Active turns, compaction, and resume operations finish before it is released.
     public func deactivateThread(id: String) {
+        guard threadOperations[id] == nil else {
+            deferredThreadDeactivations.insert(id)
+            return
+        }
         state.threads.removeAll { $0.id == id }
         state.messagesByThread.removeValue(forKey: id)
         state.historyByThread.removeValue(forKey: id)
@@ -415,6 +432,7 @@ extension AgentRuntime {
             enqueueStoreOperation(.upsertThread(state.threads[index]))
         } else {
             state.threads.append(thread)
+            if lazyThreadActivationEnabled { state.partiallyLoadedThreadIDs.insert(thread.id) }
             enqueueStoreOperation(.upsertThread(thread))
         }
         if state.summariesByThread[thread.id] == nil {
@@ -429,7 +447,8 @@ extension AgentRuntime {
 
     func setThreadStatus(
         _ status: AgentThreadStatus,
-        for threadID: String
+        for threadID: String,
+        waitDespiteCancellation: Bool = false
     ) async throws {
         guard let index = state.threads.firstIndex(where: { $0.id == threadID }) else {
             throw AgentRuntimeError.threadNotFound(threadID)
@@ -453,7 +472,7 @@ extension AgentRuntime {
                 createdAt: state.threads[index].updatedAt
             )
         }
-        try await persistState()
+        try await persistState(waitDespiteCancellation: waitDespiteCancellation)
         logger.debug(
             .runtime,
             "Thread status changed.",

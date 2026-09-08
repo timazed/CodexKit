@@ -3,10 +3,14 @@ import Foundation
 public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sendable, Codable {
     public let code: String
     public let message: String
+    public let http: AgentHTTPFailure?
+    public let retry: AgentRetryInformation?
 
-    public init(code: String, message: String) {
+    public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil) {
         self.code = code
         self.message = message
+        self.http = http
+        self.retry = retry
     }
 
     public var errorDescription: String? {

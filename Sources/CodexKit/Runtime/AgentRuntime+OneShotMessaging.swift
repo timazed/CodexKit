@@ -78,17 +78,11 @@ extension AgentRuntime {
         responseContract: AgentResponseContract,
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> Output {
-        let stream = try await streamRequest(
-            request,
-            in: threadID,
-            responseContract: responseContract
-        )
-        let message = try await collectFinalAssistantMessage(from: stream)
-        return try decodeOneShotResponse(
-            message.text,
-            as: outputType,
-            decoder: decoder
-        )
+        let capture = AgentOneShotResponseCapture<Output>(format: responseContract.format, decoder: decoder)
+        let stream = try await streamRequest(request, in: threadID, responseContract: responseContract,
+            oneShotValidation: .init(format: responseContract.format, validate: { try await capture.validate($0) }))
+        _ = try await collectFinalAssistantMessage(from: stream)
+        return try await capture.value()
     }
 
     func sendWithSummary<Output: Decodable & Sendable>(
@@ -98,40 +92,18 @@ extension AgentRuntime {
         responseContract: AgentResponseContract,
         decoder: JSONDecoder = JSONDecoder()
     ) async throws -> AgentTurnResult<Output> {
+        let capture = AgentOneShotResponseCapture<Output>(format: responseContract.format, decoder: decoder)
         let completionCapture = AgentTurnCompletionCapture()
-        let stream = try await streamRequest(
-            request,
-            in: threadID,
-            responseContract: responseContract,
-            completionCapture: completionCapture
-        )
+        let stream = try await streamRequest(request, in: threadID, responseContract: responseContract,
+            completionCapture: completionCapture,
+            oneShotValidation: .init(format: responseContract.format, validate: { try await capture.validate($0) }))
         let completed = try await collectFinalAssistantTurn(from: stream)
         let memoryApplication = await completionCapture.memoryApplication()
         return AgentTurnResult(
-            value: try decodeOneShotResponse(
-                completed.message.text,
-                as: outputType,
-                decoder: decoder
-            ),
+            value: try await capture.value(),
             summary: completed.summary,
             clientRequestID: request.clientRequestID,
             memoryApplication: memoryApplication
         )
-    }
-
-    private func decodeOneShotResponse<Output: Decodable & Sendable>(
-        _ text: String,
-        as outputType: Output.Type,
-        decoder: JSONDecoder
-    ) throws -> Output {
-        let payload = Data(text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
-        do {
-            return try decoder.decode(outputType, from: payload)
-        } catch {
-            throw AgentRuntimeError.structuredOutputDecodingFailed(
-                typeName: String(describing: outputType),
-                underlyingMessage: error.localizedDescription
-            )
-        }
     }
 }

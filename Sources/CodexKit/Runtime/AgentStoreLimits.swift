@@ -59,6 +59,8 @@ public enum AgentStoreLimits {
     public static let maximumEmbeddedPayloadDepth = 64
     public static let maximumToolResultContentCount = 256
     public static let maximumResponseErrorBodyByteCount = 1 * 1_024 * 1_024
+    public static let maximumResponseItemCount = 2_048
+    public static let maximumPendingSteeringMessageCount = 512
     public static let maximumResponseEventByteCount =
         ((maximumImageByteCount + 2) / 3) * 4 + maximumEmbeddedPayloadByteCount
 
@@ -96,6 +98,12 @@ package enum AgentStoreLimitValidator {
             try validateIdentifier(query.threadID, name: "threadID")
             if let turnID = query.turnID {
                 try validateIdentifier(turnID, name: "turnID")
+            }
+            if let relationship = query.relationship {
+                switch relationship {
+                case let .message(id), let .toolInvocation(id):
+                    try validateIdentifier(id, name: "relationship ID")
+                }
             }
             try validateDateRange(query.createdAtRange, name: "createdAtRange")
             try validate(query.page ?? AgentQueryPage(

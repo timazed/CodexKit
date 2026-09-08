@@ -272,7 +272,7 @@ extension AgentRuntimeTests {
         XCTAssertEqual(visibleText, "Echo: Draft a shipping reply.")
     }
 
-    func testStructuredDecodeFailureThrowsRuntimeError() async throws {
+    func testOneShotSchemaFailureThrowsBeforeSwiftDecoding() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),
             secureStore: KeychainSessionSecureStore(
@@ -299,8 +299,7 @@ extension AgentRuntimeTests {
             )
         ) { error in
             let runtimeError = error as? AgentRuntimeError
-            XCTAssertEqual(runtimeError?.code, "structured_output_decoding_failed")
-            XCTAssertTrue(runtimeError?.message.contains("ShippingReplyDraft") == true)
+            XCTAssertEqual(runtimeError?.code, "structured_output_schema_invalid")
         }
     }
 

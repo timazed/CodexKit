@@ -196,7 +196,7 @@ extension AgentHistoryItem {
         }
     }
 
-    private static func relationshipKey(kind: String, id: String) -> String {
+    package static func relationshipKey(kind: String, id: String) -> String {
         "k\(kind.utf8.count):\(kind)i\(id.utf8.count):\(id)"
     }
 

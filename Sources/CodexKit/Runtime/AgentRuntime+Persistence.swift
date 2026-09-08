@@ -11,7 +11,9 @@ struct AgentRuntimePendingStoreOperation: Sendable {
 
 struct AgentRuntimeActivePersistenceTask: Sendable {
     let id: UInt64
-    let task: Task<Void, Error>
+    let firstGeneration: UInt64
+    let lastGeneration: UInt64
+    let task: RuntimeStoreTask<Void>
 }
 
 struct AgentRuntimePersistenceBatch: Sendable {
@@ -21,29 +23,27 @@ struct AgentRuntimePersistenceBatch: Sendable {
 }
 
 extension AgentRuntime {
-    func persistState() async throws {
-        state = state.normalized()
-        guard let requestedGeneration = pendingStoreOperations.last?.generation else {
+    func persistState(waitDespiteCancellation: Bool = false) async throws {
+        guard let requestedGeneration = pendingStoreOperations.last?.generation ?? activePersistenceTask?.lastGeneration else {
             return
         }
 
         while true {
             if let active = activePersistenceTask {
+                if active.firstGeneration > requestedGeneration { return }
                 do {
-                    try await active.task.value
+                    if waitDespiteCancellation { try await active.task.uninterruptibleValue }
+                    else { try await active.task.value }
                 } catch {
+                    if Task.isCancelled { throw CancellationError() }
                     clearActivePersistenceTask(id: active.id)
-                    if pendingStoreOperations.contains(where: {
-                        $0.generation <= requestedGeneration
-                    }) {
+                    if hasUnfinishedPersistence(through: requestedGeneration) {
                         continue
                     }
                     throw error
                 }
                 clearActivePersistenceTask(id: active.id)
-                if pendingStoreOperations.contains(where: {
-                    $0.generation <= requestedGeneration
-                }) {
+                if hasUnfinishedPersistence(through: requestedGeneration) {
                     continue
                 }
                 return
@@ -77,11 +77,19 @@ extension AgentRuntime {
             let batch = makePersistenceBatch(operations)
             nextPersistenceTaskID &+= 1
             let taskID = nextPersistenceTaskID
-            let task = Task {
-                try await self.applyPersistenceBatch(batch)
+            let task = RuntimeStoreTask<Void>(inheritingCommitScope: false) {
+                do {
+                    try await self.applyPersistenceBatch(batch)
+                    await self.finishPersistenceTask(id: taskID)
+                } catch {
+                    await self.finishPersistenceTask(id: taskID)
+                    throw error
+                }
             }
             activePersistenceTask = AgentRuntimeActivePersistenceTask(
                 id: taskID,
+                firstGeneration: queued.first?.generation ?? requestedGeneration,
+                lastGeneration: queued.last?.generation ?? requestedGeneration,
                 task: task
             )
         }
@@ -98,6 +106,23 @@ extension AgentRuntime {
     private func clearActivePersistenceTask(id: UInt64) {
         guard activePersistenceTask?.id == id else { return }
         activePersistenceTask = nil
+    }
+
+    private func hasUnfinishedPersistence(through generation: UInt64) -> Bool {
+        if let activePersistenceTask, activePersistenceTask.firstGeneration <= generation { return true }
+        return pendingStoreOperations.contains { $0.generation <= generation }
+    }
+
+    private func finishPersistenceTask(id: UInt64) {
+        clearActivePersistenceTask(id: id)
+        guard !pendingStoreOperations.isEmpty else { return }
+        // Keep draining accepted writes and cancellation records even when all
+        // callers stop waiting before the store can acquire its lease.
+        Task {
+            do { try await self.persistState() }
+            catch { logger.error(.persistence, "Deferred runtime persistence failed.",
+                metadata: ["error": error.localizedDescription]) }
+        }
     }
 
     private func makePersistenceBatch(

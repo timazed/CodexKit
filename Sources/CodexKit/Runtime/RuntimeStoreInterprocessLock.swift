@@ -7,9 +7,28 @@ package struct RuntimeStoreInterprocessLock: Sendable {
     private let fileDescriptor: Int32
 
     package static func acquire(for attachmentRootURL: URL) async throws -> Self {
-        try await Task.detached(priority: nil) {
-            try acquireSynchronously(for: attachmentRootURL)
-        }.value
+        try Task.checkCancellation()
+        let fileDescriptor = try openLockFile(for: attachmentRootURL)
+        var transferred = false
+        defer { if !transferred { _ = close(fileDescriptor) } }
+        var delay = 1
+        while true {
+            try Task.checkCancellation()
+            if flock(fileDescriptor, LOCK_EX | LOCK_NB) == 0 {
+                try Task.checkCancellation()
+                transferred = true
+                return Self(fileDescriptor: fileDescriptor)
+            }
+            let code = errno
+            if code == EINTR { continue }
+            guard code == EWOULDBLOCK || code == EAGAIN else {
+                throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+            }
+            // Suspend while contended; a blocking flock would occupy a Swift
+            // executor worker and would not respond to task cancellation.
+            try await Task.sleep(for: .milliseconds(delay))
+            delay = min(delay * 2, 25)
+        }
     }
 
     package func release() {
@@ -39,9 +58,9 @@ package struct RuntimeStoreInterprocessLock: Sendable {
         return canonical.standardizedFileURL
     }
 
-    private static func acquireSynchronously(
+    private static func openLockFile(
         for attachmentRootURL: URL
-    ) throws -> Self {
+    ) throws -> Int32 {
         let lockURL = lockURL(for: attachmentRootURL)
         try FileManager.default.createDirectory(
             at: lockURL.deletingLastPathComponent(),
@@ -56,13 +75,7 @@ package struct RuntimeStoreInterprocessLock: Sendable {
             throw POSIXError(Self.currentPOSIXErrorCode())
         }
 
-        while flock(fileDescriptor, LOCK_EX) != 0 {
-            if errno == EINTR { continue }
-            let error = POSIXError(Self.currentPOSIXErrorCode())
-            _ = close(fileDescriptor)
-            throw error
-        }
-        return Self(fileDescriptor: fileDescriptor)
+        return fileDescriptor
     }
 
     private static func currentPOSIXErrorCode() -> POSIXErrorCode {

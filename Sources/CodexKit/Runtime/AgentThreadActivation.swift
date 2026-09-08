@@ -134,7 +134,7 @@ package enum AgentThreadContextWindow {
                 guard let result = toolResultsByInvocationID[call.invocation.id] else {
                     return nil
                 }
-                let resultText = result.result.primaryText
+                let resultText = result.result.combinedText
                     ?? result.result.errorMessage
                     ?? (result.result.success ? "completed" : "failed")
                 return AgentMessage(

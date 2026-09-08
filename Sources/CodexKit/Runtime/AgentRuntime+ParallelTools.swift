@@ -3,7 +3,7 @@ import Foundation
 extension AgentRuntime {
     func consumeToolInvocations(
         _ invocations: [ToolInvocation], turnStream: AgentTurnStream, session: ChatGPTSession,
-        policyTracker: TurnSkillPolicyTracker?, storesTurnState: Bool, sink: AgentToolEventSink
+        policyTracker: TurnSkillPolicyTracker?, registrations: [String: ToolRegistry.Entry], storesTurnState: Bool, sink: AgentToolEventSink
     ) async throws {
         guard Set(invocations.map(\.id)).count == invocations.count else {
             throw AgentRuntimeError(code: "duplicate_tool_call", message: "A tool batch contains duplicate call IDs.")
@@ -11,7 +11,7 @@ extension AgentRuntime {
         var parallel: [ToolInvocation] = []
         for invocation in invocations {
             try Task.checkCancellation()
-            let definition = await toolRegistry.definition(named: invocation.toolName)
+            let definition = registrations[invocation.toolName]?.definition
             // Skill sequences and call limits retain their existing serial semantics.
             let canOverlap = policyTracker == nil && definition?.supportsParallelExecution == true
                 && definition?.approvalPolicy == .automatic
@@ -19,24 +19,24 @@ extension AgentRuntime {
                 parallel.append(invocation)
                 if parallel.count == maximumParallelToolCalls {
                     try await consumeParallelBatch(parallel, turnStream: turnStream, session: session,
-                                                   storesTurnState: storesTurnState, sink: sink)
+                                                   registrations: registrations, storesTurnState: storesTurnState, sink: sink)
                     parallel.removeAll()
                 }
             } else {
                 try await consumeParallelBatch(parallel, turnStream: turnStream, session: session,
-                                               storesTurnState: storesTurnState, sink: sink)
+                                               registrations: registrations, storesTurnState: storesTurnState, sink: sink)
                 parallel.removeAll()
                 try await consumeToolInvocation(invocation, turnStream: turnStream, session: session,
-                    policyTracker: policyTracker, storesTurnState: storesTurnState, sink: sink)
+                    policyTracker: policyTracker, registration: registrations[invocation.toolName], storesTurnState: storesTurnState, sink: sink)
             }
         }
         try await consumeParallelBatch(parallel, turnStream: turnStream, session: session,
-                                       storesTurnState: storesTurnState, sink: sink)
+                                       registrations: registrations, storesTurnState: storesTurnState, sink: sink)
     }
 
     private func consumeParallelBatch(
         _ invocations: [ToolInvocation], turnStream: AgentTurnStream, session: ChatGPTSession,
-        storesTurnState: Bool, sink: AgentToolEventSink
+        registrations: [String: ToolRegistry.Entry], storesTurnState: Bool, sink: AgentToolEventSink
     ) async throws {
         guard let first = invocations.first else { return }
         if storesTurnState {
@@ -50,7 +50,7 @@ extension AgentRuntime {
             for invocation in invocations {
                 group.addTask {
                     try await self.consumeToolInvocation(invocation, turnStream: turnStream, session: session,
-                        policyTracker: nil, storesTurnState: storesTurnState, sink: sink)
+                        policyTracker: nil, registration: registrations[invocation.toolName], storesTurnState: storesTurnState, sink: sink)
                 }
             }
             try await group.waitForAll()

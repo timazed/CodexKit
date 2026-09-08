@@ -88,11 +88,14 @@ for try await event in stream {
 
 For typed replies and attachments, see [Messaging and images](docs/messaging.md). For model discovery, parallel tools, progress, and turn controls, see [Runtime progress, tools, and turn control](docs/upstream-runtime-features.md).
 
+Turns use bounded event queues and configurable execution limits. The default runtime duration is five minutes, including approval waits; see [event buffering and execution limits](docs/messaging.md#event-buffering-and-execution-limits) for longer workflows.
+
 ## Documentation
 
 The [documentation index](docs/index.md) contains the full guide list, core concepts, and architecture overview. Common next steps:
 
 - [Configure models and reasoning](docs/backend-configuration.md)
+- [Use host-managed sessions, execution handles, and async observation](docs/sdk-integration.md)
 - [Add memory](docs/memory.md)
 - [Define personas and skills](docs/personas-and-skills.md)
 - [Integrate App Intents, sharing, and background completion](docs/apple-integrations.md)
@@ -110,6 +113,7 @@ Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-featur
 
 ## Project
 
+- [Streaming validation and backend completion](docs/messaging.md#streaming-validation-and-backend-completion)
 - [Changelog](CHANGELOG.md) and [release conventions](docs/migration.md#versioning-and-releases)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

@@ -23,6 +23,18 @@ enum CodexResponsesImageReferences {
         return try items.map { try restore($0, using: byDigest) }
     }
 
+    /// Checks attachment ownership without allocating expanded base64 payloads.
+    static func validate(_ items: [JSONValue], using attachments: [AgentImageAttachment]) throws {
+        var requiredDigests = Set<String>()
+        for item in items { collectReferenceDigests(in: item, into: &requiredDigests) }
+        guard !requiredDigests.isEmpty else { return }
+        for attachment in attachments {
+            requiredDigests.remove(digest(attachment.data))
+            if requiredDigests.isEmpty { return }
+        }
+        throw missingImage()
+    }
+
     static func attachments(
         in messages: [AgentMessage],
         additional: [AgentImageAttachment] = []
@@ -112,26 +124,38 @@ enum CodexResponsesImageReferences {
         _ value: String,
         using attachments: [String: AgentImageAttachment]
     ) throws -> String? {
-        let mode: String
-        let digestValue: String
-        if value.hasPrefix(dataURLPrefix) {
-            mode = "data-url"
-            digestValue = String(value.dropFirst(dataURLPrefix.count))
-        } else if value.hasPrefix(base64Prefix) {
-            mode = "base64"
-            digestValue = String(value.dropFirst(base64Prefix.count))
-        } else {
-            return nil
-        }
+        guard let digestValue = referenceDigest(in: value) else { return nil }
         guard let attachment = attachments[digestValue] else {
-            throw AgentRuntimeError(
-                code: "responses_missing_persisted_image",
-                message: "A persisted Responses image reference could not be resolved."
-            )
+            throw missingImage()
         }
-        return mode == "data-url"
+        return value.hasPrefix(dataURLPrefix)
             ? attachment.dataURLString
             : attachment.data.base64EncodedString()
+    }
+
+    private static func collectReferenceDigests(in value: JSONValue, into digests: inout Set<String>) {
+        switch value {
+        case let .array(values):
+            for child in values { collectReferenceDigests(in: child, into: &digests) }
+        case let .object(object):
+            for child in object.values { collectReferenceDigests(in: child, into: &digests) }
+        case let .string(value):
+            if let digest = referenceDigest(in: value) { digests.insert(digest) }
+        case .bool, .null, .number:
+            break
+        }
+    }
+
+    private static func referenceDigest(in value: String) -> String? {
+        for prefix in [dataURLPrefix, base64Prefix] where value.hasPrefix(prefix) {
+            return String(value.dropFirst(prefix.count))
+        }
+        return nil
+    }
+
+    private static func missingImage() -> AgentRuntimeError {
+        AgentRuntimeError(code: "responses_missing_persisted_image",
+            message: "A persisted Responses image reference could not be resolved.")
     }
 
     private static func digest(_ data: Data) -> String {

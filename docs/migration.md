@@ -24,8 +24,22 @@ If you are moving code forward from earlier 2.0 alpha snapshots, update these AP
   Use `Request` with `context:` when you want to attach host-app context separately from freeform prompt text.
 - fulfillment policy is request-side
   Use `Request.options` when the app needs to guide how lookup or enrichment work should be performed without putting that policy into user-visible text.
-- runtime auth and session storage are concrete
-  Configure `AgentRuntime` with `ChatGPTAuthProvider` and `KeychainSessionSecureStore`. Use `AgentRuntime.useSession(_:)` when the app already has a session to load.
+- runtime auth supports host-managed sessions
+  Existing `ChatGPTAuthProvider`/`KeychainSessionSecureStore` initializer calls remain valid. Alternatively, supply `AgentSessionProviding` and optionally `AgentSessionManaging`. Configuration inspection properties `authProvider` and `secureStore` are now optional. See [SDK integration](sdk-integration.md).
+- execution handles and async observation are additive
+  Use `start(...)` for a cancellable execution handle, and `publisher.values` for bounded async notifications or `.values(buffering: .latest)` for coalesced snapshots. Existing `stream`, `send`, and Combine APIs remain available.
+- runtime and response budgets now have finite defaults
+  Turns default to 128 requested tool calls and 300 seconds, including approvals. The backend defaults to 32 model passes and 256 MiB of response bytes. Increase these or use `nil` for workflows that need more; see [execution limits](messaging.md#event-buffering-and-execution-limits).
+- one-shot structured output now validates locally before persistence
+  `send(..., response:)` and `sendWithSummary(..., response:)` enforce the same schema subset as structured streaming. Unsupported raw assertions fail before starting; invalid replies fail the turn before the assistant reply is saved. Schema violations use `structured_output_schema_invalid`; Swift decoding failures retain `structured_output_decoding_failed`.
+- compaction participates in thread operation ownership
+  Concurrent persistent turns, compactions, and activation attempts may report `thread_busy`. Deactivation waits for active work; restoring an active runtime reports `runtime_busy`. Compact requests honor the configured response-byte limit and timeout, and authentication recovery cannot change accounts or silently fall back on failure.
+- definition loading is bounded and skill policies are validated strictly
+  Persona and skill sources default to a 1 MiB limit; inject an `AgentDefinitionSourceLoader(maximumDefinitionBytes:)` with a larger positive value when needed. Malformed JSON skill definitions and invalid or unknown root/policy fields now throw `invalid_skill_definition`. An explicit empty `allowedToolNames` disallows every tool; omit it or use `nil` for unrestricted tools. See [personas and skills](personas-and-skills.md#dynamic-persona-and-skill-sources).
+- tool results preserve all text and validate downloaded images
+  Every nonempty text block reaches provider requests, fallback replies, and compaction context in order. Remote image downloads must return a successful HTTP status and decodable supported image bytes; HTTP errors, HTML, and truncated payloads are omitted from attachments. Image bytes continue to live in disk blobs, with database references.
+- retry metadata is typed
+  `AgentRuntimeError.http` and `.retry` preserve status and replay information. Numeric/HTTP-date `Retry-After` is honored. Existing codes and messages remain available, and older stored errors decode with absent metadata.
 - backend turn streaming uses a value type
   Custom `AgentBackend` implementations return `AgentTurnStream`; backend defaults and context-window metadata are asynchronously readable.
 - runtime observation is actor-isolated
@@ -48,6 +62,28 @@ let stateStore = try GRDBRuntimeStateStore(url: stateURL)
 // Now
 let stateStore = try SQLiteRuntimeStateStore()
 ```
+
+## Public API review against alpha.26
+
+The [8 September release review](release-readiness-2026-09-08.md) compares the current core/UI modules with local tag `v2.0.0-alpha.26`. Ordinary initializer calls remain supported, including the original auth-based configuration initializer. `PublicAPICompatibilityTests` compiles representative previous-release call shapes without `@testable` access.
+
+Seven initializer signatures gained defaulted parameters: definition loading, runtime configuration, runtime errors, turn streams, both backend-configuration initializers, and history queries. Direct calls can omit the new parameters. Code storing an exact initializer as a function value needs a closure because Swift does not apply default arguments to a function reference:
+
+```swift
+let makeError: (String, String) -> AgentRuntimeError = {
+    AgentRuntimeError(code: $0, message: $1)
+}
+```
+
+Configuration inspection also changes: `authProvider` and `secureStore` are optional because a host-managed session provider may supply neither. Use optional binding or the runtime's session-management methods. The comparison reports no removed/changed public UI declarations and no new core protocol requirements. These checks concern source migration; they do not establish binary ABI compatibility across alpha versions.
+
+Reproduce the API report locally without changing the checkout:
+
+```sh
+python3 Scripts/review_public_api.py --baseline v2.0.0-alpha.26
+```
+
+The script compiles isolated baseline/current core and UI modules, then writes Swift API Digester diagnostics under `.build/api-review`. Review diagnostics manually: a defaulted-parameter addition changes a symbol signature even when ordinary calls remain valid.
 
 ## Versioning And Releases
 

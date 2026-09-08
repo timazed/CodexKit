@@ -20,7 +20,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
     let dbQueue: DatabaseQueue
     let migrator: DatabaseMigrator
     var isPrepared = false
-    var preparationTask: Task<Void, Error>?
+    var preparationTask: RuntimeStoreTask<Void>?
     var preparationGeneration: UInt64 = 0
     var decodedHistoryBodyCount = 0
     var latestActivationMetrics: SQLiteThreadActivationMetrics?

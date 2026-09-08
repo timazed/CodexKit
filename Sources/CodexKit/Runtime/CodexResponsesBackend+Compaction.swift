@@ -26,6 +26,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentCompactionResult {
+        try Task.checkCancellation()
         logger.info(
             .compaction,
             "Starting remote context compaction.",
@@ -46,7 +47,8 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         let input: [JSONValue]? = if previousResponseID != nil {
             nil
         } else if let items = providerState?.items, !items.isEmpty {
-            items
+            try CodexResponsesImageReferences.restore(items,
+                using: CodexResponsesImageReferences.attachments(in: effectiveHistory))
         } else {
             effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
         }
@@ -67,6 +69,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses/compact"))
+        request.timeoutInterval = configuration.streamIdleTimeout
         request.httpMethod = "POST"
         request.httpBody = try encoder.encode(requestBody)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -81,7 +84,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
-        if let bodyData = request.httpBody {
+        if logger.isEnabled(.debug, for: .network), let bodyData = request.httpBody {
             logger.debug(
                 .network,
                 "Responses compact request payload.",
@@ -93,13 +96,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             )
         }
 
-        let (data, response) = try await urlSession.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AgentRuntimeError(
-                code: "responses_compact_invalid_response",
-                message: "The ChatGPT compact endpoint returned an invalid response."
-            )
-        }
+        let (data, httpResponse) = try await readCompactionResponse(for: request)
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = sanitizedResponsesJSONString(from: data)
             logger.error(
@@ -112,30 +109,37 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
                     "body": body
                 ]
             )
-            throw AgentRuntimeError(
-                code: "responses_compact_failed",
+            throw AgentRuntimeError.httpFailure(
+                response: httpResponse, body: data, prefix: "responses_compact",
                 message: "The ChatGPT compact endpoint failed with status \(httpResponse.statusCode): \(body)"
             )
         }
 
-        logger.debug(
-            .network,
-            "Responses compact response payload.",
-            metadata: [
-                "thread_id": thread.id,
-                "status": "\(httpResponse.statusCode)",
-                "payload": sanitizedResponsesJSONString(from: data)
-            ]
-        )
+        if logger.isEnabled(.debug, for: .network) {
+            logger.debug(
+                .network,
+                "Responses compact response payload.",
+                metadata: [
+                    "thread_id": thread.id,
+                    "status": "\(httpResponse.statusCode)",
+                    "payload": sanitizedResponsesJSONString(from: data)
+                ]
+            )
+        }
 
         let payload = try decoder.decode(JSONValue.self, from: data)
         let output = payload.objectValue?["output"]?.arrayValue ?? []
-        let messages = output.compactMap { item in
-            Self.compactedMessage(from: item, threadID: thread.id)
+        let messages = try output.compactMap { item in
+            try Self.compactedMessage(from: item, threadID: thread.id)
         }
         guard !output.isEmpty else {
             throw AgentRuntimeError.contextCompactionUnsupported()
         }
+        let storedOutput = try CodexResponsesImageReferences.externalize(output)
+        // Every stored reference must have an attachment retained by the compacted
+        // context, including after database reopening or transcript pruning.
+        try CodexResponsesImageReferences.validate(storedOutput,
+            using: CodexResponsesImageReferences.attachments(in: messages))
 
         logger.info(
             .compaction,
@@ -149,21 +153,65 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
 
         return AgentCompactionResult(
             effectiveMessages: messages,
-            providerContext: CodexResponsesProviderState(items: output).agentProviderContext,
+            providerContext: CodexResponsesProviderState(items: storedOutput).agentProviderContext,
             summaryPreview: nil
         )
+    }
+
+    private func readCompactionResponse(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (bytes, response) = try await urlSession.bytes(for: request)
+        defer { bytes.task.cancel() }
+        guard let response = response as? HTTPURLResponse else {
+            throw AgentRuntimeError(code: "responses_compact_invalid_response",
+                message: "The ChatGPT compact endpoint returned an invalid response.")
+        }
+        let isSuccess = (200 ..< 300).contains(response.statusCode)
+        let limit = isSuccess ? configuration.maximumResponseBytes
+            : min(configuration.maximumResponseBytes ?? Int.max, AgentStoreLimits.maximumResponseErrorBodyByteCount)
+        if isSuccess, let limit, response.expectedContentLength > Int64(limit) {
+            throw AgentRuntimeError.executionLimitExceeded(.responseBytes)
+        }
+        var data = Data()
+        if !isSuccess, limit == 0 { return (data, response) }
+        // AsyncBytes yields individual bytes. Batch Data mutations so large image
+        // responses do not pay Foundation's append overhead for every byte.
+        var chunk: [UInt8] = []
+        chunk.reserveCapacity(65_536)
+        var byteCount = 0
+        for try await byte in bytes {
+            if chunk.isEmpty { try Task.checkCancellation() }
+            if let limit, byteCount >= limit {
+                if isSuccess { throw AgentRuntimeError.executionLimitExceeded(.responseBytes) }
+                break // Preserve HTTP status for authentication recovery, even with an oversized error body.
+            }
+            chunk.append(byte)
+            byteCount += 1
+            if chunk.count == 65_536 {
+                data.append(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+            }
+            if !isSuccess, byteCount == limit { break }
+        }
+        data.append(contentsOf: chunk)
+        try Task.checkCancellation()
+        return (data, response)
     }
 
     private static func compactedMessage(
         from value: JSONValue,
         threadID: String
-    ) -> AgentMessage? {
+    ) throws -> AgentMessage? {
         guard let object = value.objectValue,
               let type = object["type"]?.stringValue
         else {
             return nil
         }
 
+        if type == "image_generation_call" {
+            let generated = try JSONDecoder().decode(StreamImageGenerationCallItem.self, from: JSONEncoder().encode(value))
+            guard let image = generated.imageAttachment else { return nil }
+            return AgentMessage(threadID: threadID, role: .assistant, text: generated.assistantText, images: [image])
+        }
         guard type == "message",
               let roleRaw = object["role"]?.stringValue
         else {
@@ -182,7 +230,8 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             return nil
         }
 
-        let text = (object["content"]?.arrayValue ?? []).compactMap { item -> String? in
+        let content = object["content"]?.arrayValue ?? []
+        let text = content.compactMap { item -> String? in
             guard let content = item.objectValue else {
                 return nil
             }
@@ -192,7 +241,9 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         return AgentMessage(
             threadID: threadID,
             role: role,
-            text: text
+            text: text,
+            images: content.compactMap { $0.objectValue.flatMap(StreamMessageContent.parseImageAttachment) },
+            phase: object["phase"]?.stringValue.map(AgentMessagePhase.init(rawValue:))
         )
     }
 }

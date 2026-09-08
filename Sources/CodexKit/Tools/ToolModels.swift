@@ -127,6 +127,12 @@ public struct ToolResultEnvelope: Hashable, Sendable {
         content.compactMap(\.textValue).first
     }
 
+    /// Full tool content for provider input and context; previews use primaryText.
+    var combinedText: String? {
+        let blocks = content.compactMap(\.textValue).filter { !$0.isEmpty }
+        return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
+    }
+
     public static func success(
         invocation: ToolInvocation,
         text: String,

@@ -7,22 +7,23 @@ extension CodexResponsesTurnRunner {
     ) async throws -> StreamEventResult {
         switch event.kind {
         case let .progress(progress):
-            continuation.yield(.progress(.init(threadID: threadID, turnID: turnID, content: progress)))
+            try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID, content: progress)))
             return .assistantDelta
 
         case let .rateLimits(snapshots):
             await streamClient.rateLimitObserver(snapshots)
-            continuation.yield(.rateLimitsUpdated(snapshots))
+            try await continuation.yield(.rateLimitsUpdated(snapshots))
             return .none
 
         case .responseCreated:
             return .none
 
         case let .assistantTextDelta(delta):
-            let emittedDelta = try handleAssistantTextDelta(delta, state: &state)
+            let emittedDelta = try await handleAssistantTextDelta(delta, state: &state)
             return emittedDelta ? .assistantDelta : .none
 
         case let .outputItem(item, outputIndex):
+            try streamClient.responseBudget?.consumeItem()
             state.pendingResponseItems.append(
                 PendingResponseItem(
                     outputIndex: outputIndex,
@@ -33,11 +34,11 @@ extension CodexResponsesTurnRunner {
             )
             if let object = item.rawValue.objectValue, let id = object["id"]?.stringValue {
                 if object["type"]?.stringValue == "message" {
-                    continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
+                    try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
                         content: .messageCompleted(itemID: id,
                             phase: object["phase"]?.stringValue.map(AgentMessagePhase.init(rawValue:))))))
                 } else if object["type"]?.stringValue == "web_search_call" {
-                    continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
+                    try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
                         content: .webSearch(itemID: id, status: object["status"]?.stringValue ?? "completed",
                             action: object["action"])) ))
                 }
@@ -52,7 +53,7 @@ extension CodexResponsesTurnRunner {
                 guard !text.isEmpty || !images.isEmpty else {
                     return .none
                 }
-                try handleAssistantMessage(
+                try await handleAssistantMessage(
                     AgentMessage(
                         id: messageItem.id ?? UUID().uuidString,
                         threadID: "",
@@ -91,7 +92,7 @@ extension CodexResponsesTurnRunner {
                 guard let image = imageGenerationCall.imageAttachment else {
                     return .none
                 }
-                try handleAssistantMessage(
+                try await handleAssistantMessage(
                     AgentMessage(
                         id: item.rawValue.objectValue?["id"]?.stringValue ?? UUID().uuidString,
                         threadID: "",
@@ -108,16 +109,16 @@ extension CodexResponsesTurnRunner {
             }
 
         case let .structuredOutputPartial(value):
-            continuation.yield(.structuredOutputPartial(value))
-            return .none
+            try await continuation.yield(.structuredOutputPartial(value))
+            return .assistantDelta
 
         case let .structuredOutputCommitted(value):
-            continuation.yield(.structuredOutputCommitted(value))
-            return .none
+            try await continuation.yield(.structuredOutputCommitted(value))
+            return .assistantMessage
 
         case let .structuredOutputValidationFailed(validationFailure):
-            continuation.yield(.structuredOutputValidationFailed(validationFailure))
-            return .none
+            try await continuation.yield(.structuredOutputValidationFailed(validationFailure))
+            return .assistantDelta
 
         case let .completed(usage, responseID):
             try await resolvePendingFunctionCalls(state: &state)
@@ -145,12 +146,12 @@ extension CodexResponsesTurnRunner {
     func handleAssistantTextDelta(
         _ delta: String,
         state: inout TurnRunState
-    ) throws -> Bool {
+    ) async throws -> Bool {
         guard responseContract?.streamedRequest != nil else {
             guard !delta.isEmpty else {
                 return false
             }
-            continuation.yield(
+            try await continuation.yield(
                 .assistantMessageDelta(
                     threadID: threadID,
                     turnID: turnID,
@@ -161,14 +162,14 @@ extension CodexResponsesTurnRunner {
         }
 
         var emittedVisibleDelta = false
-        for parsedEvent in state.structuredParser.consume(delta: delta) {
+        for parsedEvent in try state.structuredParser.consume(delta: delta) {
             switch parsedEvent {
             case let .visibleText(visibleDelta):
                 guard !visibleDelta.isEmpty else {
                     continue
                 }
                 emittedVisibleDelta = true
-                continuation.yield(
+                try await continuation.yield(
                     .assistantMessageDelta(
                         threadID: threadID,
                         turnID: turnID,
@@ -176,9 +177,11 @@ extension CodexResponsesTurnRunner {
                     )
                 )
             case let .structuredOutputPartial(value):
-                continuation.yield(.structuredOutputPartial(value))
+                emittedVisibleDelta = true
+                try await continuation.yield(.structuredOutputPartial(value))
             case let .structuredOutputValidationFailed(validationFailure):
-                continuation.yield(.structuredOutputValidationFailed(validationFailure))
+                emittedVisibleDelta = true
+                try await continuation.yield(.structuredOutputValidationFailed(validationFailure))
             }
         }
         return emittedVisibleDelta
@@ -187,8 +190,8 @@ extension CodexResponsesTurnRunner {
     func handleAssistantMessage(
         _ messageTemplate: AgentMessage,
         state: inout TurnRunState
-    ) throws {
-        let normalizedMessage = try normalizedAssistantMessage(
+    ) async throws {
+        let normalizedMessage = try await normalizedAssistantMessage(
             from: messageTemplate,
             state: &state
         )
@@ -211,7 +214,7 @@ extension CodexResponsesTurnRunner {
                 )
         )
 
-        continuation.yield(.assistantMessageCompleted(message))
+        try await continuation.yield(.assistantMessageCompleted(message))
         state.pendingToolImages.removeAll(keepingCapacity: true)
         state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
         state.pendingStructuredOutputMetadata = nil
@@ -220,7 +223,7 @@ extension CodexResponsesTurnRunner {
     func normalizedAssistantMessage(
         from messageTemplate: AgentMessage,
         state: inout TurnRunState
-    ) throws -> AgentMessage {
+    ) async throws -> AgentMessage {
         guard let streamedStructuredOutput = responseContract?.streamedRequest else {
             return AgentMessage(
                 id: messageTemplate.id,
@@ -242,9 +245,9 @@ extension CodexResponsesTurnRunner {
                 formatName: streamedStructuredOutput.responseFormat.name,
                 payload: value
             )
-            continuation.yield(.structuredOutputCommitted(value))
+            try await continuation.yield(.structuredOutputCommitted(value))
         case let .invalid(validationFailure):
-            continuation.yield(.structuredOutputValidationFailed(validationFailure))
+            try await continuation.yield(.structuredOutputValidationFailed(validationFailure))
             throw AgentRuntimeError.structuredOutputInvalid(
                 stage: validationFailure.stage,
                 underlyingMessage: validationFailure.message
@@ -284,7 +287,8 @@ extension CodexResponsesTurnRunner {
             arguments: functionCall.arguments
         )
 
-        continuation.yield(.toolCallRequested(invocation))
+        try await pendingToolResults.register([invocation])
+        try await continuation.yield(.toolCallRequested(invocation))
         try await collectToolResult(invocation, state: &state)
     }
 
@@ -304,10 +308,10 @@ extension CodexResponsesTurnRunner {
         state.pendingToolImages.append(contentsOf: toolImages)
         state.pendingToolImages = state.pendingToolImages.uniqued()
 
-        if let primaryText = toolResult.primaryText?
+        if let text = toolResult.combinedText?
             .trimmingCharacters(in: .whitespacesAndNewlines),
-           !primaryText.isEmpty {
-            state.pendingToolFallbackTexts.append(primaryText)
+           !text.isEmpty {
+            state.pendingToolFallbackTexts.append(text)
         }
 
         state.pendingToolOutputs.append(
@@ -370,7 +374,7 @@ extension CodexResponsesTurnRunner {
 
     func emitPendingAssistantFallbackIfNeeded(
         state: inout TurnRunState
-    ) {
+    ) async throws {
         guard !state.pendingToolImages.isEmpty || !state.pendingToolFallbackTexts.isEmpty else {
             return
         }
@@ -385,7 +389,7 @@ extension CodexResponsesTurnRunner {
         if configuration.stateManagement == .clientManaged {
             state.workingHistory.append(.assistantMessage(message))
         }
-        continuation.yield(.assistantMessageCompleted(message))
+        try await continuation.yield(.assistantMessageCompleted(message))
         state.pendingToolImages.removeAll(keepingCapacity: true)
         state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)
     }
@@ -399,11 +403,11 @@ extension CodexResponsesTurnRunner {
         let hasAttemptsRemaining = attempt < policy.maxAttempts
         let retryableError = streamClient.shouldRetry(error, policy: policy)
 
-        if retryState.hasNonReplayableOutput {
+        if retryState.hasVisibleOutput {
             return RetryDecision(
                 shouldRetry: false,
                 retryableError: retryableError,
-                blockedBy: "non_replayable_output_emitted"
+                blockedBy: "output_already_emitted"
             )
         }
 
@@ -432,13 +436,13 @@ extension CodexResponsesTurnRunner {
 
     func sleepBeforeRetry(
         attempt: Int,
-        policy: RequestRetryPolicy
+        policy: RequestRetryPolicy,
+        error: Error
     ) async throws {
-        let delay = policy.delayBeforeRetry(attempt: attempt)
+        let delay = max(policy.delayBeforeRetry(attempt: attempt), (error as? AgentRuntimeError)?.http?.retryAfter ?? 0)
         guard delay > 0 else {
             return
         }
-        let nanoseconds = UInt64((delay * 1_000_000_000).rounded())
-        try await Task.sleep(nanoseconds: nanoseconds)
+        try await Task.sleep(for: .seconds(min(delay, 86_400)))
     }
 }

@@ -161,22 +161,31 @@ public actor AgentImageGenerationClient {
             session: session,
             options: options
         )
-        let (data, response) = try await urlSession.data(for: request)
+        let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
                 code: "image_generation_invalid_response",
                 message: "The image generation endpoint returned an invalid response."
             )
         }
-        guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                throw AgentRuntimeError.unauthorized(body)
+        let isSuccess = (200 ..< 300).contains(httpResponse.statusCode)
+        let responseLimit = isSuccess
+            ? ((AgentStoreLimits.maximumImageBytesPerWrite + 2) / 3) * 4 + AgentStoreLimits.maximumEmbeddedPayloadByteCount
+            : AgentStoreLimits.maximumResponseErrorBodyByteCount
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < responseLimit else {
+                throw AgentRuntimeError(code: "image_generation_response_too_large",
+                    message: "The image generation response exceeded its supported size limit.",
+                    http: .init(response: httpResponse))
             }
-            throw AgentRuntimeError(
-                code: "image_generation_http_status_\(httpResponse.statusCode)",
-                message: "The image generation request failed with status \(httpResponse.statusCode): \(body)"
-            )
+            data.append(byte)
+        }
+        try Task.checkCancellation()
+        guard isSuccess else {
+            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AgentRuntimeError.httpFailure(response: httpResponse, body: data, prefix: "image_generation",
+                message: "The image generation request failed with status \(httpResponse.statusCode): \(body)")
         }
 
         let responseBody = try decoder.decode(ImageGenerationResponseBody.self, from: data)

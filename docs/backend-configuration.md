@@ -4,6 +4,8 @@
 
 Configure the account backend, retries, model selection, reasoning levels, and response-state management.
 
+For injectable sessions and typed HTTP/retry metadata, see [SDK integration](sdk-integration.md).
+
 ## Authentication
 
 `ChatGPTAuthProvider` supports:
@@ -24,7 +26,7 @@ That means:
 
 If your app needs capabilities outside the built-in backend path, the intended approach is to expose them through your own host tools or custom backend integration.
 
-`CodexResponsesBackend` also includes built-in retry/backoff for transient failures (`429`, `5xx`, and network-transient URL errors like `networkConnectionLost`). You can tune or disable it:
+`CodexResponsesBackend` also includes built-in retry/backoff for transient failures (`429`, `5xx`, and network-transient URL errors like `networkConnectionLost`). Automatic retries stop once text, progress, a structured snapshot, a committed message, or a tool call has been emitted. An interrupted reply then fails instead of replaying output into an append-only consumer. Initial HTTP authentication/context recovery uses the request-readiness boundary; later failures do not replay the whole turn. You can tune or disable transient retries:
 
 ```swift
 let backend = CodexResponsesBackend(
@@ -41,6 +43,34 @@ let backend = CodexResponsesBackend(
     )
 )
 ```
+
+## Response and model-pass limits
+
+The built-in backend defaults to 32 model passes per turn, a 256 MiB streamed-response byte budget, and 64 buffered events per queue:
+
+```swift
+let backend = CodexResponsesBackend(configuration: .init(
+    maximumBufferedEvents: 64,
+    maximumModelPasses: 32,
+    maximumResponseBytes: 256 * 1_024 * 1_024
+))
+```
+
+Each model request following tool results or accepted steering consumes another pass. Transient retries share that pass, while response bytes from retries and later passes consume the same turn-wide byte budget. Byte accounting includes SSE framing and ignored events from successful HTTP streams. Error response bodies retain their separate per-response bound. Bytes are checked at line boundaries; an incomplete line is independently bounded by `AgentStoreLimits.maximumResponseEventByteCount`.
+
+`nil` removes either configurable backend budget; negative counts clamp to zero, which rejects work immediately. A new turn gets a fresh budget. These settings also apply when using `CodexResponsesBackend` directly. Duration and tool-call budgets belong to `AgentRuntime` and require using the runtime.
+
+Independently, at most `AgentStoreLimits.maximumResponseItemCount` (2,048) provider output items may be accumulated across a turn's passes and retries. This also bounds an incomplete parallel tool batch before the provider completes its response. Budget errors expose the applicable `AgentRuntimeError.executionLimit` and are never retried. The existing per-event, image, and context payload limits still apply.
+
+The pending steering queue accepts at most `AgentStoreLimits.maximumPendingSteeringMessageCount` (512) messages at once. Additional input fails with `steering_queue_full`; accepted messages retain their order, and capacity becomes available after the next pass drains the queue.
+
+## Context compaction transport
+
+Each compact response has its own `maximumResponseBytes` budget (256 MiB by default). Declared oversized success bodies are rejected before reading; unknown or understated lengths are checked as bytes arrive. Error bodies are capped at the smaller of that budget and 1 MiB, while preserving HTTP status for session recovery. Downloads are cancelled on rejection or cancellation. Compact requests use `streamIdleTimeout` as their request timeout.
+
+Runtime compaction retries an HTTP 401/403 once through the configured session provider. Recovery must retain the same account. Failed recovery, a second authentication failure, or cancellation propagates instead of silently installing a local summary. `preferRemoteThenLocal` can still fall back locally for ordinary remote failures; `remoteOnly` reports them. Compact HTTP errors expose `AgentRuntimeError.http`.
+
+Client-managed compact requests expand internal image references using effective-history attachments. Missing attachments fail with `responses_missing_persisted_image` before sending. Server-managed requests with a previous response ID omit input. Compacted message and generated-image output retain attachment bytes in disk blobs through the storage adapters; provider context holds internal references. Debug request/response formatting runs only when network debug logging is enabled.
 
 ## Models and reasoning
 

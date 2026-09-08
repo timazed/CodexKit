@@ -27,9 +27,9 @@ public struct RequestRetryPolicy: Sendable, Equatable {
         ]
     ) {
         self.maxAttempts = max(1, maxAttempts)
-        self.initialBackoff = max(0, initialBackoff)
-        self.maxBackoff = max(self.initialBackoff, maxBackoff)
-        self.jitterFactor = min(max(0, jitterFactor), 1)
+        self.initialBackoff = initialBackoff.isFinite ? min(86_400, max(0, initialBackoff)) : 0
+        self.maxBackoff = max(self.initialBackoff, maxBackoff.isFinite ? min(86_400, max(0, maxBackoff)) : 0)
+        self.jitterFactor = jitterFactor.isFinite ? min(max(0, jitterFactor), 1) : 0
         self.retryableHTTPStatusCodes = retryableHTTPStatusCodes
         self.retryableURLErrorCodes = retryableURLErrorCodes
     }
@@ -40,7 +40,8 @@ public struct RequestRetryPolicy: Sendable, Equatable {
 
 extension RequestRetryPolicy {
     func delayBeforeRetry(attempt: Int) -> TimeInterval {
-        let exponential = initialBackoff * pow(2, Double(max(0, attempt - 1)))
+        let exponent = min(1_024, max(1, attempt) - 1)
+        let exponential = initialBackoff == 0 ? 0 : initialBackoff * pow(2, Double(exponent))
         let capped = min(maxBackoff, exponential)
         guard jitterFactor > 0 else {
             return capped
@@ -48,6 +49,6 @@ extension RequestRetryPolicy {
 
         let jitterRange = capped * jitterFactor
         let jittered = capped + Double.random(in: -jitterRange ... jitterRange)
-        return max(0, jittered)
+        return min(86_400, max(0, jittered))
     }
 }

@@ -71,7 +71,7 @@ extension AgentRuntime {
         result: ToolResultEnvelope,
         completedAt: Date = Date()
     ) {
-        let resultText = result.primaryText
+        let resultText = result.combinedText
             ?? result.errorMessage
             ?? (result.success ? "completed" : "failed")
         appendEffectiveMessage(
@@ -179,6 +179,8 @@ extension AgentRuntime {
 
     @discardableResult
     public func compactThreadContext(id threadID: String) async throws -> AgentThreadContextState {
+        let operationID = try reserveThreadOperation(in: threadID)
+        defer { releaseThreadOperation(in: threadID, id: operationID) }
         guard shouldUseCompaction(),
               contextCompactionConfiguration.mode.supportsManual
         else {
@@ -231,7 +233,10 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
-        let current = state.contextStateByThread[threadID]
+        let operationID = threadOperations[threadID]
+        let originalContext = state.contextStateByThread[threadID]
+        let originalMessages = state.messagesByThread[threadID]
+        let current = originalContext
             ?? AgentThreadContextState(
                 threadID: threadID,
                 effectiveMessages: state.messagesByThread[threadID] ?? []
@@ -254,6 +259,12 @@ extension AgentRuntime {
             session: session
         )
         try Task.checkCancellation()
+        guard self.thread(for: threadID) != nil, threadOperations[threadID] == operationID,
+              state.contextStateByThread[threadID] == originalContext,
+              state.messagesByThread[threadID] == originalMessages else {
+            throw AgentRuntimeError(code: "context_changed_during_compaction",
+                message: "The thread context changed while compaction was running. Retry compaction with the current context.")
+        }
         let boundedCompactedMessages = AgentThreadContextWindow.boundedMessages(
             compaction.result.effectiveMessages,
             policy: threadActivationPolicy,
@@ -346,80 +357,35 @@ extension AgentRuntime {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> (result: AgentCompactionResult, usedInstructions: Bool) {
-        switch contextCompactionConfiguration.strategy {
-        case .preferRemoteThenLocal:
-            if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
-                do {
-                    let result = try await compactingBackend.compactContext(
-                        thread: thread,
-                        effectiveHistory: effectiveHistory,
-                        providerContext: providerContext(for: thread.id),
-                        instructions: instructions,
-                        tools: tools,
-                        session: session
-                    )
-                    return (result, true)
-                } catch {
-                    try preserveCompactionCancellation(error)
+        let strategy = contextCompactionConfiguration.strategy
+        if strategy != .localOnly {
+            let context = providerContext(for: thread.id)
+            var encounteredUnauthorized = false
+            do {
+                let recovered = try await withUnauthorizedRecovery(initialSession: session) { session in
+                    do {
+                        if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
+                            return try await compactingBackend.compactContext(thread: thread,
+                                effectiveHistory: effectiveHistory, providerContext: context,
+                                instructions: instructions, tools: tools, session: session)
+                        }
+                        guard let compactingBackend = backend as? any AgentBackendContextCompacting else {
+                            throw AgentRuntimeError.contextCompactionUnsupported()
+                        }
+                        return try await compactingBackend.compactContext(thread: thread,
+                            effectiveHistory: effectiveHistory, instructions: instructions, tools: tools, session: session)
+                    } catch {
+                        encounteredUnauthorized = encounteredUnauthorized || Self.isUnauthorizedError(error)
+                        throw error
+                    }
                 }
-                return (
-                    localCompactionResult(for: thread.id, from: effectiveHistory),
-                    false
-                )
+                return (recovered.result, true)
+            } catch {
+                try preserveCompactionCancellation(error)
+                if strategy == .remoteOnly || encounteredUnauthorized { throw error }
             }
-            if let compactingBackend = backend as? any AgentBackendContextCompacting {
-                do {
-                    let result = try await compactingBackend.compactContext(
-                        thread: thread,
-                        effectiveHistory: effectiveHistory,
-                        instructions: instructions,
-                        tools: tools,
-                        session: session
-                    )
-                    return (result, true)
-                } catch {
-                    try preserveCompactionCancellation(error)
-                }
-            }
-            return (
-                localCompactionResult(for: thread.id, from: effectiveHistory),
-                false
-            )
-
-        case .remoteOnly:
-            if let compactingBackend = backend as? any AgentBackendProviderContextCompacting {
-                return (
-                    try await compactingBackend.compactContext(
-                        thread: thread,
-                        effectiveHistory: effectiveHistory,
-                        providerContext: providerContext(for: thread.id),
-                        instructions: instructions,
-                        tools: tools,
-                        session: session
-                    ),
-                    true
-                )
-            }
-            guard let compactingBackend = backend as? any AgentBackendContextCompacting else {
-                throw AgentRuntimeError.contextCompactionUnsupported()
-            }
-            return (
-                try await compactingBackend.compactContext(
-                    thread: thread,
-                    effectiveHistory: effectiveHistory,
-                    instructions: instructions,
-                    tools: tools,
-                    session: session
-                ),
-                true
-            )
-
-        case .localOnly:
-            return (
-                localCompactionResult(for: thread.id, from: effectiveHistory),
-                false
-            )
         }
+        return (localCompactionResult(for: thread.id, from: effectiveHistory), false)
     }
 
     private func preserveCompactionCancellation(_ error: Error) throws {
@@ -503,6 +469,9 @@ extension AgentRuntime {
     }
 
     func isContextPressureError(_ error: Error) -> Bool {
+        if let code = (error as? AgentRuntimeError)?.http?.providerCode {
+            return ["context_length_exceeded", "context_window_exceeded", "context_limit_exceeded", "too_many_tokens"].contains(code)
+        }
         let message = ((error as? AgentRuntimeError)?.message ?? error.localizedDescription).lowercased()
         return message.contains("context") && message.contains("limit")
             || message.contains("maximum context length")
