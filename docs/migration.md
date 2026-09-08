@@ -4,6 +4,8 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+For `2.0.0-alpha.27`, use Swift 6.1 or newer and Xcode 16.3 or newer for Xcode projects. The deployment targets remain iOS 17 and macOS 14, and this prerelease requires no database schema migration. Review the host-managed session, execution-limit, structured-output, compaction, and definition-validation changes below, plus the [API compatibility review](#public-api-review-against-alpha26).
+
 ## 2.0 Migration Notes
 
 If you are moving code forward from earlier 2.0 alpha snapshots, update these API areas:

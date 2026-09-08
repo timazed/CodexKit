@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.27] - 2026-09-08
+
+This prerelease adds host-managed sessions and execution handles, fixes cancellation and persistence races, and reduces image-compaction and history-paging overhead. Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. Deployment targets remain iOS 17 and macOS 14. See the [migration notes](docs/migration.md) for configuration inspection, structured-output validation, and execution-limit changes.
+
 ### Added
 
 - Added a repeatable concurrency workload across file, SQLite, and Realm stores, combining six overlapping operations, cancellation, compaction, slow consumers, shared image blobs, and database/runtime reopening with independent transcript checks.

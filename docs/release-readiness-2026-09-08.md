@@ -1,6 +1,6 @@
 # Release readiness — 8 September 2026
 
-The SDK code passes local and hosted package, release-build, simulator, and performance verification. Live-provider compatibility remains unverified because no current SDK/demo session is saved on this Mac. Changes and release notes remain under `Unreleased`; no release tag or publication was created.
+The SDK code passes local and hosted package, release-build, simulator, and performance verification. Live-provider compatibility remains unverified because no current SDK/demo session is saved on this Mac. The next prerelease is `v2.0.0-alpha.27`; its changelog entry and migration guidance are prepared. No release tag or publication has been created.
 
 The [storage-lock cancellation issue](storage-lock-audit-2026-09-08.md) is fixed. Cancelled lock acquisitions and queued direct writes stop before acquiring a lease; commits already underway finish atomically. Shared preparation and runtime-owned accepted writes retain their completion and ordering guarantees. Ten new regression tests cover the original failure and cancellation through the storage queues.
 
@@ -56,6 +56,6 @@ Behavioral changes also require attention: one-shot output now validates before 
 ## Remaining release gates
 
 1. Supply a current SDK/demo session and pass the live plain/structured and image → compaction → database reopen → follow-up checks. The complete image matrix currently runs on the Mac package-test host; signing into a separate iOS device does not populate its Keychain.
-2. Choose the next release version, move the `Unreleased` notes to that version, and create its tag through the normal release process. Any later code changes must pass the same CI checks again. The reviewed changes are on `codex/release-validation`.
+2. Publish the prepared `v2.0.0-alpha.27` after the live checks pass: update the README release links, bring the reviewed changes from `codex/release-validation` onto `main`, and push an annotated tag through the normal release process. The release workflow reruns package, optimized, and simulator verification before publishing the GitHub prerelease. Any later code changes must pass the same CI checks again.
 
 The [performance follow-up](performance-2026-09-08.md#implemented-performance-follow-up) batches compact-response bytes, validates image references without expansion, and reads consecutive Realm history windows by primary key. Eight new regression tests passed. The observed eight-image compaction and 20,000-record paging times decreased by 48% and 79% respectively; these local measurements introduce no performance-based release blocker and make no live-provider or physical-device energy claim. These changes add no public API or database schema migration.
