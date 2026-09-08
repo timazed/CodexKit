@@ -12,6 +12,31 @@ permissions:
   actions: read
 
 jobs:
+  diagnose-prior-failure:
+    name: Diagnose earlier test failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Diagnose the earlier current-OS test failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/jobs/101942695648/logs" \
+            --output "$RUNNER_TEMP/prior-job.log"
+          python3 - <<'PYTHON'
+          import os, re
+          from pathlib import Path
+
+          lines = (Path(os.environ["RUNNER_TEMP"]) / "prior-job.log").read_text(errors="replace").splitlines()
+          failures = [line for line in lines if (".swift:" in line and "error:" in line)
+                      or re.search(r"Test Case .* failed \(", line)]
+          message = "\n".join(dict.fromkeys(failures))[:6000] or "No source/test failure lines were found."
+          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::notice title=Earlier current-OS failure::{message}")
+          PYTHON
+
   test-and-build:
     name: Verify (${{ matrix.profile }})
     strategy:
@@ -60,28 +85,6 @@ jobs:
         run: |
           sw_vers
           swift --version
-
-      - name: Diagnose the earlier current-OS test failure
-        if: matrix.profile == 'current'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          curl --fail --location --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/jobs/101942695648/logs" \
-            --output "$RUNNER_TEMP/prior-job.log"
-          python3 - <<'PYTHON'
-          import os, re
-          from pathlib import Path
-
-          lines = (Path(os.environ["RUNNER_TEMP"]) / "prior-job.log").read_text(errors="replace").splitlines()
-          failures = [line for line in lines if (".swift:" in line and "error:" in line)
-                      or re.search(r"Test Case .* failed \(", line)]
-          message = "\n".join(dict.fromkeys(failures))[:6000] or "No source/test failure lines were found."
-          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-          print(f"::notice title=Earlier current-OS failure::{message}")
-          PYTHON
 
       - name: Production source size
         run: python3 Scripts/check_source_size.py
