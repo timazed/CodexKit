@@ -456,7 +456,9 @@ extension AgentHistoryCursor {
             threadID: threadID,
             sequenceNumber: sequenceNumber
         )
-        let data = (try? JSONEncoder().encode(payload)) ?? Data()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = (try? encoder.encode(payload)) ?? Data()
         let base64 = data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -503,7 +505,9 @@ extension AgentHistoryCursor {
             sequenceNumber: record.sequenceNumber,
             createdAt: record.createdAt
         )
-        let data = (try? JSONEncoder().encode(payload)) ?? Data()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = (try? encoder.encode(payload)) ?? Data()
         self.init(rawValue: Self.urlSafeBase64(data))
     }
 

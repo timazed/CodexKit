@@ -21,6 +21,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 
+- Encoded history cursors with deterministic JSON key ordering so equivalent pages have stable cursor values; previously issued cursors remain readable.
 - Simplified model-catalog decoding so the SDK builds with Swift 6.1 without exceeding the compiler's type-checking limit.
 - Made Realm actor isolation explicit and kept history-query fallbacks in the owning actor for Swift 6.1 concurrency checking.
 - Made contended storage-lock waits cancellable without blocking executor workers, closed cancelled leases, preserved queue ordering after cancelled waiters, and protected database/attachment commits already underway.
