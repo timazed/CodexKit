@@ -1,6 +1,6 @@
 # Release candidate — 9 September 2026
 
-The candidate is `v2.0.0-alpha.27` on `codex/release-validation`, based on `aef6820276e67ff7e9b770834b7e0fb39b2ef173`. Remote tags were checked on 9 September: `v2.0.0-alpha.26` remains the latest tag in this series. Publication is held for manual demo verification. The versioned changelog and migration notes include the account-name addition.
+The candidate is `v2.0.0-alpha.27` on `codex/release-validation`. Its code commit is `8da0900fff95ce28e4fe403b68157fd9da3c1bf0`, based on `aef6820276e67ff7e9b770834b7e0fb39b2ef173`. Remote tags were checked on 9 September: `v2.0.0-alpha.26` remains the latest tag in this series. Publication is held for manual demo verification. The versioned changelog and migration notes include the account-name addition.
 
 ## Account-name behavior
 
@@ -29,7 +29,13 @@ The full package suite completed in 137.085 seconds. Its six skips are the two l
 
 The API comparison still reports the seven earlier default-parameter initializer changes and two optional configuration properties documented in the [migration guide](migration.md#public-api-review-against-alpha26). It reports no removed/changed public UI declarations or new core protocol requirements. It does not establish binary ABI compatibility.
 
-Local logs are retained under `.build/` and are not committed. Previous hosted results from 8 September cover the earlier code revision; the final candidate still needs its own hosted CI results, including the minimum Swift/macOS/iOS profiles.
+Local logs are retained under `.build/` and are not committed.
+
+## Hosted verification
+
+All four jobs in the [candidate CI run](https://github.com/timazed/CodexKit/actions/runs/34310334995) passed for code commit `8da0900fff95ce28e4fe403b68157fd9da3c1bf0`: current and minimum package/release verification, the Swift 6.1 iOS 17 build, and actual iOS 17 runtime verification. The current job also passed optimized regression/concurrency checks and signed simulator execution. Final job status is retained locally in `.build/account-name-hosted-ci.json`.
+
+This final results update changes documentation only; it does not change the verified SDK, tests, demo sources, or workflows. Hosted CI retains its own package, optimized-test, and simulator evidence.
 
 ## Manual demo checks
 
@@ -44,6 +50,6 @@ Name availability in real service tokens remains unverified: the two documented 
 ## Publication handoff
 
 - Keep the candidate on `codex/release-validation` while the demo is being checked.
-- Complete the final candidate's hosted CI and record the manual/live verification outcome before publication.
+- Hosted CI is complete. Record the manual/live verification outcome before publication.
 - Once approved, update README release links to alpha.27, bring the reviewed candidate onto `main`, and create an annotated `v2.0.0-alpha.27` tag on the approved release commit.
 - Pushing that tag triggers the release workflow, which repeats its required checks before publishing the GitHub prerelease. No release tag should be pushed before approval.
