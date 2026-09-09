@@ -116,6 +116,7 @@ struct PKCECodes {
 
 struct JWTClaims: Decodable {
     let email: String?
+    let name: String?
     let chatGPTAccountID: String?
     let planType: String?
     let issuedAtSeconds: TimeInterval?
@@ -123,6 +124,7 @@ struct JWTClaims: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case email
+        case name
         case chatGPTAccountID = "chatgpt_account_id"
         case planType = "chatgpt_plan_type"
         case issuedAtSeconds = "iat"

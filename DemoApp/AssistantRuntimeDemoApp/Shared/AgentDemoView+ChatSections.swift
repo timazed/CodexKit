@@ -36,7 +36,7 @@ extension AgentDemoView {
             }
 
             if let session = viewModel.session {
-                Text("Signed in as \(session.account.email)")
+                Text("Signed in as \(session.account.displayName)")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
             }

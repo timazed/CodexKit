@@ -1,5 +1,7 @@
 # Release readiness — 8 September 2026
 
+This report records the earlier baseline. See the [9 September release candidate report](release-readiness-2026-09-09.md) for account-name support and the latest verification status.
+
 The SDK code passes local and hosted package, release-build, simulator, and performance verification. Live-provider compatibility remains unverified because no current SDK/demo session is saved on this Mac. The next prerelease is `v2.0.0-alpha.27`; its changelog entry and migration guidance are prepared. No release tag or publication has been created.
 
 The [storage-lock cancellation issue](storage-lock-audit-2026-09-08.md) is fixed. Cancelled lock acquisitions and queued direct writes stop before acquiring a lease; commits already underway finish atomically. Shared preparation and runtime-owned accepted writes retain their completion and ordering guarantees. Ten new regression tests cover the original failure and cancellation through the storage queues.

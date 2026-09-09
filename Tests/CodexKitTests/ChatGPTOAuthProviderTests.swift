@@ -49,6 +49,7 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         let idToken = try makeUnsignedJWT(
             claims: [
                 "email": "taylor@example.com",
+                "name": "Taylor Morgan",
                 "chatgpt_account_id": "workspace-123",
                 "chatgpt_plan_type": "plus",
                 "iat": Int(now.timeIntervalSince1970),
@@ -93,6 +94,8 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         let signedIn = try await provider.signInInteractively()
         XCTAssertEqual(signedIn.account.id, "workspace-123")
         XCTAssertEqual(signedIn.account.email, "taylor@example.com")
+        XCTAssertEqual(signedIn.account.name, "Taylor Morgan")
+        XCTAssertEqual(signedIn.account.displayName, "Taylor Morgan")
         XCTAssertEqual(signedIn.account.plan, .plus)
         XCTAssertEqual(signedIn.refreshToken, "refresh-123")
         XCTAssertEqual(signedIn.idToken, idToken)
@@ -135,6 +138,7 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         let refreshedIDToken = try makeUnsignedJWT(
             claims: [
                 "email": "jamie@example.com",
+                "name": "Jamie Morgan",
                 "chatgpt_account_id": "workspace-abc",
                 "chatgpt_plan_type": "pro",
                 "iat": Int(Date().timeIntervalSince1970),
@@ -166,13 +170,14 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
             session: ChatGPTSession(
                 accessToken: "old-access",
                 refreshToken: "refresh-123",
-                account: ChatGPTAccount(id: "workspace-abc", email: "old@example.com", plan: .free)
+                account: ChatGPTAccount(id: "workspace-abc", email: "old@example.com", plan: .free, name: "Old Name")
             ),
             reason: .unauthorized
         )
 
         XCTAssertEqual(refreshed.account.id, "workspace-abc")
         XCTAssertEqual(refreshed.account.email, "jamie@example.com")
+        XCTAssertEqual(refreshed.account.name, "Jamie Morgan")
         XCTAssertEqual(refreshed.account.plan, .pro)
         XCTAssertEqual(refreshed.refreshToken, "refresh-456")
     }
@@ -190,6 +195,7 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         let refreshedIDToken = try makeUnsignedJWT(
             claims: [
                 "email": "runtime@example.com",
+                "name": "Runtime User",
                 "chatgpt_account_id": "workspace-runtime",
                 "chatgpt_plan_type": "plus",
                 "iat": Int(now.timeIntervalSince1970),
@@ -253,5 +259,7 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
         let currentSession = await runtime.currentSession()
         XCTAssertEqual(currentSession?.accessToken, refreshedAccessToken)
         XCTAssertEqual(currentSession?.refreshToken, "refresh-runtime-2")
+        XCTAssertEqual(currentSession?.account.name, "Runtime User")
+        XCTAssertEqual(try secureStore.loadSession()?.account.name, "Runtime User")
     }
 }

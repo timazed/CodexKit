@@ -7,6 +7,8 @@
 
 `main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.26](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.26). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
+The next prerelease, `v2.0.0-alpha.27`, is prepared for demo verification. See the [release candidate report](docs/release-readiness-2026-09-09.md) for verification evidence and remaining publication steps.
+
 ## Capabilities
 
 - Text and image input, streamed replies, and typed structured output.
@@ -89,6 +91,8 @@ for try await event in stream {
 ```
 
 For typed replies and attachments, see [Messaging and images](docs/messaging.md). For model discovery, parallel tools, progress, and turn controls, see [Runtime progress, tools, and turn control](docs/upstream-runtime-features.md).
+
+Signed-in accounts expose an optional `account.name` and `account.displayName`, which falls back to email. See [account names](docs/auth-on-ios.md#account-name).
 
 Turns use bounded event queues and configurable execution limits. The default runtime duration is five minutes, including approval waits; see [event buffering and execution limits](docs/messaging.md#event-buffering-and-execution-limits) for longer workflows.
 

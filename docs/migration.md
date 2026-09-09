@@ -10,6 +10,8 @@ For `2.0.0-alpha.27`, use Swift 6.1 or newer and Xcode 16.3 or newer for Xcode p
 
 If you are moving code forward from earlier 2.0 alpha snapshots, update these API areas:
 
+- account names are optional
+  Browser OAuth and device-code sign-in/refresh populate `ChatGPTAccount.name` when the ID token supplies it. Use `account.displayName` for a name-or-email label. The original three-argument initializer, including function references, remains available. Saved sessions without a name still decode; the next sign-in or token refresh can populate it. See [account names](auth-on-ios.md#account-name).
 - progress and interruption add event cases
   Update exhaustive ordinary and structured event switches for `progress`, `rateLimitsUpdated`, and `turnInterrupted`, plus status/history switches for `AgentTurnStatus.interrupted` and `AgentSystemEventType.turnInterrupted`. Cancelled turns now record interrupted status, return the thread to idle, and end the stream with `CancellationError`.
 - one persistent turn runs per thread

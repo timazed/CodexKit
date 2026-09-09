@@ -43,6 +43,7 @@ final class ChatGPTDeviceCodeAuthProviderTests: XCTestCase {
         let idToken = try makeUnsignedJWT(
             claims: [
                 "email": "device@example.com",
+                "name": "Device User",
                 "chatgpt_account_id": "workspace-device",
                 "chatgpt_plan_type": "plus",
                 "iat": Int(now.timeIntervalSince1970),
@@ -113,6 +114,8 @@ final class ChatGPTDeviceCodeAuthProviderTests: XCTestCase {
         XCTAssertEqual(prompt?.verificationURL.absoluteString, "https://auth.openai.com/codex/device")
         XCTAssertEqual(clearCount, 1)
         XCTAssertEqual(signedIn.account.email, "device@example.com")
+        XCTAssertEqual(signedIn.account.name, "Device User")
+        XCTAssertEqual(signedIn.account.displayName, "Device User")
         XCTAssertEqual(signedIn.account.id, "workspace-device")
         XCTAssertEqual(signedIn.refreshToken, "refresh-device")
     }

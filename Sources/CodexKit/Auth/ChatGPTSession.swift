@@ -15,11 +15,26 @@ public struct ChatGPTAccount: Codable, Hashable, Sendable {
     public var id: String
     public var email: String
     public var plan: ChatGPTPlanType
+    /// The name supplied by the sign-in token, when available.
+    public var name: String?
 
     public init(id: String, email: String, plan: ChatGPTPlanType) {
+        self.init(id: id, email: email, plan: plan, name: nil)
+    }
+
+    public init(id: String, email: String, plan: ChatGPTPlanType, name: String?) {
         self.id = id
         self.email = email
         self.plan = plan
+        self.name = name
+    }
+
+    /// The account name with surrounding whitespace removed, or the email when absent or blank.
+    public var displayName: String {
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return email
+        }
+        return name
     }
 }
 

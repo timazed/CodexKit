@@ -255,7 +255,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
             accessToken: response.accessToken,
             refreshToken: response.refreshToken ?? fallbackRefreshToken,
             idToken: response.idToken,
-            account: ChatGPTAccount(id: accountID, email: email, plan: plan),
+            account: ChatGPTAccount(id: accountID, email: email, plan: plan, name: idClaims.name),
             acquiredAt: accessClaims.issuedAt ?? Date(),
             expiresAt: accessClaims.expiresAt,
             isExternallyManaged: false

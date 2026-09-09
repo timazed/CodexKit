@@ -6,12 +6,13 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
-## [2.0.0-alpha.27] - 2026-09-08
+## [2.0.0-alpha.27] - 2026-09-09
 
-This prerelease adds host-managed sessions and execution handles, fixes cancellation and persistence races, and reduces image-compaction and history-paging overhead. Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. Deployment targets remain iOS 17 and macOS 14. See the [migration notes](docs/migration.md) for configuration inspection, structured-output validation, and execution-limit changes.
+This prerelease adds account names, host-managed sessions, and execution handles, fixes cancellation and persistence races, and reduces image-compaction and history-paging overhead. Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. Deployment targets remain iOS 17 and macOS 14. See the [migration notes](docs/migration.md) for configuration inspection, structured-output validation, and execution-limit changes.
 
 ### Added
 
+- Added optional `ChatGPTAccount.name` from the sign-in ID token for browser OAuth and device-code sign-in/refresh, plus `displayName` with an email fallback. Existing saved sessions and initializer calls, including initializer function references, remain compatible; the demo now displays the account name when available.
 - Added a repeatable concurrency workload across file, SQLite, and Realm stores, combining six overlapping operations, cancellation, compaction, slow consumers, shared image blobs, and database/runtime reopening with independent transcript checks.
 - Added release compilation, warnings-as-errors, and optimized performance/SDK/storage regression checks to CI; CI also verifies macOS 14 and iOS 17.0.1, while current-host CI and release verification run 40 concurrency rounds per adapter and retain the optimized test log.
 - Added signed simulator execution to CI and release verification, with per-adapter results, database reopen checks, fresh-report validation, retained diagnostic artifacts, and a production source-size guard.
