@@ -401,7 +401,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.26...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.27...HEAD
+[2.0.0-alpha.27]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.26...v2.0.0-alpha.27
 [2.0.0-alpha.26]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.25...v2.0.0-alpha.26
 [2.0.0-alpha.25]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.24...v2.0.0-alpha.25
 [2.0.0-alpha.24]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.23...v2.0.0-alpha.24

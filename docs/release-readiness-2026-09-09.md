@@ -1,6 +1,6 @@
 # Release candidate — 9 September 2026
 
-The candidate is `v2.0.0-alpha.27` on `codex/release-validation`. Its code commit is `8da0900fff95ce28e4fe403b68157fd9da3c1bf0`, based on `aef6820276e67ff7e9b770834b7e0fb39b2ef173`. Remote tags were checked on 9 September: `v2.0.0-alpha.26` remains the latest tag in this series. Publication is held for manual demo verification. The versioned changelog and migration notes include the account-name addition.
+The candidate is `v2.0.0-alpha.27` on `codex/release-validation`. Its code commit is `8da0900fff95ce28e4fe403b68157fd9da3c1bf0`, based on `aef6820276e67ff7e9b770834b7e0fb39b2ef173`. Remote tags were checked on 9 September: `v2.0.0-alpha.26` remains the latest tag in this series. The user approved publication on 9 September after confirming the OAuth name in the demo. The versioned changelog and migration notes include the account-name addition.
 
 ## Account-name behavior
 
@@ -53,7 +53,7 @@ This confirms real-token name availability and session restoration for the teste
 
 ## Publication handoff
 
-- Keep the candidate on `codex/release-validation` while the demo is being checked.
-- Hosted CI is complete. Record the manual/live verification outcome before publication.
-- Once approved, update README release links to alpha.27, bring the reviewed candidate onto `main`, and create an annotated `v2.0.0-alpha.27` tag on the approved release commit.
-- Pushing that tag triggers the release workflow, which repeats its required checks before publishing the GitHub prerelease. No release tag should be pushed before approval.
+- User publication approval received on 9 September; manual OAuth name and restoration results are recorded above.
+- README release links and changelog comparisons target alpha.27.
+- Fast-forward the reviewed candidate onto `main` and create an annotated `v2.0.0-alpha.27` tag.
+- The tag triggers the release workflow, which repeats required checks before publishing the GitHub prerelease.
