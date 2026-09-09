@@ -45,7 +45,11 @@ This final results update changes documentation only; it does not change the ver
 4. Send a short message and confirm normal replies still work. If you use both browser and device-code sign-in, check each flow.
 5. Report whether a real account name appeared and whether sign-in, restoration, and messaging worked. Do not share raw tokens.
 
-Name availability in real service tokens remains unverified: the two documented SDK/demo Mac Keychain entries had no saved session. The existing live plain/structured and image-compaction/reopen tests also remain unverified for this candidate; the Mac tests need a Mac SDK/demo session, separate from an iOS device's session.
+Fresh browser OAuth sign-in was confirmed on an iOS 26.5 simulator on 9 September: the user reported seeing the name in the demo. A temporary diagnostic recorded a nonempty top-level ID-token `name`, distinct from the email, and a populated `account.name`. The name was also present in the access token's namespaced profile and the provider's advertised user-info response (HTTP 200). The diagnostic only read those additional sources; the displayed name came from the existing ID-token implementation. It recorded field names/presence rather than token or profile values and was removed afterward. No additional profile request was added to the SDK. The local diagnostic summary is `.build/account-name-oauth-diagnostic-result.json`.
+
+After removing the diagnostics, the normal demo build was rebuilt, installed over the diagnostic build without clearing app data, and relaunched. The demo restored the saved OAuth session and still displayed the name.
+
+This confirms real-token name availability and session restoration for the tested browser OAuth flow. It does not yet confirm the original physical-device session, device-code sign-in, or live messaging checks. The existing live plain/structured and image-compaction/reopen tests also remain unverified for this candidate; the Mac tests need a Mac SDK/demo session, separate from an iOS device's session.
 
 ## Publication handoff
 
