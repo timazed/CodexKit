@@ -18,7 +18,7 @@ The main and tag jobs overlapped; their durations must not be added as sequentia
 
 - A release reuses complete, exact-SHA CI evidence instead of rebuilding packages and demos. Missing verification can be dispatched once; failed verification is not automatically retried. Pending/failed/skipped checks never become successful by timeout.
 - Main reuses original branch evidence when its commit SHA is identical. A merge producing another SHA requires fresh verification. Same-repository Codex PRs delegate to their existing branch checks; other PRs verify the merge revision.
-- SDK compatibility, current SDK tests, signed iOS/macOS demos, and the portable iOS 17 build execute in parallel. The iOS 17 runtime step reuses its signed artifact without recompilation.
+- SDK compatibility, current Debug tests, optimized tests, signed iOS/macOS demos, and the portable iOS 17 build execute in parallel. The iOS 17 runtime step reuses its signed artifact without recompilation.
 - Dependency and build caches include toolchain/platform and lockfile identities. Every build/test still executes after cache restoration. The redundant standalone optimized build was folded into optimized tests, which compile all four library dependencies.
 - Both demos default to smoke mode. Cancellation and second-process result retrieval remain mandatory. Full scenarios remain available with `--mode full`, are selected for relevant changes, and run on the daily comprehensive check.
 - Ordinary optimized concurrency uses six rounds. Relevant changes, manual extended dispatch, and scheduled verification retain 40-round stress and larger workloads.
@@ -37,8 +37,12 @@ Measured on the development Mac with existing compatible build directories; thes
 | Retained full macOS/iOS modes | Both passed using the prebuilt signed apps; full assertions and second-process receipt recovery retained |
 | Full SDK Debug suite with locked versions | 593 tests, six expected opt-in skips, zero failures; build and tests 186.420s |
 | Short optimized lane with locked versions | 55 tests passed; build and tests 86.028s, of which test execution was 7.802s |
-| Gate/planner/demo-harness tests | 34 tests passed, including dispatch-once, timeout, stale/foreign proof, and failed-verification rejection |
+| Gate/planner/demo-harness tests | 38 tests passed, including dispatch-once, timeout, stale/foreign proof, failed-verification rejection, cold simulator discovery, and PR delegation |
 | Workflow validation | Official actionlint v1.7.12 passed |
 | Source-size and whitespace guards | Passed |
 
 The initial target is 1–2 minutes to publish an already verified commit and less than ten minutes for fresh routine CI with compatible caches. Cold-cache and extended runs must be measured separately. Hosted timing validation is recorded below as it completes; the timing target is not yet a measured guarantee.
+
+The [first cold hosted run](https://github.com/timazed/CodexKit/actions/runs/34501275170) exposed a 60-second CoreSimulator runtime-listing timeout before the current iOS app build began. The harness now retries this read within a shared 120-second bound; malformed responses, command failures, build errors, and assertions still fail immediately. This run cannot certify the candidate because the iOS job failed. Other lane results remain useful timing evidence.
+
+The same cold run showed that keeping Debug and optimized compilation in one SDK job exceeded ten minutes. Those configurations now run as independent mandatory lanes. The full suite, optimized coverage, and both compiler profiles remain required.

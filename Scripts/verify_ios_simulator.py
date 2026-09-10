@@ -43,6 +43,27 @@ def select_simulator(runtimes, requested=None):
     raise RuntimeError("No compatible installed iPhone simulator runtime was found.")
 
 
+def discover_runtimes(*, log, timeout=120):
+    """Cold hosted runners can time out starting CoreSimulator; retry only this read."""
+    command = ["xcrun", "simctl", "list", "runtimes", "--json"]
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    while (remaining := deadline - time.monotonic()) > 0:
+        attempts += 1
+        print(f"Runtime discovery attempt {attempts}", file=log, flush=True)
+        try:
+            result = run(command, timeout=min(60, remaining))
+        except subprocess.TimeoutExpired as error:
+            print(str(error), file=log, flush=True)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(2, remaining))
+            continue
+        # Malformed data and nonzero command exits must not be hidden by retries.
+        return json.loads(result)["runtimes"]
+    raise RuntimeError(f"Simulator runtime discovery timed out after {timeout}s ({attempts} attempts)")
+
+
 def validate_report(report, run_id, mode="smoke"):
     if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
@@ -117,7 +138,8 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     try:
         if not options.build_only:
-            runtimes = json.loads(run(["xcrun", "simctl", "list", "runtimes", "--json"]))["runtimes"]
+            with timings.measure("runtime_discovery"), (output / "runtime-discovery.log").open("w") as log:
+                runtimes = discover_runtimes(log=log)
             runtime, device = select_simulator(runtimes, options.runtime)
             print(f"Verifying on {runtime['name']} / {device['name']}.", flush=True)
         if options.app:

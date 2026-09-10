@@ -63,7 +63,7 @@ A complete run uses up to 14 small provider requests, including four remote comp
 
 ## CI and release promotion
 
-CI has one canonical push verification for `main` and `codex/**`. Same-repository `codex/**` PRs delegate to their branch checks instead of duplicating them. Other PRs verify GitHub's merge revision. A merge producing a different SHA must pass its own main verification before release. Superseded development runs are cancelled; main and scheduled runs are not interrupted by newer revisions.
+CI has one canonical push verification for `main` and `codex/**`. Same-repository `codex/**` PRs wait for passing branch evidence instead of duplicating the builds; a pending, failed, or missing branch result cannot make the PR gate green. Other PRs verify GitHub's merge revision. A merge producing a different SHA must pass its own main verification before release. Superseded development runs are cancelled; main and scheduled runs are not interrupted by newer revisions.
 
 The plan job runs the cheap source-size guard and Python harness/gate tests. If a trusted CI run already passed every required job for the exact SHA, compilation and app execution are skipped and the original evidence URL is retained. Reuse-only runs cannot certify themselves. Fork/PR runs, different commits/workflows, missing or skipped mandatory jobs, and a later completed failure cannot serve as release evidence. An API error causes fresh CI verification; the same error blocks release publication.
 
@@ -71,13 +71,14 @@ Fresh verification runs these lanes in parallel:
 
 | Lane | Checks |
 | --- | --- |
-| SDK (current) | Full Debug suite, then optimized correctness/recovery tests with six concurrency rounds. The optimized test target depends on all four library targets; no separate overlapping release-build command. |
+| SDK (current) | Full Debug suite on the current compiler. |
+| SDK (optimized) | Optimized correctness/recovery tests with six concurrency rounds, running alongside Debug tests. Its test target depends on all four library targets; no separate overlapping release-build command. |
 | SDK (minimum) | Full Debug suite on macOS 14 / Swift 6.1.3. Optimized checks run on the current compiler. |
 | Demo (iOS) | Signed current-runtime build, SQLite/Realm completion/reopen/cancellation, saved structured result, and retrieval in a second app process. |
 | Demo (macOS) | Signed app startup, controlled chat, conversation restoration, cancellation, saved structured result, and retrieval in a second app process. |
 | Build iOS 17 verifier → Demo (iOS 17) | Xcode 16.4 produces a signed universal simulator app once; macOS 14 executes it on iOS 17.0.1 without rebuilding. |
 
-`Verification gate v1` requires all mandatory lanes to pass. Relevant storage/concurrency changes enable a separate 40-round optimized stress/benchmark job after SDK verification, reusing compatible intermediates. Relevant demo/authentication/recovery changes select full demo mode. `Scripts/ci_plan.py` defines the path rules. A daily 18:00 UTC run and manual dispatch with `extended: true` force fresh, comprehensive checks even if the commit already passed. No live accounts or model calls are enabled by CI.
+`Verification gate v1` requires all mandatory lanes to pass. Relevant storage/concurrency changes enable a separate 40-round optimized stress/benchmark job after optimized verification, reusing compatible intermediates. Relevant demo/authentication/recovery changes select full demo mode. `Scripts/ci_plan.py` defines the path rules. A daily 18:00 UTC run and manual dispatch with `extended: true` force fresh, comprehensive checks even if the commit already passed. No live accounts or model calls are enabled by CI.
 
 Build caches are partitioned by lane, actual OS/architecture/Xcode/Swift versions, dependency lockfiles, and source content. Compatible earlier intermediates may be restored for incremental compilation, but builds and tests still execute; a cache hit is never a passing test. Dependency versions are locked during SwiftPM and Xcode builds. Current-runtime iOS builds compile only the host architecture; the portable iOS 17 artifact retains both architectures.
 
@@ -89,7 +90,7 @@ The release gate uses `actions: write` only to dispatch missing verification; it
 
 Publication of an already verified commit should take 1–2 minutes, subject to GitHub scheduling. Fresh routine CI targets less than ten minutes with compatible caches. Cold caches, extended workloads, and hosted-runner queues are measured separately; the timeout is not a mechanism for declaring unfinished tests successful. Mac build lanes retain a 15-minute failure limit, while the release evidence wait stays within eight minutes.
 
-`Scripts/ci_timed.py` records SDK command duration and exit status. Demo `timings.json` files separate build, simulator setup, and app execution/relaunch. Each timing is also added to the job summary. Artifacts retain logs, both process reports, and timings for 14 days (`sdk-current`, `sdk-minimum`, `demo-iOS`, `demo-macOS`, `minimum-simulator-build`, `minimum-simulator-verification`, and optional `extended-stress`). The portable app and release-note transfer artifacts last one day.
+`Scripts/ci_timed.py` records SDK command duration and exit status. Demo `timings.json` files separate build, simulator setup, and app execution/relaunch. Each timing is also added to the job summary. Artifacts retain logs, both process reports, and timings for 14 days (`sdk-current`, `sdk-minimum`, `sdk-optimized`, `demo-iOS`, `demo-macOS`, `minimum-simulator-build`, `minimum-simulator-verification`, and optional `extended-stress`). The portable app and release-note transfer artifacts last one day.
 
 [The streamlining evidence](verification-streamlining.md) distinguishes local measurements from hosted results and records the original alpha.30 baseline.
 
@@ -106,7 +107,7 @@ Both harnesses default to `smoke`; use `--mode full` for the retained extensive 
 
 Use `--output-dir` to choose the iOS report directory, `--derived-data` to choose its build directory, or `--runtime 17.0.1` to require a specific installed runtime. `--build-only` produces a portable signed app without simulator access. `--app /absolute/path/CodexKitIOSDemo.app` runs a prebuilt app without compilation. The macOS `--skip-build` option similarly runs an existing signed build.
 
-The iOS container lookup remains separately bounded: timed-out reads are retried within 180 seconds without reinstalling or relaunching. Failed commands, invalid paths, stale reports, and failed assertions are not retried. App report waits are also bounded to 180 seconds. The source guard enforces 600 physical lines per production Swift file and repository verification script.
+Cold CoreSimulator runtime discovery retries only timed-out reads within 120 seconds. The iOS container lookup remains separately bounded: timed-out reads are retried within 180 seconds without reinstalling or relaunching. Failed commands, invalid paths, stale reports, and failed assertions are not retried. App report waits are also bounded to 180 seconds. The source guard enforces 600 physical lines per production Swift file and repository verification script.
 
 ## iOS simulator and physical device
 

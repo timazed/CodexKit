@@ -25,14 +25,10 @@ concurrency:
 jobs:
   plan:
     name: Verification plan
-    # Codex branches already have push checks on their head. Other PRs check the merge revision.
+    # Codex PRs wait for canonical branch proof; other PRs check the merge revision.
     # A new main merge SHA needs its own proof before release.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name != github.repository ||
-      !startsWith(github.event.pull_request.head.ref, 'codex/')
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 10
     outputs:
       verify: ${{ steps.plan.outputs.verify }}
       stress: ${{ steps.plan.outputs.stress }}
@@ -88,8 +84,37 @@ jobs:
           set -euo pipefail
           python3 Scripts/ci_timed.py --name 'SDK debug build and tests' --output "$RUNNER_TEMP/timing-debug.json" -- \
             swift test --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/package-tests.log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sdk-${{ matrix.profile }}
+          path: |
+            ${{ runner.temp }}/timing-*.json
+            ${{ runner.temp }}/*tests.log
+          retention-days: 14
+
+  optimized:
+    name: SDK (optimized)
+    needs: plan
+    if: needs.plan.outputs.verify == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-cache
+        with:
+          kind: sdk-optimized
+          paths: |
+            .build/artifacts
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
+            .build/build.db
+            .build/debug.yaml
+            .build/release.yaml
+            .build/arm64-apple-macosx
+            .build/x86_64-apple-macosx
       - name: Optimized correctness checks (all four library targets)
-        if: matrix.profile == 'current'
         env:
           CODEXKIT_STRESS_ROUNDS: "6"
         run: |
@@ -101,10 +126,10 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: sdk-${{ matrix.profile }}
+          name: sdk-optimized
           path: |
-            ${{ runner.temp }}/timing-*.json
-            ${{ runner.temp }}/*tests.log
+            ${{ runner.temp }}/timing-optimized.json
+            ${{ runner.temp }}/optimized-tests.log
           retention-days: 14
 
   demos:
@@ -222,7 +247,7 @@ jobs:
 
   extended-stress:
     name: Extended stress
-    needs: [plan, sdk]
+    needs: [plan, optimized]
     if: needs.plan.outputs.verify == 'true' && needs.plan.outputs.stress == 'true'
     runs-on: macos-latest
     timeout-minutes: 15
@@ -230,7 +255,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-cache
         with:
-          kind: sdk-current
+          kind: sdk-optimized
           paths: |
             .build/artifacts
             .build/checkouts
@@ -262,7 +287,7 @@ jobs:
 
   verified:
     name: Verification gate v1
-    needs: [plan, sdk, demos, build-minimum-simulator, minimum-simulator, extended-stress]
+    needs: [plan, sdk, optimized, demos, build-minimum-simulator, minimum-simulator, extended-stress]
     if: always() && needs.plan.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -280,7 +305,7 @@ jobs:
               assert plan['evidence_url'], 'Missing original verification evidence'
               print('Reused complete verification:', plan['evidence_url'])
           else:
-              for job in ('sdk', 'demos', 'build-minimum-simulator', 'minimum-simulator'):
+              for job in ('sdk', 'optimized', 'demos', 'build-minimum-simulator', 'minimum-simulator'):
                   assert needs[job]['result'] == 'success', f'{job} did not pass'
               expected = 'success' if plan['stress'] == 'true' else 'skipped'
               assert needs['extended-stress']['result'] == expected, 'Extended stress did not match the required result'

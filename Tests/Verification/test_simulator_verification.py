@@ -47,6 +47,37 @@ class SimulatorVerificationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verifier.select_simulator([self.runtime("18.6")], "17.0")
 
+    def test_cold_runtime_discovery_retries_only_the_timed_out_read(self):
+        clock = [0]
+        command = ["xcrun", "simctl", "list", "runtimes", "--json"]
+        calls = []
+        def read(args, *, timeout):
+            calls.append((args, timeout))
+            if len(calls) == 1:
+                clock[0] += timeout
+                raise subprocess.TimeoutExpired(args, timeout)
+            return json.dumps(dict(runtimes=[self.runtime("17.0.1")]))
+        with patch.object(verifier.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(verifier.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
+             patch.object(verifier, "run", side_effect=read):
+            self.assertEqual(verifier.discover_runtimes(log=io.StringIO()), [self.runtime("17.0.1")])
+        self.assertEqual(calls, [(command, 60), (command, 58)])
+
+    def test_runtime_discovery_timeout_is_bounded_and_other_errors_do_not_retry(self):
+        clock = [0]
+        def timed_out(command, *, timeout):
+            clock[0] += timeout
+            raise subprocess.TimeoutExpired(command, timeout)
+        with patch.object(verifier.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(verifier.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
+             patch.object(verifier, "run", side_effect=timed_out), self.assertRaisesRegex(RuntimeError, "after 120s"):
+            verifier.discover_runtimes(log=io.StringIO())
+        self.assertEqual(clock[0], 120)
+        for error in (RuntimeError("simctl failed"), ValueError("malformed JSON")):
+            with patch.object(verifier, "run", side_effect=error) as read, self.assertRaises(type(error)):
+                verifier.discover_runtimes(log=io.StringIO())
+            self.assertEqual(read.call_count, 1)
+
     def test_build_only_produces_a_portable_app_without_accessing_simulators(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -8,7 +8,7 @@ import urllib.request
 
 WORKFLOW = "ci.yml"
 REQUIRED_JOBS = frozenset({
-    "SDK (current)", "SDK (minimum)", "Demo (iOS)", "Demo (macOS)",
+    "SDK (current)", "SDK (minimum)", "SDK (optimized)", "Demo (iOS)", "Demo (macOS)",
     "Build iOS 17 verifier", "Demo (iOS 17)", "Verification gate v1",
 })
 

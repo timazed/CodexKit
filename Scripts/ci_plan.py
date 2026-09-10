@@ -8,6 +8,14 @@ from pathlib import Path
 import subprocess
 
 from ci_evidence import EvidenceError, GitHub, find_evidence
+from release_gate import require_evidence
+
+
+def delegated_revision(event, repository):
+    head = event.get("pull_request", {}).get("head", {})
+    if (head.get("repo") or {}).get("full_name") == repository and head.get("ref", "").startswith("codex/"):
+        return head.get("sha")
+    return None
 
 
 def extended_checks(paths, force=False):
@@ -46,7 +54,12 @@ def main():
     scheduled = os.environ["GITHUB_EVENT_NAME"] == "schedule"
     force = options.force or scheduled or event.get("inputs", {}).get("extended") in (True, "true")
     proof = None
-    if not force and os.environ["GITHUB_EVENT_NAME"] != "pull_request":
+    delegated = delegated_revision(event, os.environ["GITHUB_REPOSITORY"])
+    if delegated:
+        # The PR gate stays pending (or fails) until the canonical branch checks pass.
+        # Merely skipping duplicate jobs must never make an unverified PR green.
+        proof = require_evidence(GitHub(os.environ["GITHUB_REPOSITORY"]), delegated, wait_seconds=480)
+    elif not force and os.environ["GITHUB_EVENT_NAME"] != "pull_request":
         try:
             proof, _ = find_evidence(GitHub(os.environ["GITHUB_REPOSITORY"]), sha, os.environ["GITHUB_RUN_ID"])
         except (EvidenceError, OSError, ValueError, KeyError) as error:
@@ -62,7 +75,7 @@ def main():
             output.write(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n")
     print(json.dumps(result))
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-        summary.write(f"Commit `{sha}`: " + (f"reusing [verified CI]({proof['html_url']}).\n" if proof else "running fresh verification.\n"))
+        summary.write(f"Commit `{delegated or sha}`: " + (f"reusing [verified CI]({proof['html_url']}).\n" if proof else "running fresh verification.\n"))
 
 
 if __name__ == "__main__":

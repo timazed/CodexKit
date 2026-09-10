@@ -171,6 +171,31 @@ class ExactCommitEvidenceTests(unittest.TestCase):
 
 
 class VerificationPlanningTests(unittest.TestCase):
+    def test_only_same_repository_codex_prs_delegate(self):
+        event = dict(pull_request=dict(head=dict(repo=dict(full_name=REPOSITORY), ref="codex/task", sha=SHA)))
+        self.assertEqual(ci_plan.delegated_revision(event, REPOSITORY), SHA)
+        event["pull_request"]["head"]["repo"]["full_name"] = "fork/library"
+        self.assertIsNone(ci_plan.delegated_revision(event, REPOSITORY))
+        event["pull_request"]["head"]["repo"]["full_name"] = REPOSITORY
+        event["pull_request"]["head"]["ref"] = "feature"
+        self.assertIsNone(ci_plan.delegated_revision(event, REPOSITORY))
+
+    def test_delegated_pr_without_passing_branch_proof_cannot_become_green(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event = root / "event.json"
+            event.write_text(json.dumps(dict(pull_request=dict(head=dict(
+                repo=dict(full_name=REPOSITORY), ref="codex/task", sha=SHA)))))
+            environment = dict(GITHUB_SHA="b" * 40, GITHUB_EVENT_PATH=str(event), GITHUB_EVENT_NAME="pull_request",
+                               GITHUB_REPOSITORY=REPOSITORY, GITHUB_RUN_ID="2", GITHUB_OUTPUT=str(root / "output"),
+                               GITHUB_STEP_SUMMARY=str(root / "summary"))
+            with patch.dict(os.environ, environment), patch.object(sys, "argv", ["ci_plan"]), \
+                 patch.object(ci_plan, "require_evidence", side_effect=evidence.EvidenceError("branch failed")) as require, \
+                 self.assertRaises(evidence.EvidenceError):
+                ci_plan.main()
+            self.assertEqual(require.call_args.args[1], SHA)
+            self.assertFalse((root / "output").exists())
+
     def test_documentation_change_keeps_extended_work_optional(self):
         self.assertEqual(ci_plan.extended_checks(["docs/guide.md"]), dict(stress=False, full_demos=False))
 
