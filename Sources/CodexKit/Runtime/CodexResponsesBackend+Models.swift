@@ -38,7 +38,6 @@ struct ResponsesRequestBody: Encodable {
     let store: Bool
     let stream: Bool
     let include: [String]
-    let previousResponseID: String?
     let promptCacheKey: String?
 
     enum CodingKeys: String, CodingKey {
@@ -53,7 +52,6 @@ struct ResponsesRequestBody: Encodable {
         case store
         case stream
         case include
-        case previousResponseID = "previous_response_id"
         case promptCacheKey = "prompt_cache_key"
     }
 }
@@ -63,10 +61,9 @@ struct ResponsesCompactRequestBody: Encodable {
     let reasoning: ResponsesReasoningConfiguration
     let instructions: String
     let text: ResponsesTextConfiguration
-    let input: [JSONValue]?
+    let input: [JSONValue]
     let tools: [JSONValue]
     let parallelToolCalls: Bool
-    let previousResponseID: String?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -76,7 +73,6 @@ struct ResponsesCompactRequestBody: Encodable {
         case input
         case tools
         case parallelToolCalls = "parallel_tool_calls"
-        case previousResponseID = "previous_response_id"
     }
 }
 
@@ -227,9 +223,9 @@ struct CodexResponsesProviderState: Sendable {
     var items: [JSONValue]
     var previousResponseID: String?
 
-    init(items: [JSONValue] = [], previousResponseID: String? = nil) {
+    init(items: [JSONValue] = []) {
         self.items = items
-        self.previousResponseID = previousResponseID
+        self.previousResponseID = nil
     }
 
     init?(context: AgentProviderContext?) {
@@ -243,12 +239,20 @@ struct CodexResponsesProviderState: Sendable {
         previousResponseID = object["previous_response_id"]?.stringValue
     }
 
+    func validateClientManagedState() throws {
+        guard previousResponseID != nil, items.isEmpty else { return }
+        throw AgentRuntimeError(
+            code: "responses_server_state_unsupported",
+            message: "This saved context requires unsupported server-managed Responses state. Start a new conversation or rebuild client-managed context from saved history."
+        )
+    }
+
     var agentProviderContext: AgentProviderContext {
         AgentProviderContext(
             providerID: Self.providerID,
             payload: .object([
                 "items": .array(items),
-                "previous_response_id": previousResponseID.map(JSONValue.string) ?? .null,
+                "previous_response_id": .null,
             ])
         )
     }

@@ -10,7 +10,6 @@ struct CodexResponsesRequestFactory: Sendable {
         responseContract: AgentResponseContract?,
         threadID: String,
         items: [WorkingHistoryItem],
-        previousResponseID: String? = nil,
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) throws -> URLRequest {
@@ -33,14 +32,9 @@ struct CodexResponsesRequestFactory: Sendable {
             ),
             toolChoice: "auto",
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
-            store: configuration.stateManagement == .serverManaged,
+            store: false,
             stream: true,
-            include: configuration.stateManagement == .clientManaged
-                ? ["reasoning.encrypted_content"]
-                : [],
-            previousResponseID: configuration.stateManagement == .serverManaged
-                ? previousResponseID
-                : nil,
+            include: ["reasoning.encrypted_content"],
             promptCacheKey: threadID
         )
 

@@ -1,8 +1,8 @@
 import Foundation
 
+/// The authenticated Codex endpoint supports client-managed state only.
 public enum CodexResponsesStateManagement: String, Codable, Hashable, Sendable {
     case clientManaged
-    case serverManaged
 }
 
 public struct CodexResponsesBackendConfiguration: Sendable {

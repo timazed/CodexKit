@@ -15,7 +15,6 @@ enum TurnPassDisposition {
 }
 struct TurnRunState {
     var workingHistory: [WorkingHistoryItem]
-    var previousResponseID: String?
     var aggregateUsage = AgentUsage()
     var pendingResponseItems: [PendingResponseItem] = []
     var pendingFunctionCalls: [FunctionCallRecord] = []

@@ -97,15 +97,17 @@ final class CompactionTransportTests: XCTestCase {
             providerContext: context, instructions: "", tools: [], session: demoSession())
     }
 
-    func testServerManagedPreviousResponseDoesNotExpandOrTransmitInput() async throws {
-        let context = CodexResponsesProviderState(items: [.string("codexkit-image-ref:base64:unavailable")],
-            previousResponseID: "previous").agentProviderContext
+    func testLegacyResponseIDCannotReplaceClientManagedCompactionInput() async throws {
+        let item: JSONValue = .object(["type": .string("reasoning"), "encrypted_content": .string("retained")])
+        let context = AgentProviderContext(providerID: "openai.responses", payload: .object([
+            "items": .array([item]), "previous_response_id": .string("previous")
+        ]))
         await TestURLProtocol.enqueue(.init(body: compactReply, inspect: { request in
             let value = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
-            XCTAssertNil(value.objectValue?["input"])
-            XCTAssertEqual(value.objectValue?["previous_response_id"]?.stringValue, "previous")
+            XCTAssertEqual(value.objectValue?["input"]?.arrayValue, [item])
+            XCTAssertNil(value.objectValue?["previous_response_id"])
         }))
-        let backend = CodexResponsesBackend(configuration: .init(stateManagement: .serverManaged), urlSession: makeTestURLSession())
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         _ = try await backend.compactContext(thread: .init(id: "thread"), effectiveHistory: [], providerContext: context,
             instructions: "", tools: [], session: demoSession())
     }

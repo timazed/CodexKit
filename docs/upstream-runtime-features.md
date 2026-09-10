@@ -23,8 +23,10 @@ larger maximum. Model selection does not grant account access.
 
 The built-in Responses backend requires `response.completed`. A stream that
 ends without that event throws `responses_stream_disconnected`. Existing retry
-policy still decides whether a retry is safe: committed assistant messages and
-executed tool calls prevent replay. Uncommitted text deltas retain their existing retry behavior.
+policy still decides whether a retry is safe: emitted text, progress, structured
+output, committed assistant messages, and tool calls prevent automatic replay.
+Before output, a retry sends the same POST again; it does not resume the original
+provider response. See the [recovery investigation](response-recovery-investigation-2026-09-10.md).
 
 The configured `streamIdleTimeout` is also applied to the Responses URL request.
 Custom `AgentBackend` implementations retain their existing completion behavior.

@@ -41,12 +41,8 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         )
         let threadConfiguration = thread.configuration ?? configuration.defaultThreadConfiguration
         let providerState = CodexResponsesProviderState(context: providerContext)
-        let previousResponseID = configuration.stateManagement == .serverManaged
-            ? providerState?.previousResponseID
-            : nil
-        let input: [JSONValue]? = if previousResponseID != nil {
-            nil
-        } else if let items = providerState?.items, !items.isEmpty {
+        try providerState?.validateClientManagedState()
+        let input: [JSONValue] = if let items = providerState?.items, !items.isEmpty {
             try CodexResponsesImageReferences.restore(items,
                 using: CodexResponsesImageReferences.attachments(in: effectiveHistory))
         } else {
@@ -64,8 +60,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
                 enableImageGeneration: configuration.enableImageGeneration,
                 imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ),
-            parallelToolCalls: false,
-            previousResponseID: previousResponseID
+            parallelToolCalls: false
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses/compact"))

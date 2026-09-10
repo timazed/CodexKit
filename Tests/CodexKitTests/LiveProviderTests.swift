@@ -29,38 +29,36 @@ final class LiveProviderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let image = try redImage()
         for adapter in ["sqlite", "realm"] {
-            for mode in [CodexResponsesStateManagement.clientManaged, .serverManaged] {
-                let url = directory.appendingPathComponent("\(adapter)-\(mode)")
-                let open: () throws -> any RuntimeStateStoring = {
-                    adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
-                }
-                let backend = CodexResponsesBackend(configuration: .init(streamIdleTimeout: 45,
-                    enableWebSearch: false, enableImageGeneration: false, stateManagement: mode,
-                    requestRetryPolicy: .disabled, maximumModelPasses: 1, maximumResponseBytes: 8 * 1_024 * 1_024))
-                let makeRuntime: () throws -> AgentRuntime = {
-                    try .init(configuration: .init(sessionProvider: LiveSessionProvider(session: session), backend: backend,
-                        approvalPresenter: AutoApprovalPresenter(), stateStore: open(),
-                        turnLimits: .init(maximumToolCalls: 0, maximumDuration: 60),
-                        contextCompaction: .init(isEnabled: true, mode: .manual, strategy: .remoteOnly)))
-                }
-                let runtime = try makeRuntime()
-                let thread = try await runtime.createThread()
-                let marker = UUID().uuidString
-                let initial = try await runtime.send(Request(text: "Remember this exact marker: \(marker). Inspect the image. Return the marker and its dominant color in lowercase. Do not use tools.", images: [image]),
-                    in: thread.id, response: LiveImageResult.self)
-                XCTAssertEqual(initial.marker, marker)
-                XCTAssertEqual(initial.color.lowercased(), "red")
-                let compacted = try await runtime.compactThreadContext(id: thread.id)
-                XCTAssertEqual(compacted.generation, 1)
-                await runtime.deactivateThread(id: thread.id)
-                let reopened = try makeRuntime()
-                _ = try await reopened.restore()
-                _ = try await reopened.resumeThread(id: thread.id)
-                let recalled = try await reopened.send(Request(text: "Return the exact marker and image color established earlier. If unavailable, return missing. Do not use tools."),
-                    in: thread.id, response: LiveImageResult.self)
-                XCTAssertEqual(recalled.marker, marker, "Context failed after \(adapter) reopen in \(mode) mode")
-                XCTAssertEqual(recalled.color.lowercased(), "red")
+            let url = directory.appendingPathComponent(adapter)
+            let open: () throws -> any RuntimeStateStoring = {
+                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
+            let backend = CodexResponsesBackend(configuration: .init(streamIdleTimeout: 45,
+                enableWebSearch: false, enableImageGeneration: false, stateManagement: .clientManaged,
+                requestRetryPolicy: .disabled, maximumModelPasses: 1, maximumResponseBytes: 8 * 1_024 * 1_024))
+            let makeRuntime: () throws -> AgentRuntime = {
+                try .init(configuration: .init(sessionProvider: LiveSessionProvider(session: session), backend: backend,
+                    approvalPresenter: AutoApprovalPresenter(), stateStore: open(),
+                    turnLimits: .init(maximumToolCalls: 0, maximumDuration: 60),
+                    contextCompaction: .init(isEnabled: true, mode: .manual, strategy: .remoteOnly)))
+            }
+            let runtime = try makeRuntime()
+            let thread = try await runtime.createThread()
+            let marker = UUID().uuidString
+            let initial = try await runtime.send(Request(text: "Remember this exact marker: \(marker). Inspect the image. Return the marker and its dominant color in lowercase. Do not use tools.", images: [image]),
+                in: thread.id, response: LiveImageResult.self)
+            XCTAssertEqual(initial.marker, marker)
+            XCTAssertEqual(initial.color.lowercased(), "red")
+            let compacted = try await runtime.compactThreadContext(id: thread.id)
+            XCTAssertEqual(compacted.generation, 1)
+            await runtime.deactivateThread(id: thread.id)
+            let reopened = try makeRuntime()
+            _ = try await reopened.restore()
+            _ = try await reopened.resumeThread(id: thread.id)
+            let recalled = try await reopened.send(Request(text: "Return the exact marker and image color established earlier. If unavailable, return missing. Do not use tools."),
+                in: thread.id, response: LiveImageResult.self)
+            XCTAssertEqual(recalled.marker, marker, "Context failed after \(adapter) reopen")
+            XCTAssertEqual(recalled.color.lowercased(), "red")
         }
     }
 

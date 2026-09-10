@@ -2,7 +2,7 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
-The current candidate is alpha.28; see the [10 September verification report](release-readiness-2026-09-10.md). It adds external credential discovery, account/source binding, rotation and owner renewal, authentication recovery after tools, account-directory storage, and signed macOS demo checks. Earlier audit results below are historical evidence, not results for the current candidate.
+The alpha.29 candidate restricts Responses state to client-managed mode; see its [verification report](release-readiness-alpha29-2026-09-10.md). The previous release is alpha.28; see the [10 September verification report](release-readiness-2026-09-10.md). It adds external credential discovery, account/source binding, rotation and owner renewal, authentication recovery after tools, account-directory storage, and signed macOS demo checks. Earlier audit results below are historical evidence, not results for the current candidate.
 
 The 8 September deep-audit regressions are in `DeepAuditRegressionTests`, `CompactionTransportTests`, `PreparationCancellationTests`, and `OneShotValidationTests`. They cover conflicting/stale compaction, database reopen behavior, request and response image references, bounded compact bodies, session recovery, network cancellation, startup cancellation before/during persistence, strict root policy fields, and one-shot schema/Swift decoding before commit.
 

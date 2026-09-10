@@ -90,15 +90,13 @@ struct CodexResponsesTurnRunner {
             ]
         )
         let providerState = CodexResponsesProviderState(context: providerContext)
+        try providerState?.validateClientManagedState()
         var state = TurnRunState(
             workingHistory: try initialWorkingHistory(
                 history: history,
                 providerState: providerState,
                 newMessage: request
-            ),
-            previousResponseID: configuration.stateManagement == .serverManaged
-                ? providerState?.previousResponseID
-                : nil
+            )
         )
 
         try await runTurnPasses(state: &state)
@@ -121,14 +119,9 @@ struct CodexResponsesTurnRunner {
     private func turnResult(
         from state: TurnRunState
     ) throws -> CodexResponsesTurnResult {
-        let updatedProviderState: CodexResponsesProviderState = switch configuration.stateManagement {
-        case .clientManaged:
-            CodexResponsesProviderState(items: try CodexResponsesImageReferences.externalize(
-                state.workingHistory.map(\.jsonValue)
-            ))
-        case .serverManaged:
-            CodexResponsesProviderState(previousResponseID: state.previousResponseID)
-        }
+        let updatedProviderState = CodexResponsesProviderState(items: try CodexResponsesImageReferences.externalize(
+            state.workingHistory.map(\.jsonValue)
+        ))
         return CodexResponsesTurnResult(
             usage: state.aggregateUsage,
             providerContext: updatedProviderState.agentProviderContext
@@ -141,33 +134,16 @@ struct CodexResponsesTurnRunner {
         newMessage: Request
     ) throws -> [WorkingHistoryItem] {
         var workingHistory: [WorkingHistoryItem]
-        switch configuration.stateManagement {
-        case .clientManaged:
-            if let items = providerState?.items, !items.isEmpty {
-                workingHistory = try CodexResponsesImageReferences.restore(
-                    items,
-                    using: CodexResponsesImageReferences.attachments(
-                        in: history,
-                        additional: newMessage.images
-                    )
-                ).map(WorkingHistoryItem.raw)
-            } else {
-                workingHistory = workingHistoryItems(from: history)
-            }
-        case .serverManaged:
-            if providerState?.previousResponseID != nil {
-                workingHistory = []
-            } else if let items = providerState?.items, !items.isEmpty {
-                workingHistory = try CodexResponsesImageReferences.restore(
-                    items,
-                    using: CodexResponsesImageReferences.attachments(
-                        in: history,
-                        additional: newMessage.images
-                    )
-                ).map(WorkingHistoryItem.raw)
-            } else {
-                workingHistory = workingHistoryItems(from: history)
-            }
+        if let items = providerState?.items, !items.isEmpty {
+            workingHistory = try CodexResponsesImageReferences.restore(
+                items,
+                using: CodexResponsesImageReferences.attachments(
+                    in: history,
+                    additional: newMessage.images
+                )
+            ).map(WorkingHistoryItem.raw)
+        } else {
+            workingHistory = workingHistoryItems(from: history)
         }
         workingHistory.append(contentsOf: developerMessages(for: newMessage))
         if newMessage.hasVisibleContent {
@@ -382,7 +358,6 @@ struct CodexResponsesTurnRunner {
             responseContract: responseContract,
             threadID: threadID,
             items: state.workingHistory,
-            previousResponseID: state.previousResponseID,
             tools: tools,
             session: session ?? self.session
         )

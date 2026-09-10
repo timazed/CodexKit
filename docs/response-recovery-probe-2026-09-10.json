@@ -1,0 +1,215 @@
+{
+  "utc": "2026-09-10T12:09:48.935470+00:00",
+  "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+  "model": "gpt-5.6-sol",
+  "observations": [
+    {
+      "label": "completed_control",
+      "method": "POST",
+      "status": 200,
+      "content_type": null
+    },
+    {
+      "label": "completed_control",
+      "events_seen": 13,
+      "response_id_received": true,
+      "last_sequence": 12,
+      "provider_completion_observed": true,
+      "client_last_sequence": 12,
+      "turn_state_header_received": true,
+      "terminal_delivered_to_simulated_client": true
+    },
+    {
+      "label": "completed_control/retrieve",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "completed_control/cursor",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "completed_control/last_event_id",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "drop_after_created",
+      "method": "POST",
+      "status": 200,
+      "content_type": null
+    },
+    {
+      "label": "drop_after_created",
+      "events_seen": 1,
+      "response_id_received": true,
+      "last_sequence": 0,
+      "provider_completion_observed": false,
+      "client_last_sequence": 0,
+      "turn_state_header_received": true,
+      "terminal_delivered_to_simulated_client": false
+    },
+    {
+      "label": "drop_after_created/retrieve",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "drop_after_created/cursor",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "drop_after_created/last_event_id",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "drop_mid_text",
+      "method": "POST",
+      "status": 200,
+      "content_type": null
+    },
+    {
+      "label": "drop_mid_text",
+      "events_seen": 5,
+      "response_id_received": true,
+      "last_sequence": 4,
+      "provider_completion_observed": false,
+      "client_last_sequence": 4,
+      "turn_state_header_received": true,
+      "terminal_delivered_to_simulated_client": false
+    },
+    {
+      "label": "drop_mid_text/retrieve",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "drop_mid_text/cursor",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "drop_mid_text/last_event_id",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "withhold_terminal",
+      "method": "POST",
+      "status": 200,
+      "content_type": null
+    },
+    {
+      "label": "withhold_terminal",
+      "events_seen": 13,
+      "response_id_received": true,
+      "last_sequence": 12,
+      "provider_completion_observed": true,
+      "client_last_sequence": 11,
+      "turn_state_header_received": true,
+      "terminal_delivered_to_simulated_client": false
+    },
+    {
+      "label": "withhold_terminal/retrieve",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "withhold_terminal/cursor",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "withhold_terminal/last_event_id",
+      "method": "GET",
+      "status": 403,
+      "content_type": "text/html; charset=UTF-8",
+      "known_messages": [],
+      "server": "cloudflare",
+      "cf_mitigated": "challenge",
+      "challenge_page": true
+    },
+    {
+      "label": "store_true",
+      "method": "POST",
+      "status": 400,
+      "content_type": "application/json",
+      "known_messages": [
+        "Store must be set to false"
+      ],
+      "server": "cloudflare",
+      "cf_mitigated": null,
+      "challenge_page": false
+    },
+    {
+      "label": "background_true",
+      "method": "POST",
+      "status": 400,
+      "content_type": "application/json",
+      "known_messages": [
+        "Unsupported parameter: background"
+      ],
+      "server": "cloudflare",
+      "cf_mitigated": null,
+      "challenge_page": false
+    }
+  ]
+}

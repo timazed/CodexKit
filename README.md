@@ -1,11 +1,11 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.28-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.28)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.29-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.29)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.28](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.28). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.29](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.29). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
 This prerelease adds local Codex session reuse and the native macOS demo. See the [release verification report](docs/release-readiness-2026-09-10.md) for validation and publication status.
 

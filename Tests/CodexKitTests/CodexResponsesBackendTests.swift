@@ -1267,9 +1267,9 @@ final class CodexResponsesBackendTests: XCTestCase {
         })
     }
 
-    func testServerManagedModeChainsResponseIDsWithoutReplayingHistory() async throws {
+    func testClientManagedModeReplaysItemsAcrossToolPassesAndTurns() async throws {
         let backend = CodexResponsesBackend(
-            configuration: CodexResponsesBackendConfiguration(stateManagement: .serverManaged),
+            configuration: CodexResponsesBackendConfiguration(stateManagement: .clientManaged),
             urlSession: makeTestURLSession()
         )
         let session = ChatGPTSession(
@@ -1297,9 +1297,9 @@ final class CodexResponsesBackendTests: XCTestCase {
             inspect: { request in
                 let body = try XCTUnwrap(requestBodyData(for: request))
                 let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-                XCTAssertEqual(json["store"] as? Bool, true)
+                XCTAssertEqual(json["store"] as? Bool, false)
                 XCTAssertNil(json["background"])
-                XCTAssertEqual(json["include"] as? [String], [])
+                XCTAssertEqual(json["include"] as? [String], ["reasoning.encrypted_content"])
                 XCTAssertNil(json["previous_response_id"])
             }
         ))
@@ -1316,10 +1316,11 @@ final class CodexResponsesBackendTests: XCTestCase {
             inspect: { request in
                 let body = try XCTUnwrap(requestBodyData(for: request))
                 let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-                XCTAssertEqual(json["previous_response_id"] as? String, "resp_server_1")
+                XCTAssertNil(json["previous_response_id"])
+                XCTAssertEqual(json["store"] as? Bool, false)
                 let input = try XCTUnwrap(json["input"] as? [[String: Any]])
-                XCTAssertEqual(input.count, 1)
-                XCTAssertEqual(input.first?["type"] as? String, "function_call_output")
+                XCTAssertEqual(input.count, 3)
+                XCTAssertEqual(input.last?["type"] as? String, "function_call_output")
             }
         ))
 
@@ -1349,10 +1350,8 @@ final class CodexResponsesBackendTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(
-            providerContext?.payload.objectValue?["previous_response_id"]?.stringValue,
-            "resp_server_2"
-        )
+        XCTAssertNil(providerContext?.payload.objectValue?["previous_response_id"]?.stringValue)
+        XCTAssertEqual(providerContext?.payload.objectValue?["items"]?.arrayValue?.count, 4)
 
         await TestURLProtocol.enqueue(.init(
             headers: ["Content-Type": "text/event-stream"],
@@ -1367,11 +1366,12 @@ final class CodexResponsesBackendTests: XCTestCase {
             inspect: { request in
                 let body = try XCTUnwrap(requestBodyData(for: request))
                 let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-                XCTAssertEqual(json["previous_response_id"] as? String, "resp_server_2")
+                XCTAssertNil(json["previous_response_id"])
+                XCTAssertEqual(json["store"] as? Bool, false)
                 let bodyText = String(decoding: body, as: UTF8.self)
                 XCTAssertFalse(bodyText.contains("SHOULD_NOT_REPLAY"))
                 let input = try XCTUnwrap(json["input"] as? [[String: Any]])
-                XCTAssertEqual(input.count, 1)
+                XCTAssertEqual(input.count, 5)
             }
         ))
 
@@ -1389,9 +1389,9 @@ final class CodexResponsesBackendTests: XCTestCase {
         for try await _ in secondTurn.events {}
     }
 
-    func testServerManagedModeFailsWhenEndpointOmitsResponseID() async throws {
+    func testClientManagedModeCompletesWithoutResponseID() async throws {
         let backend = CodexResponsesBackend(
-            configuration: CodexResponsesBackendConfiguration(stateManagement: .serverManaged),
+            configuration: CodexResponsesBackendConfiguration(stateManagement: .clientManaged),
             urlSession: makeTestURLSession()
         )
         let session = ChatGPTSession(
@@ -1422,9 +1422,7 @@ final class CodexResponsesBackendTests: XCTestCase {
             session: session
         )
 
-        await XCTAssertThrowsErrorAsync(try await drainBackendEvents(turnStream.events)) { error in
-            XCTAssertEqual((error as? AgentRuntimeError)?.code, "responses_server_state_missing_id")
-        }
+        try await drainBackendEvents(turnStream.events)
     }
 
     func testRemoteCompactionPreservesOpaqueCompactionItem() async throws {

@@ -120,12 +120,12 @@ extension CodexResponsesTurnRunner {
             try await continuation.yield(.structuredOutputValidationFailed(validationFailure))
             return .assistantDelta
 
-        case let .completed(usage, responseID):
+        case let .completed(usage, _):
             try await resolvePendingFunctionCalls(state: &state)
             state.aggregateUsage.inputTokens += usage.inputTokens
             state.aggregateUsage.cachedInputTokens += usage.cachedInputTokens
             state.aggregateUsage.outputTokens += usage.outputTokens
-            try commitCompletedPass(responseID: responseID, state: &state)
+            commitCompletedPass(state: &state)
             logger.debug(
                 .network,
                 "Backend stream completed pass.",
@@ -333,10 +333,7 @@ extension CodexResponsesTurnRunner {
         )
     }
 
-    func commitCompletedPass(
-        responseID: String?,
-        state: inout TurnRunState
-    ) throws {
+    func commitCompletedPass(state: inout TurnRunState) {
         let completedItems = state.pendingResponseItems
             .sorted { lhs, rhs in
                 if lhs.outputIndex == rhs.outputIndex {
@@ -352,21 +349,8 @@ extension CodexResponsesTurnRunner {
             }
             .map { WorkingHistoryItem.raw($0.value) }
 
-        switch configuration.stateManagement {
-        case .clientManaged:
-            state.workingHistory.append(contentsOf: completedItems)
-            state.workingHistory.append(contentsOf: state.pendingToolOutputs)
-
-        case .serverManaged:
-            guard let responseID, !responseID.isEmpty else {
-                throw AgentRuntimeError(
-                    code: "responses_server_state_missing_id",
-                    message: "The Responses endpoint did not return a response ID required for server-managed state."
-                )
-            }
-            state.previousResponseID = responseID
-            state.workingHistory = state.pendingToolOutputs
-        }
+        state.workingHistory.append(contentsOf: completedItems)
+        state.workingHistory.append(contentsOf: state.pendingToolOutputs)
 
         state.pendingResponseItems.removeAll(keepingCapacity: true)
         state.pendingToolOutputs.removeAll(keepingCapacity: true)
@@ -386,9 +370,7 @@ extension CodexResponsesTurnRunner {
             text: state.pendingToolFallbackTexts.joined(separator: "\n\n"),
             images: state.pendingToolImages
         )
-        if configuration.stateManagement == .clientManaged {
-            state.workingHistory.append(.assistantMessage(message))
-        }
+        state.workingHistory.append(.assistantMessage(message))
         try await continuation.yield(.assistantMessageCompleted(message))
         state.pendingToolImages.removeAll(keepingCapacity: true)
         state.pendingToolFallbackTexts.removeAll(keepingCapacity: true)

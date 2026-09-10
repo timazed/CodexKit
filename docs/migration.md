@@ -4,7 +4,13 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
-For `2.0.0-alpha.28`, use Swift 6.1 or newer and Xcode 16.3 or newer for Xcode projects. The deployment targets remain iOS 17 and macOS 14, and this prerelease requires no database schema migration. Review the external-session changes below and the [candidate verification report](release-readiness-2026-09-10.md). Earlier alpha.27 changes and their [API compatibility review](#public-api-review-against-alpha26) remain documented below.
+## Client-managed state only (alpha.29)
+
+`CodexResponsesStateManagement.serverManaged` has been removed. The authenticated Codex endpoint rejects `store: true`; remove `stateManagement: .serverManaged` or change it to `.clientManaged`. Existing `.clientManaged` calls and default configurations remain source-compatible. Decoding the old `"serverManaged"` enum value now fails instead of silently selecting another mode.
+
+Generation always sends `store: false` with encrypted reasoning included. Generation and compaction send local input without `previous_response_id`. Saved client-managed contexts remain compatible, with no database schema migration. A legacy context containing local items and a previous response ID uses those items and drops the ID on the next context update. A context containing only a server response ID fails before HTTP with `responses_server_state_unsupported`; start a new conversation or explicitly rebuild client-managed context from saved history. The SDK cannot reconstruct provider-only history from that ID.
+
+For `2.0.0-alpha.29`, use Swift 6.1 or newer and Xcode 16.3 or newer for Xcode projects. The deployment targets remain iOS 17 and macOS 14, and this prerelease requires no database schema migration. Review the changes below and the [alpha.29 verification report](release-readiness-alpha29-2026-09-10.md). Earlier alpha.27 changes and their [API compatibility review](#public-api-review-against-alpha26) remain documented below.
 
 ## Local Codex sessions (alpha.28)
 

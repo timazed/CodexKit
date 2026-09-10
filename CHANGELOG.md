@@ -6,6 +6,22 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.29] - 2026-09-10
+
+This prerelease restricts the built-in Codex backend to the client-managed state supported by the authenticated endpoint. Existing client-managed integrations remain compatible. Server-managed configuration is removed; see the [migration notes](docs/migration.md#client-managed-state-only-alpha29). This release does not add interrupted-response retrieval or stream resumption.
+
+### Changed
+
+- Restricted `CodexResponsesStateManagement` to `.clientManaged`; `.serverManaged` is removed because the authenticated Codex endpoint rejects `store: true`. Requests always send local context with `store: false`, and compaction never uses `previous_response_id`. Legacy server-only contexts fail locally with `responses_server_state_unsupported`; existing client-managed calls and saved contexts remain supported.
+
+### Added
+
+- Added controlled transport coverage for request replay, lost terminal events, cold reopening, cancellation, repeated events, and tool effects, plus an opt-in authenticated endpoint capability probe and investigation report.
+
+### Fixed
+
+- Corrected documentation that still described retries after emitted text deltas; alpha.27 and alpha.28 already prevent that automatic replay.
+
 ## [2.0.0-alpha.28] - 2026-09-10
 
 This prerelease adds read-only reuse of a locally authenticated Codex session on macOS and a native macOS demo alongside the iOS demo. Both demos now live in `DemoApp/CodexKitDemo.xcodeproj`. Swift 6.1, iOS 17, and macOS 14 remain the minimum versions. See the [migration notes](docs/migration.md#local-codex-sessions-alpha28) before adopting external credentials.
@@ -427,7 +443,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.28...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.29...HEAD
+[2.0.0-alpha.29]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.28...v2.0.0-alpha.29
 [2.0.0-alpha.28]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.27...v2.0.0-alpha.28
 [2.0.0-alpha.27]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.26...v2.0.0-alpha.27
 [2.0.0-alpha.26]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.25...v2.0.0-alpha.26
