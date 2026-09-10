@@ -15,7 +15,14 @@ enum MacDemoVerification {
         let resultURL = URL(fileURLWithPath: arguments[index + 1])
         var result: [String: Any]
         do {
-            let checks = try await verify()
+            let directory = resultURL.deletingLastPathComponent().appendingPathComponent("recovery")
+            let checks: [String]
+            if arguments.contains("--verify-recovery-reopen") {
+                checks = try await DemoRecoveryVerification.reopen(directory: directory)
+            } else {
+                let existing = try await verify()
+                checks = existing + (try await DemoRecoveryVerification.run(directory: directory))
+            }
             result = ["passed": true, "checks": checks]
         } catch {
             result = ["passed": false, "error": error.localizedDescription]

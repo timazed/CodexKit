@@ -1,7 +1,7 @@
 @testable import CodexKit
 import XCTest
 
-/// Characterization of alpha.28, not a simulated claim of provider resumption.
+/// Transport behavior, including local reliability improvements. These tests do not imply provider resumption.
 final class ResponseRecoveryInvestigationTests: XCTestCase {
     override func tearDown() async throws { RecoveryProbeURLProtocol.endHeldConnection() }
 
@@ -45,7 +45,7 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
         XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("resp_original"))
     }
 
-    func testDisabledRetryStopsAfterCreatedWithoutPreservingResponseID() async throws {
+    func testDisabledRetryStopsAfterCreatedAndPreservesDiagnosticResponseID() async throws {
         RecoveryProbeURLProtocol.configure([.init(body: created)])
         let stream = try await begin(backend())
         do {
@@ -56,7 +56,8 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
             XCTAssertEqual(error.retry?.maximumAttempts, 1)
             XCTAssertEqual(error.retry?.safety, .beforeOutput)
             let encoded = try JSONEncoder().encode(error)
-            XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("resp_original"))
+            XCTAssertTrue(String(decoding: encoded, as: UTF8.self).contains("resp_original"))
+            XCTAssertEqual(error.interruption?.lastSequenceNumber, 0)
         }
         XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
     }
@@ -75,9 +76,10 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
                 }
                 XCTFail("Expected transport failure")
             } catch {
-                XCTAssertEqual((error as NSError).domain, NSURLErrorDomain)
-                XCTAssertEqual((error as NSError).code, code.rawValue)
-                XCTAssertNil(error as? AgentRuntimeError, "Raw URL failures currently lack typed retry metadata")
+                let failure = try XCTUnwrap(error as? AgentRuntimeError)
+                XCTAssertEqual(failure.interruption?.transportErrorDomain, NSURLErrorDomain)
+                XCTAssertEqual(failure.interruption?.transportErrorCode, code.rawValue)
+                XCTAssertEqual(failure.retry?.safety, .outputAlreadyEmitted)
             }
             XCTAssertEqual(text, "Hel")
             XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
@@ -107,14 +109,14 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
         XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
     }
 
-    func testRepeatedSequenceNumbersRepeatDeltas() async throws {
+    func testRepeatedSequenceNumbersDoNotRepeatDeltas() async throws {
         RecoveryProbeURLProtocol.configure([.init(body: created + delta + delta + message + completed)])
         let stream = try await begin(backend())
         var text = ""
         for try await event in stream.events {
             if case let .assistantMessageDelta(_, _, value) = event { text += value }
         }
-        XCTAssertEqual(text, "HelHel", "Current parser has no event replay deduplication")
+        XCTAssertEqual(text, "Hel")
     }
 
     func testProviderCompletionStillRequiresValidStructuredResult() async throws {
@@ -187,8 +189,10 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
         XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
     }
 
-    func testRepeatedToolEventCanRepeatEphemeralSideEffect() async throws {
-        RecoveryProbeURLProtocol.configure([.init(body: created + tool + tool + completed), .init(body: message + completed)])
+    func testRepeatedToolEventDoesNotRepeatEphemeralSideEffect() async throws {
+        let repeated = tool.replacingOccurrences(of: "\"sequence_number\":2", with: "\"sequence_number\":3")
+        let terminal = completed.replacingOccurrences(of: "\"sequence_number\":3", with: "\"sequence_number\":4")
+        RecoveryProbeURLProtocol.configure([.init(body: created + tool + repeated + terminal), .init(body: message + completed)])
         let counter = RecoveryEffectCounter()
         let runtime = try runtime(tools: [.init(definition: .init(name: "write", description: "Synthetic effect",
             inputSchema: .object([:]), approvalPolicy: .automatic), executor: AnyToolExecutor { invocation, _ in
@@ -198,7 +202,7 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
         let thread = try await runtime.createThread()
         _ = try await runtime.send(Request(text: "Synthetic", executionMode: .ephemeral), in: thread.id)
         let count = await counter.count
-        XCTAssertEqual(count, 2, "A recovery implementation needs a durable effect ledger even for ephemeral work")
+        XCTAssertEqual(count, 1, "Deduplication is local to this turn; recovery forbids tools across requests")
     }
 
     func testProviderFailureAndIncompleteAreNotDisconnections() async throws {

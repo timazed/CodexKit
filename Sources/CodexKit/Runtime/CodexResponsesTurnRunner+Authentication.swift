@@ -10,7 +10,7 @@ extension CodexResponsesTurnRunner {
         } catch {
             guard let authenticationContext, AgentRuntime.isUnauthorizedError(error),
                   !retryState.hasVisibleOutput, !retryState.hasNonReplayableOutput else { throw error }
-            let refreshed = try await authenticationContext.recover(lease.accessToken)
+            let refreshed = try await authenticationContext.recover(retryState.accessTokenUsed ?? lease.accessToken)
             var retry = request
             retry.setValue("Bearer \(refreshed.accessToken)", forHTTPHeaderField: "Authorization")
             retry.setValue(refreshed.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
@@ -19,7 +19,8 @@ extension CodexResponsesTurnRunner {
             catch {
                 if AgentRuntime.isUnauthorizedError(error), let failure = error as? AgentRuntimeError {
                     throw AgentRuntimeError(code: "authentication_recovery_exhausted",
-                        message: "Authentication was rejected after renewal. Reconnect to continue.", http: failure.http)
+                        message: "Authentication was rejected after renewal. Reconnect to continue.",
+                        http: failure.http, interruption: failure.interruption)
                 }
                 throw error
             }

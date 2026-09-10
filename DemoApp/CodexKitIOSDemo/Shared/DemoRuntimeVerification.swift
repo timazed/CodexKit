@@ -15,6 +15,22 @@ enum DemoRuntimeVerification {
         hasRun = true
         var report = ["startedAt": ISO8601DateFormatter().string(from: Date()),
             "runID": ProcessInfo.processInfo.environment["CODEXKIT_VERIFICATION_RUN_ID"] ?? UUID().uuidString]
+        let recoveryDirectory = URL.documentsDirectory.appendingPathComponent("RecoveryVerification")
+        let reopening = CommandLine.arguments.contains("--verify-recovery-reopen")
+        if reopening {
+            do {
+                report["recovery"] = try await DemoRecoveryVerification.reopen(directory: recoveryDirectory).joined(separator: "; ")
+                report["passed"] = "true"
+            } catch { report["recovery"] = failureCode(error); report["passed"] = "false" }
+            report["finishedAt"] = ISO8601DateFormatter().string(from: Date())
+            let url = URL.documentsDirectory.appendingPathComponent("CodexKitRecoveryReopen.json")
+            try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
+            return
+        }
+        do {
+            report["recoveryChecks"] = try await DemoRecoveryVerification.run(directory: recoveryDirectory).joined(separator: "; ")
+            report["recovery"] = "passed"
+        } catch { report["recovery"] = failureCode(error) }
         for adapter in ["sqlite", "realm"] {
             do {
                 try await verifyLocalAdapter(adapter)

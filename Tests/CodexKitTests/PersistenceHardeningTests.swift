@@ -703,11 +703,15 @@ final class PersistenceHardeningTests: XCTestCase {
             }
             realm.invalidate()
         }
+        // Read the corrupt persisted data through a fresh actor-bound Realm. The original
+        // cached reader advances via notifications and can still expose its pre-corruption
+        // snapshot here; notification scheduling is not what this validation test exercises.
+        let corruptedRealmStore = try RealmMemoryStore(url: realmURL)
         await XCTAssertThrowsErrorAsync(
-            try await realmStore.record(id: record.id, namespace: record.namespace)
+            try await corruptedRealmStore.record(id: record.id, namespace: record.namespace)
         )
         await XCTAssertThrowsErrorAsync(
-            try await realmStore.record(
+            try await corruptedRealmStore.record(
                 id: projectionRecord.id,
                 namespace: projectionRecord.namespace
             )

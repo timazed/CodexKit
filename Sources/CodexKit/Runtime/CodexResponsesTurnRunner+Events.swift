@@ -17,6 +17,8 @@ extension CodexResponsesTurnRunner {
 
         case .responseCreated:
             return .none
+        case let .failed(error, _):
+            throw error
 
         case let .assistantTextDelta(delta):
             let emittedDelta = try await handleAssistantTextDelta(delta, state: &state)
@@ -67,11 +69,22 @@ extension CodexResponsesTurnRunner {
                 return .assistantMessage
 
             case let .functionCall(functionCallItem):
+                state.hasToolActivity = true
+                guard AgentStructuredRecoveryContext.current == nil else {
+                    throw AgentRecoveryError.toolsUnsupported
+                }
                 let functionCall = FunctionCallRecord(
                     name: functionCallItem.name,
                     callID: functionCallItem.callID,
                     argumentsRaw: functionCallItem.arguments
                 )
+                if let previous = state.toolCallsByID[functionCall.callID] {
+                    guard previous.name == functionCall.name, previous.argumentsRaw == functionCall.argumentsRaw else {
+                        throw AgentRuntimeError(code: "responses_tool_call_conflict", message: "A repeated tool call ID changed its arguments.")
+                    }
+                    return .none
+                }
+                state.toolCallsByID[functionCall.callID] = functionCall
                 logger.info(
                     .tools,
                     "Received tool call from backend.",

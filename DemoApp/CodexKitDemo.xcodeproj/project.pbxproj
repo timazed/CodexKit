@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB2900000000000000000001 /* Recovery iOS */ = {isa = PBXBuildFile; fileRef = AB2900000000000000000003; };
+		AB2900000000000000000002 /* Recovery macOS */ = {isa = PBXBuildFile; fileRef = AB2900000000000000000003; };
 		F0C67F5047D94121B9882C4E /* DemoRuntimeVerification.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7039ACB63E945B799838C66 /* DemoRuntimeVerification.swift */; };
 		1A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */; };
 		1A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift */; };
@@ -110,6 +112,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AB2900000000000000000003 /* DemoRecoveryVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRecoveryVerification.swift; sourceTree = "<group>"; };
 		C7039ACB63E945B799838C66 /* DemoRuntimeVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRuntimeVerification.swift; sourceTree = "<group>"; };
 		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
 		2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AgentDemoView+ChatSections.swift"; sourceTree = "<group>"; };
@@ -321,6 +324,7 @@
 				2A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift */,
 				2A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift */,
 				C7039ACB63E945B799838C66 /* DemoRuntimeVerification.swift */,
+				AB2900000000000000000003 /* DemoRecoveryVerification.swift */,
 				2A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift */,
 				2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */,
 				2A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift */,
@@ -470,6 +474,7 @@
 				1A2B3C4D5E6F700000000018 /* ThreadMessageViews.swift in Sources */,
 				1A2B3C4D5E6F700000000019 /* AgentDemoViewModel+RuntimeFeatures.swift in Sources */,
 				F0C67F5047D94121B9882C4E /* DemoRuntimeVerification.swift in Sources */,
+				AB2900000000000000000001 /* Recovery iOS */,
 				1A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift in Sources */,
 				1A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift in Sources */,
 				1A2B3C4D5E6F700000000011 /* AgentDemoViewModel+Memory.swift in Sources */,
@@ -490,6 +495,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BBC000000000000000000002,
+				AB2900000000000000000002 /* Recovery macOS */,
 				285A639DD3BD73BEAB029157,
 				ABC32155E3CB0FC626C18226,
 				118AE21C0D79186CAD1B57A0,

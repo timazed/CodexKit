@@ -41,6 +41,14 @@ def main():
             raise RuntimeError(f"macOS demo verification failed: {result.get('error', 'unknown failure')}")
         for check in result["checks"]:
             print(f"PASS: {check}")
+        subprocess.run([str(app / "Contents/MacOS/CodexKitMacDemo"), "--verify-local-only",
+                        "--verify-recovery-reopen", "--verification-result", str(result_path)], check=True, timeout=45)
+        reopened = json.loads(result_path.read_text())
+        if not reopened.get("passed"):
+            raise RuntimeError(f"macOS cold recovery failed: {reopened.get('error', 'unknown failure')}")
+        (derived / "recovery-reopen-result.json").write_text(json.dumps(reopened, indent=2) + "\n")
+        for check in reopened["checks"]:
+            print(f"PASS: {check}")
         print(f"macOS demo verification passed ({len(result['checks'])} checks).")
         print(f"App: {app}")
 

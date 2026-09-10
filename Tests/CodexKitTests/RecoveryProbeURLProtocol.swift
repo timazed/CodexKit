@@ -10,6 +10,7 @@ final class RecoveryProbeURLProtocol: URLProtocol {
     struct Reply: Sendable {
         let body: String
         var holdOpen = false
+        var statusCode = 200
     }
 
     private final class Storage: @unchecked Sendable {
@@ -61,7 +62,7 @@ final class RecoveryProbeURLProtocol: URLProtocol {
             }
             let reply = Self.storage.replies.removeFirst()
             if reply.holdOpen { Self.storage.held = instance }
-            let response = HTTPURLResponse(url: instance.request.url!, statusCode: 200,
+            let response = HTTPURLResponse(url: instance.request.url!, statusCode: reply.statusCode,
                 httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
             instance.client?.urlProtocol(instance, didReceive: response, cacheStoragePolicy: .notAllowed)
             instance.client?.urlProtocol(instance, didLoad: Data(reply.body.utf8))

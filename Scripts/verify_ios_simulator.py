@@ -44,7 +44,7 @@ def select_simulator(runtimes, requested=None):
 def validate_report(report, run_id):
     if report.get("runID") != run_id or not report.get("finishedAt"):
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
-    for key in ("sqlite", "realm", "localAdapters"):
+    for key in ("sqlite", "realm", "localAdapters", "recovery"):
         if report.get(key) != "passed":
             raise RuntimeError(f"Simulator verification {key}: {report.get(key, 'missing')}")
     if report.get("liveProvider") != "skipped: local_only":
@@ -158,7 +158,20 @@ def main():
                 report_bytes = report_path.read_bytes()
                 (output / "CodexKitVerification.json").write_bytes(report_bytes)
                 validate_report(json.loads(report_bytes), run_id)
-                print("Simulator verification passed: SQLite and Realm; live-account access disabled.", flush=True)
+                run(["xcrun", "simctl", "terminate", simulator, bundle_id])
+                run(["xcrun", "simctl", "launch", simulator, bundle_id,
+                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"], env=environment)
+                reopen_path = container / "Documents/CodexKitRecoveryReopen.json"
+                reopen_deadline = time.monotonic() + options.report_timeout
+                while not reopen_path.is_file() and time.monotonic() < reopen_deadline:
+                    time.sleep(1)
+                if not reopen_path.is_file():
+                    raise RuntimeError("Cold recovery verification did not report a result.")
+                reopened = json.loads(reopen_path.read_bytes())
+                (output / "CodexKitRecoveryReopen.json").write_text(json.dumps(reopened, indent=2) + "\n")
+                if reopened.get("runID") != run_id or reopened.get("passed") != "true" or not reopened.get("finishedAt"):
+                    raise RuntimeError(f"Cold recovery failed: {reopened}")
+                print("Simulator verification passed: adapters, dropped requests, and receipt recovery after app relaunch; no live access.", flush=True)
                 return 0
             time.sleep(1)
         raise RuntimeError(f"No verification report arrived within {options.report_timeout} seconds.")

@@ -69,6 +69,6 @@ extension AgentRuntimeError {
     }
 
     func withRetryInformation(_ information: AgentRetryInformation) -> Self {
-        .init(code: code, message: message, http: http, retry: information)
+        .init(code: code, message: message, http: http, retry: information, interruption: interruption)
     }
 }

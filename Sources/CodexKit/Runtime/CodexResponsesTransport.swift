@@ -24,13 +24,13 @@ struct CodexResponsesRequestFactory: Sendable {
                 )
             ),
             input: items.map(\.jsonValue),
-            tools: responsesTools(
+            tools: AgentStructuredRecoveryContext.current == nil ? responsesTools(
                 from: tools,
                 enableWebSearch: configuration.enableWebSearch,
                 enableImageGeneration: configuration.enableImageGeneration,
                 imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
-            ),
-            toolChoice: "auto",
+            ) : [],
+            toolChoice: AgentStructuredRecoveryContext.current == nil ? "auto" : "none",
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
             store: false,
             stream: true,
@@ -41,7 +41,13 @@ struct CodexResponsesRequestFactory: Sendable {
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
         request.httpMethod = "POST"
         request.timeoutInterval = configuration.streamIdleTimeout
-        request.httpBody = try encoder.encode(requestBody)
+        if AgentStructuredRecoveryContext.current != nil {
+            let stableEncoder = JSONEncoder()
+            stableEncoder.outputFormatting = [.sortedKeys]
+            request.httpBody = try stableEncoder.encode(requestBody)
+        } else {
+            request.httpBody = try encoder.encode(requestBody)
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
@@ -227,6 +233,9 @@ struct CodexResponsesEventStreamClient: Sendable {
         policy: RequestRetryPolicy
     ) -> Bool {
         if let runtimeError = error as? AgentRuntimeError {
+            if let code = runtimeError.interruption?.transportErrorCode {
+                return policy.retryableURLErrorCodes.contains(code)
+            }
             if runtimeError.code == "responses_stream_disconnected" { return true }
             if runtimeError.code == AgentRuntimeError.unauthorized().code {
                 return false
@@ -403,15 +412,15 @@ struct CodexResponsesEventStreamClient: Sendable {
             kind = .completed(usage, responseID: envelope.response?.id)
         case "response.failed":
             let message = envelope.response?.error?.message ?? "The ChatGPT responses stream failed."
-            throw AgentRuntimeError(code: "responses_stream_failed", message: message,
+            kind = .failed(AgentRuntimeError(code: "responses_stream_failed", message: message,
                 http: .init(statusCode: 200, providerCode: envelope.response?.error?.code,
-                    providerType: envelope.response?.error?.type))
+                    providerType: envelope.response?.error?.type)), responseID: envelope.response?.id)
         case "response.incomplete":
             let reason = envelope.response?.incompleteDetails?.reason ?? "unknown"
-            throw AgentRuntimeError(
+            kind = .failed(AgentRuntimeError(
                 code: "responses_stream_incomplete",
                 message: "The ChatGPT responses stream completed early: \(reason)."
-            )
+            ), responseID: envelope.response?.id)
         default:
             kind = .other
         }

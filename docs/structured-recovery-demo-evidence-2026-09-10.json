@@ -1,0 +1,36 @@
+{
+  "scope": "Offline controlled transport through real CodexKit in signed demo apps; no remote resumption claim",
+  "macOS": {
+    "passed": true,
+    "recoveryChecks": [
+      "before output: baseline fails with 1 POST; recovery succeeds with 2 POSTs",
+      "mid response: baseline fails with 1 POST; recovery succeeds with 2 POSTs",
+      "lost terminal event: baseline fails with 1 POST; recovery succeeds with 2 POSTs",
+      "repeated drops stop after exactly 3 POSTs",
+      "cancellation after output saves cancelled state with exactly 1 POST",
+      "completed receipt saved before host acknowledgement for next-process recovery"
+    ],
+    "newProcess": {
+      "checks": [
+        "new app process retrieves validated result with 0 POSTs and 0 authorizations"
+      ],
+      "passed": true
+    }
+  },
+  "iOS": {
+    "runtime": "iOS 26.5",
+    "device": "iPhone 17 Pro simulator",
+    "passed": "passed",
+    "recoveryChecks": "before output: baseline fails with 1 POST; recovery succeeds with 2 POSTs; mid response: baseline fails with 1 POST; recovery succeeds with 2 POSTs; lost terminal event: baseline fails with 1 POST; recovery succeeds with 2 POSTs; repeated drops stop after exactly 3 POSTs; cancellation after output saves cancelled state with exactly 1 POST; completed receipt saved before host acknowledgement for next-process recovery",
+    "startedAt": "2026-09-10T13:47:46Z",
+    "finishedAt": "2026-09-10T13:47:46Z",
+    "runID": "5fd880ee-bf23-4a57-b405-15892e423f52",
+    "newProcess": {
+      "finishedAt": "2026-09-10T13:47:47Z",
+      "passed": "true",
+      "recovery": "new app process retrieves validated result with 0 POSTs and 0 authorizations",
+      "runID": "5fd880ee-bf23-4a57-b405-15892e423f52",
+      "startedAt": "2026-09-10T13:47:47Z"
+    }
+  }
+}

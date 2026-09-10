@@ -4,6 +4,12 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Structured recovery (alpha.30)
+
+The new [structured recovery API](structured-request-recovery.md) is opt-in and does not change existing `send` retry policy. It uses separate local storage; no runtime database migration is required. Responses URL failures now carry `AgentRuntimeError.interruption` rather than escaping as raw `URLError`. Read `interruption.transportErrorDomain` and `transportErrorCode` when mapping transport failures to app UI. Cancellation continues to use `CancellationError`.
+
+`AgentRuntimeError` gains an optional `interruption` property and an initializer overload; its existing initializer remains available. Old serialized errors decode with that property absent. Repeated numbered SSE events and repeated function-call IDs within a turn are now suppressed; this does not make tools replay-safe across requests.
+
 ## Client-managed state only (alpha.29)
 
 `CodexResponsesStateManagement.serverManaged` has been removed. The authenticated Codex endpoint rejects `store: true`; remove `stateManagement: .serverManaged` or change it to `.clientManaged`. Existing `.clientManaged` calls and default configurations remain source-compatible. Decoding the old `"serverManaged"` enum value now fails instead of silently selecting another mode.

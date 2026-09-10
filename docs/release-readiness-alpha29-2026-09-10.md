@@ -36,4 +36,4 @@ The earlier authenticated probe completed small tool-free structured requests. T
 - Swift 6.1 iOS 17 verifier build.
 - iOS 17 runtime verification.
 
-Only this verification record changes after the tested candidate. The tag-triggered workflow will verify the exact release revision before creating the GitHub prerelease. Publication remains pending until that workflow passes.
+Only this verification record changed after the tested candidate. [Release workflow 34480219442](https://github.com/timazed/CodexKit/actions/runs/34480219442) passed for tag revision `3cb1ed82219239bbfdbc5f04f9c78ddd3af0b0b5`. [Alpha.29](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.29) was published as a non-draft prerelease at 2026-09-10 13:36:36 UTC. This is a maintenance release; the subsequent structured recovery implementation is separate and is not included in alpha.29.

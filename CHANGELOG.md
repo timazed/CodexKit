@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.30] - 2026-09-10
+
+This prerelease adds local completed-result recovery and explicitly authorized replacement attempts for tool-free structured requests. It does not resume a remote provider stream. See the [verification report](docs/release-readiness-alpha30-2026-09-10.md).
+
+### Added
+
+- Added opt-in recovery for ephemeral, tool-free structured requests: frozen account-bound requests, durable attempt accounting, host authorization before each generation POST including authentication reissues, and local completed-result receipts that survive relaunch. This supports explicit replacement generations, not remote stream resumption. See [structured request recovery](docs/structured-request-recovery.md).
+- Added typed Responses interruption metadata including provider response ID, sequence cursor, output/tool activity, and underlying transport error domain/code.
+- Added signed iOS/macOS demo comparisons for dropped connections and receipt retrieval in a second app process with zero generation requests.
+
+### Fixed
+
+- Ignore repeated numbered stream events and repeated function-call IDs within a turn; reject conflicting repeated tool arguments. Tool deduplication does not extend across new requests or app restarts.
+
+### Changed
+
+- Responses transport URL failures now surface as `AgentRuntimeError` with typed interruption and retry information. Callers that catch only `URLError` should inspect `interruption.transportErrorCode`.
+
 ## [2.0.0-alpha.29] - 2026-09-10
 
 This prerelease restricts the built-in Codex backend to the client-managed state supported by the authenticated endpoint. Existing client-managed integrations remain compatible. Server-managed configuration is removed; see the [migration notes](docs/migration.md#client-managed-state-only-alpha29). This release does not add interrupted-response retrieval or stream resumption.

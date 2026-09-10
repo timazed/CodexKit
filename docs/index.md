@@ -13,6 +13,7 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [Runtime progress, tools, and turn control](upstream-runtime-features.md) | Parallel tools, progress, model discovery, usage limits, steering, interruption |
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
+| [Structured request recovery](structured-request-recovery.md) | Account-bound completed receipts, host-budgeted replacement, cancellation, cold reopen |
 | [Persistence and observation](persistence.md) | SQLite/Realm integration, migration, queries, Combine, context compaction |
 | [Memory](memory.md) | Capture, retrieval, guided writing, raw stores, attribution |
 | [Personas and skills](personas-and-skills.md) | Layered instructions, tool policies, dynamic definitions, previews |

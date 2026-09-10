@@ -23,6 +23,8 @@ struct TurnRunState {
     var pendingToolFallbackTexts: [String] = []
     var structuredParser = CodexResponsesStructuredStreamParser()
     var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
+    var toolCallsByID: [String: FunctionCallRecord] = [:]
+    var hasToolActivity = false
 
     mutating func beginAttempt() {
         structuredParser = CodexResponsesStructuredStreamParser()
@@ -41,6 +43,8 @@ struct PendingResponseItem {
 }
 
 struct RetryAttemptState {
+    // Only in memory, for renewing the actual credential used after host authorization/backoff.
+    var accessTokenUsed: String?
     var hasAssistantDelta = false
     var hasNonReplayableOutput = false
 

@@ -5,12 +5,19 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
     public let message: String
     public let http: AgentHTTPFailure?
     public let retry: AgentRetryInformation?
+    public let interruption: AgentResponseInterruption?
 
     public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil) {
+        self.init(code: code, message: message, http: http, retry: retry, interruption: nil)
+    }
+
+    public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil,
+                interruption: AgentResponseInterruption?) {
         self.code = code
         self.message = message
         self.http = http
         self.retry = retry
+        self.interruption = interruption
     }
 
     public var errorDescription: String? {

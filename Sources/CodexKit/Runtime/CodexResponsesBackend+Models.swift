@@ -341,6 +341,7 @@ struct CodexResponsesStreamEvent: Sendable {
         case structuredOutputCommitted(JSONValue)
         case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
         case completed(AgentUsage, responseID: String?)
+        case failed(AgentRuntimeError, responseID: String?)
         case other
     }
 

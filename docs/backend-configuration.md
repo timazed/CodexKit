@@ -46,6 +46,8 @@ let backend = CodexResponsesBackend(
 
 ## Response and model-pass limits
 
+For ephemeral one-shot structured requests, [structured request recovery](structured-request-recovery.md) provides explicit host-budgeted replacement and durable local completed-result receipts. It disables tools and SDK transient retries for that operation. It does not resume a provider stream.
+
 The built-in backend defaults to 32 model passes per turn, a 256 MiB streamed-response byte budget, and 64 buffered events per queue:
 
 ```swift

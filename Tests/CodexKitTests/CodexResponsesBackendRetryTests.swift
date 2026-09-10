@@ -59,7 +59,10 @@ extension CodexResponsesBackendTests {
         await XCTAssertThrowsErrorAsync(try await drainEvents(turnStream.events)) { error in
             XCTAssertEqual(error as? AgentRuntimeError, AgentRuntimeError(code: "responses_http_status_400",
                 message: "The ChatGPT responses request failed with status 400: {\"error\":\"bad request\"}",
-                http: .init(statusCode: 400), retry: .init(attempt: 1, maximumAttempts: 3, isRetryable: false, safety: .beforeOutput)))
+                http: .init(statusCode: 400), retry: .init(attempt: 1, maximumAttempts: 3, isRetryable: false, safety: .beforeOutput),
+                interruption: .init(outcome: .requestRejected, clientRequestID: nil, requestID: "thread-no-retry",
+                    responseID: nil, lastSequenceNumber: nil, hasOutput: false, hasToolActivity: false,
+                    providerCompleted: false, transportErrorDomain: nil, transportErrorCode: nil)))
         }
     }
 

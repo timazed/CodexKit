@@ -251,7 +251,7 @@ struct CodexResponsesTurnRunner {
     func runTurnPassWithRetry(
         state: inout TurnRunState
     ) async throws -> TurnPassDisposition {
-        let retryPolicy = configuration.requestRetryPolicy
+        let retryPolicy = AgentStructuredRecoveryContext.current == nil ? configuration.requestRetryPolicy : .disabled
         // Build one request per pass. Retries replay the same request, while a new pass
         // is only started after tool output mutates the working history.
         let lease = try await authenticationContext?.resolve() ?? session
@@ -369,20 +369,48 @@ struct CodexResponsesTurnRunner {
         retryState: inout RetryAttemptState
     ) async throws -> TurnPassDisposition {
         var passDisposition: TurnPassDisposition = .completed
-        let stream = try await streamClient.streamEvents(request: request)
-        await streamReady()
-        for try await event in stream {
-            let eventResult = try await handleStreamEvent(event, state: &state)
-            passDisposition = passDisposition.merging(with: eventResult.passDisposition)
-            retryState.record(eventResult)
-            if case .completed = event.kind {
-                return passDisposition
-            }
+        var observation = ResponsesAttemptObservation()
+        observation.hasToolActivity = state.hasToolActivity
+        var request = request
+        if let recovery = AgentStructuredRecoveryContext.current {
+            let attemptID = try await recovery.authorizeAttempt()
+            request.setValue(attemptID, forHTTPHeaderField: "x-client-request-id")
         }
-        try Task.checkCancellation()
-        throw AgentRuntimeError(
-            code: "responses_stream_disconnected",
-            message: "The Responses stream closed before response.completed."
-        )
+        if let current = try await authenticationContext?.resolve() {
+            request.setValue("Bearer \(current.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(current.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
+            retryState.accessTokenUsed = current.accessToken
+        }
+        do {
+            let stream = try await streamClient.streamEvents(request: request)
+            await streamReady()
+            for try await event in stream {
+                if let sequence = event.sequenceNumber, let previous = observation.lastSequenceNumber, sequence <= previous {
+                    continue
+                }
+                observation.observe(event)
+                try await AgentStructuredRecoveryContext.current?.observe(observation)
+                if AgentStructuredRecoveryContext.current != nil, observation.hasToolActivity {
+                    throw AgentRecoveryError.toolsUnsupported
+                }
+                let eventResult = try await handleStreamEvent(event, state: &state)
+                passDisposition = passDisposition.merging(with: eventResult.passDisposition)
+                retryState.record(eventResult)
+                if case .completed = event.kind {
+                    return passDisposition
+                }
+            }
+            try Task.checkCancellation()
+            throw AgentRuntimeError(
+                code: "responses_stream_disconnected",
+                message: "The Responses stream closed before response.completed."
+            )
+        } catch {
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            let failure = observation.failure(error, clientRequestID: self.request.clientRequestID,
+                requestID: request.value(forHTTPHeaderField: "x-client-request-id"))
+            try await AgentStructuredRecoveryContext.current?.failed(failure)
+            throw failure
+        }
     }
 }

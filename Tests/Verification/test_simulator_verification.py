@@ -17,9 +17,9 @@ spec.loader.exec_module(verifier)
 class SimulatorVerificationTests(unittest.TestCase):
     def test_requires_each_adapter_and_local_only_mode(self):
         valid = dict(runID="current", finishedAt="finished", sqlite="passed", realm="passed",
-                     localAdapters="passed", liveProvider="skipped: local_only")
+                     localAdapters="passed", recovery="passed", liveProvider="skipped: local_only")
         verifier.validate_report(valid, "current")
-        for key in ("sqlite", "realm", "localAdapters"):
+        for key in ("sqlite", "realm", "localAdapters", "recovery"):
             for status in (None, "skipped", "failed: storage_error"):
                 with self.subTest(key=key, status=status), self.assertRaises(RuntimeError):
                     verifier.validate_report(dict(valid, **{key: status}), "current")
@@ -70,8 +70,10 @@ class SimulatorVerificationTests(unittest.TestCase):
             container = root / "container"
             (container / "Documents").mkdir(parents=True)
             report = dict(runID="fresh", finishedAt="finished", sqlite="passed", realm="passed",
-                          localAdapters="passed", liveProvider="skipped: local_only")
+                          localAdapters="passed", recovery="passed", liveProvider="skipped: local_only")
             (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
+            (container / "Documents/CodexKitRecoveryReopen.json").write_text(json.dumps(
+                dict(runID="fresh", passed="true", finishedAt="finished")))
             clock = [0]
             lookups = []
 
@@ -103,7 +105,8 @@ class SimulatorVerificationTests(unittest.TestCase):
             self.assertEqual(installs, [["xcrun", "simctl", "install", "owned-simulator", str(app.resolve())]])
             commands = [call.args[0][2] for call in run.call_args_list]
             self.assertEqual(commands.count("get_app_container"), 2)
-            self.assertEqual(commands.count("launch"), 1)
+            self.assertEqual(commands.count("launch"), 2)
+            self.assertEqual(commands.count("terminate"), 1)
             self.assertLess(max(i for i, command in enumerate(commands) if command == "get_app_container"),
                             commands.index("launch"))
             self.assertEqual([call.args[0] for call in cleanup.call_args_list], [
