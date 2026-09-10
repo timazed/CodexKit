@@ -41,7 +41,7 @@ Build and run the signed app's offline integration checks:
 python3 Scripts/verify_macos_demo.py
 ```
 
-The script treats demo-target Swift warnings as errors, verifies signing, and runs 25 checks inside a separate app instance: session lifecycle, OAuth handoff and recovery, typed output, tool approvals, parallel execution, memory previews, compaction, and File/SQLite/Realm persistence. Third-party package warnings are not promoted to errors. It uses temporary homes, isolated defaults, and synthetic credentials in memory and disposable native Keychain items; it never reads real credentials or calls a model. Results are written to `.build/macos-demo/verification-result.json`. The separate `Scripts/verify_local_codex_session.py` probe exercises native file and Keychain access with synthetic items.
+The script treats demo-target Swift warnings as errors, verifies signing, and defaults to a short `--mode smoke` run: startup, chat, conversation restoration, cancellation, and receipt recovery in a second app process. Use `--mode full` for the retained authentication, workspace recovery, tools, memory, compaction, persistence-adapter, and dropped-connection scenarios. Third-party package warnings are not promoted to errors. All checks use isolated fixtures and synthetic credentials; no real credentials or model calls are used. Reports and separate build/execution timings are saved under `.build/macos-demo`. `--skip-build` reuses the already-built signed app but always reruns verification.
 
 After building, open the normal app or the Debug-only offline preview:
 
@@ -151,7 +151,7 @@ On iOS, the interactive demo installs `IOSBackgroundActivityProvider`. Active tu
 
 The demo also inherits the runtime's five-minute turn duration and 128-tool-call limit. The duration includes approval waits; reaching a budget shows a turn failure and clears pending approval. Hosts can adjust these defaults through `AgentRuntime.Configuration.turnLimits`; see [execution limits](../docs/messaging.md#event-buffering-and-execution-limits).
 
-Run `python3 Scripts/verify_ios_simulator.py` from the repository root for the same signed simulator verification used by CI. It creates and removes a temporary simulator, verifies SQLite/Realm completion, reopening, and cancellation, and saves reports in `.build/verification`. For a manually launched Debug app, add `--verify-runtime`; also add `--verify-local-only` to skip live-session lookup. Verification launches bypass ordinary demo setup. See [verification instructions](../docs/verification.md) for scope, session requirements, and report retrieval.
+Run `python3 Scripts/verify_ios_simulator.py` from the repository root for the same signed simulator verification used by CI. It creates and removes a temporary simulator, verifies SQLite/Realm completion, reopening, and cancellation, and saves reports in `.build/verification`. Add `--mode full` for extensive recovery scenarios. Both modes verify saved results in a second app process. For a manually launched Debug app, add `--verify-runtime`; also add `--verify-local-only` to skip live-session lookup. Verification launches bypass ordinary demo setup. See [verification instructions](../docs/verification.md) for scope, session requirements, and report retrieval.
 
 Keep signing enabled when running this check on a simulator: the unsigned CI build can compile successfully while Keychain access fails. The verification guide includes a local ad-hoc signing command.
 

@@ -4,12 +4,13 @@ import Foundation
 
 /// Uses the real Responses backend with an offline transport. No account credentials or live requests.
 enum DemoRecoveryVerification {
-    static func run(directory: URL) async throws -> [String] {
+    static func run(directory: URL, smoke: Bool = false) async throws -> [String] {
         try? FileManager.default.removeItem(at: directory)
         let store = AgentStructuredRecoveryStore(directory: directory)
         var checks: [String] = []
-        for (name, prefix) in [("before output", created), ("mid response", created + delta),
-                               ("lost terminal event", created + message)] {
+        let scenarios = smoke ? [] : [("before output", created), ("mid response", created + delta),
+                                     ("lost terminal event", created + message)]
+        for (name, prefix) in scenarios {
             // Baseline: the existing send API with SDK retries disabled fails after one interrupted POST.
             DemoRecoveryTransport.configure([prefix, message + completed])
             let baseline = try runtime()
@@ -36,17 +37,19 @@ enum DemoRecoveryVerification {
             try await recovering.acknowledgeStructuredRecovery(handle, store: store)
         }
 
-        DemoRecoveryTransport.configure([created, created, created, message + completed])
-        let bounded = try runtime()
-        let boundedHandle = try await prepare(bounded, store: store)
-        do {
-            _ = try await bounded.sendRecovering(boundedHandle, response: Output.self, store: store) { _ in true }
-            throw Failure("Exhausted request succeeded")
-        } catch let failure as AgentRuntimeError {
-            try require(failure.interruption?.outcome == .disconnected, "Incorrect exhaustion failure")
+        if !smoke {
+            DemoRecoveryTransport.configure([created, created, created, message + completed])
+            let bounded = try runtime()
+            let boundedHandle = try await prepare(bounded, store: store)
+            do {
+                _ = try await bounded.sendRecovering(boundedHandle, response: Output.self, store: store) { _ in true }
+                throw Failure("Exhausted request succeeded")
+            } catch let failure as AgentRuntimeError {
+                try require(failure.interruption?.outcome == .disconnected, "Incorrect exhaustion failure")
+            }
+            try require(DemoRecoveryTransport.count == 3, "Exceeded three-attempt budget")
+            checks.append("repeated drops stop after exactly 3 POSTs")
         }
-        try require(DemoRecoveryTransport.count == 3, "Exceeded three-attempt budget")
-        checks.append("repeated drops stop after exactly 3 POSTs")
 
         DemoRecoveryTransport.configure([created + delta], hold: true)
         let cancelled = try runtime()

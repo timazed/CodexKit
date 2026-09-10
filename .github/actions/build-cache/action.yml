@@ -1,0 +1,28 @@
+name: Restore compatible build intermediates
+description: Key build caches by platform, toolchain, dependencies, and sources; always rerun verification.
+inputs:
+  kind:
+    description: Separate SDK, iOS, minimum iOS, and macOS caches
+    required: true
+  paths:
+    description: Build paths; never authentication or user application data
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: identity
+      shell: bash
+      env:
+        CACHE_KIND: ${{ inputs.kind }}
+        DEPENDENCIES: ${{ hashFiles('Package.swift', 'Package.resolved', 'DemoApp/**/Package.resolved') }}
+        SOURCES: ${{ hashFiles('Sources/**', 'Tests/**', 'DemoApp/**', 'Scripts/**', '.github/**') }}
+      run: |
+        set -euo pipefail
+        fingerprint=$( { sw_vers; uname -m; xcodebuild -version; swift --version; } | shasum -a 256 | cut -d ' ' -f 1)
+        echo "prefix=build-v1-${CACHE_KIND}-${fingerprint}-${DEPENDENCIES}" >> "$GITHUB_OUTPUT"
+        echo "source=${SOURCES}" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ${{ inputs.paths }}
+        key: ${{ steps.identity.outputs.prefix }}-${{ steps.identity.outputs.source }}
+        restore-keys: ${{ steps.identity.outputs.prefix }}-

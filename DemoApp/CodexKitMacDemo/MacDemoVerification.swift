@@ -13,6 +13,7 @@ enum MacDemoVerification {
             return
         }
         let resultURL = URL(fileURLWithPath: arguments[index + 1])
+        let smoke = arguments.contains("--verify-smoke")
         var result: [String: Any]
         do {
             let directory = resultURL.deletingLastPathComponent().appendingPathComponent("recovery")
@@ -20,19 +21,22 @@ enum MacDemoVerification {
             if arguments.contains("--verify-recovery-reopen") {
                 checks = try await DemoRecoveryVerification.reopen(directory: directory)
             } else {
-                let existing = try await verify()
-                checks = existing + (try await DemoRecoveryVerification.run(directory: directory))
+                let existing = try await verify(smoke: smoke)
+                checks = existing + (try await DemoRecoveryVerification.run(directory: directory, smoke: smoke))
             }
             result = ["passed": true, "checks": checks]
         } catch {
             result = ["passed": false, "error": error.localizedDescription]
         }
+        result["mode"] = smoke ? "smoke" : "full"
+        result["phase"] = arguments.contains("--verify-recovery-reopen") ? "reopen" : "initial"
+        result["runID"] = ProcessInfo.processInfo.environment["CODEXKIT_VERIFICATION_RUN_ID"] ?? UUID().uuidString
         do { try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: resultURL) }
         catch { NSLog("Could not write demo verification result.") }
         NSApplication.shared.terminate(nil)
     }
 
-    private static func verify() async throws -> [String] {
+    private static func verify(smoke: Bool) async throws -> [String] {
         let fixture = try MacDemoFixture()
         defer { fixture.cleanup() }
         var checks: [String] = []
@@ -61,6 +65,16 @@ enum MacDemoVerification {
         try require(restored.chat?.messages.contains(where: { $0.role == .assistant }) == true,
                     "Saved messages did not restore")
         checks.append("bound session and conversation restore")
+
+        if smoke {
+            let request = Task { await restored.sendMessage("slow response") }
+            try await Task.sleep(for: .milliseconds(100))
+            await restored.disconnect()
+            await request.value
+            try require(restored.chat == nil && !restored.isConnected, "Late response restored disconnected UI")
+            checks.append("disconnect during streaming cannot restore UI")
+            return checks
+        }
 
         // A renewed token from the same owner remains usable without reconnecting.
         try fixture.writeCredentials(account: "synthetic-workspace", nonce: "rotated")

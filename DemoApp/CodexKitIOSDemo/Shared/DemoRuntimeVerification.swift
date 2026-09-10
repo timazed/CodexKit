@@ -13,7 +13,9 @@ enum DemoRuntimeVerification {
     static func runIfRequested() async {
         guard CommandLine.arguments.contains("--verify-runtime"), !hasRun else { return }
         hasRun = true
+        let smoke = CommandLine.arguments.contains("--verify-smoke")
         var report = ["startedAt": ISO8601DateFormatter().string(from: Date()),
+            "mode": smoke ? "smoke" : "full",
             "runID": ProcessInfo.processInfo.environment["CODEXKIT_VERIFICATION_RUN_ID"] ?? UUID().uuidString]
         let recoveryDirectory = URL.documentsDirectory.appendingPathComponent("RecoveryVerification")
         let reopening = CommandLine.arguments.contains("--verify-recovery-reopen")
@@ -28,7 +30,7 @@ enum DemoRuntimeVerification {
             return
         }
         do {
-            report["recoveryChecks"] = try await DemoRecoveryVerification.run(directory: recoveryDirectory).joined(separator: "; ")
+            report["recoveryChecks"] = try await DemoRecoveryVerification.run(directory: recoveryDirectory, smoke: smoke).joined(separator: "; ")
             report["recovery"] = "passed"
         } catch { report["recovery"] = failureCode(error) }
         for adapter in ["sqlite", "realm"] {

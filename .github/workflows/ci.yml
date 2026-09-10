@@ -1,18 +1,60 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main, "codex/**"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      extended:
+        description: Force fresh verification, full demos, and extended stress workloads
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 18 * * *"
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.ref != 'refs/heads/main' }}
 
 jobs:
-  test-and-build:
-    name: Verify (${{ matrix.profile }})
+  plan:
+    name: Verification plan
+    # Codex branches already have push checks on their head. Other PRs check the merge revision.
+    # A new main merge SHA needs its own proof before release.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      !startsWith(github.event.pull_request.head.ref, 'codex/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      verify: ${{ steps.plan.outputs.verify }}
+      stress: ${{ steps.plan.outputs.stress }}
+      full_demos: ${{ steps.plan.outputs.full_demos }}
+      evidence_url: ${{ steps.plan.outputs.evidence_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Source size and verification harness tests
+        run: |
+          python3 Scripts/check_source_size.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Verification
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/ci_plan.py
+
+  sdk:
+    name: SDK (${{ matrix.profile }})
+    needs: plan
+    if: needs.plan.outputs.verify == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -22,206 +64,225 @@ jobs:
           - profile: minimum
             runner: macos-14
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    # Ten minutes is a performance target; unfinished verification never becomes a pass.
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Swift 6.1 on macOS 14
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/minimum-swift
         if: matrix.profile == 'minimum'
-        shell: bash
-        run: |
-          set -euo pipefail
-          package="$RUNNER_TEMP/swift-6.1.3.pkg"
-          curl --fail --location --retry 3 \
-            https://download.swift.org/swift-6.1.3-release/xcode/swift-6.1.3-RELEASE/swift-6.1.3-RELEASE-osx.pkg \
-            --output "$package"
-          signature="$(pkgutil --check-signature "$package")"
-          printf '%s\n' "$signature"
-          if [[ "$signature" != *"Developer ID Installer: Swift Open Source (V9AUD2URP3)"* ]]; then
-            echo "The Swift toolchain installer has an unexpected signer." >&2
-            exit 1
-          fi
-          installer -pkg "$package" -target CurrentUserHomeDirectory
-          toolchain="$HOME/Library/Developer/Toolchains/swift-6.1.3-RELEASE.xctoolchain"
-          toolchain_id="$(plutil -extract CFBundleIdentifier raw "$toolchain/Info.plist")"
-          echo "TOOLCHAINS=$toolchain_id" >> "$GITHUB_ENV"
-          echo "DEVELOPER_DIR=/Applications/Xcode_16.2.app/Contents/Developer" >> "$GITHUB_ENV"
-          echo "$toolchain/usr/bin" >> "$GITHUB_PATH"
-          # Realm's C++20 modules need Apple's Clang when built by SwiftPM.
-          apple_tools="/Applications/Xcode_16.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin"
-          echo "CC=$apple_tools/clang" >> "$GITHUB_ENV"
-          echo "CXX=$apple_tools/clang++" >> "$GITHUB_ENV"
-
-      - name: Host and Swift versions
-        run: |
-          sw_vers
-          swift --version
-
-      - name: Production source size
-        run: python3 Scripts/check_source_size.py
-
-      - name: Verification harness checks
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Verification
-
-      - name: Swift package tests
-        id: package_tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          swift test -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/codexkit-package-tests.log"
-
-      - name: Release package build
-        id: release_build
-        shell: bash
-        run: |
-          set -euo pipefail
-          swift build -c release -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/codexkit-release-build.log"
-
-      - name: Optimized regression and concurrency checks
-        id: optimized
-        if: matrix.profile == 'current'
-        shell: bash
-        env:
-          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
-          CODEXKIT_STRESS_ROUNDS: "40"
-        run: |
-          set -euo pipefail
-          swift test -c release -Xswiftc -warnings-as-errors \
-            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests|RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests' \
-            2>&1 | tee "$RUNNER_TEMP/codexkit-optimized.log"
-
-      - name: Verify demo app (iOS Simulator)
-        id: simulator
-        if: matrix.profile == 'current'
-        shell: bash
-        run: |
-          python3 Scripts/verify_ios_simulator.py --output-dir "$RUNNER_TEMP/codexkit-verification"
-
-      - name: Verify demo app (macOS)
-        id: macos_demo
-        if: matrix.profile == 'current'
-        shell: bash
-        run: |
-          python3 Scripts/verify_macos_demo.py
-
-      - name: Failure diagnostics
-        if: failure()
-        env:
-          CHECK_OUTCOMES: ${{ toJSON(steps) }}
-        run: |
-          python3 - <<'PYTHON'
-          import json, os, re
-          from pathlib import Path
-
-          root = Path(os.environ["RUNNER_TEMP"])
-          steps = json.loads(os.environ["CHECK_OUTCOMES"])
-          checks = {"package_tests": ["codexkit-package-tests.log"],
-                    "release_build": ["codexkit-release-build.log"],
-                    "optimized": ["codexkit-optimized.log"],
-                    "simulator": ["codexkit-verification/build.log", "codexkit-verification/failure.txt"]}
-          logs = [name for check, names in checks.items()
-                  if steps.get(check, {}).get("outcome") == "failure" for name in names]
-          for name in logs:
-              path = root / name
-              if not path.is_file():
-                  continue
-              lines = path.read_text(errors="replace").splitlines()
-              errors = list(dict.fromkeys(line for line in lines
-                            if "error:" in line.lower() or "failed" in line.lower()))
-              if not errors:
-                  continue
-              source_errors = [line for line in errors
-                               if re.search(r"\.(?:swift|cpp|cc|c|mm|m|h):\d+", line)
-                               or (line.startswith("Test Case ") and " failed (" in line)]
-              errors = source_errors or errors
-              excerpt = errors if len(errors) <= 12 else errors[:6] + errors[-6:]
-              message = "\n".join(excerpt)[:6000]
-              message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-              print(f"::error title={name}::{message}")
-          PYTHON
-
-      - name: Verification reports and logs
-        if: always()
-        uses: actions/upload-artifact@v7
+      - uses: ./.github/actions/build-cache
         with:
-          name: runtime-verification-${{ matrix.profile }}
+          kind: sdk-${{ matrix.profile }}
+          paths: |
+            .build/artifacts
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
+            .build/build.db
+            .build/debug.yaml
+            .build/release.yaml
+            .build/arm64-apple-macosx
+            .build/x86_64-apple-macosx
+      - name: Full SDK tests
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci_timed.py --name 'SDK debug build and tests' --output "$RUNNER_TEMP/timing-debug.json" -- \
+            swift test --force-resolved-versions -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/package-tests.log"
+      - name: Optimized correctness checks (all four library targets)
+        if: matrix.profile == 'current'
+        env:
+          CODEXKIT_STRESS_ROUNDS: "6"
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci_timed.py --name 'SDK optimized build and tests' --output "$RUNNER_TEMP/timing-optimized.json" -- \
+            swift test -c release --force-resolved-versions -Xswiftc -warnings-as-errors \
+            --filter 'RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests|StructuredRecoveryTests|ResponseRecoveryInvestigationTests' \
+            2>&1 | tee "$RUNNER_TEMP/optimized-tests.log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sdk-${{ matrix.profile }}
           path: |
-            ${{ runner.temp }}/codexkit-verification
-            ${{ runner.temp }}/codexkit-package-tests.log
-            ${{ runner.temp }}/codexkit-release-build.log
-            ${{ runner.temp }}/codexkit-optimized.log
+            ${{ runner.temp }}/timing-*.json
+            ${{ runner.temp }}/*tests.log
+          retention-days: 14
+
+  demos:
+    name: Demo (${{ matrix.platform }})
+    needs: plan
+    if: needs.plan.outputs.verify == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [iOS, macOS]
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-cache
+        with:
+          kind: demo-${{ matrix.platform }}
+          paths: |
+            .build/simulator-verification/Build
+            .build/simulator-verification/SourcePackages
+            .build/simulator-verification/ModuleCache.noindex
+            .build/macos-demo/Build
+            .build/macos-demo/SourcePackages
+            .build/macos-demo/ModuleCache.noindex
+      - name: Build and verify the signed demo
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          FULL_DEMOS: ${{ needs.plan.outputs.full_demos }}
+        run: |
+          set -euo pipefail
+          mode=smoke
+          if [[ "$FULL_DEMOS" == true ]]; then mode=full; fi
+          if [[ "$PLATFORM" == iOS ]]; then
+            python3 Scripts/verify_ios_simulator.py --mode "$mode" --output-dir "$RUNNER_TEMP/demo-verification"
+          else
+            python3 Scripts/verify_macos_demo.py --mode "$mode"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: demo-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/demo-verification
             .build/macos-demo/build.log
-            .build/macos-demo/verification-result.json
-          if-no-files-found: ignore
+            .build/macos-demo/*result.json
+            .build/macos-demo/timings.json
           retention-days: 14
 
   build-minimum-simulator:
-    name: Build iOS 17 verifier (Swift 6.1)
+    name: Build iOS 17 verifier
+    needs: plan
+    if: needs.plan.outputs.verify == 'true'
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 15
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Host and Swift versions
-        run: |
-          sw_vers
-          xcrun swift --version
-      - name: Build the signed simulator app
+      - uses: ./.github/actions/build-cache
+        with:
+          kind: demo-iOS17-universal
+          paths: |
+            .build/minimum-simulator/Build
+            .build/minimum-simulator/SourcePackages
+            .build/minimum-simulator/ModuleCache.noindex
+      - name: Build portable signed simulator app
         run: |
           set -euo pipefail
           python3 Scripts/verify_ios_simulator.py --build-only \
-            --output-dir "$RUNNER_TEMP/minimum-simulator-build" \
-            --derived-data "$RUNNER_TEMP/minimum-simulator-derived"
-          products="$RUNNER_TEMP/minimum-simulator-derived/Build/Products/Debug-iphonesimulator"
+            --output-dir "$RUNNER_TEMP/minimum-simulator-build" --derived-data .build/minimum-simulator
+          products=.build/minimum-simulator/Build/Products/Debug-iphonesimulator
           lipo "$products/CodexKitIOSDemo.app/CodexKitIOSDemo" -verify_arch arm64 x86_64
-          tar -czf "$RUNNER_TEMP/minimum-simulator-app.tar.gz" \
-            -C "$products" CodexKitIOSDemo.app
-      - name: Signed simulator app
-        uses: actions/upload-artifact@v7
+          tar -czf "$RUNNER_TEMP/minimum-simulator-app.tar.gz" -C "$products" CodexKitIOSDemo.app
+      - uses: actions/upload-artifact@v7
         with:
           name: minimum-simulator-app
           path: ${{ runner.temp }}/minimum-simulator-app.tar.gz
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
-      - name: Build log
+      - uses: actions/upload-artifact@v7
         if: always()
-        uses: actions/upload-artifact@v7
         with:
           name: minimum-simulator-build
           path: ${{ runner.temp }}/minimum-simulator-build
-          if-no-files-found: ignore
           retention-days: 14
 
-  verify-minimum-simulator:
-    name: Verify iOS 17 runtime
-    needs: build-minimum-simulator
+  minimum-simulator:
+    name: Demo (iOS 17)
+    needs: [plan, build-minimum-simulator]
+    if: needs.plan.outputs.verify == 'true'
     runs-on: macos-14
-    timeout-minutes: 15
+    timeout-minutes: 5
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Download the signed simulator app
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: minimum-simulator-app
           path: ${{ runner.temp }}/minimum-simulator-download
-      - name: Verify on iOS 17
+      - name: Verify the prebuilt app on iOS 17
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/minimum-simulator-download"
           tar -xzf "$archive/minimum-simulator-app.tar.gz" -C "$archive"
-          python3 Scripts/verify_ios_simulator.py --runtime 17.0.1 \
-            --app "$archive/CodexKitIOSDemo.app" \
-            --output-dir "$RUNNER_TEMP/minimum-simulator-verification"
-      - name: Simulator report and logs
+          python3 Scripts/verify_ios_simulator.py --runtime 17.0.1 --mode smoke \
+            --app "$archive/CodexKitIOSDemo.app" --output-dir "$RUNNER_TEMP/minimum-simulator-verification"
+      - uses: actions/upload-artifact@v7
         if: always()
-        uses: actions/upload-artifact@v7
         with:
           name: minimum-simulator-verification
           path: ${{ runner.temp }}/minimum-simulator-verification
-          if-no-files-found: ignore
           retention-days: 14
+
+  extended-stress:
+    name: Extended stress
+    needs: [plan, sdk]
+    if: needs.plan.outputs.verify == 'true' && needs.plan.outputs.stress == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-cache
+        with:
+          kind: sdk-current
+          paths: |
+            .build/artifacts
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
+            .build/build.db
+            .build/debug.yaml
+            .build/release.yaml
+            .build/arm64-apple-macosx
+            .build/x86_64-apple-macosx
+      - name: Extended storage, image, and concurrency workloads
+        env:
+          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
+          CODEXKIT_STRESS_ROUNDS: "40"
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci_timed.py --name 'Extended workloads' --output "$RUNNER_TEMP/timing-stress.json" -- \
+            swift test -c release --force-resolved-versions -Xswiftc -warnings-as-errors \
+            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests|RuntimeConcurrencyStressTests' \
+            2>&1 | tee "$RUNNER_TEMP/stress.log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: extended-stress
+          path: |
+            ${{ runner.temp }}/timing-stress.json
+            ${{ runner.temp }}/stress.log
+          retention-days: 14
+
+  verified:
+    name: Verification gate v1
+    needs: [plan, sdk, demos, build-minimum-simulator, minimum-simulator, extended-stress]
+    if: always() && needs.plan.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require complete verification or original exact-commit evidence
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          needs = json.loads(os.environ['RESULTS'])
+          assert needs['plan']['result'] == 'success', 'Verification planning failed'
+          plan = needs['plan']['outputs']
+          if plan['verify'] == 'false':
+              assert plan['evidence_url'], 'Missing original verification evidence'
+              print('Reused complete verification:', plan['evidence_url'])
+          else:
+              for job in ('sdk', 'demos', 'build-minimum-simulator', 'minimum-simulator'):
+                  assert needs[job]['result'] == 'success', f'{job} did not pass'
+              expected = 'success' if plan['stress'] == 'true' else 'skipped'
+              assert needs['extended-stress']['result'] == expected, 'Extended stress did not match the required result'
+              print('All required checks passed for this commit')
+          PYTHON

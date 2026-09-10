@@ -2,7 +2,7 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
-The alpha.29 candidate restricts Responses state to client-managed mode; see its [verification report](release-readiness-alpha29-2026-09-10.md). The previous release is alpha.28; see the [10 September verification report](release-readiness-2026-09-10.md). It adds external credential discovery, account/source binding, rotation and owner renewal, authentication recovery after tools, account-directory storage, and signed macOS demo checks. Earlier audit results below are historical evidence, not results for the current candidate.
+The latest published SDK is alpha.30; see its [release verification report](release-readiness-alpha30-2026-09-10.md). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
 
 The 8 September deep-audit regressions are in `DeepAuditRegressionTests`, `CompactionTransportTests`, `PreparationCancellationTests`, and `OneShotValidationTests`. They cover conflicting/stale compaction, database reopen behavior, request and response image references, bounded compact bodies, session recovery, network cancellation, startup cancellation before/during persistence, strict root policy fields, and one-shot schema/Swift decoding before commit.
 
@@ -14,7 +14,7 @@ Run `swift test` for the package suite. Most backend tests use a local URLProtoc
 
 `ExternalSessionDiscoveryTests`, `ExternalSessionLifecycleTests`, and `ExternalSessionRuntimeTests` cover read-only discovery, safe failures, binding, rotation, renewal coalescing/timeouts, disconnect, and bounded recovery without replaying tools. `ScopedStorageTests` checks account-directory isolation and rejects host database files. These tests use synthetic credentials and local backend fixtures.
 
-Run `python3 Scripts/verify_local_codex_session.py` for a signed native file/Keychain/auto discovery probe with disposable synthetic records. Run `python3 Scripts/verify_macos_demo.py` for 25 signed app checks, including OAuth handoff/restoration, workspace retry, conversations, typed replies, approvals, parallel tools, memory, and persistence adapters. The current-host CI job and release workflow run the macOS demo verifier and retain `.build/macos-demo/build.log` and `verification-result.json`. The [macOS walkthrough](../DemoApp/README.md#macos-demo) documents separate, explicit live-session checks.
+Run `python3 Scripts/verify_local_codex_session.py` for a signed native file/Keychain/auto discovery probe with disposable synthetic records. `python3 Scripts/verify_macos_demo.py` defaults to a short signed-app smoke check. Add `--mode full` for the full authentication, tools, memory, compaction, persistence, and dropped-connection scenarios. Both modes verify completed-result recovery in a second app process. The [macOS walkthrough](../DemoApp/README.md#macos-demo) documents separate, explicit live-session checks.
 
 The audit follow-up adds coverage for provider injection, host session management, cross-account recovery cancellation, execution readiness before event consumption, ephemeral cancellation, observation cleanup/overflow, typed HTTP details, server retry delays, bounded image error ingestion, and the earlier auth/history/tool/streaming regressions.
 
@@ -61,40 +61,52 @@ The first test sends a small plain request and a structured request with an in-m
 
 A complete run uses up to 14 small provider requests, including four remote compactions. A session saved on an iPhone or simulator is not automatically available to a test process on the Mac. The demo's separate device verifier checks plain/structured completion; the full image/compaction matrix currently runs through the Mac package tests. A skipped or inaccessible-session check is not evidence of live-provider compatibility.
 
-## CI and local simulator automation
+## CI and release promotion
 
-CI runs on pull requests to `main`, pushes to `main` or `codex/**`, and manual dispatch. Its two package profiles run the ordinary suite and release build with warnings treated as errors. Simulator execution covers the newest installed runtime and iOS 17 separately:
+CI has one canonical push verification for `main` and `codex/**`. Same-repository `codex/**` PRs delegate to their branch checks instead of duplicating them. Other PRs verify GitHub's merge revision. A merge producing a different SHA must pass its own main verification before release. Superseded development runs are cancelled; main and scheduled runs are not interrupted by newer revisions.
 
-- `current` uses `macos-latest` and its newest available iPhone simulator. It also runs the optimized selection above with performance workloads enabled and 40 concurrency waves per adapter.
-- `minimum` runs package tests and release compilation on `macos-14`, with Xcode 16.2's SDKs and the verified official Swift 6.1.3 toolchain. GRDB 7.10 requires Swift 6.1, so Xcode 16.2's bundled compiler is insufficient. The job logs the actual host and Swift versions.
-- `Build iOS 17 verifier (Swift 6.1)` uses Xcode 16.4 on `macos-15` to produce an ad-hoc-signed app containing both Intel and Apple Silicon simulator code. A tar archive preserves executable permissions and signatures while the artifact moves between jobs.
-- `Verify iOS 17 runtime` installs that app on `macos-14` with Xcode 16.2 and exactly iOS 17.0.1. It executes the same SQLite/Realm completion, reopening, cancellation, and fresh-report checks without resolving or compiling packages. A missing requested runtime fails the job.
+The plan job runs the cheap source-size guard and Python harness/gate tests. If a trusted CI run already passed every required job for the exact SHA, compilation and app execution are skipped and the original evidence URL is retained. Reuse-only runs cannot certify themselves. Fork/PR runs, different commits/workflows, missing or skipped mandatory jobs, and a later completed failure cannot serve as release evidence. An API error causes fresh CI verification; the same error blocks release publication.
 
-The build and runtime jobs are separate because [Xcode loads packages through its built-in SwiftPM](https://forums.swift.org/t/build-for-ios-not-using-toolchain-in-toolchains-variable/70708/2), even when another Swift toolchain is selected. Xcode 16.2 therefore cannot load a Swift 6.1 package. The [macOS 14 inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-14-Readme.md) provides the iOS 17 runtime, the [macOS 15 inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md) provides Xcode 16.4, and [Swift.org](https://www.swift.org/install/macos/) provides the standalone compiler for the macOS 14 package checks.
+Fresh verification runs these lanes in parallel:
 
-The minimum profile selects Xcode's Apple Clang for SwiftPM's C/C++ dependencies: the standalone Swift toolchain's Clang fails to import Realm's `s2geometry` module under C++20. This compiler selection is confined to verification and changes no dependency sources or SDK build flags.
+| Lane | Checks |
+| --- | --- |
+| SDK (current) | Full Debug suite, then optimized correctness/recovery tests with six concurrency rounds. The optimized test target depends on all four library targets; no separate overlapping release-build command. |
+| SDK (minimum) | Full Debug suite on macOS 14 / Swift 6.1.3. Optimized checks run on the current compiler. |
+| Demo (iOS) | Signed current-runtime build, SQLite/Realm completion/reopen/cancellation, saved structured result, and retrieval in a second app process. |
+| Demo (macOS) | Signed app startup, controlled chat, conversation restoration, cancellation, saved structured result, and retrieval in a second app process. |
+| Build iOS 17 verifier → Demo (iOS 17) | Xcode 16.4 produces a signed universal simulator app once; macOS 14 executes it on iOS 17.0.1 without rebuilding. |
 
-The release workflow runs the current-host checks. A failing optimized test fails the job even though output is also captured for diagnostics. The release workflow skips the new selection when manually dispatched against an older tag without its stress-test source; its existing release-build and legacy simulator checks remain in place.
+`Verification gate v1` requires all mandatory lanes to pass. Relevant storage/concurrency changes enable a separate 40-round optimized stress/benchmark job after SDK verification, reusing compatible intermediates. Relevant demo/authentication/recovery changes select full demo mode. `Scripts/ci_plan.py` defines the path rules. A daily 18:00 UTC run and manual dispatch with `extended: true` force fresh, comprehensive checks even if the commit already passed. No live accounts or model calls are enabled by CI.
 
-CI and release revisions containing the verifier run:
+Build caches are partitioned by lane, actual OS/architecture/Xcode/Swift versions, dependency lockfiles, and source content. Compatible earlier intermediates may be restored for incremental compilation, but builds and tests still execute; a cache hit is never a passing test. Dependency versions are locked during SwiftPM and Xcode builds. Current-runtime iOS builds compile only the host architecture; the portable iOS 17 artifact retains both architectures.
+
+Release publication runs on Ubuntu, with no Swift build or simulator. It resolves the tag to a commit reachable from `origin/main`, validates the changelog entry, and checks GitHub CI evidence. If no verification exists, it can dispatch one CI run for the tag; if a run is already active, it waits for that run. It never automatically retries failed verification. The wait is bounded to eight minutes and an unfinished run remains a failure to publish. Once verification finishes, manual release dispatch can retry publication without rebuilding. The publish job checks the tag still resolves to the verified SHA and uses only the validated changelog notes.
+
+The release gate uses `actions: write` only to dispatch missing verification; it has read-only contents permission. Only the publisher has `contents: write`. Old tags whose workflows predate the new evidence policy cannot bypass it using an older passing job layout. They need compatible verification rather than the previous compilation-only legacy fallback.
+
+### Timing goals and evidence
+
+Publication of an already verified commit should take 1–2 minutes, subject to GitHub scheduling. Fresh routine CI targets less than ten minutes with compatible caches. Cold caches, extended workloads, and hosted-runner queues are measured separately; the timeout is not a mechanism for declaring unfinished tests successful. Mac build lanes retain a 15-minute failure limit, while the release evidence wait stays within eight minutes.
+
+`Scripts/ci_timed.py` records SDK command duration and exit status. Demo `timings.json` files separate build, simulator setup, and app execution/relaunch. Each timing is also added to the job summary. Artifacts retain logs, both process reports, and timings for 14 days (`sdk-current`, `sdk-minimum`, `demo-iOS`, `demo-macOS`, `minimum-simulator-build`, `minimum-simulator-verification`, and optional `extended-stress`). The portable app and release-note transfer artifacts last one day.
+
+[The streamlining evidence](verification-streamlining.md) distinguishes local measurements from hosted results and records the original alpha.30 baseline.
+
+## Local demo verification
 
 ```sh
 python3 Scripts/check_source_size.py
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Verification
-python3 Scripts/verify_ios_simulator.py
+python3 Scripts/verify_ios_simulator.py --mode smoke
+python3 Scripts/verify_macos_demo.py --mode smoke
 ```
 
-The source guard enforces 600 physical lines for production Swift and repository verification scripts, excluding tests and dependency/build directories. The simulator script builds the Debug demo with ad-hoc signing, selects a compatible installed iPhone runtime, creates a temporary device, and launches `--verify-runtime --verify-local-only`. This launch bypasses ordinary demo setup and does not read a live session. SQLite and Realm each verify plain/structured completion, database reopening, and cancellation. A fresh report with matching run ID must report both adapters passed; missing, stale, partial, or failed reports fail the job. The script removes only its own simulator, including on failure or interruption.
+Both harnesses default to `smoke`; use `--mode full` for the retained extensive app scenarios. SDK tests retain the detailed transport, budget, validation, and tool-side-effect permutations. Neither smoke nor full mode uses live credentials. The iOS script creates only its own temporary simulator and removes it on success/failure. A matching run ID, mode, and completed report are mandatory. Both harnesses launch a second app process and require a fresh successful receipt-recovery report; a first-process report cannot satisfy the reopen check.
 
-Reports and build/app logs default to `.build/verification`; CI retains the package-profile logs in `runtime-verification-current` and `runtime-verification-minimum`, and the separate iOS 17 build/runtime logs in `minimum-simulator-build` and `minimum-simulator-verification` artifacts (`release-runtime-verification` for releases) for 14 days using [GitHub's artifact action](https://github.com/actions/upload-artifact). CI also retains package-test and release-build logs, and reports bounded failure excerpts as job annotations. The current/release artifact contains `codexkit-optimized.log`. Use `--output-dir` to choose a report directory, `--derived-data` to reuse an Xcode build directory, or `--runtime 18.6` to select a specific installed iOS version. Runtime selection defaults to the newest available iPhone-compatible iOS 17+ runtime. Report waiting is bounded to 180 seconds by default, with separate build/boot timeouts.
+Use `--output-dir` to choose the iOS report directory, `--derived-data` to choose its build directory, or `--runtime 17.0.1` to require a specific installed runtime. `--build-only` produces a portable signed app without simulator access. `--app /absolute/path/CodexKitIOSDemo.app` runs a prebuilt app without compilation. The macOS `--skip-build` option similarly runs an existing signed build.
 
-The installed app's data-container path is resolved before launch, so this simulator-service lookup does not compete with the verification workload. A timed-out lookup is retried within a shared 180-second deadline, with at most 60 seconds for each attempt and a short pause between attempts. Nonzero command failures and invalid paths fail immediately. Lookup attempts are retained in `container.log`, and `run.json` records the temporary simulator ID. The separate report deadline starts after launch; a stale, missing, malformed, or failed app report still fails verification without relaunching the app.
-
-This addresses the 60-second lookup timeout in the [alpha.27 branch run](https://github.com/timazed/CodexKit/actions/runs/34314111832/job/102346612414); the same commit passed [main CI](https://github.com/timazed/CodexKit/actions/runs/34314111626) and [release verification](https://github.com/timazed/CodexKit/actions/runs/34314111589). The recovery regression failed before the fix. On 10 September, the signed iOS 26.5 / iPhone 17 Pro verifier recovered from one deliberately injected lookup timeout, then passed SQLite, Realm, completion, reopening, and cancellation with run ID `16b012b4-e937-4be6-94a4-ba1baee37357`. Evidence is retained locally under `.build/verification/container-timeout-local`; the injected timeout tests recovery and does not reproduce the hosted machine's underlying service stall.
-
-Use `--build-only` to produce the signed universal app without accessing simulators, then use `--app /absolute/path/CodexKitIOSDemo.app --runtime 17.0.1` on a host with the required runtime. The two modes are mutually exclusive. The eleven harness tests cover mode separation, portable build settings, failure-detail retention, runtime selection, container-lookup recovery and deadline enforcement, and stale/incomplete/failed report rejection.
-
-Manual dispatch for older release tags without these scripts retains the previous compilation-only verification. The report validation and runtime-selection checks run without Xcode via Python's standard `unittest` runner. The full script requires macOS and Xcode with an installed iOS runtime.
+The iOS container lookup remains separately bounded: timed-out reads are retried within 180 seconds without reinstalling or relaunching. Failed commands, invalid paths, stale reports, and failed assertions are not retried. App report waits are also bounded to 180 seconds. The source guard enforces 600 physical lines per production Swift file and repository verification script.
 
 ## iOS simulator and physical device
 

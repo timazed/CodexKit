@@ -4,6 +4,7 @@ import argparse
 from collections import deque
 import json
 import os
+import platform
 from pathlib import Path
 import plistlib
 import signal
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import time
 import uuid
+from verification_timing import Timings
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,8 +43,8 @@ def select_simulator(runtimes, requested=None):
     raise RuntimeError("No compatible installed iPhone simulator runtime was found.")
 
 
-def validate_report(report, run_id):
-    if report.get("runID") != run_id or not report.get("finishedAt"):
+def validate_report(report, run_id, mode="smoke"):
+    if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
     for key in ("sqlite", "realm", "localAdapters", "recovery"):
         if report.get(key) != "passed":
@@ -92,6 +94,7 @@ def main():
     parser.add_argument("--derived-data", type=Path, default=ROOT / ".build/simulator-verification")
     parser.add_argument("--runtime", help="Installed iOS version or runtime identifier; defaults to newest available.")
     parser.add_argument("--report-timeout", type=int, default=180)
+    parser.add_argument("--mode", choices=("smoke", "full"), default="smoke")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--build-only", action="store_true", help="Build a signed universal simulator app without launching it.")
     mode.add_argument("--app", type=Path, help="Install and verify an already-built signed simulator app.")
@@ -100,6 +103,7 @@ def main():
         parser.error("--report-timeout must be positive")
     output = options.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    timings = Timings(output / "timings.json")
     for name in ("CodexKitVerification.json", "run.json", "failure.txt", "build.log", "boot.log", "container.log",
                  "app-stdout.log", "app-stderr.log"):
         (output / name).unlink(missing_ok=True)
@@ -123,10 +127,13 @@ def main():
             command = ["xcodebuild", "-project", "DemoApp/CodexKitDemo.xcodeproj",
                        "-scheme", "CodexKitIOSDemo", "-configuration", "Debug",
                        "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", str(derived),
+                       "-onlyUsePackageVersionsFromResolvedFile",
                        "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_IDENTITY=-"]
             if options.build_only:
                 command += ["ONLY_ACTIVE_ARCH=NO", "ARCHS=arm64 x86_64"]
-            with (output / "build.log").open("w") as log:
+            else:
+                command += ["ONLY_ACTIVE_ARCH=YES", f"ARCHS={platform.machine()}"]
+            with timings.measure("build"), (output / "build.log").open("w") as log:
                 run(command + ["build"], log=log, timeout=1800)
             app = derived / "Build/Products/Debug-iphonesimulator/CodexKitIOSDemo.app"
         with (app / "Info.plist").open("rb") as source:
@@ -134,6 +141,7 @@ def main():
         if options.build_only:
             print(f"Signed universal simulator app built: {app}", flush=True)
             return 0
+        setup_start = time.monotonic()
         simulator = run(["xcrun", "simctl", "create", f"CodexKit verification {run_id}",
                          device["identifier"], runtime["identifier"]])
         (output / "run.json").write_text(json.dumps({"runID": run_id, "runtime": runtime["name"],
@@ -146,21 +154,24 @@ def main():
         print("Locating the installed app's data container before launch.", flush=True)
         with (output / "container.log").open("w") as log:
             container = resolve_app_container(simulator, bundle_id, log=log)
+        timings.record("simulator_setup", time.monotonic() - setup_start)
         report_path = container / "Documents/CodexKitVerification.json"
         environment = dict(os.environ, SIMCTL_CHILD_CODEXKIT_VERIFICATION_RUN_ID=run_id)
+        mode_arguments = ["--verify-smoke"] if options.mode == "smoke" else []
+        verification_start = time.monotonic()
         run(["xcrun", "simctl", "launch", "--terminate-running-process",
              f"--stdout={output / 'app-stdout.log'}", f"--stderr={output / 'app-stderr.log'}",
-             simulator, bundle_id, "--verify-runtime", "--verify-local-only"], env=environment)
+             simulator, bundle_id, "--verify-runtime", "--verify-local-only"] + mode_arguments, env=environment)
         print("Waiting for SQLite, Realm, completion, and cancellation checks.", flush=True)
         deadline = time.monotonic() + options.report_timeout
         while time.monotonic() < deadline:
             if report_path.is_file():
                 report_bytes = report_path.read_bytes()
                 (output / "CodexKitVerification.json").write_bytes(report_bytes)
-                validate_report(json.loads(report_bytes), run_id)
+                validate_report(json.loads(report_bytes), run_id, options.mode)
                 run(["xcrun", "simctl", "terminate", simulator, bundle_id])
                 run(["xcrun", "simctl", "launch", simulator, bundle_id,
-                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"], env=environment)
+                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"] + mode_arguments, env=environment)
                 reopen_path = container / "Documents/CodexKitRecoveryReopen.json"
                 reopen_deadline = time.monotonic() + options.report_timeout
                 while not reopen_path.is_file() and time.monotonic() < reopen_deadline:
@@ -169,9 +180,11 @@ def main():
                     raise RuntimeError("Cold recovery verification did not report a result.")
                 reopened = json.loads(reopen_path.read_bytes())
                 (output / "CodexKitRecoveryReopen.json").write_text(json.dumps(reopened, indent=2) + "\n")
-                if reopened.get("runID") != run_id or reopened.get("passed") != "true" or not reopened.get("finishedAt"):
+                if (reopened.get("runID") != run_id or reopened.get("passed") != "true"
+                        or not reopened.get("finishedAt") or reopened.get("mode") != options.mode):
                     raise RuntimeError(f"Cold recovery failed: {reopened}")
-                print("Simulator verification passed: adapters, dropped requests, and receipt recovery after app relaunch; no live access.", flush=True)
+                timings.record("execution_and_relaunch", time.monotonic() - verification_start)
+                print(f"Simulator {options.mode} verification passed: adapters, cancellation, and receipt recovery after app relaunch; no live access.", flush=True)
                 return 0
             time.sleep(1)
         raise RuntimeError(f"No verification report arrived within {options.report_timeout} seconds.")

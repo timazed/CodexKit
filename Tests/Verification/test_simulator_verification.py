@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 source = Path(__file__).resolve().parents[2] / "Scripts/verify_ios_simulator.py"
+sys.path.insert(0, str(source.parent))
 spec = importlib.util.spec_from_file_location("simulator_verification", source)
 verifier = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verifier)
@@ -17,7 +19,7 @@ spec.loader.exec_module(verifier)
 class SimulatorVerificationTests(unittest.TestCase):
     def test_requires_each_adapter_and_local_only_mode(self):
         valid = dict(runID="current", finishedAt="finished", sqlite="passed", realm="passed",
-                     localAdapters="passed", recovery="passed", liveProvider="skipped: local_only")
+                     localAdapters="passed", recovery="passed", liveProvider="skipped: local_only", mode="smoke")
         verifier.validate_report(valid, "current")
         for key in ("sqlite", "realm", "localAdapters", "recovery"):
             for status in (None, "skipped", "failed: storage_error"):
@@ -70,10 +72,10 @@ class SimulatorVerificationTests(unittest.TestCase):
             container = root / "container"
             (container / "Documents").mkdir(parents=True)
             report = dict(runID="fresh", finishedAt="finished", sqlite="passed", realm="passed",
-                          localAdapters="passed", recovery="passed", liveProvider="skipped: local_only")
+                          localAdapters="passed", recovery="passed", liveProvider="skipped: local_only", mode="smoke")
             (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
             (container / "Documents/CodexKitRecoveryReopen.json").write_text(json.dumps(
-                dict(runID="fresh", passed="true", finishedAt="finished")))
+                dict(runID="fresh", passed="true", finishedAt="finished", mode="smoke")))
             clock = [0]
             lookups = []
 
@@ -158,7 +160,7 @@ class SimulatorVerificationTests(unittest.TestCase):
             container = root / "container"
             (container / "Documents").mkdir(parents=True)
             report = dict(runID="fresh", finishedAt="finished", sqlite="passed", realm="failed: storage_error",
-                          localAdapters="failed", liveProvider="skipped: local_only")
+                          localAdapters="failed", liveProvider="skipped: local_only", mode="smoke")
             (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
             output = root / "reports"
             args = ["verify", "--app", str(app), "--output-dir", str(output)]

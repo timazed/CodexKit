@@ -2,144 +2,75 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Tag to publish, for example v2.0.0-alpha.1
+        description: Verified tag to publish, for example v2.0.0-alpha.31
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   verify:
-    runs-on: macos-latest
-    timeout-minutes: 45
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-      RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      sha: ${{ steps.gate.outputs.sha }}
     steps:
-      - name: Checkout release revision
-        uses: actions/checkout@v4
+      # Gate code comes from main, never from an arbitrary historical tag.
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_REF }}
+          ref: main
           fetch-depth: 0
-
-      - name: Verify exact release tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid release tag: $RELEASE_TAG" >&2
-            exit 1
-          fi
-          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
-          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
-
-      - name: Production source size
-        if: hashFiles('Scripts/check_source_size.py') != ''
-        run: python3 Scripts/check_source_size.py
-
-      - name: Verification harness checks
-        if: hashFiles('Tests/Verification/*.py') != ''
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Verification
-
-      - name: Swift package tests
-        run: swift test -Xswiftc -warnings-as-errors
-
-      - name: Release package build
-        run: swift build -c release -Xswiftc -warnings-as-errors
-
-      - name: Optimized regression and concurrency checks
-        if: hashFiles('Tests/CodexKitTests/RuntimeConcurrencyStressTests.swift') != ''
-        shell: bash
+      - name: Require successful CI for the exact tagged commit
+        id: gate
         env:
-          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
-          CODEXKIT_STRESS_ROUNDS: "40"
-        run: |
-          set -euo pipefail
-          swift test -c release -Xswiftc -warnings-as-errors \
-            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests|RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests' \
-            2>&1 | tee "$RUNNER_TEMP/codexkit-optimized.log"
-
-      - name: Verify demo app (iOS Simulator)
-        if: hashFiles('Scripts/verify_ios_simulator.py') != ''
-        run: |
-          python3 Scripts/verify_ios_simulator.py \
-            --output-dir "$RUNNER_TEMP/codexkit-verification"
-
-      - name: Verify demo app (macOS)
-        if: hashFiles('Scripts/verify_macos_demo.py') != ''
-        run: python3 Scripts/verify_macos_demo.py
-
-      - name: Build legacy release without a runtime verifier
-        if: hashFiles('Scripts/verify_ios_simulator.py') == ''
-        run: |
-          # These historical tags predate the CodexKitDemo project and target names.
-          xcodebuild \
-            -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
-            -scheme AssistantRuntimeDemoApp \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Verification reports and logs
-        if: always()
-        uses: actions/upload-artifact@v7
+          RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/release_gate.py --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v7
         with:
-          name: release-runtime-verification
-          path: |
-            ${{ runner.temp }}/codexkit-verification
-            ${{ runner.temp }}/codexkit-optimized.log
-            .build/macos-demo/build.log
-            .build/macos-demo/verification-result.json
-          if-no-files-found: ignore
-          retention-days: 14
+          name: verified-release-notes
+          path: ${{ runner.temp }}/release-notes.md
+          if-no-files-found: error
+          retention-days: 1
 
   publish-release:
     needs: verify
     runs-on: ubuntu-latest
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+    timeout-minutes: 2
+    permissions:
+      contents: write
+      actions: read
     steps:
-      - name: Checkout release notes
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
-
-      - name: Extract changelog entry
-        shell: bash
-        run: |
-          python3 - <<'PYTHON'
-          import os
-          from pathlib import Path
-
-          version = os.environ["RELEASE_TAG"].removeprefix("v")
-          marker = f"## [{version}]"
-          lines = Path("CHANGELOG.md").read_text().splitlines()
-          start = next((i for i, line in enumerate(lines)
-                        if line == marker or line.startswith(marker + " - ")), None)
-          if start is None:
-              raise SystemExit(f"Missing changelog entry for {version}")
-          end = next((i for i in range(start + 1, len(lines))
-                      if lines[i].startswith("## ")), len(lines))
-          notes = "\n".join(lines[start + 1:end]).strip()
-          if not notes:
-              raise SystemExit(f"Empty changelog entry for {version}")
-          (Path(os.environ["RUNNER_TEMP"]) / "release-notes.md").write_text(notes + "\n")
-          PYTHON
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ensure the tag still identifies the verified commit
+        env:
+          RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.sha }}
+        run: test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$VERIFIED_SHA"
+      - uses: actions/download-artifact@v8
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          body_path: ${{ runner.temp }}/release-notes.md
+          name: verified-release-notes
+          path: ${{ runner.temp }}/release-notes
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          body_path: ${{ runner.temp }}/release-notes/release-notes.md
           generate_release_notes: true
-          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          prerelease: ${{ contains(inputs.tag_name || github.ref_name, '-') }}
