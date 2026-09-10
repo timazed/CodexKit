@@ -9,6 +9,7 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | Guide | Topics |
 | --- | --- |
 | [Backend configuration and models](backend-configuration.md) | Account auth, retries, response budgets, GPT-6 Astra, reasoning, response state |
+| [Local Codex login on macOS](auth-on-macos.md) | Read-only discovery, external ownership, renewal, and disconnect |
 | [Runtime progress, tools, and turn control](upstream-runtime-features.md) | Parallel tools, progress, model discovery, usage limits, steering, interruption |
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
@@ -19,7 +20,7 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [Logging and troubleshooting](logging-and-troubleshooting.md) | Diagnostics, production checks, common failures |
 | [Migration and releases](migration.md) | Changes between alpha versions and release conventions |
 | [Verification](verification.md) | CI simulator execution, opt-in live tests, performance checks |
-| [Release readiness](release-readiness-2026-09-08.md) | API compatibility review and remaining release gates |
+| [Release readiness](release-readiness-2026-09-10.md) | Alpha.28 candidate verification and publication status |
 | [Workload measurements](performance-2026-09-08.md) | Images, database paging, cancellation, optimized pipeline |
 | [Demo app](../DemoApp/README.md) | Setup and a walkthrough of the runtime features |
 
@@ -68,6 +69,8 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | Supported platforms | iOS 17+, macOS 14+ |
 | iOS auth: device code | Yes |
 | iOS auth: browser OAuth (localhost callback) | Yes |
+| macOS auth: browser OAuth and device code | Yes |
+| macOS auth: reuse a local Codex session | Read-only file/direct Keychain discovery with explicit effective settings; renewal depends on the owner |
 | Threaded runtime state + restore | Yes |
 | Streamed assistant output | Yes |
 | Host-defined tools + approval flow | Yes |

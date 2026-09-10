@@ -43,6 +43,7 @@ extension AgentRuntime {
         }
 
         let session = try await sessionManager.requireSession()
+        try validateMemoryAuthentication(session)
         logger.info(
             .runtime,
             "Creating thread.",
@@ -57,6 +58,7 @@ extension AgentRuntime {
             try await backend.createThread(session: session)
         }
         var thread = creation.result
+        thread.authenticationBinding = creation.session.binding
         if let title {
             thread.title = title
         }
@@ -92,6 +94,8 @@ extension AgentRuntime {
 
     @discardableResult
     public func resumeThread(id: String) async throws -> AgentThread {
+        let session = try await sessionManager.requireSession()
+        if let active = thread(for: id) { try validateThreadAuthentication(active, session: session) }
         await acquireThreadResume(id)
         defer { releaseThreadResume(id) }
         try Task.checkCancellation()
@@ -114,13 +118,14 @@ extension AgentRuntime {
             id: id,
             policy: threadActivationPolicy
         )
-        let session = try await sessionManager.requireSession()
+        try validateThreadAuthentication(activation.thread, session: session)
         let resume = try await withUnauthorizedRecovery(
             initialSession: session
         ) { session in
             try await backend.resumeThread(id: id, session: session)
         }
-        let backendThread = resume.result
+        var backendThread = resume.result
+        backendThread.authenticationBinding = resume.session.binding
         guard backendThread.id == id else {
             throw AgentRuntimeError(
                 code: "thread_resume_mismatch",
@@ -187,6 +192,7 @@ extension AgentRuntime {
         resumedAt: Date
     ) async throws -> ThreadResumePersistenceProjection {
         var thread = activation.thread
+        if thread.authenticationBinding == nil { thread.authenticationBinding = backendThread.authenticationBinding }
         if thread.title == nil {
             thread.title = backendThread.title
         }
@@ -413,6 +419,7 @@ extension AgentRuntime {
     ) async throws {
         if let index = state.threads.firstIndex(where: { $0.id == thread.id }) {
             var mergedThread = thread
+            if mergedThread.authenticationBinding == nil { mergedThread.authenticationBinding = state.threads[index].authenticationBinding }
             if mergedThread.title == nil {
                 mergedThread.title = state.threads[index].title
             }

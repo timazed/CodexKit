@@ -8,7 +8,7 @@ enum DemoTab: Hashable {
 }
 
 @main
-struct AssistantRuntimeDemoApp: App {
+struct CodexKitIOSDemoApp: App {
     @State private var viewModel: AgentDemoViewModel?
     @State private var setupError: String?
     @State private var selectedTab: DemoTab = .assistant

@@ -69,6 +69,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var personaStack: AgentPersonaStack?
     public var skillIDs: [String]
     public var memoryContext: AgentMemoryContext?
+    public var authenticationBinding: ChatGPTSessionBinding?
     public var createdAt: Date
     public var updatedAt: Date
     public var status: AgentThreadStatus
@@ -90,6 +91,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         self.personaStack = personaStack
         self.skillIDs = skillIDs
         self.memoryContext = memoryContext
+        self.authenticationBinding = nil
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.status = status
@@ -101,6 +103,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         case configuration
         case personaStack
         case skillIDs
+        case authenticationBinding
         case memoryContext
         case createdAt
         case updatedAt
@@ -115,6 +118,7 @@ public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
         personaStack = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaStack)
         skillIDs = try container.decodeIfPresent([String].self, forKey: .skillIDs) ?? []
         memoryContext = try container.decodeIfPresent(AgentMemoryContext.self, forKey: .memoryContext)
+        authenticationBinding = try container.decodeIfPresent(ChatGPTSessionBinding.self, forKey: .authenticationBinding)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         status = try container.decodeIfPresent(AgentThreadStatus.self, forKey: .status) ?? .idle

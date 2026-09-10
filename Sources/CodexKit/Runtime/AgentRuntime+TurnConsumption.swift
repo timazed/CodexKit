@@ -34,6 +34,7 @@ extension AgentRuntime {
 
         do {
             for try await backendEvent in turnStream.events {
+                try await validateActiveAuthentication(session)
                 switch backendEvent {
                 case let .progress(progress):
                     try validateBackendTurnEvent(threadID: progress.threadID, turnID: progress.turnID,

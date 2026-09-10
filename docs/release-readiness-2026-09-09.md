@@ -21,7 +21,7 @@ Existing saved sessions without `name` still decode. The original three-argument
 | Production source-size guard | 211 files passed, each at most 600 lines | `python3 scripts/check_source_size.py` |
 | Public API comparison against alpha.26 | Reviewed; no additional breaking diagnostics from account-name support | `.build/account-name-api-review/` |
 
-The simulator run used iOS 26.5 / iPhone 17 Pro, run ID `b9b4cd38-ff6b-4417-9b47-89d7250f5d0a`, finishing at `2026-09-09T04:09:57Z`. It ran the final signed demo build in a disposable simulator and explicitly disabled live-account access. The temporary simulator was removed afterward. The built app remains at `.build/simulator-verification/Build/Products/Debug-iphonesimulator/AssistantRuntimeDemoApp.app`.
+The simulator run used iOS 26.5 / iPhone 17 Pro, run ID `b9b4cd38-ff6b-4417-9b47-89d7250f5d0a`, finishing at `2026-09-09T04:09:57Z`. It ran the final signed demo build in a disposable simulator and explicitly disabled live-account access. The temporary simulator was removed afterward. That run built the app at `.build/simulator-verification/Build/Products/Debug-iphonesimulator/AssistantRuntimeDemoApp.app`.
 
 The optimized selection completed in 93.012 seconds. Its file, SQLite, and Realm concurrency checks each ran 40 rounds with six workers: 720 total lifecycle operations, 120 reader reopens, and 60 owning-runtime replacements. All passed independent transcript and attachment checks.
 
@@ -39,7 +39,7 @@ This final results update changes documentation only; it does not change the ver
 
 ## Manual demo checks
 
-1. Open `DemoApp/AssistantRuntimeDemoApp.xcodeproj` in Xcode, select `AssistantRuntimeDemoApp`, and run on your device or simulator. The shared scheme starts the normal UI without `--verify-runtime`.
+1. Open `DemoApp/CodexKitDemo.xcodeproj` in Xcode, select `CodexKitIOSDemo`, and run on your device or simulator. The shared scheme starts the normal UI without `--verify-runtime`.
 2. Complete a fresh sign-in and inspect **Signed in as** on the Assistant tab. Expect the account name when supplied by authentication, otherwise the email. A restored older session can remain on the email fallback until sign-in or token refresh supplies a name.
 3. Close and relaunch the app. Confirm the saved session and displayed name/email are restored.
 4. Send a short message and confirm normal replies still work. If you use both browser and device-code sign-in, check each flow.

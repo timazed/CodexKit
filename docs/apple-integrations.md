@@ -67,7 +67,7 @@ App Intents also stay app-owned, but the demo app now includes working source ex
 
 The source lives in:
 
-- [`DemoAppShortcuts.swift`](../DemoApp/AssistantRuntimeDemoApp/Shared/DemoAppShortcuts.swift)
+- [`DemoAppShortcuts.swift`](../DemoApp/CodexKitIOSDemo/Shared/DemoAppShortcuts.swift)
 
 A minimal App Intent shape looks like this:
 

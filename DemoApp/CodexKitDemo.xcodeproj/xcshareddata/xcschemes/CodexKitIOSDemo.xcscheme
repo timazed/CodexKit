@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AFCECA980077E01927A26ED2"
-               BuildableName = "AssistantRuntimeDemoApp.app"
-               BlueprintName = "AssistantRuntimeDemoApp"
-               ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
+               BuildableName = "CodexKitIOSDemo.app"
+               BlueprintName = "CodexKitIOSDemo"
+               ReferencedContainer = "container:CodexKitDemo.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -31,9 +31,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AFCECA980077E01927A26ED2"
-            BuildableName = "AssistantRuntimeDemoApp.app"
-            BlueprintName = "AssistantRuntimeDemoApp"
-            ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
+            BuildableName = "CodexKitIOSDemo.app"
+            BlueprintName = "CodexKitIOSDemo"
+            ReferencedContainer = "container:CodexKitDemo.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -54,9 +54,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AFCECA980077E01927A26ED2"
-            BuildableName = "AssistantRuntimeDemoApp.app"
-            BlueprintName = "AssistantRuntimeDemoApp"
-            ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
+            BuildableName = "CodexKitIOSDemo.app"
+            BlueprintName = "CodexKitIOSDemo"
+            ReferencedContainer = "container:CodexKitDemo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -71,9 +71,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AFCECA980077E01927A26ED2"
-            BuildableName = "AssistantRuntimeDemoApp.app"
-            BlueprintName = "AssistantRuntimeDemoApp"
-            ReferencedContainer = "container:AssistantRuntimeDemoApp.xcodeproj">
+            BuildableName = "CodexKitIOSDemo.app"
+            BlueprintName = "CodexKitIOSDemo"
+            ReferencedContainer = "container:CodexKitDemo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

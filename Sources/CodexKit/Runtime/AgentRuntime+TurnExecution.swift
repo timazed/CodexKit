@@ -17,6 +17,13 @@ extension AgentRuntime {
         guard request.hasContent else { throw AgentRuntimeError.invalidMessageContent() }
         try validateClientRequestID(request.clientRequestID)
         guard let thread = thread(for: threadID) else { throw AgentRuntimeError.threadNotFound(threadID) }
+        let authenticated = try await sessionManager.requireSession()
+        try validateThreadAuthentication(thread, session: authenticated)
+        if thread.authenticationBinding == nil, let index = state.threads.firstIndex(where: { $0.id == threadID }) {
+            state.threads[index].authenticationBinding = authenticated.binding
+            enqueueStoreOperation(.upsertThread(state.threads[index]))
+            try await persistState()
+        }
         let execution = request.isEphemeral ? nil : try reserveTurn(in: threadID)
         logger.info(.runtime, "Starting streamed message.", metadata: [
             "thread_id": threadID,
@@ -63,6 +70,7 @@ extension AgentRuntime {
         oneShotValidation: AgentOneShotResponseValidation? = nil,
         sink: AgentTurnEventSink<Output>
     ) {
+        authenticatedExecutionControls[control.id] = control
         let threadID = prepared.thread.id
         let cancellation = control.cancellation
         let budget = AgentTurnBudget(limits: turnLimits, executionID: prepared.execution?.id)
@@ -78,6 +86,7 @@ extension AgentRuntime {
                 named: "CodexKit agent turn", expirationHandler: { cancellation.cancel() }
             )
             defer {
+                authenticatedExecutionControls.removeValue(forKey: control.id)
                 control.finish()
                 budget.finish()
                 watchdog.cancel()
@@ -89,6 +98,7 @@ extension AgentRuntime {
                 try Task.checkCancellation()
                 async let initialEvents: Void = emitInitialEvents(prepared, sink: sink)
                 let session = try await sessionManager.requireSession()
+                try validateThreadAuthentication(thread(for: threadID) ?? prepared.thread, session: session)
                 let skills = try resolveTurnSkills(thread: prepared.thread, message: prepared.request)
                 let instructions = try await resolveInstructions(thread: prepared.thread,
                     message: prepared.request, resolvedTurnSkills: skills)
@@ -152,7 +162,8 @@ extension AgentRuntime {
             sink.finish(throwing: CancellationError(), events: events)
             return
         }
-        let runtimeError = (error as? AgentRuntimeError) ?? AgentRuntimeError(code: "turn_failed", message: error.localizedDescription)
+        let runtimeError = (error as? AgentRuntimeError) ?? AgentRuntimeError(
+            code: (error as? ChatGPTSessionError).map { "auth_" + $0.rawValue } ?? "turn_failed", message: error.localizedDescription)
         if storesTurnState {
             _ = try? appendHistoryItem(.systemEvent(.init(type: .turnFailed, threadID: threadID,
                 turnID: turnID, error: runtimeError, occurredAt: Date())), threadID: threadID, createdAt: Date())

@@ -4,6 +4,28 @@ import XCTest
 
 @MainActor
 final class AgentRuntimeStoreTests: XCTestCase {
+    func testStoreForwardsImageOnlyRequestsAndPersonaOverrides() async throws {
+        let backend = InMemoryAgentBackend()
+        let runtime = try AgentRuntime(configuration: .init(
+            authProvider: DemoChatGPTAuthProvider(),
+            secureStore: KeychainSessionSecureStore(service: "CodexKitTests.UIRequest", account: UUID().uuidString),
+            backend: backend, approvalPresenter: ApprovalInbox(), stateStore: InMemoryRuntimeStateStore()))
+        _ = try await runtime.useSession(demoSession())
+        let store = AgentRuntimeStore(runtime: runtime)
+        await store.restore()
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=")!
+        let request = Request(text: "", images: [.png(png)],
+            personaOverride: .init(layers: [.init(name: "reviewer", instructions: "Describe visible risks first.")]))
+        await store.send(request)
+        let received = await backend.receivedMessages()
+        let instructions = await backend.receivedInstructions()
+        XCTAssertEqual(received.last?.images, request.images)
+        XCTAssertTrue(instructions.last?.contains("Describe visible risks first.") == true)
+        XCTAssertEqual(store.messages.first(where: { $0.role == .user })?.images, request.images)
+        XCTAssertNil(store.lastError)
+        await store.signOut()
+    }
+
     func testStoreRestoresSessionAndStreamsMessages() async throws {
         let runtime = try AgentRuntime(configuration: .init(
             authProvider: DemoChatGPTAuthProvider(),

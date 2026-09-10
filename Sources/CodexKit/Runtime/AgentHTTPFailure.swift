@@ -63,7 +63,7 @@ extension AgentHTTPFailure {
 
 extension AgentRuntimeError {
     static func httpFailure(response: HTTPURLResponse, body: Data = Data(), prefix: String, message: String) -> Self {
-        let unauthorized = response.statusCode == 401 || response.statusCode == 403
+        let unauthorized = response.statusCode == 401
         return .init(code: unauthorized ? "unauthorized" : "\(prefix)_http_status_\(response.statusCode)",
             message: message, http: .init(response: response, body: body))
     }

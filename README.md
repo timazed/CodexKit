@@ -7,7 +7,7 @@
 
 `main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.27](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.27). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-See the [release verification report](docs/release-readiness-2026-09-09.md) for automated checks and demo verification results.
+The next candidate is **v2.0.0-alpha.28**, adding local Codex session reuse and the native macOS demo. See the [candidate verification report](docs/release-readiness-2026-09-10.md) for validation and publication status.
 
 ## Capabilities
 
@@ -17,6 +17,7 @@ See the [release verification report](docs/release-readiness-2026-09-09.md) for 
 - Personas, skills, and local memory for app-specific behavior.
 - GPT-6 Astra identifiers, account model discovery, and reported usage limits.
 - Provider progress, message phases, input added to active turns, and interruption.
+- Browser OAuth, device-code sign-in, and read-only reuse of local Codex sessions on macOS.
 
 Your app owns the tools and user interface. The built-in backend uses ChatGPT account access; model availability depends on the account. See the [feature matrix](docs/index.md#feature-matrix) for the full supported surface.
 
@@ -90,6 +91,8 @@ for try await event in stream {
 }
 ```
 
+For macOS applications that reuse an accessible local Codex login, see [local session discovery and lifecycle](docs/auth-on-macos.md).
+
 For typed replies and attachments, see [Messaging and images](docs/messaging.md). For model discovery, parallel tools, progress, and turn controls, see [Runtime progress, tools, and turn control](docs/upstream-runtime-features.md).
 
 Signed-in accounts expose an optional `account.name` and `account.displayName`, which falls back to email. See [account names](docs/auth-on-ios.md#account-name).
@@ -102,17 +105,20 @@ The [documentation index](docs/index.md) contains the full guide list, core conc
 
 - [Configure models and reasoning](docs/backend-configuration.md)
 - [Use host-managed sessions, execution handles, and async observation](docs/sdk-integration.md)
+- [Reuse a local Codex session on macOS](docs/auth-on-macos.md)
 - [Add memory](docs/memory.md)
 - [Define personas and skills](docs/personas-and-skills.md)
 - [Integrate App Intents, sharing, and background completion](docs/apple-integrations.md)
 - [Configure logging and troubleshoot](docs/logging-and-troubleshooting.md)
 
-## Demo App
+## Demo Apps
+
+The native macOS demo includes local Codex session reuse, browser OAuth, device-code sign-in, streaming chat, tools and approvals, typed output, memory, and File/SQLite/Realm persistence. Both demos share `DemoApp/CodexKitDemo.xcodeproj`: select the `CodexKitMacDemo` scheme for macOS or `CodexKitIOSDemo` for iOS. Build and run the macOS offline checks with `python3 Scripts/verify_macos_demo.py`. See the [macOS walkthrough](DemoApp/README.md#macos-demo).
 
 The checked-in iOS app consumes the local package and demonstrates chat, structured output, memory, and Health Coach flows. It includes model refresh, account usage, live progress, **Add to turn**, **Stop**, and a **Parallel Lookups** example.
 
 ```sh
-open DemoApp/AssistantRuntimeDemoApp.xcodeproj
+open DemoApp/CodexKitDemo.xcodeproj
 ```
 
 Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-features).

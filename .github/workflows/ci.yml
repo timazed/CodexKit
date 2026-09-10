@@ -98,6 +98,13 @@ jobs:
         run: |
           python3 Scripts/verify_ios_simulator.py --output-dir "$RUNNER_TEMP/codexkit-verification"
 
+      - name: Verify demo app (macOS)
+        id: macos_demo
+        if: matrix.profile == 'current'
+        shell: bash
+        run: |
+          python3 Scripts/verify_macos_demo.py
+
       - name: Failure diagnostics
         if: failure()
         env:
@@ -144,6 +151,8 @@ jobs:
             ${{ runner.temp }}/codexkit-package-tests.log
             ${{ runner.temp }}/codexkit-release-build.log
             ${{ runner.temp }}/codexkit-optimized.log
+            .build/macos-demo/build.log
+            .build/macos-demo/verification-result.json
           if-no-files-found: ignore
           retention-days: 14
 
@@ -166,9 +175,9 @@ jobs:
             --output-dir "$RUNNER_TEMP/minimum-simulator-build" \
             --derived-data "$RUNNER_TEMP/minimum-simulator-derived"
           products="$RUNNER_TEMP/minimum-simulator-derived/Build/Products/Debug-iphonesimulator"
-          lipo "$products/AssistantRuntimeDemoApp.app/AssistantRuntimeDemoApp" -verify_arch arm64 x86_64
+          lipo "$products/CodexKitIOSDemo.app/CodexKitIOSDemo" -verify_arch arm64 x86_64
           tar -czf "$RUNNER_TEMP/minimum-simulator-app.tar.gz" \
-            -C "$products" AssistantRuntimeDemoApp.app
+            -C "$products" CodexKitIOSDemo.app
       - name: Signed simulator app
         uses: actions/upload-artifact@v7
         with:
@@ -206,7 +215,7 @@ jobs:
           archive="$RUNNER_TEMP/minimum-simulator-download"
           tar -xzf "$archive/minimum-simulator-app.tar.gz" -C "$archive"
           python3 Scripts/verify_ios_simulator.py --runtime 17.0.1 \
-            --app "$archive/AssistantRuntimeDemoApp.app" \
+            --app "$archive/CodexKitIOSDemo.app" \
             --output-dir "$RUNNER_TEMP/minimum-simulator-verification"
       - name: Simulator report and logs
         if: always()

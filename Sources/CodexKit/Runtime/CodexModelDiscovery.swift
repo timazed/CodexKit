@@ -66,7 +66,10 @@ extension AgentRuntime {
         guard let backend = backend as? any AgentBackendModelDiscovering else {
             return .bundled
         }
-        return try await backend.listModels(session: sessionManager.requireSession(), policy: policy)
+        let session = try await sessionManager.requireSession()
+        return try await withUnauthorizedRecovery(initialSession: session) {
+            try await backend.listModels(session: $0, policy: policy)
+        }.result
     }
 
     /// Latest limits observed for the signed-in account, including failed HTTP requests.
@@ -86,8 +89,9 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
     public func listModels(session: ChatGPTSession,
                            policy: CodexModelRefreshPolicy = .preferCached) async throws -> CodexModelCatalogSnapshot {
         let accountID = session.account.id
-        catalogAccountID = accountID
-        let cached = modelCatalogs[accountID]
+        let cacheKey = session.binding.cacheKey
+        catalogAccountID = cacheKey
+        let cached = modelCatalogs[cacheKey]
         let fresh = cached.map { Date().timeIntervalSince($0.fetchedAt) < 300 } ?? false
         if case .cachedOnly = policy { return cachedSnapshot(cached, stale: !fresh) }
         if case .preferCached = policy, fresh { return cachedSnapshot(cached, stale: false) }
@@ -106,10 +110,10 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
             guard let response = response as? HTTPURLResponse else {
                 throw AgentRuntimeError(code: "models_invalid_response", message: "Invalid model catalog response.")
             }
-            await rateLimitStore.update(CodexRateLimitParser.headers(response), accountID: accountID)
+            await rateLimitStore.update(CodexRateLimitParser.headers(response), accountID: cacheKey)
             if response.statusCode == 304, let cached {
                 let updated = CodexModelCacheEntry(models: cached.models, fetchedAt: Date(), etag: cached.etag)
-                modelCatalogs[accountID] = updated
+                modelCatalogs[cacheKey] = updated
                 return cachedSnapshot(updated, stale: false)
             }
             guard (200..<300).contains(response.statusCode) else {
@@ -131,7 +135,7 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
             let models = try Self.decodeModels(data)
             let entry = CodexModelCacheEntry(models: models, fetchedAt: Date(),
                                             etag: response.value(forHTTPHeaderField: "ETag"))
-            modelCatalogs[accountID] = entry
+            modelCatalogs[cacheKey] = entry
             return .init(models: models, source: .remote, fetchedAt: entry.fetchedAt, isStale: false)
         } catch {
             try Task.checkCancellation()
@@ -142,7 +146,7 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
     }
 
     public func rateLimits(session: ChatGPTSession) async -> [AgentRateLimitSnapshot] {
-        await rateLimitStore.snapshots(accountID: session.account.id)
+        await rateLimitStore.snapshots(accountID: session.binding.cacheKey)
     }
 
     private func cachedSnapshot(_ entry: CodexModelCacheEntry?, stale: Bool) -> CodexModelCatalogSnapshot {

@@ -25,6 +25,7 @@ public actor AgentRuntime {
     let maximumParallelToolCalls: Int
     let maximumBufferedEvents: Int
     let turnLimits: AgentTurnLimits
+    var authenticatedExecutionControls: [UUID: AgentExecutionControl] = [:]
     var activeTurnExecutions: [String: AgentActiveTurnExecution] = [:]
     var threadOperations: [String: UUID] = [:]
     var deferredThreadDeactivations: Set<String> = []
@@ -202,14 +203,12 @@ public actor AgentRuntime {
     public func signIn() async throws -> ChatGPTSession {
         logger.info(.auth, "Starting interactive sign-in.")
         guard let manager = sessionManager as? any AgentSessionManaging else { throw AgentRuntimeError.sessionManagementUnsupported() }
+        interruptAuthenticatedExecutions()
         let session = try await manager.signIn()
         logger.info(
             .auth,
             "Interactive sign-in completed.",
-            metadata: [
-                "account_id": session.account.id,
-                "plan": session.account.plan.rawValue
-            ]
+            metadata: [:]
         )
         return session
     }
@@ -218,6 +217,7 @@ public actor AgentRuntime {
     public func useSession(_ session: ChatGPTSession) async throws -> ChatGPTSession {
         logger.info(.auth, "Loading supplied ChatGPT session.")
         guard let manager = sessionManager as? any AgentSessionManaging else { throw AgentRuntimeError.sessionManagementUnsupported() }
+        interruptAuthenticatedExecutions()
         return try await manager.useSession(session)
     }
 
@@ -228,6 +228,7 @@ public actor AgentRuntime {
     public func signOut() async throws {
         logger.info(.auth, "Signing out current session.")
         guard let manager = sessionManager as? any AgentSessionManaging else { throw AgentRuntimeError.sessionManagementUnsupported() }
+        interruptAuthenticatedExecutions()
         try await manager.signOut()
     }
 
@@ -395,32 +396,32 @@ public actor AgentRuntime {
     // MARK: - Auth Recovery
 
     static func isUnauthorizedError(_ error: Error) -> Bool {
-        guard let error = error as? AgentRuntimeError else { return false }
-        if let status = error.http?.statusCode { return status == 401 || status == 403 }
+        guard let error = error as? AgentRuntimeError,
+              error.code != "authentication_recovery_exhausted" else { return false }
+        if let status = error.http?.statusCode { return status == 401 }
         return error.code == AgentRuntimeError.unauthorized().code
     }
 
     func withUnauthorizedRecovery<Result: Sendable>(
         initialSession: ChatGPTSession,
         operation: (ChatGPTSession) async throws -> Result
-    ) async throws -> (
-        result: Result,
-        session: ChatGPTSession
-    ) {
+    ) async throws -> (result: Result, session: ChatGPTSession) {
+        let context = authenticationContext(for: initialSession)
+        let lease = try await context.resolve()
         do {
-            return (try await operation(initialSession), initialSession)
-        } catch {
-            guard Self.isUnauthorizedError(error) else {
-                throw error
+            let result = try await AgentAuthenticationContext.$current.withValue(context) {
+                try await operation(lease)
             }
-
-            let recoveredSession = try await sessionManager.recoverUnauthorizedSession(
-                previousAccessToken: initialSession.accessToken
-            )
-            try Task.checkCancellation()
-            guard recoveredSession.account.id == initialSession.account.id else { throw CancellationError() }
-            return (try await operation(recoveredSession), recoveredSession)
+            try await validateActiveAuthentication(lease)
+            return (result, lease)
+        } catch {
+            guard Self.isUnauthorizedError(error) else { throw error }
+            let recovered = try await context.recover(lease.accessToken)
+            let result = try await AgentAuthenticationContext.$current.withValue(context) {
+                try await operation(recovered)
+            }
+            try await validateActiveAuthentication(recovered)
+            return (result, recovered)
         }
     }
-
 }

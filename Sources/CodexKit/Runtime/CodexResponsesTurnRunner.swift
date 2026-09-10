@@ -20,6 +20,7 @@ struct CodexResponsesTurnRunner {
     let request: Request
     let tools: [ToolDefinition]
     let session: ChatGPTSession
+    let authenticationContext = AgentAuthenticationContext.current
     let control: CodexTurnControl
     let pendingToolResults: PendingToolResults
     let continuation: AgentEventChannel<AgentBackendEvent>
@@ -277,7 +278,8 @@ struct CodexResponsesTurnRunner {
         let retryPolicy = configuration.requestRetryPolicy
         // Build one request per pass. Retries replay the same request, while a new pass
         // is only started after tool output mutates the working history.
-        let request = try makeRequest(for: state)
+        let lease = try await authenticationContext?.resolve() ?? session
+        let request = try makeRequest(for: state, session: lease)
         logger.debug(
             .network,
             "Starting backend turn pass.",
@@ -302,8 +304,12 @@ struct CodexResponsesTurnRunner {
                 ]
             )
             do {
-                let disposition = try await consumeEventStream(
-                    request: request,
+                let attemptLease = try await authenticationContext?.resolve() ?? lease
+                var authenticatedRequest = request
+                authenticatedRequest.setValue("Bearer \(attemptLease.accessToken)", forHTTPHeaderField: "Authorization")
+                let disposition = try await consumeAuthenticatedStream(
+                    request: authenticatedRequest,
+                    lease: attemptLease,
                     state: &state,
                     retryState: &retryState
                 )
@@ -368,7 +374,7 @@ struct CodexResponsesTurnRunner {
     }
 
     func makeRequest(
-        for state: TurnRunState
+        for state: TurnRunState, session: ChatGPTSession? = nil
     ) throws -> URLRequest {
         try requestFactory.buildURLRequest(
             threadConfiguration: threadConfiguration,
@@ -378,7 +384,7 @@ struct CodexResponsesTurnRunner {
             items: state.workingHistory,
             previousResponseID: state.previousResponseID,
             tools: tools,
-            session: session
+            session: session ?? self.session
         )
     }
 

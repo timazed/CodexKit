@@ -49,7 +49,7 @@ class SimulatorVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             derived = root / "derived"
-            app = derived / "Build/Products/Debug-iphonesimulator/AssistantRuntimeDemoApp.app"
+            app = derived / "Build/Products/Debug-iphonesimulator/CodexKitIOSDemo.app"
             self.make_app(app)
             args = ["verify", "--build-only", "--derived-data", str(derived),
                     "--output-dir", str(root / "reports")]

@@ -149,6 +149,9 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
+        let session = try await sessionManager.requireSession()
+        try validateThreadAuthentication(thread, session: session)
+
         let sourceText = formattedMemoryCaptureSource(
             source,
             threadID: threadID
@@ -171,7 +174,6 @@ extension AgentRuntime {
                 maxMemories: max(1, options.maxMemories)
             )
         )
-        let session = try await sessionManager.requireSession()
         let noSkills = ResolvedTurnSkills(
             threadSkills: [],
             turnSkills: [],
@@ -210,6 +212,7 @@ extension AgentRuntime {
             from: turnStart.turnStream,
             for: threadID
         )
+        try await validateActiveAuthentication(session)
         let payload = Data(assistantMessage.text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
 
         let extraction: MemoryExtractionDraftResponse
@@ -226,6 +229,7 @@ extension AgentRuntime {
         var records: [MemoryRecord] = []
         records.reserveCapacity(drafts.count)
         for draft in drafts {
+            try await validateActiveAuthentication(session)
             if draft.dedupeKey != nil {
                 records.append(try await writer.upsert(draft))
             } else {

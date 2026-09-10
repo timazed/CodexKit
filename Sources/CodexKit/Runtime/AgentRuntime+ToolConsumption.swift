@@ -15,6 +15,7 @@ extension AgentRuntime {
         sink: AgentToolEventSink
     ) async throws {
         try Task.checkCancellation()
+        try await validateActiveAuthentication(session)
         let threadID = invocation.threadID
         let existingToolResult = storesTurnState
             ? try await storedToolResult(invocationID: invocation.id, in: invocation.threadID)
@@ -62,6 +63,7 @@ extension AgentRuntime {
             policyTracker?.recordAccepted(toolName: invocation.toolName)
         }
 
+        try await validateActiveAuthentication(session)
         if storesTurnState,
            existingToolResult == nil,
            result.session?.isTerminal != false {

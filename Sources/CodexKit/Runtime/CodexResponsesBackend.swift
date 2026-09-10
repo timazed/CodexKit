@@ -236,7 +236,7 @@ public actor CodexResponsesBackend: AgentBackend {
         } else {
             responseContract = nil
         }
-        catalogAccountID = session.account.id
+        catalogAccountID = session.binding.cacheKey
         return CodexResponsesTurnSession(
             configuration: configuration,
             logger: logger,
@@ -348,7 +348,7 @@ private struct CodexResponsesTurnSession {
                 pendingToolResults: pendingToolResults,
                 control: control,
                 rateLimitObserver: { snapshots in
-                    await rateLimitStore.update(snapshots, accountID: session.account.id)
+                    await rateLimitStore.update(snapshots, accountID: session.binding.cacheKey)
                 },
                 streamReady: { await readiness.resolve(.success(())) },
                 continuation: continuation

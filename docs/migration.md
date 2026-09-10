@@ -4,7 +4,29 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
-For `2.0.0-alpha.27`, use Swift 6.1 or newer and Xcode 16.3 or newer for Xcode projects. The deployment targets remain iOS 17 and macOS 14, and this prerelease requires no database schema migration. Review the host-managed session, execution-limit, structured-output, compaction, and definition-validation changes below, plus the [API compatibility review](#public-api-review-against-alpha26).
+For `2.0.0-alpha.28`, use Swift 6.1 or newer and Xcode 16.3 or newer for Xcode projects. The deployment targets remain iOS 17 and macOS 14, and this prerelease requires no database schema migration. Review the external-session changes below and the [candidate verification report](release-readiness-2026-09-10.md). Earlier alpha.27 changes and their [API compatibility review](#public-api-review-against-alpha26) remain documented below.
+
+## Local Codex sessions (alpha.28)
+
+- `ChatGPTSession.ownership` distinguishes application-owned and externally managed credentials. The existing initializer and mutable `isExternallyManaged` remain supported; legacy serialized sessions still decode. Setting the legacy flag to `false` explicitly transfers the value back to app-owned semantics, so callers must not use that setter for borrowed credentials.
+- `ChatGPTSessionManager` no longer persists or refreshes externally managed credentials through its app-owned provider. Its `restore()` is explicitly async to prevent the protocol's default implementation from bypassing restoration. Existing `try await manager.restore()` call sites remain valid.
+- Legacy external copies in the application's secure store are removed on restoration and require an explicit source binding. The external credential source is never deleted. `KeychainSessionSecureStore.saveSession` rejects external sessions.
+- App-owned persistence and refresh remain available. External sessions without a discoverable binding may be supplied by a host for in-memory use, but cannot be independently renewed.
+- Threads gain an optional serialized authentication binding. External sessions reject unbound legacy conversations; start a new conversation. App-owned legacy conversations bind on first use. Memory configurations used with external sessions require an explicit binding and an account-partitioned store.
+- Plain HTTP 403 responses no longer initiate authentication recovery. Account/source mismatches return `ChatGPTSessionError` (runtime stream failures expose `auth_…` error codes); cancellation still uses `CancellationError`.
+- Default session/account diagnostic descriptions redact credentials and account data. Read explicit account properties only for application-controlled UI.
+
+See [macOS authentication](auth-on-macos.md) for effective-configuration requirements, the integration example, and unattended-renewal limitations.
+
+## Demo project and scoped storage (alpha.28)
+
+Open `DemoApp/CodexKitDemo.xcodeproj` and select `CodexKitIOSDemo` or `CodexKitMacDemo`. The former `AssistantRuntimeDemoApp` target, scheme, app product, and source directory are now `CodexKitIOSDemo`. Update custom build and artifact scripts accordingly. The iOS bundle identifier, URL scheme, Keychain service/account, and persisted settings keys are preserved, so this rename does not require signing in again or migrating application data.
+
+The optional SQLite and Realm adapters now accept `init(storageDirectory:logging:)` for an account-specific root directory. They create their own fixed database paths under that root; they do not accept a host database file. Existing parameterless initializers retain their managed locations. Choose and persist the appropriate account partition before opening runtime and memory stores; see [persistence](persistence.md).
+
+The core/UI API comparison against alpha.27 reported no removed public declarations or changed existing protocol requirements. Its sole enum-case diagnostic is `invalidStorageDirectory` on the package-scoped `CodexKitManagedStorageError`; that implementation type is not a public host-app API. This is a source API review, not an ABI guarantee.
+
+`AgentRuntimeStore.send(_:)` also accepts `Request`, including images and persona overrides. The string overload remains available. Tool activity, peak concurrency, and reasoning summaries are observable for UI presentation.
 
 ## 2.0 Migration Notes
 

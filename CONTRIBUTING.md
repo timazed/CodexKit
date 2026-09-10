@@ -12,7 +12,7 @@ swift test
 For demo app validation:
 
 ```sh
-xcodebuild -project DemoApp/AssistantRuntimeDemoApp.xcodeproj -scheme AssistantRuntimeDemoApp -destination 'generic/platform=iOS' build
+xcodebuild -project DemoApp/CodexKitDemo.xcodeproj -scheme CodexKitIOSDemo -destination 'generic/platform=iOS' build
 ```
 
 ## Pull Requests

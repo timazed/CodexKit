@@ -2,13 +2,6 @@ import Foundation
 import CodexKit
 import GRDB
 
-struct SQLiteThreadActivationMetrics: Equatable, Sendable {
-    let fetchedHistoryRowCount: Int
-    let decodedHistoryRowCount: Int
-    let decodedHistoryByteCount: Int
-    let usedPersistedContextState: Bool
-}
-
 public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting, AgentRuntimeQueryableStore {
     // v2 is the last released SQLite runtime schema. All current work ships as v3.
     static let currentStoreSchemaVersion = 3

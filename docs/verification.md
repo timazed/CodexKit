@@ -2,6 +2,8 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
+The current candidate is alpha.28; see the [10 September verification report](release-readiness-2026-09-10.md). It adds external credential discovery, account/source binding, rotation and owner renewal, authentication recovery after tools, account-directory storage, and signed macOS demo checks. Earlier audit results below are historical evidence, not results for the current candidate.
+
 The 8 September deep-audit regressions are in `DeepAuditRegressionTests`, `CompactionTransportTests`, `PreparationCancellationTests`, and `OneShotValidationTests`. They cover conflicting/stale compaction, database reopen behavior, request and response image references, bounded compact bodies, session recovery, network cancellation, startup cancellation before/during persistence, strict root policy fields, and one-shot schema/Swift decoding before commit.
 
 On 8 September 2026, the final package suite executed 527 tests with warnings treated as errors: 521 passed, six opt-in checks skipped, zero failures. The optimized release build and all 29 selected performance/SDK/storage checks passed separately, also with warnings treated as errors; the latter included 40 concurrency waves per disk adapter. The signed iOS 26.5 simulator verifier passed SQLite/Realm completion, reopening, and cancellation again after the cursor and Realm compiler fixes. The source guard passed all 211 production files (208 Swift files and three scripts). [Hosted CI](https://github.com/timazed/CodexKit/actions/runs/34195469609) also passed all four jobs on code revision `d75130c`, including macOS 14 / Swift 6.1.3 and actual iOS 17.0.1 execution. See [release readiness](release-readiness-2026-09-08.md) for evidence and remaining gates. Both explicitly enabled live tests skipped because no current SDK/demo session was saved on this Mac.
@@ -9,6 +11,10 @@ On 8 September 2026, the final package suite executed 527 tests with warnings tr
 ## Deterministic tests
 
 Run `swift test` for the package suite. Most backend tests use a local URLProtocol fixture; database tests exercise in-memory, file, SQLite, and Realm stores. The optional live-provider and performance workloads skip during ordinary runs.
+
+`ExternalSessionDiscoveryTests`, `ExternalSessionLifecycleTests`, and `ExternalSessionRuntimeTests` cover read-only discovery, safe failures, binding, rotation, renewal coalescing/timeouts, disconnect, and bounded recovery without replaying tools. `ScopedStorageTests` checks account-directory isolation and rejects host database files. These tests use synthetic credentials and local backend fixtures.
+
+Run `python3 Scripts/verify_local_codex_session.py` for a signed native file/Keychain/auto discovery probe with disposable synthetic records. Run `python3 Scripts/verify_macos_demo.py` for 25 signed app checks, including OAuth handoff/restoration, workspace retry, conversations, typed replies, approvals, parallel tools, memory, and persistence adapters. The current-host CI job and release workflow run the macOS demo verifier and retain `.build/macos-demo/build.log` and `verification-result.json`. The [macOS walkthrough](../DemoApp/README.md#macos-demo) documents separate, explicit live-session checks.
 
 The audit follow-up adds coverage for provider injection, host session management, cross-account recovery cancellation, execution readiness before event consumption, ephemeral cancellation, observation cleanup/overflow, typed HTTP details, server retry delays, bounded image error ingestion, and the earlier auth/history/tool/streaming regressions.
 
@@ -86,7 +92,7 @@ The installed app's data-container path is resolved before launch, so this simul
 
 This addresses the 60-second lookup timeout in the [alpha.27 branch run](https://github.com/timazed/CodexKit/actions/runs/34314111832/job/102346612414); the same commit passed [main CI](https://github.com/timazed/CodexKit/actions/runs/34314111626) and [release verification](https://github.com/timazed/CodexKit/actions/runs/34314111589). The recovery regression failed before the fix. On 10 September, the signed iOS 26.5 / iPhone 17 Pro verifier recovered from one deliberately injected lookup timeout, then passed SQLite, Realm, completion, reopening, and cancellation with run ID `16b012b4-e937-4be6-94a4-ba1baee37357`. Evidence is retained locally under `.build/verification/container-timeout-local`; the injected timeout tests recovery and does not reproduce the hosted machine's underlying service stall.
 
-Use `--build-only` to produce the signed universal app without accessing simulators, then use `--app /absolute/path/AssistantRuntimeDemoApp.app --runtime 17.0.1` on a host with the required runtime. The two modes are mutually exclusive. The eleven harness tests cover mode separation, portable build settings, failure-detail retention, runtime selection, container-lookup recovery and deadline enforcement, and stale/incomplete/failed report rejection.
+Use `--build-only` to produce the signed universal app without accessing simulators, then use `--app /absolute/path/CodexKitIOSDemo.app --runtime 17.0.1` on a host with the required runtime. The two modes are mutually exclusive. The eleven harness tests cover mode separation, portable build settings, failure-detail retention, runtime selection, container-lookup recovery and deadline enforcement, and stale/incomplete/failed report rejection.
 
 Manual dispatch for older release tags without these scripts retains the previous compilation-only verification. The report validation and runtime-selection checks run without Xcode via Python's standard `unittest` runner. The full script requires macOS and Xcode with an installed iOS runtime.
 
@@ -97,8 +103,8 @@ Build and run the demo normally for a UI startup check. For automated checks, ad
 Use a signed app for runtime verification, including on the simulator. The CI script supplies ad-hoc signing; unsigned simulator builds omit the application identity needed by Keychain. For a local simulator build, use:
 
 ```sh
-xcodebuild -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
-  -scheme AssistantRuntimeDemoApp \
+xcodebuild -project DemoApp/CodexKitDemo.xcodeproj \
+  -scheme CodexKitIOSDemo \
   -destination 'generic/platform=iOS Simulator' \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build
 ```

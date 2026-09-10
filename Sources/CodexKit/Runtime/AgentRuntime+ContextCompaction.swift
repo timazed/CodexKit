@@ -192,6 +192,7 @@ extension AgentRuntime {
         }
 
         let session = try await sessionManager.requireSession()
+        try validateThreadAuthentication(thread, session: session)
         let tools = await toolRegistry.allDefinitions()
         let request = Request(text: "", images: [])
         let resolvedTurnSkills = try resolveTurnSkills(
@@ -233,6 +234,8 @@ extension AgentRuntime {
             throw AgentRuntimeError.threadNotFound(threadID)
         }
 
+        try validateThreadAuthentication(thread, session: session)
+        try await validateActiveAuthentication(session)
         let operationID = threadOperations[threadID]
         let originalContext = state.contextStateByThread[threadID]
         let originalMessages = state.messagesByThread[threadID]
@@ -259,6 +262,7 @@ extension AgentRuntime {
             session: session
         )
         try Task.checkCancellation()
+        try await validateActiveAuthentication(session)
         guard self.thread(for: threadID) != nil, threadOperations[threadID] == operationID,
               state.contextStateByThread[threadID] == originalContext,
               state.messagesByThread[threadID] == originalMessages else {
@@ -375,7 +379,7 @@ extension AgentRuntime {
                         return try await compactingBackend.compactContext(thread: thread,
                             effectiveHistory: effectiveHistory, instructions: instructions, tools: tools, session: session)
                     } catch {
-                        encounteredUnauthorized = encounteredUnauthorized || Self.isUnauthorizedError(error)
+                        encounteredUnauthorized = encounteredUnauthorized || (Self.isUnauthorizedError(error) || (error as? AgentRuntimeError)?.http?.statusCode == 403 || error is ChatGPTSessionError)
                         throw error
                     }
                 }

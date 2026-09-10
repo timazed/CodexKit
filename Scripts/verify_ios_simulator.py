@@ -120,15 +120,15 @@ def main():
             app = options.app.resolve()
         else:
             print("Building the signed Debug simulator app.", flush=True)
-            command = ["xcodebuild", "-project", "DemoApp/AssistantRuntimeDemoApp.xcodeproj",
-                       "-scheme", "AssistantRuntimeDemoApp", "-configuration", "Debug",
+            command = ["xcodebuild", "-project", "DemoApp/CodexKitDemo.xcodeproj",
+                       "-scheme", "CodexKitIOSDemo", "-configuration", "Debug",
                        "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", str(derived),
                        "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_IDENTITY=-"]
             if options.build_only:
                 command += ["ONLY_ACTIVE_ARCH=NO", "ARCHS=arm64 x86_64"]
             with (output / "build.log").open("w") as log:
                 run(command + ["build"], log=log, timeout=1800)
-            app = derived / "Build/Products/Debug-iphonesimulator/AssistantRuntimeDemoApp.app"
+            app = derived / "Build/Products/Debug-iphonesimulator/CodexKitIOSDemo.app"
         with (app / "Info.plist").open("rb") as source:
             bundle_id = plistlib.load(source)["CFBundleIdentifier"]
         if options.build_only:

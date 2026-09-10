@@ -6,8 +6,30 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.28] - 2026-09-10
+
+This prerelease adds read-only reuse of a locally authenticated Codex session on macOS and a native macOS demo alongside the iOS demo. Both demos now live in `DemoApp/CodexKitDemo.xcodeproj`. Swift 6.1, iOS 17, and macOS 14 remain the minimum versions. See the [migration notes](docs/migration.md#local-codex-sessions-alpha28) before adopting external credentials.
+
+### Added
+
+- Added `CodexLocalSessionSource` and a native macOS credential reader for selected file, direct Keychain, and auto storage settings. Discovery discards owner refresh tokens and never signs out or modifies the owning Codex installation.
+- Added explicit session ownership, source/account/user bindings, redacted authentication snapshots, injectable session storage, and optional owner-coordinated renewal with cancellation and timeout handling.
+- Added authentication checks before backend requests and after tool/approval waits, with bound recovery across turns, model discovery, memory extraction, and compaction.
+- Added the `CodexKitMacDemo` target with browser OAuth, device-code sign-in, local-session reuse, streaming chat, images, model selection, personas, skills, tools and approvals, typed output, memory, and File/SQLite/Realm persistence. HealthKit and iOS-specific system integrations remain in the iOS target.
+- Added account-directory initializers to SQLite and Realm runtime/memory stores while retaining fixed CodexKit database filenames and rejecting existing host database files.
+- Added image/persona-aware requests and observable tool concurrency and reasoning progress to `AgentRuntimeStore`.
+- Added external-session regression tests, signed native credential probes, and 25 isolated macOS demo checks. CI and release verification now run the macOS demo checks and retain their reports.
+
+### Changed
+
+- Consolidated the demos into one project with `CodexKitIOSDemo` and `CodexKitMacDemo` targets and schemes; updated source paths, build scripts, and CI artifact paths. Existing iOS bundle, Keychain, and settings identifiers are retained.
+- External sessions require explicit account/source binding for conversations and memory. Legacy external copies in the application's secure store require reconnecting to an external source; the owning Codex credential store is left intact.
+- Unauthorized recovery retries only the rejected HTTP pass before that pass emits output, without repeating earlier tool effects. Plain HTTP 403 responses no longer trigger credential refresh.
+
 ### Fixed
 
+- Reused the authenticated session during macOS workspace setup instead of rereading Keychain and resetting its lifecycle. Workspace failures preserve the login choice, expose the underlying error, and offer retry or saved-session recovery.
+- Prevented account/source replacement, logout, cancellation, or late renewal results from reviving an invalid external session or crossing conversation boundaries.
 - Resolved simulator data-container paths before launching the verifier, retried timed-out lookups within a three-minute deadline, and retained lookup diagnostics without retrying failed application checks.
 
 ## [2.0.0-alpha.27] - 2026-09-09
@@ -405,7 +427,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.27...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.28...HEAD
+[2.0.0-alpha.28]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.27...v2.0.0-alpha.28
 [2.0.0-alpha.27]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.26...v2.0.0-alpha.27
 [2.0.0-alpha.26]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.25...v2.0.0-alpha.26
 [2.0.0-alpha.25]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.24...v2.0.0-alpha.25

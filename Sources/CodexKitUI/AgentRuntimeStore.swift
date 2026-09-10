@@ -12,6 +12,9 @@ public final class AgentRuntimeStore {
     public private(set) var lastError: String?
     public private(set) var latestProgress: AgentTurnProgress?
     public private(set) var rateLimits: [AgentRateLimitSnapshot] = []
+    public private(set) var runningTools: [String: String] = [:]
+    public private(set) var peakConcurrentTools = 0
+    public private(set) var reasoningSummary = ""
 
     public let approvalInbox: ApprovalInbox?
     public let deviceCodeCoordinator: DeviceCodePromptCoordinator?
@@ -123,7 +126,12 @@ public final class AgentRuntimeStore {
     }
 
     public func send(_ text: String) async {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        await send(Request(text: text))
+    }
+
+    /// Sends image attachments, persona overrides, and other request options through the UI store.
+    public func send(_ request: Request) async {
+        guard !request.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !request.images.isEmpty else {
             return
         }
 
@@ -141,10 +149,16 @@ public final class AgentRuntimeStore {
 
         streamingText = ""
         latestProgress = nil
+        runningTools = [:]
+        peakConcurrentTools = 0
+        reasoningSummary = ""
+        defer {
+            if self.activeThreadID == activeThreadID, accountGeneration == account { runningTools = [:] }
+        }
 
         do {
             let stream = try await runtime.stream(
-                Request(text: text),
+                request,
                 in: activeThreadID
             )
             await refreshMessages(in: activeThreadID, account: account)
@@ -209,7 +223,12 @@ public final class AgentRuntimeStore {
                 }
 
             case let .progress(progress):
-                if activeThreadID == threadID { latestProgress = progress }
+                if activeThreadID == threadID {
+                    latestProgress = progress
+                    if case let .reasoningSummaryDelta(_, _, delta) = progress.content {
+                        reasoningSummary = String((reasoningSummary + delta).suffix(8_000))
+                    }
+                }
             case let .rateLimitsUpdated(snapshots):
                 for snapshot in snapshots {
                     rateLimits.removeAll { $0.limitID == snapshot.limitID }
@@ -224,10 +243,15 @@ public final class AgentRuntimeStore {
                 try await refreshThreadMetadata(account: account)
             case .turnStarted,
                  .approvalRequested,
-                 .approvalResolved,
-                 .toolCallStarted,
-                 .toolCallFinished:
+                 .approvalResolved:
                 break
+            case let .toolCallStarted(invocation):
+                if activeThreadID == threadID {
+                    runningTools[invocation.id] = invocation.toolName
+                    peakConcurrentTools = max(peakConcurrentTools, runningTools.count)
+                }
+            case let .toolCallFinished(result):
+                if activeThreadID == threadID { runningTools[result.invocationID] = nil }
 
             case let .assistantMessageDelta(_, _, delta):
                 if activeThreadID == threadID { streamingText.append(delta) }
@@ -263,6 +287,9 @@ public final class AgentRuntimeStore {
         messages = []
         streamingText = ""
         latestProgress = nil
+        runningTools = [:]
+        peakConcurrentTools = 0
+        reasoningSummary = ""
         return selectionGeneration
     }
 

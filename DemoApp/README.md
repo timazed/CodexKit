@@ -1,13 +1,79 @@
 # CodexKit Demo App
 
-This folder contains the checked-in iOS example app for exercising the `CodexKit` embedded agent runtime. The package itself supports both iOS and macOS; this demo remains the iOS sample app.
+This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime.
 
-## Open the app in Xcode
+## macOS demo
+
+Both demos live in `DemoApp/CodexKitDemo.xcodeproj` with separate application targets and shared local SDK dependencies. Select **CodexKitIOSDemo** for iOS or **CodexKitMacDemo** for macOS.
+
+The iOS demo retains its existing bundle identifier and persisted Keychain/UserDefaults identifiers so renaming the target does not reset saved sessions or settings.
+
+For macOS, select the **CodexKitMacDemo** scheme and **My Mac**, then run. It requires macOS 14 or later and uses ad-hoc signing without a development team. The checked-in Xcode project is the source of truth.
+
+The native SwiftUI demo includes:
+
+- Local Codex session reuse, browser OAuth (localhost callback on port 1455), and device-code sign-in.
+- An Assistant workspace with persisted conversations, model discovery, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
+- Structured shipping drafts, imported-content summaries, and streamed text with typed payloads using the iOS demo's shared schemas.
+- MemoryWriter and raw-record authoring, retrieval, prompt previews, explicit capture, and optional automatic capture after turns.
+- Tool approval/denial, parallel lookups, travel skills, skill-policy comparison, personas and per-request reviewer overrides.
+- Conversation renaming, instruction previews, ephemeral replies, manual/automatic context compaction, and bounded SDK diagnostics.
+- File, SQLite, and Realm conversation stores with account-specific memory storage.
+- Session status and expiry, same-account credential rereads, and reconnect guidance.
+- Conversation storage partitioned by source, workspace, and user binding.
+- Disconnect that survives relaunch and leaves externally owned credentials intact.
+
+Local connection asks for the **effective** Codex home and credential storage. Advanced settings cover keyring backend, forced login method, required workspace, and ChatGPT endpoint. Match any command-line and managed overrides; the demo does not parse or monitor Codex configuration files. Disconnect and reconnect after changing those settings. No credential discovery happens on a fresh launch until you choose Connect. Restoration checks the previously accepted binding; it cannot silently switch accounts.
+
+The demo is intentionally **not App Sandboxed**, to exercise access to a selected Codex home and accessible direct Keychain items. It is a developer sample, not an App Store distribution configuration. Access to a real Codex Keychain item still depends on that item's ACL. Encrypted `secrets` storage is unsupported. Expired external credentials must be renewed by signing in through Codex; this demo has no credential-owner renewal broker. See [macOS authentication](../docs/auth-on-macos.md).
+
+Application-owned credentials use the `CodexKitMacDemo.ApplicationSession` Keychain service. Conversations and memory are saved under `~/Library/Application Support/CodexKitMacDemo/` in separate binding partitions. UserDefaults holds the selected settings, binding, and authentication preference, never borrowed tokens. HealthKit, health-coach notifications, and the iOS system-integration flows are excluded from this macOS sample.
+
+Choose storage, web search, image generation, and automatic memory capture under **Session options** before connecting. Disconnect to change those options; each persistence adapter keeps its own data, so select **File** to reopen conversations from the original macOS demo. File conversations use a separate SQLite memory store. Both database adapters expose `init(storageDirectory:...)` for an account-specific directory while retaining fixed, separate CodexKit database filenames.
+
+After connecting, switch between **Assistant**, **Structured**, **Memory**, and **Runtime**. The persona picker applies when creating a conversation; **Apply Planner Persona** changes the active one. **Use Memory** controls memory context for the conversation. Tool examples use clearly labeled sample data and never send drafts or make bookings. The browser OAuth flow can be cancelled while waiting for sign-in; it never borrows or modifies Codex's external refresh token.
+
+Authentication and workspace restoration are separate steps. If opening conversations fails after sign-in, the demo keeps the saved authentication choice, displays the workspace error, and offers **Retry Opening Workspace**. **Open Saved ChatGPT Session** also recovers a session saved by an earlier build that failed before recording its authentication choice. Runtime setup reuses the authenticated manager without rereading Keychain. An ad-hoc rebuild can cause macOS to request Keychain access again; approve that system prompt yourself to use the saved session.
+
+Build and run the signed app's offline integration checks:
+
+```sh
+python3 Scripts/verify_macos_demo.py
+```
+
+The script treats demo-target Swift warnings as errors, verifies signing, and runs 25 checks inside a separate app instance: session lifecycle, OAuth handoff and recovery, typed output, tool approvals, parallel execution, memory previews, compaction, and File/SQLite/Realm persistence. Third-party package warnings are not promoted to errors. It uses temporary homes, isolated defaults, and synthetic credentials in memory and disposable native Keychain items; it never reads real credentials or calls a model. Results are written to `.build/macos-demo/verification-result.json`. The separate `Scripts/verify_local_codex_session.py` probe exercises native file and Keychain access with synthetic items.
+
+After building, open the normal app or the Debug-only offline preview:
+
+```sh
+open .build/macos-demo/Build/Products/Debug/CodexKitMacDemo.app
+open -n .build/macos-demo/Build/Products/Debug/CodexKitMacDemo.app --args --offline-demo
+```
+
+For a real-session check, connect with your selected local settings, send a short message, relaunch to check restoration, and disconnect. Confirm Codex remains signed in. Repeat with device-code sign-in to exercise the app-owned fallback. The offline checks do not establish live service access or cross-app Keychain authorization.
+
+The Debug app also provides an explicitly opted-in live check. It sends a typed shipping-draft request, disconnects, and compares the owner credential file before/after. It uses temporary conversation storage and writes only boolean results and the selected model to the report:
+
+```sh
+.build/macos-demo/Build/Products/Debug/CodexKitMacDemo.app/Contents/MacOS/CodexKitMacDemo \
+  --verify-live-local --live-codex-home "$HOME/.codex" \
+  --verification-result /tmp/codexkit-live-verification.json
+```
+
+To verify the demo's already-saved OAuth session, run the following. With `--send-live-request`, it sends a marker request using temporary conversation storage and checks that the saved credentials remain unchanged. Omit that flag to check restoration of the existing workspace without sending a request. Neither mode signs out. Native Keychain prompts require user interaction.
+
+```sh
+.build/macos-demo/Build/Products/Debug/CodexKitMacDemo.app/Contents/MacOS/CodexKitMacDemo \
+  --verify-application-session --send-live-request \
+  --verification-result /tmp/codexkit-oauth-verification.json
+```
+
+## Open the iOS app in Xcode
 
 Run:
 
 ```sh
-open DemoApp/AssistantRuntimeDemoApp.xcodeproj
+open DemoApp/CodexKitDemo.xcodeproj
 ```
 
 The Xcode project is the source of truth for the demo app. Edit it directly in Xcode and commit project changes normally.
@@ -129,14 +195,14 @@ Implementation examples live in `AgentDemoViewModel+RuntimeFeatures.swift`, `Run
 
 ## Files
 
-- `DemoApp/AssistantRuntimeDemoApp/AssistantRuntimeDemoApp.swift`
-- `DemoApp/AssistantRuntimeDemoApp/Info.plist`
-- `DemoApp/AssistantRuntimeDemoApp.xcodeproj`
-- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoView.swift`
-- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoViewModel.swift`
-- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoRuntimeFactory.swift`
-- `DemoApp/AssistantRuntimeDemoApp/Shared/AgentDemoViewModel+RuntimeFeatures.swift`
-- `DemoApp/AssistantRuntimeDemoApp/Shared/RuntimeFeatureViews.swift`
+- `DemoApp/CodexKitIOSDemo/CodexKitIOSDemoApp.swift`
+- `DemoApp/CodexKitIOSDemo/Info.plist`
+- `DemoApp/CodexKitDemo.xcodeproj`
+- `DemoApp/CodexKitIOSDemo/Shared/AgentDemoView.swift`
+- `DemoApp/CodexKitIOSDemo/Shared/AgentDemoViewModel.swift`
+- `DemoApp/CodexKitIOSDemo/Shared/AgentDemoRuntimeFactory.swift`
+- `DemoApp/CodexKitIOSDemo/Shared/AgentDemoViewModel+RuntimeFeatures.swift`
+- `DemoApp/CodexKitIOSDemo/Shared/RuntimeFeatureViews.swift`
 - `Sources/CodexKitUI/AgentRuntimeStore.swift`
 - `Sources/CodexKitUI/ApprovalInbox.swift`
 - `Sources/CodexKitUI/DeviceCodePromptCoordinator.swift`

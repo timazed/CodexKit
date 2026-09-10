@@ -75,9 +75,14 @@ jobs:
           python3 Scripts/verify_ios_simulator.py \
             --output-dir "$RUNNER_TEMP/codexkit-verification"
 
+      - name: Verify demo app (macOS)
+        if: hashFiles('Scripts/verify_macos_demo.py') != ''
+        run: python3 Scripts/verify_macos_demo.py
+
       - name: Build legacy release without a runtime verifier
         if: hashFiles('Scripts/verify_ios_simulator.py') == ''
         run: |
+          # These historical tags predate the CodexKitDemo project and target names.
           xcodebuild \
             -project DemoApp/AssistantRuntimeDemoApp.xcodeproj \
             -scheme AssistantRuntimeDemoApp \
@@ -93,6 +98,8 @@ jobs:
           path: |
             ${{ runner.temp }}/codexkit-verification
             ${{ runner.temp }}/codexkit-optimized.log
+            .build/macos-demo/build.log
+            .build/macos-demo/verification-result.json
           if-no-files-found: ignore
           retention-days: 14
 

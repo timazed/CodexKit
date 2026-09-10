@@ -102,8 +102,8 @@ final class AgentHTTPFailureTests: XCTestCase {
             backend: CodexResponsesBackend(urlSession: makeTestURLSession()),
             approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore()))
         let thread = try await runtime.createThread()
-        do { _ = try await runtime.send(Request(text: "Private request"), in: thread.id); XCTFail("Expected account replacement cancellation") }
-        catch is CancellationError {}
+        do { _ = try await runtime.send(Request(text: "Private request"), in: thread.id); XCTFail("Expected account replacement rejection") }
+        catch { XCTAssertEqual(error as? ChatGPTSessionError, .accountChanged) }
     }
 
     func testImageGenerationRejectsOversizedHTTPErrorBeforeDecoding() async throws {

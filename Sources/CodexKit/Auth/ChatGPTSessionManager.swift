@@ -2,10 +2,16 @@ import Foundation
 
 public actor ChatGPTSessionManager {
     private let authProvider: ChatGPTAuthProvider
-    private let secureStore: KeychainSessionSecureStore
+    let secureStore: any ChatGPTSessionStoring
     private let logger: AgentLogger
-    private var session: ChatGPTSession?
-    private var generation = UUID()
+    var session: ChatGPTSession?
+    var generation = UUID()
+    var externalSource: (any ChatGPTExternalSessionSource)?
+    var credentialOwner: (any ChatGPTSessionOwnerRenewing)?
+    var rejectedAccessToken: String?
+    var authenticationFailure: ChatGPTSessionError?
+    let now: @Sendable () -> Date
+    let renewalTimeout: Duration
     private var pendingRefresh: (generation: UUID, task: Task<ChatGPTSession, Error>)?
 
     public init(
@@ -16,12 +22,36 @@ public actor ChatGPTSessionManager {
         self.authProvider = authProvider
         self.secureStore = secureStore
         self.logger = AgentLogger(configuration: logging)
+        self.now = { Date() }
+        self.renewalTimeout = .seconds(15)
+    }
+
+    public init(authProvider: ChatGPTAuthProvider, sessionStore: any ChatGPTSessionStoring,
+                logging: AgentLoggingConfiguration = .disabled,
+                now: @escaping @Sendable () -> Date = { Date() },
+                renewalTimeout: Duration = .seconds(15)) {
+        self.authProvider = authProvider
+        self.secureStore = sessionStore
+        self.logger = AgentLogger(configuration: logging)
+        self.now = now
+        self.renewalTimeout = max(.milliseconds(1), renewalTimeout)
     }
 
     @discardableResult
-    public func restore() throws -> ChatGPTSession? {
-        let restored = try secureStore.loadSession()
+    public func restore() async throws -> ChatGPTSession? {
+        // Explicit external bindings take precedence; restoration must not switch modes.
+        if externalSource != nil { return try await requireSession() }
+        var restored = try secureStore.loadSession()
+        if restored?.isExternallyManaged == true {
+            // Remove only the application's obsolete copy, never the external source.
+            try secureStore.deleteSession()
+            restored = nil
+            authenticationFailure = .reconnectRequired
+        }
         invalidatePendingAuthentication()
+        if restored != nil { authenticationFailure = nil }
+        rejectedAccessToken = nil
+        restored?.lifecycleID = generation
         session = restored
         logger.debug(
             .auth,
@@ -40,19 +70,27 @@ public actor ChatGPTSessionManager {
 
     @discardableResult
     public func useSession(_ session: ChatGPTSession) throws -> ChatGPTSession {
-        try secureStore.saveSession(session)
+        if case let .external(binding?) = session.ownership, binding.accountID != session.account.id {
+            throw ChatGPTSessionError.accountChanged
+        }
+        if !session.isExternallyManaged { try secureStore.saveSession(session) }
         invalidatePendingAuthentication()
-        self.session = session
+        externalSource = nil
+        credentialOwner = nil
+        authenticationFailure = nil
+        rejectedAccessToken = nil
+        var accepted = session
+        accepted.lifecycleID = generation
+        if accepted.isExternallyManaged { accepted.refreshToken = nil; accepted.idToken = nil }
+        self.session = accepted
         logger.info(
             .auth,
-            "Session loaded and persisted.",
+            "Session loaded.",
             metadata: [
-                "account_id": session.account.id,
-                "plan": session.account.plan.rawValue,
                 "externally_managed": "\(session.isExternallyManaged)"
             ]
         )
-        return session
+        return accepted
     }
 
     @discardableResult
@@ -62,18 +100,21 @@ public actor ChatGPTSessionManager {
         let signedInSession = try await authProvider.signInInteractively()
         try Task.checkCancellation()
         guard generation == startedGeneration else { throw CancellationError() }
-        try secureStore.saveSession(signedInSession)
+        if !signedInSession.isExternallyManaged { try secureStore.saveSession(signedInSession) }
         invalidatePendingAuthentication()
-        session = signedInSession
+        externalSource = nil
+        credentialOwner = nil
+        authenticationFailure = nil
+        rejectedAccessToken = nil
+        var accepted = signedInSession
+        accepted.lifecycleID = generation
+        session = accepted
         logger.info(
             .auth,
             "Interactive sign-in completed and session persisted.",
-            metadata: [
-                "account_id": signedInSession.account.id,
-                "plan": signedInSession.account.plan.rawValue
-            ]
+            metadata: [:]
         )
-        return signedInSession
+        return accepted
     }
 
     @discardableResult
@@ -91,7 +132,6 @@ public actor ChatGPTSessionManager {
             "Refreshing session.",
             metadata: [
                 "reason": refreshReasonLabel(reason),
-                "account_id": current.account.id
             ]
         )
         let authProvider = authProvider
@@ -100,7 +140,12 @@ public actor ChatGPTSessionManager {
                 if self.pendingRefresh?.generation == startedGeneration { self.pendingRefresh = nil }
             }
             do {
-                let refreshed = try await authProvider.refresh(session: current, reason: reason)
+                let refreshed: ChatGPTSession
+                if current.isExternallyManaged {
+                    refreshed = try await self.renewExternalSession(current, generation: startedGeneration)
+                } else {
+                    refreshed = try await authProvider.refresh(session: current, reason: reason)
+                }
                 return try self.commitRefresh(refreshed, generation: startedGeneration)
             } catch {
                 try Task.checkCancellation()
@@ -113,7 +158,7 @@ public actor ChatGPTSessionManager {
         logger.info(
             .auth,
             "Session refresh completed.",
-            metadata: ["account_id": refreshed.account.id]
+            metadata: [:]
         )
         try Task.checkCancellation()
         return refreshed
@@ -121,25 +166,39 @@ public actor ChatGPTSessionManager {
 
     public func signOut() async throws {
         let current = session
+        let external = current?.isExternallyManaged == true || externalSource != nil
         invalidatePendingAuthentication()
         session = nil
-        try secureStore.deleteSession()
-        await authProvider.signOut(session: current)
+        externalSource = nil
+        credentialOwner = nil
+        authenticationFailure = .disconnected
+        rejectedAccessToken = nil
+        if !external {
+            try secureStore.deleteSession()
+            await authProvider.signOut(session: current)
+        }
         logger.info(
             .auth,
             "Session signed out.",
             metadata: [
                 "had_session": "\(current != nil)",
-                "account_id": current?.account.id ?? ""
             ]
         )
     }
 
     public func requireSession() async throws -> ChatGPTSession {
         guard let session else {
+            if let authenticationFailure, authenticationFailure != .disconnected { throw authenticationFailure }
             throw AgentRuntimeError.signedOut()
         }
-        if session.requiresRefresh() {
+        if session.isExternallyManaged, externalSource != nil {
+            let expected = generation
+            let resolved = try await resolveExternalSession(session, generation: expected)
+            if resolved.accessToken == rejectedAccessToken || resolved.requiresRefresh(referenceDate: now()) { return try await refresh(reason: .unauthorized) }
+            self.session = resolved
+            return resolved
+        }
+        if session.requiresRefresh(referenceDate: now()) {
             return try await refresh(reason: .unauthorized)
         }
         return session
@@ -155,18 +214,25 @@ public actor ChatGPTSessionManager {
             "Attempting unauthorized-session recovery.",
             metadata: ["had_previous_access_token": "\(previousAccessToken != nil)"]
         )
-        if let restored = try secureStore.loadSession(), restored.account.id == current.account.id {
+        if current.isExternallyManaged {
+            rejectedAccessToken = previousAccessToken ?? current.accessToken
+            if let previousAccessToken, current.accessToken != previousAccessToken,
+               !current.requiresRefresh(referenceDate: now()) { return try await requireSession() }
+            return try await refresh(reason: .unauthorized)
+        }
+        if var restored = try secureStore.loadSession(), !restored.isExternallyManaged, restored.binding == current.binding {
             if let previousAccessToken,
                restored.accessToken != previousAccessToken,
-               !restored.requiresRefresh() {
+               !restored.requiresRefresh(referenceDate: now()) {
                 if restored != session {
                     invalidatePendingAuthentication()
+                    restored.lifecycleID = current.lifecycleID
                     session = restored
                 }
                 logger.info(
                     .auth,
                     "Recovered session from secure store after unauthorized response.",
-                    metadata: ["account_id": restored.account.id]
+                    metadata: [:]
                 )
                 return restored
             }
@@ -195,7 +261,7 @@ public actor ChatGPTSessionManager {
         return value
     }
 
-    private func invalidatePendingAuthentication() {
+    func invalidatePendingAuthentication() {
         generation = UUID()
         pendingRefresh?.task.cancel()
         pendingRefresh = nil
@@ -203,13 +269,19 @@ public actor ChatGPTSessionManager {
 
     private func commitRefresh(_ refreshed: ChatGPTSession, generation expected: UUID) throws -> ChatGPTSession {
         guard generation == expected else { throw CancellationError() }
-        try secureStore.saveSession(refreshed)
-        session = refreshed
-        return refreshed
+        guard refreshed.binding == session?.binding else { throw ChatGPTSessionError.accountChanged }
+        if !refreshed.isExternallyManaged { try secureStore.saveSession(refreshed) }
+        var accepted = refreshed
+        accepted.lifecycleID = session?.lifecycleID ?? generation
+        session = accepted
+        authenticationFailure = nil
+        rejectedAccessToken = nil
+        return accepted
     }
 
     private func requireStoredSession() throws -> ChatGPTSession {
         guard let session else {
+            if let authenticationFailure, authenticationFailure != .disconnected { throw authenticationFailure }
             throw AgentRuntimeError.signedOut()
         }
         return session

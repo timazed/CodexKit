@@ -489,6 +489,8 @@ public struct DefaultMemoryPromptRenderer: MemoryPromptRendering, Sendable {
 }
 
 public struct AgentMemoryConfiguration: Sendable {
+    /// Bind an account-partitioned memory store before using externally managed authentication.
+    public var authenticationBinding: ChatGPTSessionBinding?
     public let store: any MemoryStoring
     public let defaultRanking: MemoryRankingProfile
     public let defaultReadBudget: MemoryReadBudget
@@ -506,6 +508,7 @@ public struct AgentMemoryConfiguration: Sendable {
         instructionPlacement: MemoryInstructionPlacement,
         automaticCapturePolicy: MemoryAutomaticCapturePolicy? = nil
     ) {
+        self.authenticationBinding = nil
         self.store = store
         self.defaultRanking = defaultRanking
         self.defaultReadBudget = defaultReadBudget

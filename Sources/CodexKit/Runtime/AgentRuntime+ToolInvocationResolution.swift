@@ -157,7 +157,9 @@ extension AgentRuntime {
         try Task.checkCancellation()
         let result: ToolResultEnvelope
         if let registration {
+            try await validateActiveAuthentication(session)
             result = await registration.execute(invocation, session: session)
+            try await validateActiveAuthentication(session)
         } else {
             result = .failure(invocation: invocation, message: "No tool named \(invocation.toolName) was registered for this turn.")
         }

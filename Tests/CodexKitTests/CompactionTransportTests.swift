@@ -176,8 +176,9 @@ final class CompactionTransportTests: XCTestCase {
                 if outcome == .success { await TestURLProtocol.enqueue(.init(statusCode: 403, body: Data())) }
                 do { _ = try await runtime.compactThreadContext(id: thread.id); XCTFail("Expected failed recovery") }
                 catch {
-                    if outcome == .differentAccount || outcome == .cancelled { XCTAssertTrue(error is CancellationError) }
-                    else { XCTAssertEqual((error as? AgentRuntimeError)?.code, outcome == .failure ? "refresh_failed" : "unauthorized") }
+                    if outcome == .differentAccount { XCTAssertEqual(error as? ChatGPTSessionError, .accountChanged) }
+                    else if outcome == .cancelled { XCTAssertTrue(error is CancellationError) }
+                    else { XCTAssertEqual((error as? AgentRuntimeError)?.code, outcome == .failure ? "refresh_failed" : "responses_compact_http_status_403") }
                 }
                 let after = try await store.loadState()
                 XCTAssertEqual(after, before)

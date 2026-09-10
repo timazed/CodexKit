@@ -69,6 +69,8 @@ SQLite stores follow the same managed-location rule. `SQLiteRuntimeStateStore()`
 
 Realm persistence is new in this unreleased line, so both Realm stores ship with schema version 1. Development iterations are intentionally folded into that initial schema rather than exposed as fictional public migrations. SQLite migrations, by contrast, advance only from previously released SQLite schema versions.
 
+For account isolation or an app-owned shared container, all four database stores also accept `init(storageDirectory:logging:)`. This selects a containing directory; CodexKit still appends its own `CodexKit/SQLite/` or `CodexKit/Realm/` subdirectory and fixed runtime/memory filenames. Passing an existing file or a non-file URL is rejected. Choose a distinct directory for each authenticated account/source, and keep the stores' schema ownership separate from your application's databases. The default initializers retain the bundle-based locations above.
+
 With lazy persistent stores, `activeThreads()` returns only the bounded set currently hydrated by the runtime. Use `persistedThreads(_:)` for the durable thread catalog shown by navigation or restart UI; resuming one of those threads hydrates it into the active set.
 
 The SwiftPM manifest uses explicit target paths under `Sources/`. The checked-in `DemoApp/` is not part of any package product or target; it is an example app only.

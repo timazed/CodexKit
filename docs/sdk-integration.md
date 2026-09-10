@@ -26,9 +26,11 @@ let runtime = try AgentRuntime(configuration: .init(
 ))
 ```
 
-No Keychain store or ChatGPT auth provider is constructed by this initializer. The host owns credential storage and refresh synchronization. Providers that refresh credentials should implement `requireSession()` and `recoverUnauthorizedSession(previousAccessToken:)`, honor cancellation, share concurrent refresh requests, and prevent stale results from overwriting a replacement session. Unauthorized recovery cannot move an existing request to a different account: the runtime cancels if recovery returns another account ID.
+No Keychain store or ChatGPT auth provider is constructed by this initializer. The host owns credential storage and refresh synchronization. Providers that refresh credentials should implement `requireSession()` and `recoverUnauthorizedSession(previousAccessToken:)`, honor cancellation, share concurrent refresh requests, and prevent stale results from overwriting a replacement session. Unauthorized recovery cannot move an existing request to a different account: the runtime rejects recovery that changes the source, workspace, or user binding.
 
 Implement `AgentSessionManaging` to support `runtime.signIn()`, `useSession`, and `signOut`; otherwise those actions throw `session_management_unsupported`. `ChatGPTSessionManager` conforms to both protocols and remains the default for the existing auth/secure-store initializer. Each runtime made from that initializer gets its own manager; a supplied provider instance is shared exactly as configured.
+
+For reusable local Codex authentication on macOS, see [external session discovery and renewal](auth-on-macos.md).
 
 Backends continue receiving `ChatGPTSession`, preserving the existing backend protocol. This boundary separates runtime authentication lifecycle from credential storage without changing the session representation. When inspecting configuration, `authProvider` and `secureStore` are now optional and are `nil` for a supplied provider; `sessionProvider` is `nil` for built-in authentication. Existing initializer call sites require no changes.
 

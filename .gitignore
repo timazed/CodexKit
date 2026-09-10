@@ -101,13 +101,16 @@ iOSInjectionProject/
 */xcshareddata/*
 !*/xcshareddata/swiftpm/
 !*/xcshareddata/swiftpm/Package.resolved
+!DemoApp/CodexKitDemo.xcodeproj/xcshareddata/xcschemes/
+!DemoApp/CodexKitDemo.xcodeproj/xcshareddata/xcschemes/CodexKitIOSDemo.xcscheme
+!DemoApp/CodexKitDemo.xcodeproj/xcshareddata/xcschemes/CodexKitMacDemo.xcscheme
 ### Xcode Patch ###
 **/xcshareddata/WorkspaceSettings.xcsettings
-DemoApp/AssistantRuntimeDemoApp.xcodeproj/project.xcworkspace/*
-!DemoApp/AssistantRuntimeDemoApp.xcodeproj/project.xcworkspace/contents.xcworkspacedata
-!DemoApp/AssistantRuntimeDemoApp.xcodeproj/project.xcworkspace/xcshareddata/
-!DemoApp/AssistantRuntimeDemoApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
-!DemoApp/AssistantRuntimeDemoApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+DemoApp/CodexKitDemo.xcodeproj/project.xcworkspace/*
+!DemoApp/CodexKitDemo.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!DemoApp/CodexKitDemo.xcodeproj/project.xcworkspace/xcshareddata/
+!DemoApp/CodexKitDemo.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+!DemoApp/CodexKitDemo.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 #Cocoapods
 Pods/

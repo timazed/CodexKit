@@ -31,11 +31,14 @@ package enum CodexKitManagedStoreKind: Sendable {
 
 package enum CodexKitManagedStorageError: Error, LocalizedError, Sendable {
     case applicationSupportDirectoryUnavailable
+    case invalidStorageDirectory
 
     package var errorDescription: String? {
         switch self {
         case .applicationSupportDirectoryUnavailable:
             "CodexKit could not locate the application's support directory for managed storage."
+        case .invalidStorageDirectory:
+            "CodexKit storage requires a local directory, not a database file."
         }
     }
 }
@@ -72,6 +75,19 @@ package struct CodexKitManagedStorageLayout: Sendable {
     package func fileURL(for kind: CodexKitManagedStoreKind) -> URL {
         applicationSupportDirectory
             .appendingPathComponent(hostIdentifier, isDirectory: true)
+            .appendingPathComponent("CodexKit", isDirectory: true)
+            .appendingPathComponent(kind.adapterDirectory, isDirectory: true)
+            .appendingPathComponent(kind.filename, isDirectory: false)
+    }
+
+    /// A caller may choose a containing directory, but never the database filenames or schemas.
+    package static func fileURL(in storageDirectory: URL, for kind: CodexKitManagedStoreKind) throws -> URL {
+        guard storageDirectory.isFileURL else { throw CodexKitManagedStorageError.invalidStorageDirectory }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: storageDirectory.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+            throw CodexKitManagedStorageError.invalidStorageDirectory
+        }
+        return storageDirectory.standardizedFileURL
             .appendingPathComponent("CodexKit", isDirectory: true)
             .appendingPathComponent(kind.adapterDirectory, isDirectory: true)
             .appendingPathComponent(kind.filename, isDirectory: false)

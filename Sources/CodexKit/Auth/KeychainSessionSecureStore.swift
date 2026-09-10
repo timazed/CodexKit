@@ -41,6 +41,7 @@ public final class KeychainSessionSecureStore: Sendable {
     }
 
     public func saveSession(_ session: ChatGPTSession) throws {
+        guard !session.isExternallyManaged else { throw ChatGPTSessionError.unsupportedAuthentication }
         let data = try JSONEncoder().encode(session)
         var attributes = baseQuery()
         attributes[kSecValueData as String] = data

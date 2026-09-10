@@ -18,6 +18,6 @@ public func demoSession(
         ),
         acquiredAt: Date(),
         expiresAt: Date().addingTimeInterval(3600),
-        isExternallyManaged: true
+        isExternallyManaged: false
     )
 }

@@ -11,7 +11,7 @@ LIMIT = 600
 def main():
     paths = subprocess.check_output([
         "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
-        "Sources", "DemoApp/AssistantRuntimeDemoApp", "Scripts",
+        "Sources", "DemoApp/CodexKitIOSDemo", "DemoApp/CodexKitMacDemo", "Scripts",
     ], cwd=ROOT).decode().split("\0")
     count = 0
     failures = []
