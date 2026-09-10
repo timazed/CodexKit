@@ -1,6 +1,6 @@
-# Alpha.28 release preparation — 10 September 2026
+# Alpha.28 release verification — 10 September 2026
 
-The release candidate is **v2.0.0-alpha.28**, prepared on `codex/release-alpha28` from `f7e845cc6546e5ac745aa1a6fc05e720bb5d9f8e`. The user authorized publication on 10 September 2026. Local verification and all hosted candidate CI jobs passed before tagging.
+**v2.0.0-alpha.28** was published on 10 September 2026 at `11:32:29Z`, from tagged commit `5b73fb7782d7d08134d6a82e5a70626a4b281a46`. It was prepared on `codex/release-alpha28` from `f7e845cc6546e5ac745aa1a6fc05e720bb5d9f8e`, with user authorization to publish. Local verification, all hosted candidate CI jobs, and the tag-triggered release workflow passed.
 
 ## Release scope
 
@@ -54,4 +54,4 @@ Local verification artifacts remain under ignored `.build/`; credentials and pri
 - Swift 6.1 iOS 17 verifier build.
 - iOS 17 runtime verification.
 
-The only change after that candidate revision is this verification record. Publication proceeds by fast-forwarding `main` and pushing an annotated `v2.0.0-alpha.28` tag. The tag-triggered release workflow verifies the exact tagged revision, library tests/builds, optimized checks, and both demo verifiers before creating the [GitHub prerelease](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.28) from the alpha.28 changelog entry. The release workflow's successful publication is the final release gate.
+The only change between that candidate revision and the release tag was this verification record. `main` was fast-forwarded and the annotated `v2.0.0-alpha.28` tag was pushed. [Release workflow 34469083975](https://github.com/timazed/CodexKit/actions/runs/34469083975) passed exact-tag verification, source-size and harness checks, library tests/builds, optimized regression/concurrency checks, and both demo verifiers. Its publication job created the [GitHub prerelease](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.28) from the alpha.28 changelog entry. GitHub confirms the release is published, is a prerelease, and is not a draft.
