@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import plistlib
@@ -61,7 +62,7 @@ class SimulatorVerificationTests(unittest.TestCase):
             self.assertIn("ARCHS=arm64 x86_64", command)
             self.assertIn("ONLY_ACTIVE_ARCH=NO", command)
 
-    def test_prebuilt_app_verification_never_resolves_or_builds_packages(self):
+    def test_prebuilt_app_recovers_from_container_lookup_timeout_without_relaunching(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             app = root / "Signed.app"
@@ -71,6 +72,8 @@ class SimulatorVerificationTests(unittest.TestCase):
             report = dict(runID="fresh", finishedAt="finished", sqlite="passed", realm="passed",
                           localAdapters="passed", liveProvider="skipped: local_only")
             (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
+            clock = [0]
+            lookups = []
 
             def simulated_run(command, **_kwargs):
                 self.assertEqual(command[:2], ["xcrun", "simctl"])
@@ -79,6 +82,10 @@ class SimulatorVerificationTests(unittest.TestCase):
                 if command[2] == "create":
                     return "owned-simulator"
                 if command[2] == "get_app_container":
+                    lookups.append(command)
+                    if len(lookups) == 1:
+                        clock[0] += 60
+                        raise subprocess.TimeoutExpired(command, 60)
                     return str(container)
                 return ""
 
@@ -86,12 +93,84 @@ class SimulatorVerificationTests(unittest.TestCase):
             args = ["verify", "--app", str(app), "--runtime", "17.0.1", "--output-dir", str(output)]
             with patch.object(verifier.sys, "argv", args), patch.object(verifier.signal, "signal"), \
                  patch.object(verifier.uuid, "uuid4", return_value="fresh"), \
+                 patch.object(verifier.time, "monotonic", side_effect=lambda: clock[0]), \
+                 patch.object(verifier.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
                  patch.object(verifier, "run", side_effect=simulated_run) as run, \
                  patch.object(verifier.subprocess, "run") as cleanup:
                 self.assertEqual(verifier.main(), 0)
             self.assertEqual(json.loads((output / "CodexKitVerification.json").read_text()), report)
             installs = [call.args[0] for call in run.call_args_list if call.args[0][2] == "install"]
             self.assertEqual(installs, [["xcrun", "simctl", "install", "owned-simulator", str(app.resolve())]])
+            commands = [call.args[0][2] for call in run.call_args_list]
+            self.assertEqual(commands.count("get_app_container"), 2)
+            self.assertEqual(commands.count("launch"), 1)
+            self.assertLess(max(i for i, command in enumerate(commands) if command == "get_app_container"),
+                            commands.index("launch"))
+            self.assertEqual([call.args[0] for call in cleanup.call_args_list], [
+                ["xcrun", "simctl", "shutdown", "owned-simulator"],
+                ["xcrun", "simctl", "delete", "owned-simulator"],
+            ])
+
+    def test_container_lookup_deadline_bounds_retries_and_retains_the_timeout(self):
+        clock = [0]
+
+        def timed_out(command, *, timeout):
+            clock[0] += timeout
+            raise subprocess.TimeoutExpired(command, timeout)
+
+        log = io.StringIO()
+        with patch.object(verifier.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(verifier.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
+             patch.object(verifier, "run", side_effect=timed_out) as run, \
+             self.assertRaisesRegex(RuntimeError, "test.app on owned-simulator within 125 seconds.*timed out"):
+            verifier.resolve_app_container("owned-simulator", "test.app", log=log, timeout=125)
+        self.assertEqual(clock[0], 125)
+        self.assertEqual([call.kwargs["timeout"] for call in run.call_args_list], [60, 60, 1])
+        self.assertIn("Attempt 3", log.getvalue())
+        self.assertIn("get_app_container", log.getvalue())
+
+    def test_container_lookup_does_not_retry_command_failures(self):
+        log = io.StringIO()
+        with patch.object(verifier, "run", side_effect=RuntimeError("App is not installed")) as run, \
+             patch.object(verifier.time, "sleep") as sleep, \
+             self.assertRaisesRegex(RuntimeError, "App is not installed"):
+            verifier.resolve_app_container("owned-simulator", "test.app", log=log)
+        self.assertEqual(run.call_count, 1)
+        sleep.assert_not_called()
+        self.assertIn("App is not installed", log.getvalue())
+
+    def test_container_lookup_rejects_empty_relative_and_missing_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for value in ("", "relative/container", str(Path(directory) / "missing")):
+                with self.subTest(value=value), patch.object(verifier, "run", return_value=value) as run, \
+                     self.assertRaisesRegex(RuntimeError, "invalid data-container path"):
+                    verifier.resolve_app_container("owned-simulator", "test.app", log=io.StringIO())
+                self.assertEqual(run.call_count, 1)
+
+    def test_failed_adapter_report_is_preserved_and_not_retried(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "Signed.app"
+            self.make_app(app)
+            container = root / "container"
+            (container / "Documents").mkdir(parents=True)
+            report = dict(runID="fresh", finishedAt="finished", sqlite="passed", realm="failed: storage_error",
+                          localAdapters="failed", liveProvider="skipped: local_only")
+            (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
+            output = root / "reports"
+            args = ["verify", "--app", str(app), "--output-dir", str(output)]
+            results = [json.dumps(dict(runtimes=[self.runtime("17.0.1")])), "owned-simulator",
+                       "", "", "", str(container), ""]
+            with patch.object(verifier.sys, "argv", args), patch.object(verifier.signal, "signal"), \
+                 patch.object(verifier.uuid, "uuid4", return_value="fresh"), \
+                 patch.object(verifier, "run", side_effect=results) as run, \
+                 patch.object(verifier.subprocess, "run") as cleanup:
+                self.assertEqual(verifier.main(), 1)
+            self.assertIn("realm: failed: storage_error", (output / "failure.txt").read_text())
+            self.assertEqual(json.loads((output / "CodexKitVerification.json").read_text()), report)
+            commands = [call.args[0][2] for call in run.call_args_list]
+            self.assertEqual(commands.count("launch"), 1)
+            self.assertEqual(commands.count("get_app_container"), 1)
             self.assertEqual([call.args[0] for call in cleanup.call_args_list], [
                 ["xcrun", "simctl", "shutdown", "owned-simulator"],
                 ["xcrun", "simctl", "delete", "owned-simulator"],

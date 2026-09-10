@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Resolved simulator data-container paths before launching the verifier, retried timed-out lookups within a three-minute deadline, and retained lookup diagnostics without retrying failed application checks.
+
 ## [2.0.0-alpha.27] - 2026-09-09
 
 This prerelease adds account names, host-managed sessions, and execution handles, fixes cancellation and persistence races, and reduces image-compaction and history-paging overhead. Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. Deployment targets remain iOS 17 and macOS 14. See the [migration notes](docs/migration.md) for configuration inspection, structured-output validation, and execution-limit changes.

@@ -51,6 +51,41 @@ def validate_report(report, run_id):
         raise RuntimeError("CI verification must explicitly skip live-account access.")
 
 
+def resolve_app_container(simulator, bundle_id, *, log, timeout=180):
+    """Retry a timed-out read without reinstalling or relaunching the verifier."""
+    command = ["xcrun", "simctl", "get_app_container", simulator, bundle_id, "data"]
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    last_error = None
+    while (remaining := deadline - time.monotonic()) > 0:
+        attempts += 1
+        attempt_timeout = min(60, remaining)
+        print(f"Attempt {attempts}: data container for {bundle_id} on {simulator}; "
+              f"timeout {attempt_timeout:.1f}s.", file=log, flush=True)
+        try:
+            value = run(command, timeout=attempt_timeout)
+        except subprocess.TimeoutExpired as error:
+            last_error = error
+            print(str(error), file=log, flush=True)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                print("Simulator data-container lookup timed out; retrying the lookup.", flush=True)
+                time.sleep(min(2, remaining))
+            continue
+        except (RuntimeError, OSError) as error:
+            print(str(error), file=log, flush=True)
+            raise
+        container = Path(value)
+        if not value or not container.is_absolute() or not container.is_dir():
+            error = f"Simulator returned an invalid data-container path: {value!r}"
+            print(error, file=log, flush=True)
+            raise RuntimeError(error)
+        print(f"Resolved data container: {container}", file=log, flush=True)
+        return container
+    raise RuntimeError(f"Could not locate the data container for {bundle_id} on {simulator} "
+                       f"within {timeout} seconds ({attempts} attempts). Last error: {last_error}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / ".build/verification")
@@ -65,7 +100,7 @@ def main():
         parser.error("--report-timeout must be positive")
     output = options.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for name in ("CodexKitVerification.json", "run.json", "failure.txt", "build.log", "boot.log",
+    for name in ("CodexKitVerification.json", "run.json", "failure.txt", "build.log", "boot.log", "container.log",
                  "app-stdout.log", "app-stderr.log"):
         (output / name).unlink(missing_ok=True)
     derived = options.derived_data.resolve()
@@ -102,18 +137,20 @@ def main():
         simulator = run(["xcrun", "simctl", "create", f"CodexKit verification {run_id}",
                          device["identifier"], runtime["identifier"]])
         (output / "run.json").write_text(json.dumps({"runID": run_id, "runtime": runtime["name"],
-            "device": device["name"], "bundleID": bundle_id}, indent=2) + "\n")
+            "device": device["name"], "simulatorID": simulator, "bundleID": bundle_id}, indent=2) + "\n")
         print("Booting the temporary simulator.", flush=True)
         run(["xcrun", "simctl", "boot", simulator])
         with (output / "boot.log").open("w") as log:
             run(["xcrun", "simctl", "bootstatus", simulator, "-b"], log=log, timeout=300)
         run(["xcrun", "simctl", "install", simulator, str(app)], timeout=180)
+        print("Locating the installed app's data container before launch.", flush=True)
+        with (output / "container.log").open("w") as log:
+            container = resolve_app_container(simulator, bundle_id, log=log)
+        report_path = container / "Documents/CodexKitVerification.json"
         environment = dict(os.environ, SIMCTL_CHILD_CODEXKIT_VERIFICATION_RUN_ID=run_id)
         run(["xcrun", "simctl", "launch", "--terminate-running-process",
              f"--stdout={output / 'app-stdout.log'}", f"--stderr={output / 'app-stderr.log'}",
              simulator, bundle_id, "--verify-runtime", "--verify-local-only"], env=environment)
-        container = Path(run(["xcrun", "simctl", "get_app_container", simulator, bundle_id, "data"]))
-        report_path = container / "Documents/CodexKitVerification.json"
         print("Waiting for SQLite, Realm, completion, and cancellation checks.", flush=True)
         deadline = time.monotonic() + options.report_timeout
         while time.monotonic() < deadline:
