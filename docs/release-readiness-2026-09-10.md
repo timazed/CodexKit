@@ -1,6 +1,6 @@
 # Alpha.28 release preparation — 10 September 2026
 
-The candidate is **v2.0.0-alpha.28** on `codex/release-alpha28`, based on `f7e845cc6546e5ac745aa1a6fc05e720bb5d9f8e`. Remote tags were checked on 10 September; `v2.0.0-alpha.27` is the latest published tag in this series. This candidate has not been tagged or published.
+The release candidate is **v2.0.0-alpha.28**, prepared on `codex/release-alpha28` from `f7e845cc6546e5ac745aa1a6fc05e720bb5d9f8e`. The user authorized publication on 10 September 2026. Local verification and all hosted candidate CI jobs passed before tagging.
 
 ## Release scope
 
@@ -45,12 +45,13 @@ These checks establish the tested local-session and saved-OAuth paths. They do n
 
 Local verification artifacts remain under ignored `.build/`; credentials and private account data are not committed.
 
-## Publication handoff
+## Hosted verification and publication
 
-The user authorized publication of alpha.28 on 10 September. The following steps remain gated on successful hosted checks.
+[Candidate CI run 34466177455](https://github.com/timazed/CodexKit/actions/runs/34466177455) passed for `5fdce18611a3985701c8cef8186a205f0158af88`:
 
-1. Push the candidate branch and review the hosted CI results, including minimum-platform jobs. Hosted CI has not yet run for this candidate; earlier release CI results do not substitute for this run.
-2. The README's release badge/link now targets alpha.28. Fast-forward the reviewed candidate onto `main` and create an annotated `v2.0.0-alpha.28` tag.
-3. Push the tag. The release workflow verifies the tagged revision, library tests/builds, optimized checks, and both demo verifiers before creating the GitHub prerelease from the alpha.28 changelog entry.
+- Current-platform verification, including package tests, Release build, optimized regression/concurrency checks, and the iOS and macOS demo verifiers.
+- Minimum-platform verification.
+- Swift 6.1 iOS 17 verifier build.
+- iOS 17 runtime verification.
 
-The repository currently has no alpha.28 tag or published release. Preparing these files does not trigger publication.
+The only change after that candidate revision is this verification record. Publication proceeds by fast-forwarding `main` and pushing an annotated `v2.0.0-alpha.28` tag. The tag-triggered release workflow verifies the exact tagged revision, library tests/builds, optimized checks, and both demo verifiers before creating the [GitHub prerelease](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.28) from the alpha.28 changelog entry. The release workflow's successful publication is the final release gate.
