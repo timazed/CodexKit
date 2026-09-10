@@ -1,5 +1,5 @@
 name: Restore compatible build intermediates
-description: Key build caches by platform, toolchain, dependencies, and sources; always rerun verification.
+description: Restore a compatible incremental build baseline; always rebuild changed sources and rerun verification.
 inputs:
   kind:
     description: Separate SDK, iOS, minimum iOS, and macOS caches
@@ -15,14 +15,15 @@ runs:
       env:
         CACHE_KIND: ${{ inputs.kind }}
         DEPENDENCIES: ${{ hashFiles('Package.swift', 'Package.resolved', 'DemoApp/**/Package.resolved') }}
-        SOURCES: ${{ hashFiles('Sources/**', 'Tests/**', 'DemoApp/**', 'Scripts/**', '.github/**') }}
       run: |
         set -euo pipefail
         fingerprint=$( { sw_vers; uname -m; xcodebuild -version; swift --version; } | shasum -a 256 | cut -d ' ' -f 1)
         echo "prefix=build-v1-${CACHE_KIND}-${fingerprint}-${DEPENDENCIES}" >> "$GITHUB_OUTPUT"
-        echo "source=${SOURCES}" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@v4
       with:
         path: ${{ inputs.paths }}
-        key: ${{ steps.identity.outputs.prefix }}-${{ steps.identity.outputs.source }}
+        # One baseline per dependency/toolchain identity avoids gigabytes of duplicate
+        # per-commit snapshots. SwiftPM/Xcode still invalidate changed inputs normally.
+        key: ${{ steps.identity.outputs.prefix }}
+        # Also accepts the initial per-source keys during migration.
         restore-keys: ${{ steps.identity.outputs.prefix }}-

@@ -116,20 +116,31 @@ jobs:
             .build/x86_64-apple-macosx
       - name: Optimized correctness checks (all four library targets)
         env:
-          CODEXKIT_STRESS_ROUNDS: "6"
+          CODEXKIT_STRESS_ROUNDS: ${{ needs.plan.outputs.stress == 'true' && '40' || '6' }}
         run: |
           set -euo pipefail
           python3 Scripts/ci_timed.py --name 'SDK optimized build and tests' --output "$RUNNER_TEMP/timing-optimized.json" -- \
             swift test -c release --force-resolved-versions -Xswiftc -warnings-as-errors \
             --filter 'RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests|StructuredRecoveryTests|ResponseRecoveryInvestigationTests' \
             2>&1 | tee "$RUNNER_TEMP/optimized-tests.log"
+      - name: Extended image and storage benchmarks (reuse the built test bundle)
+        if: needs.plan.outputs.stress == 'true'
+        env:
+          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci_timed.py --name 'Extended benchmarks' --output "$RUNNER_TEMP/timing-benchmarks.json" -- \
+            swift test -c release --skip-build --force-resolved-versions \
+            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests' \
+            2>&1 | tee "$RUNNER_TEMP/benchmarks.log"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: sdk-optimized
           path: |
-            ${{ runner.temp }}/timing-optimized.json
+            ${{ runner.temp }}/timing-*.json
             ${{ runner.temp }}/optimized-tests.log
+            ${{ runner.temp }}/benchmarks.log
           retention-days: 14
 
   demos:
@@ -245,49 +256,9 @@ jobs:
           path: ${{ runner.temp }}/minimum-simulator-verification
           retention-days: 14
 
-  extended-stress:
-    name: Extended stress
-    needs: [plan, optimized]
-    if: needs.plan.outputs.verify == 'true' && needs.plan.outputs.stress == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/build-cache
-        with:
-          kind: sdk-optimized
-          paths: |
-            .build/artifacts
-            .build/checkouts
-            .build/repositories
-            .build/workspace-state.json
-            .build/build.db
-            .build/debug.yaml
-            .build/release.yaml
-            .build/arm64-apple-macosx
-            .build/x86_64-apple-macosx
-      - name: Extended storage, image, and concurrency workloads
-        env:
-          CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
-          CODEXKIT_STRESS_ROUNDS: "40"
-        run: |
-          set -euo pipefail
-          python3 Scripts/ci_timed.py --name 'Extended workloads' --output "$RUNNER_TEMP/timing-stress.json" -- \
-            swift test -c release --force-resolved-versions -Xswiftc -warnings-as-errors \
-            --filter 'RealisticPerformanceTests|RuntimeSystemBenchmarkTests|RuntimeConcurrencyStressTests' \
-            2>&1 | tee "$RUNNER_TEMP/stress.log"
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: extended-stress
-          path: |
-            ${{ runner.temp }}/timing-stress.json
-            ${{ runner.temp }}/stress.log
-          retention-days: 14
-
   verified:
     name: Verification gate v1
-    needs: [plan, sdk, optimized, demos, build-minimum-simulator, minimum-simulator, extended-stress]
+    needs: [plan, sdk, optimized, demos, build-minimum-simulator, minimum-simulator]
     if: always() && needs.plan.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -307,7 +278,5 @@ jobs:
           else:
               for job in ('sdk', 'optimized', 'demos', 'build-minimum-simulator', 'minimum-simulator'):
                   assert needs[job]['result'] == 'success', f'{job} did not pass'
-              expected = 'success' if plan['stress'] == 'true' else 'skipped'
-              assert needs['extended-stress']['result'] == expected, 'Extended stress did not match the required result'
               print('All required checks passed for this commit')
           PYTHON
