@@ -29,4 +29,11 @@ The earlier authenticated probe completed small tool-free structured requests. T
 
 ## Hosted verification and publication
 
-Candidate CI and tag-triggered release verification are pending at preparation. Candidate CI covers current/minimum platforms and the iOS 17 build/runtime jobs; the release workflow additionally verifies the exact tag before publishing the GitHub prerelease. Publication must wait for required checks to pass.
+[Candidate CI run 34477083294](https://github.com/timazed/CodexKit/actions/runs/34477083294) passed for `b1e71aa22632f01102ee5b399c585af0c8ba1d89`:
+
+- Current-platform package tests, release build, optimized regression/concurrency checks, and the iOS/macOS demo verifiers.
+- Minimum-platform package tests and release build.
+- Swift 6.1 iOS 17 verifier build.
+- iOS 17 runtime verification.
+
+Only this verification record changes after the tested candidate. The tag-triggered workflow will verify the exact release revision before creating the GitHub prerelease. Publication remains pending until that workflow passes.
