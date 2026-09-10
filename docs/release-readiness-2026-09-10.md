@@ -47,8 +47,10 @@ Local verification artifacts remain under ignored `.build/`; credentials and pri
 
 ## Publication handoff
 
+The user authorized publication of alpha.28 on 10 September. The following steps remain gated on successful hosted checks.
+
 1. Push the candidate branch and review the hosted CI results, including minimum-platform jobs. Hosted CI has not yet run for this candidate; earlier release CI results do not substitute for this run.
-2. After publication is authorized, update the README's latest-release badge/link to alpha.28, fast-forward the reviewed candidate onto `main`, and create an annotated `v2.0.0-alpha.28` tag.
+2. The README's release badge/link now targets alpha.28. Fast-forward the reviewed candidate onto `main` and create an annotated `v2.0.0-alpha.28` tag.
 3. Push the tag. The release workflow verifies the tagged revision, library tests/builds, optimized checks, and both demo verifiers before creating the GitHub prerelease from the alpha.28 changelog entry.
 
 The repository currently has no alpha.28 tag or published release. Preparing these files does not trigger publication.
