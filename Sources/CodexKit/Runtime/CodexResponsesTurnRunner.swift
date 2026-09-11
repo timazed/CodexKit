@@ -404,7 +404,7 @@ struct CodexResponsesTurnRunner {
             }
             try Task.checkCancellation()
             throw AgentRuntimeError(
-                code: "responses_stream_disconnected",
+                code: .responsesStreamDisconnected,
                 message: "The Responses stream closed before response.completed."
             )
         } catch {

@@ -35,7 +35,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             supportsImageDetailOriginal: supportsImageDetailOriginal(for: settings.model, session: session))
         let request = try factory.buildURLRequest(threadConfiguration: settings,
             instructions: instructions, responseContract: nil, threadID: thread.id,
-            items: (input + [.object(["type": .string("compaction_trigger")])]).map(WorkingHistoryItem.raw),
+            items: (input + [.object(["type": ResponsesItemType.compactionTrigger.jsonValue])]).map(WorkingHistoryItem.raw),
             tools: tools, session: session, isCompaction: true)
         logger.info(.compaction, "Starting streamed remote context compaction.",
             metadata: ["thread_id": thread.id, "history_count": "\(effectiveHistory.count)"])

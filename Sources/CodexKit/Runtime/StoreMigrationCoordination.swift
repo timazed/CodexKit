@@ -1,15 +1,19 @@
 import Foundation
 
 package struct StoreMigrationIdentity: Hashable, Sendable {
-    package let kind: String
+    package enum Kind: Sendable {
+        case memory, runtime
+    }
+
+    package let kind: Kind
     package let location: String
 
-    package init(kind: String, url: URL) {
+    package init(kind: Kind, url: URL) {
         self.kind = kind
         self.location = url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
-    package init(kind: String, instanceID: UUID) {
+    package init(kind: Kind, instanceID: UUID) {
         self.kind = kind
         self.location = "memory:\(instanceID.uuidString)"
     }

@@ -376,7 +376,7 @@ extension AgentRuntime {
     ) -> AgentLatestToolState {
         let status: AgentToolSessionStatus
         if let result {
-            if result.errorMessage == "Tool execution was denied by the user." {
+            if result.outcome == .approvalDenied {
                 status = .denied
             } else if let session = result.session, !session.isTerminal {
                 status = .running

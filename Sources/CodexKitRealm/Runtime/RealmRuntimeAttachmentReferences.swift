@@ -4,13 +4,13 @@ import RealmSwift
 // These synchronous helpers operate on the Realm supplied by the owning actor.
 enum RealmRuntimeAttachmentReferences {
     static func storageKeys(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         in realm: Realm
     ) throws -> Set<String> {
         let limit = AgentStoreLimits.maximumImageCountPerWrite + 1
         let keys = Array(realm.objects(RealmRuntimeAttachmentReferenceObject.self)
-            .filter("ownerType == %@ AND ownerKey == %@", ownerType, ownerKey)
+            .filter("ownerType == %@ AND ownerKey == %@", ownerType.rawValue, ownerKey)
             .prefix(limit)
             .map(\.storageKey))
         guard keys.count < limit else {
@@ -22,7 +22,7 @@ enum RealmRuntimeAttachmentReferences {
     }
 
     static func replace(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         threadID: String,
         storageKeys: some Sequence<String>,
@@ -36,7 +36,7 @@ enum RealmRuntimeAttachmentReferences {
                 ownerKey: ownerKey,
                 storageKey: storageKey
             )
-            object.ownerType = ownerType
+            object.ownerType = ownerType.rawValue
             object.ownerKey = ownerKey
             object.threadID = threadID
             object.storageKey = storageKey
@@ -45,20 +45,20 @@ enum RealmRuntimeAttachmentReferences {
     }
 
     static func delete(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         in realm: Realm
     ) {
         realm.delete(realm.objects(RealmRuntimeAttachmentReferenceObject.self)
-            .filter("ownerType == %@ AND ownerKey == %@", ownerType, ownerKey))
+            .filter("ownerType == %@ AND ownerKey == %@", ownerType.rawValue, ownerKey))
     }
 
     private static func key(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         storageKey: String
     ) -> String {
-        "o\(ownerType.utf8.count):\(ownerType)k\(ownerKey.utf8.count):\(ownerKey)s\(storageKey)"
+        "o\(ownerType.rawValue.utf8.count):\(ownerType.rawValue)k\(ownerKey.utf8.count):\(ownerKey)s\(storageKey)"
     }
 
     static func enqueueCleanup(

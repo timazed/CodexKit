@@ -13,6 +13,7 @@ import sys
 import time
 import uuid
 from verification_timing import Timings
+from verification_modes import VerificationMode
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,7 +65,7 @@ def discover_runtimes(*, log, timeout=120):
     raise RuntimeError(f"Simulator runtime discovery timed out after {timeout}s ({attempts} attempts)")
 
 
-def validate_report(report, run_id, mode="smoke"):
+def validate_report(report, run_id, mode=VerificationMode.SMOKE):
     if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
     for key in ("sqlite", "realm", "localAdapters", "recovery"):
@@ -115,7 +116,7 @@ def main():
     parser.add_argument("--derived-data", type=Path, default=ROOT / ".build/simulator-verification")
     parser.add_argument("--runtime", help="Installed iOS version or runtime identifier; defaults to newest available.")
     parser.add_argument("--report-timeout", type=int, default=180)
-    parser.add_argument("--mode", choices=("smoke", "full"), default="smoke")
+    parser.add_argument("--mode", type=VerificationMode, choices=list(VerificationMode), default=VerificationMode.SMOKE)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--build-only", action="store_true", help="Build a signed universal simulator app without launching it.")
     mode.add_argument("--app", type=Path, help="Install and verify an already-built signed simulator app.")
@@ -179,7 +180,7 @@ def main():
         timings.record("simulator_setup", time.monotonic() - setup_start)
         report_path = container / "Documents/CodexKitVerification.json"
         environment = dict(os.environ, SIMCTL_CHILD_CODEXKIT_VERIFICATION_RUN_ID=run_id)
-        mode_arguments = ["--verify-smoke"] if options.mode == "smoke" else []
+        mode_arguments = ["--verify-smoke"] if options.mode == VerificationMode.SMOKE else []
         verification_start = time.monotonic()
         run(["xcrun", "simctl", "launch", "--terminate-running-process",
              f"--stdout={output / 'app-stdout.log'}", f"--stderr={output / 'app-stderr.log'}",

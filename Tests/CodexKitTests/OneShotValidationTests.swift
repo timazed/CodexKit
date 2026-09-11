@@ -23,10 +23,10 @@ final class OneShotValidationTests: XCTestCase {
     func testSwiftDecodeFailuresAreRecordedBeforeReopeningEitherDatabase() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        for adapter in ["sqlite", "realm"] {
-            let url = directory.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.sqlite, .realm] {
+            let url = directory.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
             for summary in [false, true] {
                 let runtime = try runtime(text: #"{"priority":"low"}"#, store: open())

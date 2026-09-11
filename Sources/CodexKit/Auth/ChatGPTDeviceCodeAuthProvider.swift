@@ -92,7 +92,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
     ) async throws -> ChatGPTSession {
         guard let refreshToken = session.refreshToken, !refreshToken.isEmpty else {
             throw AgentRuntimeError(
-                code: "missing_refresh_token",
+                code: .missingRefreshToken,
                 message: "This ChatGPT session cannot be refreshed because no refresh token is available."
             )
         }
@@ -113,7 +113,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
                 .appendingPathComponent("deviceauth")
                 .appendingPathComponent("usercode")
         )
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         applyDefaultAuthHeaders(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(DeviceUserCodeRequest(clientID: configuration.clientID))
@@ -136,7 +136,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
             try Task.checkCancellation()
 
             var request = URLRequest(url: pollURL)
-            request.httpMethod = "POST"
+            request.httpMethod = HTTPMethod.post.rawValue
             applyDefaultAuthHeaders(to: &request)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(
@@ -146,7 +146,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw AgentRuntimeError(
-                    code: "device_code_invalid_response",
+                    code: .deviceCodeInvalidResponse,
                     message: "The ChatGPT device-code login returned an invalid response."
                 )
             }
@@ -162,13 +162,13 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
 
             let body = simplifyAuthErrorBody(data)
             throw AgentRuntimeError(
-                code: "device_code_poll_failed",
+                code: .deviceCodePollFailed,
                 message: "ChatGPT device-code login failed with status \(httpResponse.statusCode): \(body)"
             )
         }
 
         throw AgentRuntimeError(
-            code: "device_code_timed_out",
+            code: .deviceCodeTimedOut,
             message: "ChatGPT device-code login timed out before authorization completed."
         )
     }
@@ -179,12 +179,12 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
         redirectURI: String
     ) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         applyDefaultAuthHeaders(to: &request)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = urlEncodedFormBody(
             [
-                ("grant_type", "authorization_code"),
+                ("grant_type", OAuthGrantType.authorizationCode.rawValue),
                 ("code", code),
                 ("redirect_uri", redirectURI),
                 ("client_id", configuration.clientID),
@@ -196,12 +196,12 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
 
     private func refreshAccessToken(_ refreshToken: String) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         applyDefaultAuthHeaders(to: &request)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = urlEncodedFormBody(
             [
-                ("grant_type", "refresh_token"),
+                ("grant_type", OAuthGrantType.refreshToken.rawValue),
                 ("client_id", configuration.clientID),
                 ("refresh_token", refreshToken),
             ]
@@ -220,7 +220,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
-                code: "oauth_token_response_invalid",
+                code: .oauthTokenResponseInvalid,
                 message: "The ChatGPT token exchange returned an invalid response."
             )
         }
@@ -228,7 +228,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = simplifyAuthErrorBody(data)
             throw AgentRuntimeError(
-                code: "oauth_token_exchange_failed",
+                code: .oauthTokenExchangeFailed,
                 message: "ChatGPT request failed with status \(httpResponse.statusCode): \(body)"
             )
         }

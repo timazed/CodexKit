@@ -56,28 +56,28 @@ enum MacDemoRuntimeFactory {
 
     static let travelSkill = AgentSkill(id: "travel_planner", name: "Travel Planner",
         instructions: "Use travel_planner_build_day_plan to prepare a sample itinerary before giving a concise travel plan.",
-        executionPolicy: .init(allowedToolNames: ["travel_planner_build_day_plan"],
-            requiredToolNames: ["travel_planner_build_day_plan"], maxToolCalls: 1))
+        executionPolicy: .init(allowedToolNames: [MacDemoToolName.travelPlanner.rawValue],
+            requiredToolNames: [MacDemoToolName.travelPlanner.rawValue], maxToolCalls: 1))
 
     static var tools: [AgentRuntime.ToolRegistration] {
         let emptySchema: JSONValue = .object(["type": .string("object"), "properties": .object([:])])
         var tools: [AgentRuntime.ToolRegistration] = [
-            .init(definition: .init(name: "travel_planner_build_day_plan", description: "Build a deterministic sample itinerary for a destination.",
+            .init(definition: .init(name: MacDemoToolName.travelPlanner.rawValue, description: "Build a deterministic sample itinerary for a destination.",
                 inputSchema: .object(["type": .string("object"), "properties": .object([
                     "destination": .object(["type": .string("string")])]), "required": .array([.string("destination")])])),
                 executor: .init { invocation, _ in
                     let destination = invocation.arguments.objectValue?["destination"]?.stringValue ?? "your destination"
                     return .success(invocation: invocation, text: "Sample plan for \(destination): morning walking tour, afternoon museum, evening local dinner. No bookings made.")
                 }),
-            .init(definition: .init(name: "demo_prepare_draft", description: "Prepare a local sample support draft. Requires approval; sends nothing.",
+            .init(definition: .init(name: MacDemoToolName.prepareDraft.rawValue, description: "Prepare a local sample support draft. Requires approval; sends nothing.",
                 inputSchema: emptySchema, approvalPolicy: .requiresApproval,
                 approvalMessage: "Prepare this sample draft locally? Nothing will be sent."), executor: .init { invocation, _ in
                     .success(invocation: invocation, text: "Sample draft prepared locally. Nothing was sent.")
                 })
         ]
-        for (name, output) in [("demo_lookup_weather", "Sample Sydney weather: sunny, 22°C."),
-                                ("demo_lookup_transport", "Sample Sydney transport: trains every 10 minutes.")] {
-            tools.append(.init(definition: .init(name: name, description: output + " Independent sample lookup.",
+        for (name, output) in [(MacDemoToolName.lookupWeather, "Sample Sydney weather: sunny, 22°C."),
+                                (.lookupTransport, "Sample Sydney transport: trains every 10 minutes.")] {
+            tools.append(.init(definition: .init(name: name.rawValue, description: output + " Independent sample lookup.",
                 inputSchema: emptySchema, approvalPolicy: .automatic, supportsParallelExecution: true),
                 executor: .init { invocation, _ in
                     try await Task.sleep(for: .milliseconds(1_500))
@@ -99,4 +99,12 @@ final class MacDemoLogSink: AgentLogSink, @unchecked Sendable {
         }
     }
     func snapshot() -> String { lock.withLock { entries.joined(separator: "\n") } }
+}
+
+
+enum MacDemoToolName: String {
+    case travelPlanner = "travel_planner_build_day_plan"
+    case prepareDraft = "demo_prepare_draft"
+    case lookupWeather = "demo_lookup_weather"
+    case lookupTransport = "demo_lookup_transport"
 }

@@ -9,16 +9,16 @@ enum CodexResponsesImageDetail {
         return items.map { item in
             guard var object = item.objectValue else { return item }
             let key: String
-            switch object["type"]?.stringValue {
-            case "message": key = "content"
-            case "function_call_output", "custom_tool_call_output": key = "output"
+            switch ResponsesItemType(wireValue: object["type"]) {
+            case .message: key = "content"
+            case .functionCallOutput, .customToolCallOutput: key = "output"
             default: return item
             }
             guard let content = object[key]?.arrayValue else { return item }
             object[key] = .array(content.map { value in
-                guard var image = value.objectValue, image["type"] == .string("input_image"),
-                      image["detail"] == .string("original") else { return value }
-                image["detail"] = .string("high")
+                guard var image = value.objectValue, image["type"] == ResponsesContentType.inputImage.jsonValue,
+                      image["detail"] == .string(AgentImageDetail.original.rawValue) else { return value }
+                image["detail"] = .string(AgentImageDetail.high.rawValue)
                 return .object(image)
             })
             return .object(object)

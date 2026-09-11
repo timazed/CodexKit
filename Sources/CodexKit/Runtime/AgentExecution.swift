@@ -62,8 +62,8 @@ final class AgentExecutionControl: @unchecked Sendable {
             throw AgentRuntimeError.invalidMessageContent()
         }
         let stream = try lock.withLock {
-            guard !finished else { throw AgentRuntimeError(code: "turn_not_active", message: "This execution has ended.") }
-            guard let backend else { throw AgentRuntimeError(code: "execution_not_ready", message: "Wait for this execution to become ready before steering.") }
+            guard !finished else { throw AgentRuntimeError(code: .turnNotActive, message: "This execution has ended.") }
+            guard let backend else { throw AgentRuntimeError(code: .executionNotReady, message: "Wait for this execution to become ready before steering.") }
             return backend
         }
         try await stream.steer(.init(threadID: threadID, role: .user, text: text, images: images))

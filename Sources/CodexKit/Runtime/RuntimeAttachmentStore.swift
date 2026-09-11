@@ -399,18 +399,19 @@ package struct RuntimeAttachmentStore: Sendable {
         let recordComponent = Self.safePathComponent(recordID)
         let attachmentComponent = Self.safePathComponent(attachment.id)
         let contentComponent = Self.digest(attachment.data)
-        let fileName = "\(index)-\(attachmentComponent)-\(contentComponent).\(fileExtension(for: attachment.mimeType.rawValue))"
+        let fileName = "\(index)-\(attachmentComponent)-\(contentComponent).\(fileExtension(for: attachment.mimeType))"
         return threadComponent + "/" + recordComponent + "/" + fileName
     }
 
-    private func fileExtension(for mimeType: String) -> String {
-        switch mimeType.lowercased() {
-        case "image/jpeg", "image/jpg": "jpg"
-        case "image/png": "png"
-        case "image/gif": "gif"
-        case "image/webp": "webp"
-        case "image/heic": "heic"
-        default: "bin"
+    private func fileExtension(for mimeType: AgentImageMIMEType) -> String {
+        let normalized = AgentImageMIMEType(rawValue: mimeType.rawValue.lowercased())
+        return switch normalized {
+        case .jpeg: "jpg"
+        case .png: "png"
+        case .gif: "gif"
+        case .webp: "webp"
+        case .heic: "heic"
+        default: normalized.rawValue == "image/jpg" ? "jpg" : "bin"
         }
     }
 

@@ -268,7 +268,7 @@ extension AgentRuntime {
         guard self.thread(for: threadID) != nil, threadOperations[threadID] == operationID,
               state.contextStateByThread[threadID] == originalContext,
               state.messagesByThread[threadID] == originalMessages else {
-            throw AgentRuntimeError(code: "context_changed_during_compaction",
+            throw AgentRuntimeError(code: .contextChangedDuringCompaction,
                 message: "The thread context changed while compaction was running. Retry compaction with the current context.")
         }
         let boundedCompactedMessages = AgentThreadContextWindow.boundedMessages(
@@ -470,9 +470,16 @@ extension AgentRuntime {
         return max(1, (historyCharacters + pendingCharacters + instructions.count) / 4)
     }
 
+    private enum ContextPressureCode: String {
+        case lengthExceeded = "context_length_exceeded"
+        case windowExceeded = "context_window_exceeded"
+        case limitExceeded = "context_limit_exceeded"
+        case tooManyTokens = "too_many_tokens"
+    }
+
     func isContextPressureError(_ error: Error) -> Bool {
         if let code = (error as? AgentRuntimeError)?.http?.providerCode {
-            return ["context_length_exceeded", "context_window_exceeded", "context_limit_exceeded", "too_many_tokens"].contains(code)
+            return ContextPressureCode(rawValue: code) != nil
         }
         let message = ((error as? AgentRuntimeError)?.message ?? error.localizedDescription).lowercased()
         return message.contains("context") && message.contains("limit")

@@ -37,7 +37,7 @@ package enum AgentCounter {
 
     private static func invalid(field: String, threadID: String) -> AgentRuntimeError {
         AgentRuntimeError(
-            code: "invalid_runtime_counter",
+            code: .invalidRuntimeCounter,
             message: "Cannot increment \(field) for thread \(threadID): counter space exhausted."
         )
     }

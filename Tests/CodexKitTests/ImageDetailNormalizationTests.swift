@@ -7,10 +7,20 @@ final class ImageDetailNormalizationTests: XCTestCase {
     override func setUp() async throws { await TestURLProtocol.reset() }
     override func tearDown() async throws { await TestURLProtocol.reset() }
 
+    func testImageAttachmentParsingKeepsKnownDetailsAndDefaultsUnknownDetails() throws {
+        for detail: JSONValue? in [nil, .string("original"), .string("future_detail"), .number(42)] {
+            var object: [String: JSONValue] = ["image_url": .string("data:image/png;base64,AQID")]
+            object["detail"] = detail
+            let attachment = try XCTUnwrap(StreamMessageContent.parseImageAttachment(from: object))
+            XCTAssertEqual(attachment.data, Data([1, 2, 3]))
+            XCTAssertEqual(attachment.detail, detail == .string("original") ? .original : nil)
+        }
+    }
+
     func testNormalizationCoversMessageAndToolImagesWithoutChangingOtherData() throws {
         for type in ["message", "function_call_output", "custom_tool_call_output"] {
             let key = type == "message" ? "content" : "output"
-            let content = [nil, "auto", "low", "high", "original"].map { detail -> JSONValue in
+            let content = [nil, "auto", "low", "high", "future_detail", "original"].map { detail -> JSONValue in
                 var image: [String: JSONValue] = ["type": .string("input_image"), "image_url": .string("https://example.com/image.png")]
                 if let detail { image["detail"] = .string(detail) }
                 return .object(image)
@@ -18,7 +28,7 @@ final class ImageDetailNormalizationTests: XCTestCase {
             let input = [JSONValue.object(["type": .string(type), key: .array(content), "detail": .string("original")])]
             let normalized = CodexResponsesImageDetail.normalize(input, supportsOriginal: false)
             let details = normalized.first?.objectValue?[key]?.arrayValue?.map { $0.objectValue?["detail"]?.stringValue }
-            XCTAssertEqual(details, [nil, "auto", "low", "high", "high"])
+            XCTAssertEqual(details, [nil, "auto", "low", "high", "future_detail", "high"])
             XCTAssertEqual(normalized.first?.objectValue?["detail"], .string("original"))
             XCTAssertEqual(input.first?.objectValue?[key]?.arrayValue?.last?.objectValue?["detail"], .string("original"))
             XCTAssertEqual(CodexResponsesImageDetail.normalize(input, supportsOriginal: true), input)
@@ -75,14 +85,10 @@ final class ImageDetailNormalizationTests: XCTestCase {
         let image = AgentImageAttachment.png(Data([1, 2, 3]), detail: .original)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        for adapter in ["file", "sqlite", "realm"] {
-            let url = root.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.file, .sqlite, .realm] {
+            let url = root.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                switch adapter {
-                case "sqlite": return try SQLiteRuntimeStateStore(url: url)
-                case "realm": return try RealmRuntimeStateStore(url: url)
-                default: return FileRuntimeStateStore(url: url)
-                }
+                return try adapter.open(at: url)
             }
             let store = try open()
             let message = AgentMessage(threadID: "thread", role: .user, text: "Image", images: [image])

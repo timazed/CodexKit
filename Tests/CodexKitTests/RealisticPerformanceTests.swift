@@ -57,11 +57,11 @@ final class RealisticPerformanceTests: XCTestCase {
         try requireOptIn()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        for adapter in ["sqlite", "realm"] {
+        for adapter in [TestStorageBackend.sqlite, .realm] {
             for count in [2_000, 20_000] {
                 let url = directory.appendingPathComponent("\(adapter)-\(count)")
                 let open: () throws -> any RuntimeStateStoring & RuntimeStateInspecting = {
-                    adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                    adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
                 }
                 let thread = AgentThread(id: "history")
                 let records = (1...count).map { sequence in

@@ -36,7 +36,7 @@ struct CodexResponsesCompactionTransport {
         let (bytes, response) = try await urlSession.bytes(for: request)
         defer { bytes.task.cancel() }
         guard let response = response as? HTTPURLResponse else {
-            throw AgentRuntimeError(code: "responses_compact_invalid_response", message: "Invalid compaction response.")
+            throw AgentRuntimeError(code: .responsesCompactInvalidResponse, message: "Invalid compaction response.")
         }
         await rateLimitObserver(CodexRateLimitParser.headers(response))
         guard (200..<300).contains(response.statusCode) else {
@@ -63,7 +63,7 @@ struct CodexResponsesCompactionTransport {
             switch event.kind {
             case let .outputItem(item, _):
                 try budget.consumeItem()
-                if item.rawValue.objectValue?["type"] == .string("compaction") {
+                if item.type == .compaction {
                     count += 1
                     output = item.rawValue
                 }
@@ -71,7 +71,7 @@ struct CodexResponsesCompactionTransport {
                 guard count == 1, let output,
                       let encrypted = output.objectValue?["encrypted_content"]?.stringValue,
                       !encrypted.isEmpty else {
-                    throw AgentRuntimeError(code: "responses_compact_invalid_output",
+                    throw AgentRuntimeError(code: .responsesCompactInvalidOutput,
                         message: "Streamed compaction requires exactly one nonempty encrypted compaction item.")
                 }
                 return output
@@ -90,7 +90,7 @@ struct CodexResponsesCompactionTransport {
                 if let payload = try parser.consume(line: text), let output = try accept(payload) { return output }
             } else {
                 guard line.count < AgentStoreLimits.maximumResponseEventByteCount else {
-                    throw AgentRuntimeError(code: "responses_event_too_large", message: "Compaction event exceeded its size limit.")
+                    throw AgentRuntimeError(code: .responsesEventTooLarge, message: "Compaction event exceeded its size limit.")
                 }
                 line.append(byte)
             }
@@ -102,7 +102,7 @@ struct CodexResponsesCompactionTransport {
             if let payload = try parser.consume(line: text), let output = try accept(payload) { return output }
         }
         if let payload = parser.finish(), let output = try accept(payload) { return output }
-        throw AgentRuntimeError(code: "responses_stream_disconnected",
+        throw AgentRuntimeError(code: .responsesStreamDisconnected,
             message: "Compaction stream closed before response.completed.")
     }
 }

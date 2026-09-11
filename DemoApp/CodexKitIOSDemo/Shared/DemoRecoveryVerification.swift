@@ -20,7 +20,7 @@ enum DemoRecoveryVerification {
                     in: baselineThread.id, response: Output.self)
                 throw Failure("Baseline unexpectedly completed: \(name)")
             } catch let error as AgentRuntimeError {
-                try require(error.code == "responses_stream_disconnected", "Unexpected baseline error")
+                try require(error.knownCode == .responsesStreamDisconnected, "Unexpected baseline error")
             }
             try require(DemoRecoveryTransport.count == 1, "Baseline request count")
 

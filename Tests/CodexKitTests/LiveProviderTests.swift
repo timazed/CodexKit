@@ -28,10 +28,10 @@ final class LiveProviderTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let image = try redImage()
-        for adapter in ["sqlite", "realm"] {
-            let url = directory.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.sqlite, .realm] {
+            let url = directory.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
             let backend = CodexResponsesBackend(configuration: .init(streamIdleTimeout: 45,
                 enableWebSearch: false, enableImageGeneration: false, stateManagement: .clientManaged,

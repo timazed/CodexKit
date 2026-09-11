@@ -174,7 +174,7 @@ public actor AgentRuntime {
         try Task.checkCancellation()
         guard !isRestoring, threadOperations.isEmpty, resumingThreadIDs.isEmpty,
               activePersistenceTask == nil, pendingStoreOperations.isEmpty else {
-            throw AgentRuntimeError(code: "runtime_busy", message: "Wait for active runtime operations before restoring state.")
+            throw AgentRuntimeError(code: .runtimeBusy, message: "Wait for active runtime operations before restoring state.")
         }
         isRestoring = true
         defer { isRestoring = false }
@@ -397,7 +397,7 @@ public actor AgentRuntime {
 
     static func isUnauthorizedError(_ error: Error) -> Bool {
         guard let error = error as? AgentRuntimeError,
-              error.code != "authentication_recovery_exhausted" else { return false }
+              error.knownCode != .authenticationRecoveryExhausted else { return false }
         if let status = error.http?.statusCode { return status == 401 }
         return error.code == AgentRuntimeError.unauthorized().code
     }

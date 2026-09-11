@@ -17,7 +17,7 @@ actor PendingToolResults {
         guard !closed else { throw CancellationError() }
         guard Set(invocations.map(\.id)).count == invocations.count,
               invocations.allSatisfy({ entries[$0.id] == nil }) else {
-            throw AgentRuntimeError(code: "duplicate_tool_call", message: "Response contains duplicate pending tool call IDs.")
+            throw AgentRuntimeError(code: .duplicateToolCall, message: "Response contains duplicate pending tool call IDs.")
         }
         for invocation in invocations { entries[invocation.id] = Entry(toolName: invocation.toolName) }
     }
@@ -79,6 +79,6 @@ actor PendingToolResults {
     }
 
     private func invalidResult(_ message: String) -> AgentRuntimeError {
-        .init(code: "invalid_tool_result", message: message)
+        .init(code: .invalidToolResult, message: message)
     }
 }

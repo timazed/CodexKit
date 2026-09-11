@@ -12,14 +12,10 @@ final class CompactionCheckpointActivationTests: XCTestCase {
         }
         let context = CodexResponsesProviderState(items: messages.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
             + [checkpoint]).agentProviderContext
-        for adapter in ["file", "sqlite", "realm"] {
-            let url = root.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.file, .sqlite, .realm] {
+            let url = root.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                switch adapter {
-                case "sqlite": return try SQLiteRuntimeStateStore(url: url)
-                case "realm": return try RealmRuntimeStateStore(url: url)
-                default: return FileRuntimeStateStore(url: url)
-                }
+                return try adapter.open(at: url)
             }
             let store = try open()
             try await store.saveState(.init(threads: [.init(id: "thread")], contextStateByThread: ["thread": .init(

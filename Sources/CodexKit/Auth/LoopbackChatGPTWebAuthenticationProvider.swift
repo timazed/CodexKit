@@ -56,7 +56,7 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
         let anchor = try await MainActor.run { () throws -> ASPresentationAnchor in
             guard let anchor = presentationAnchorProvider() else {
                 throw AgentRuntimeError(
-                    code: "oauth_presentation_anchor_unavailable",
+                    code: .oauthPresentationAnchorUnavailable,
                     message: "The ChatGPT sign-in sheet could not be presented because no active window was available."
                 )
             }
@@ -82,7 +82,7 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
             do {
                 guard let firstResult = try await group.next() else {
                     throw AgentRuntimeError(
-                        code: "oauth_callback_missing_code",
+                        code: .oauthCallbackMissingCode,
                         message: "The ChatGPT sign-in callback did not complete."
                     )
                 }
@@ -113,7 +113,7 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
                 let result = callbackURL.map(Result.success)
                     ?? .failure(
                         error ?? AgentRuntimeError(
-                            code: "oauth_authentication_cancelled",
+                            code: .oauthAuthenticationCancelled,
                             message: "The ChatGPT sign-in flow did not complete."
                         )
                     )
@@ -142,7 +142,7 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
                     self?.finishAuthenticationSession(
                         with: .failure(
                             AgentRuntimeError(
-                            code: "oauth_authentication_start_failed",
+                            code: .oauthAuthenticationStartFailed,
                             message: "The ChatGPT sign-in flow could not be started."
                         )
                     )
@@ -159,7 +159,7 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
         finishAuthenticationSession(
             with: .failure(
                 AgentRuntimeError(
-                    code: "oauth_authentication_cancelled",
+                    code: .oauthAuthenticationCancelled,
                     message: "The ChatGPT sign-in flow did not complete."
                 )
             )
@@ -184,12 +184,12 @@ final class LoopbackChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebAuthen
               let redirectURI = components.queryItems?.first(where: { $0.name == "redirect_uri" })?.value,
               let redirectURL = URL(string: redirectURI),
               let scheme = redirectURL.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
+              URLScheme(rawValue: scheme)?.isHTTP == true,
               let host = redirectURL.host?.lowercased(),
               host == "localhost" || host == "127.0.0.1",
               redirectURL.port != nil else {
             throw AgentRuntimeError(
-                code: "oauth_loopback_redirect_invalid",
+                code: .oauthLoopbackRedirectInvalid,
                 message: "Loopback browser auth requires an http://localhost redirect URI with an explicit port."
             )
         }
@@ -217,7 +217,7 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
         guard let portValue = redirectURL.port,
               let port = NWEndpoint.Port(rawValue: UInt16(portValue)) else {
             throw AgentRuntimeError(
-                code: "oauth_loopback_redirect_invalid",
+                code: .oauthLoopbackRedirectInvalid,
                 message: "Loopback browser auth requires a localhost redirect URI with a valid port."
             )
         }
@@ -265,12 +265,12 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
                     await self.state.markReady()
                 case let .failed(error):
                     await self.state.fail(with: AgentRuntimeError(
-                        code: "oauth_loopback_listener_failed",
+                        code: .oauthLoopbackListenerFailed,
                         message: "The localhost callback listener failed: \(error.localizedDescription)"
                     ))
                 case .cancelled:
                     await self.state.fail(with: AgentRuntimeError(
-                        code: "oauth_loopback_listener_cancelled",
+                        code: .oauthLoopbackListenerCancelled,
                         message: "The localhost callback listener stopped before authentication completed."
                     ))
                 default:
@@ -295,7 +295,7 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
             if let error {
                 Task {
                     await self.state.fail(with: AgentRuntimeError(
-                        code: "oauth_loopback_receive_failed",
+                        code: .oauthLoopbackReceiveFailed,
                         message: "The localhost callback listener failed while reading the redirect: \(error.localizedDescription)"
                     ))
                 }
@@ -351,7 +351,7 @@ final class LoopbackCallbackServer: @unchecked Sendable, LoopbackCallbackServing
 
         let parts = requestLine.split(separator: " ")
         guard parts.count >= 2,
-              parts[0] == "GET" else {
+              HTTPMethod(rawValue: String(parts[0])) == .get else {
             return nil
         }
 

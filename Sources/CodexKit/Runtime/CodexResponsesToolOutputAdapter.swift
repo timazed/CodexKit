@@ -37,7 +37,7 @@ struct CodexResponsesToolOutputAdapter: Sendable {
     }
 
     private func imageAttachment(from url: URL) async -> AgentImageAttachment? {
-        if url.scheme?.lowercased() == "data" {
+        if URLScheme.data.matches(url) {
             let encodedLimit = AgentImageAttachment.maximumDataURLByteCount * 3
             guard url.absoluteString.utf8.count <= encodedLimit else { return nil }
             let decoded = url.absoluteString.removingPercentEncoding ?? url.absoluteString

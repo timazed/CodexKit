@@ -88,7 +88,7 @@ final class MemoryStoreTests: XCTestCase {
         XCTAssertGreaterThan(result.matches[0].explanation.matchedTokenCount, 0)
 
         let diagnostics = try await reloaded.diagnostics(namespace: "demo-assistant")
-        XCTAssertEqual(diagnostics.implementation, "sqlite")
+        XCTAssertEqual(diagnostics.implementation, .sqlite)
         XCTAssertEqual(diagnostics.schemaVersion, SQLiteMemoryStoreSchema().currentVersion)
     }
 
@@ -1126,7 +1126,7 @@ final class MemoryStoreTests: XCTestCase {
         XCTAssertEqual(listed.map(\.id).sorted(), ["active-memory", "archived-memory"])
 
         let diagnostics = try await store.diagnostics(namespace: "demo-assistant")
-        XCTAssertEqual(diagnostics.implementation, "in_memory")
+        XCTAssertEqual(diagnostics.implementation, .inMemory)
         XCTAssertNil(diagnostics.schemaVersion)
         XCTAssertEqual(diagnostics.totalRecords, 2)
         XCTAssertEqual(diagnostics.activeRecords, 1)

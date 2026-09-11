@@ -79,6 +79,6 @@ public actor InMemoryRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspect
 
 extension InMemoryRuntimeStateStore: StoreMigrationIdentifying {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
-        StoreMigrationIdentity(kind: "runtime", instanceID: migrationInstanceID)
+        StoreMigrationIdentity(kind: .runtime, instanceID: migrationInstanceID)
     }
 }

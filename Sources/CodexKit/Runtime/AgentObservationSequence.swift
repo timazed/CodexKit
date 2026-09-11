@@ -42,7 +42,7 @@ public struct AgentObservationSequence<Element: Sendable>: AsyncSequence, Sendab
             continuation.onTermination = { [weak lifetime] _ in lifetime?.cancel() }
             let token = publisher.sink(receiveCompletion: { _ in continuation.finish() }, receiveValue: { value in
                 if case .dropped = continuation.yield(value), case .buffered = buffering {
-                    continuation.finish(throwing: AgentRuntimeError(code: "observation_buffer_overflow",
+                    continuation.finish(throwing: AgentRuntimeError(code: .observationBufferOverflow,
                         message: "Observation exceeded its buffer. Resubscribe and reload state, or use latest-value buffering for snapshots."))
                 }
             })

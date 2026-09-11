@@ -18,7 +18,7 @@ struct CodexResponsesRequestFactory: Sendable {
         let requestBody = ResponsesRequestBody(
             model: threadConfiguration.model,
             reasoning: .init(effort: threadConfiguration.reasoningEffort,
-                summary: configuration.enableReasoningSummaries ? "auto" : nil),
+                summary: configuration.enableReasoningSummaries ? .auto : nil),
             instructions: instructions,
             text: .init(
                 format: .init(
@@ -34,16 +34,16 @@ struct CodexResponsesRequestFactory: Sendable {
                 enableImageGeneration: configuration.enableImageGeneration,
                 imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ) : [],
-            toolChoice: AgentStructuredRecoveryContext.current == nil ? "auto" : "none",
+            toolChoice: AgentStructuredRecoveryContext.current == nil ? .auto : .none,
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
             store: false,
             stream: true,
-            include: ["reasoning.encrypted_content"],
+            include: [.encryptedReasoning],
             promptCacheKey: threadID
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         request.timeoutInterval = configuration.streamIdleTimeout
         if AgentStructuredRecoveryContext.current != nil {
             let stableEncoder = JSONEncoder()
@@ -80,11 +80,11 @@ struct CodexResponsesRequestFactory: Sendable {
     ) -> [JSONValue] {
         var responsesTools = tools.map(\.responsesJSONValue)
         if enableWebSearch {
-            responsesTools.append(.object(["type": .string("web_search")]))
+            responsesTools.append(.object(["type": ResponsesToolType.webSearch.jsonValue]))
         }
         if enableImageGeneration {
             responsesTools.append(.object([
-                "type": .string("image_generation"),
+                "type": ResponsesToolType.imageGeneration.jsonValue,
                 "output_format": .string(imageGenerationOutputFormat),
             ]))
         }
@@ -127,7 +127,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
-                code: "responses_invalid_response",
+                code: .responsesInvalidResponse,
                 message: "The ChatGPT responses endpoint returned an invalid response."
             )
         }
@@ -194,7 +194,7 @@ struct CodexResponsesEventStreamClient: Sendable {
 
                         guard lineBuffer.count < AgentStoreLimits.maximumResponseEventByteCount else {
                             throw AgentRuntimeError(
-                                code: "responses_event_too_large",
+                                code: .responsesEventTooLarge,
                                 message: "A Responses stream event exceeded the supported size limit."
                             )
                         }
@@ -242,11 +242,11 @@ struct CodexResponsesEventStreamClient: Sendable {
         policy: RequestRetryPolicy
     ) -> Bool {
         if let runtimeError = error as? AgentRuntimeError {
-            if runtimeError.http?.isQuotaExceeded == true || runtimeError.code == "quota_exceeded" { return false }
+            if runtimeError.http?.isQuotaExceeded == true || runtimeError.knownCode == .quotaExceeded { return false }
             if let code = runtimeError.interruption?.transportErrorCode {
                 return policy.retryableURLErrorCodes.contains(code)
             }
-            if runtimeError.code == "responses_stream_disconnected" { return true }
+            if runtimeError.knownCode == .responsesStreamDisconnected { return true }
             if runtimeError.code == AgentRuntimeError.unauthorized().code {
                 return false
             }
@@ -332,19 +332,16 @@ struct CodexResponsesEventStreamClient: Sendable {
         }
         guard payload.data.utf8.count <= AgentStoreLimits.maximumResponseEventByteCount else {
             throw AgentRuntimeError(
-                code: "responses_event_too_large",
+                code: .responsesEventTooLarge,
                 message: "A Responses stream event exceeded the supported size limit."
             )
         }
 
         let payloadData = Data(payload.data.utf8)
-        if let snapshot = CodexRateLimitParser.event(payloadData) {
-            return CodexResponsesStreamEvent(kind: .rateLimits([snapshot]), sequenceNumber: nil)
-        }
-        let envelope: StreamEnvelope
+        let envelope: CodexResponsesEventPayload
         do {
             envelope = try decoder.decode(
-                StreamEnvelope.self,
+                CodexResponsesEventPayload.self,
                 from: payloadData
             )
         } catch {
@@ -358,8 +355,9 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
             throw error
         }
+        let logsResponsePayload = envelope.logsResponsePayload
         let logsPayload = logger.isVerboseEnabled(for: .network)
-            || (shouldLogResponsePayload(for: envelope.type) && logger.isEnabled(.debug, for: .network))
+            || (logsResponsePayload && logger.isEnabled(.debug, for: .network))
         let sanitizedPayload = logsPayload ? sanitizedResponsesJSONString(from: payloadData) : ""
         if logger.isVerboseEnabled(for: .network) {
             logger.verbose(
@@ -368,7 +366,7 @@ struct CodexResponsesEventStreamClient: Sendable {
                 metadata: ["payload": sanitizedPayload]
             )
         }
-        if shouldLogResponsePayload(for: envelope.type) {
+        if logsResponsePayload {
             logger.debug(
                 .network,
                 "Responses response payload.",
@@ -379,79 +377,7 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
         }
 
-        let kind: CodexResponsesStreamEvent.Kind
-        switch envelope.type {
-        case "response.output_item.added":
-            guard let object = envelope.item?.rawValue.objectValue,
-                  let id = object["id"]?.stringValue else { kind = .other; break }
-            if object["type"]?.stringValue == "message" {
-                kind = .progress(.messageStarted(itemID: id,
-                    phase: object["phase"]?.stringValue.map(AgentMessagePhase.init(rawValue:))))
-            } else if object["type"]?.stringValue == "web_search_call" {
-                kind = .progress(.webSearch(itemID: id,
-                    status: object["status"]?.stringValue ?? "in_progress", action: object["action"]))
-            } else { kind = .other }
-        case "response.reasoning_summary_text.delta":
-            guard let id = envelope.itemID, let delta = envelope.delta else { kind = .other; break }
-            kind = .progress(.reasoningSummaryDelta(itemID: id,
-                summaryIndex: envelope.summaryIndex ?? 0, delta: delta))
-        case "response.web_search_call.in_progress", "response.web_search_call.searching",
-             "response.web_search_call.completed":
-            guard let id = envelope.itemID else { kind = .other; break }
-            kind = .progress(.webSearch(itemID: id,
-                status: String(envelope.type.split(separator: ".").last ?? ""), action: nil))
-        case "response.created":
-            kind = .responseCreated(responseID: envelope.response?.id)
-        case "response.output_text.delta":
-            guard let delta = envelope.delta else {
-                kind = .other
-                break
-            }
-            kind = .assistantTextDelta(delta)
-        case "response.output_item.done":
-            guard let item = envelope.item else {
-                kind = .other
-                break
-            }
-            kind = .outputItem(
-                item,
-                outputIndex: envelope.outputIndex ?? 0
-            )
-        case "response.completed":
-            let usage = envelope.response?.usage?.assistantUsage ?? AgentUsage()
-            kind = .completed(usage, responseID: envelope.response?.id)
-        case "response.failed":
-            let message = envelope.response?.error?.message ?? "The ChatGPT responses stream failed."
-            kind = .failed(AgentRuntimeError(code: "responses_stream_failed", message: message,
-                http: .init(statusCode: 200, providerCode: envelope.response?.error?.code,
-                    providerType: envelope.response?.error?.type)), responseID: envelope.response?.id)
-        case "response.incomplete":
-            let reason = envelope.response?.incompleteDetails?.reason ?? "unknown"
-            kind = .failed(AgentRuntimeError(
-                code: "responses_stream_incomplete",
-                message: "The ChatGPT responses stream completed early: \(reason)."
-            ), responseID: envelope.response?.id)
-        default:
-            kind = .other
-        }
-        return CodexResponsesStreamEvent(
-            kind: kind,
-            sequenceNumber: envelope.sequenceNumber
-        )
-    }
-
-    private func shouldLogResponsePayload(
-        for eventType: String
-    ) -> Bool {
-        switch eventType {
-        case "response.output_item.done",
-             "response.completed",
-             "response.failed",
-             "response.incomplete":
-            true
-        default:
-            false
-        }
+        return envelope.event
     }
 
     private func readAll(
@@ -462,7 +388,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         for try await byte in bytes {
             guard data.count < limit else {
                 throw AgentRuntimeError(
-                    code: "responses_error_body_too_large",
+                    code: .responsesErrorBodyTooLarge,
                     message: "The Responses error body exceeded the supported size limit."
                 )
             }

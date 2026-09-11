@@ -141,7 +141,7 @@ struct SQLiteMemoryStoreRepository: Sendable {
         }
         return MemoryStoreDiagnostics(
             namespace: namespace,
-            implementation: "sqlite",
+            implementation: .sqlite,
             schemaVersion: schemaVersion,
             totalRecords: totals?["total_count"] ?? 0,
             activeRecords: totals?["active_count"] ?? 0,

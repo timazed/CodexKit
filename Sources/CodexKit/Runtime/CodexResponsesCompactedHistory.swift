@@ -11,7 +11,7 @@ enum CodexResponsesCompactedHistory {
         // Keep recent user context. Assistant/tool history is represented by the checkpoint.
         for item in input.reversed() {
             guard remaining > 0, var object = item.objectValue,
-                  object["type"] == .string("message"), object["role"] == .string("user"),
+                  object["type"] == ResponsesItemType.message.jsonValue, object["role"] == .string("user"),
                   let content = object["content"]?.arrayValue else { continue }
             var kept: [JSONValue] = []
             var exhausted = false
@@ -31,7 +31,7 @@ enum CodexResponsesCompactedHistory {
                     }
                     remaining -= cost
                     kept.append(value)
-                } else if part["type"] == .string("input_image") {
+                } else if part["type"] == ResponsesContentType.inputImage.jsonValue {
                     guard remaining >= retainedImageByteCharge else {
                         remaining = 0
                         exhausted = true
@@ -52,7 +52,10 @@ enum CodexResponsesCompactedHistory {
             guard let content = item.objectValue?["content"]?.arrayValue else { return nil }
             return AgentMessage(threadID: threadID, role: .user,
                 text: content.compactMap { $0.objectValue?["text"]?.stringValue }.joined(separator: "\n"),
-                images: content.compactMap { $0.objectValue.flatMap(StreamMessageContent.parseImageAttachment) })
+                images: content.compactMap { value in
+                    guard let object = value.objectValue else { return nil }
+                    return StreamMessageContent.parseImageAttachment(from: object)
+                })
         }
         let output = try CodexResponsesImageReferences.externalize(retained + [compaction])
         try CodexResponsesImageReferences.validate(output,

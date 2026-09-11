@@ -11,9 +11,13 @@ enum RuntimeDownloadedImage {
               CGImageSourceGetStatus(source) == .statusComplete,
               CGImageSourceGetCount(source) > 0,
               let identifier = CGImageSourceGetType(source),
-              let mimeType = UTType(identifier as String)?.preferredMIMEType,
-              ["image/png", "image/jpeg", "image/gif", "image/webp", "image/heic", "image/heif"].contains(mimeType)
+              let rawMIMEType = UTType(identifier as String)?.preferredMIMEType
         else { return nil }
+        let mimeType = AgentImageMIMEType(rawValue: rawMIMEType)
+        switch mimeType {
+        case .png, .jpeg, .gif, .webp, .heic, .heif: break
+        default: return nil
+        }
         let thumbnailOptions = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 1,
@@ -21,6 +25,6 @@ enum RuntimeDownloadedImage {
         ] as CFDictionary
         guard CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) != nil,
               CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return nil }
-        return AgentImageMIMEType(rawValue: mimeType)
+        return mimeType
     }
 }

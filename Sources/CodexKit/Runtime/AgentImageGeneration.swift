@@ -164,7 +164,7 @@ public actor AgentImageGenerationClient {
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
-                code: "image_generation_invalid_response",
+                code: .imageGenerationInvalidResponse,
                 message: "The image generation endpoint returned an invalid response."
             )
         }
@@ -175,7 +175,7 @@ public actor AgentImageGenerationClient {
         var data = Data()
         for try await byte in bytes {
             guard data.count < responseLimit else {
-                throw AgentRuntimeError(code: "image_generation_response_too_large",
+                throw AgentRuntimeError(code: .imageGenerationResponseTooLarge,
                     message: "The image generation response exceeded its supported size limit.",
                     http: .init(response: httpResponse))
             }
@@ -190,7 +190,7 @@ public actor AgentImageGenerationClient {
 
         let responseBody = try decoder.decode(ImageGenerationResponseBody.self, from: data)
         let generated = responseBody.output.compactMap { item -> AgentGeneratedImage? in
-            guard item.type == "image_generation_call",
+            guard ResponsesItemType(rawValue: item.type) == .imageGenerationCall,
                   let result = item.result,
                   let image = AgentImageAttachment(
                     base64String: result,
@@ -208,7 +208,7 @@ public actor AgentImageGenerationClient {
 
         guard !generated.isEmpty else {
             throw AgentRuntimeError(
-                code: "image_generation_missing_output",
+                code: .imageGenerationMissingOutput,
                 message: "The image generation request completed without returning an image."
             )
         }
@@ -223,14 +223,14 @@ public actor AgentImageGenerationClient {
     ) throws -> URLRequest {
         var content: [JSONValue] = [
             .object([
-                "type": .string("input_text"),
+                "type": ResponsesContentType.inputText.jsonValue,
                 "text": .string(prompt),
             ]),
         ]
         content.append(contentsOf: images.map(\.responsesInputImage))
 
         var tool: [String: JSONValue] = [
-            "type": .string("image_generation"),
+            "type": ResponsesToolType.imageGeneration.jsonValue,
             "action": .string(options.action.rawValue),
             "output_format": .string(options.outputFormat.rawValue),
         ]
@@ -248,7 +248,7 @@ public actor AgentImageGenerationClient {
             model: configuration.model,
             input: CodexResponsesImageDetail.normalize([
                 .object([
-                    "type": .string("message"),
+                    "type": ResponsesItemType.message.jsonValue,
                     "role": .string("user"),
                     "content": .array(content),
                 ]),
@@ -258,7 +258,7 @@ public actor AgentImageGenerationClient {
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         request.httpBody = try encoder.encode(body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -280,8 +280,8 @@ public actor AgentImageGenerationClient {
     }
 
     private static func isSupportedEditableImageMimeType(_ mimeType: AgentImageMIMEType) -> Bool {
-        switch mimeType.rawValue.lowercased() {
-        case "image/png", "image/jpeg", "image/webp":
+        switch AgentImageMIMEType(rawValue: mimeType.rawValue.lowercased()) {
+        case .png, .jpeg, .webp:
             true
         default:
             false

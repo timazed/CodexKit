@@ -130,7 +130,7 @@ package enum AgentHistoryWriteValidator {
             }
             guard item.sequenceNumber == expectedSequence else {
                 throw AgentRuntimeError(
-                    code: "invalid_history_sequence",
+                    code: .invalidHistorySequence,
                     message: "Expected history sequence \(expectedSequence) for thread \(threadID), received \(item.sequenceNumber)."
                 )
             }

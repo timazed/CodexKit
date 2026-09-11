@@ -100,6 +100,19 @@ public struct ToolSessionDescriptor: Codable, Hashable, Sendable {
 }
 
 public struct ToolResultEnvelope: Hashable, Sendable {
+    enum Outcome {
+        case succeeded, approvalDenied, failed
+    }
+
+    private static let approvalDeniedMessage = "Tool execution was denied by the user."
+
+    // Legacy envelopes encode denial in the error text. Keep that interpretation
+    // at this boundary, rather than repeating the sentinel in history queries.
+    var outcome: Outcome {
+        if errorMessage == Self.approvalDeniedMessage { return .approvalDenied }
+        return success ? .succeeded : .failed
+    }
+
     public let invocationID: String
     public let toolName: String
     public let success: Bool
@@ -168,7 +181,7 @@ public struct ToolResultEnvelope: Hashable, Sendable {
     ) -> ToolResultEnvelope {
         failure(
             invocation: invocation,
-            message: "Tool execution was denied by the user.",
+            message: approvalDeniedMessage,
             session: session
         )
     }

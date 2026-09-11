@@ -168,7 +168,7 @@ public actor InMemoryMemoryStore: MemoryStoring {
         try snapshot.validateCardinality(namespace: namespace)
         return snapshot.makeDiagnostics(
             namespace: namespace,
-            implementation: "in_memory",
+            implementation: .inMemory,
             schemaVersion: nil
         )
     }
@@ -279,6 +279,6 @@ public actor InMemoryMemoryStore: MemoryStoring {
 
 extension InMemoryMemoryStore: StoreMigrationIdentifying {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
-        StoreMigrationIdentity(kind: "memory", instanceID: migrationInstanceID)
+        StoreMigrationIdentity(kind: .memory, instanceID: migrationInstanceID)
     }
 }

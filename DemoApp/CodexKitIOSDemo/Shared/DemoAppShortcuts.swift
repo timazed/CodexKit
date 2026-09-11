@@ -34,7 +34,7 @@ private struct ShippingSupportReplyDraft: AgentStructuredOutput {
             properties: [
                 "subject": .string(),
                 "reply": .string(),
-                "urgency": .string(enum: ["low", "medium", "high"]),
+                "urgency": .string(enum: StructuredShippingReplyDraft.Urgency.allCases.map(\.rawValue)),
             ],
             required: ["subject", "reply", "urgency"],
             additionalProperties: false

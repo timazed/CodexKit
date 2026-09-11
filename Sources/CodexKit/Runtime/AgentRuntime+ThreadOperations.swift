@@ -5,10 +5,10 @@ extension AgentRuntime {
     func reserveThreadOperation(in threadID: String) throws -> UUID {
         try Task.checkCancellation()
         guard !isRestoring else {
-            throw AgentRuntimeError(code: "runtime_busy", message: "Wait for runtime restoration to finish.")
+            throw AgentRuntimeError(code: .runtimeBusy, message: "Wait for runtime restoration to finish.")
         }
         guard threadOperations[threadID] == nil else {
-            throw AgentRuntimeError(code: "thread_busy", message: "This thread already has an active turn, compaction, or resume operation.")
+            throw AgentRuntimeError(code: .threadBusy, message: "This thread already has an active turn, compaction, or resume operation.")
         }
         let id = UUID()
         threadOperations[threadID] = id

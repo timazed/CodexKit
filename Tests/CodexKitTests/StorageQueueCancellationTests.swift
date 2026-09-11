@@ -181,7 +181,7 @@ final class StorageQueueCancellationTests: XCTestCase {
     func testCancellingOnePreparationWaiterKeepsSharedPreparationUsable() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        for kind in ["sqlite", "realm"] {
+        for kind in [TestStorageBackend.sqlite, .realm] {
             let store = try makeStore(kind, directory: directory)
             let root = try XCTUnwrap(store as? any StoreMigrationCoordinating).migrationCoordinationRootURL
             let held = try await RuntimeStoreInterprocessLock.acquire(for: root)
@@ -206,7 +206,7 @@ final class StorageQueueCancellationTests: XCTestCase {
     func testCancelledDirectStoreWritesNeverRunAfterTheLockIsReleased() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        for kind in ["sqlite", "realm", "file"] {
+        for kind in [TestStorageBackend.sqlite, .realm, .file] {
             let store = try makeStore(kind, directory: directory)
             _ = try await store.prepare()
             let root = try XCTUnwrap(store as? any StoreMigrationCoordinating).migrationCoordinationRootURL
@@ -230,7 +230,7 @@ final class StorageQueueCancellationTests: XCTestCase {
     func testRuntimeStartupCancellationDoesNotWaitForAContendedStore() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        for kind in ["sqlite", "realm", "file"] {
+        for kind in [TestStorageBackend.sqlite, .realm, .file] {
             let store = try makeStore(kind, directory: directory)
             let runtime = try AgentRuntime(configuration: .init(sessionProvider: DesignReadOnlyProvider(),
                 backend: DesignBackend(), approvalPresenter: AutoApprovalPresenter(), stateStore: store))
@@ -262,13 +262,9 @@ final class StorageQueueCancellationTests: XCTestCase {
         FileManager.default.temporaryDirectory.appendingPathComponent("CodexKitLockTests-\(UUID().uuidString)")
     }
 
-    private func makeStore(_ kind: String, directory: URL) throws -> any RuntimeStateStoring {
-        let url = directory.appendingPathComponent(kind)
-        switch kind {
-        case "sqlite": return try SQLiteRuntimeStateStore(url: url)
-        case "realm": return try RealmRuntimeStateStore(url: url)
-        default: return FileRuntimeStateStore(url: url)
-        }
+    private func makeStore(_ kind: TestStorageBackend, directory: URL) throws -> any RuntimeStateStoring {
+        let url = directory.appendingPathComponent(kind.rawValue)
+        return try kind.open(at: url)
     }
 
     private func assertCancelled(_ task: Task<Void, Error>, file: StaticString = #filePath, line: UInt = #line) async {

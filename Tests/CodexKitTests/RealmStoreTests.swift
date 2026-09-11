@@ -1202,12 +1202,12 @@ final class RealmStoreTests: XCTestCase {
     func testMemoryAdaptersShareExactAndCanonicalUnicodeTokenSemantics() async throws {
         let directory = try makeTemporaryRealmDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let stores: [(String, any MemoryStoring)] = [
-            ("memory", InMemoryMemoryStore()),
-            ("sqlite", try SQLiteMemoryStore(
+        let stores: [(TestStorageBackend, any MemoryStoring)] = [
+            (.inMemory, InMemoryMemoryStore()),
+            (.sqlite, try SQLiteMemoryStore(
                 url: directory.appendingPathComponent("unicode-memory.sqlite")
             )),
-            ("realm", try RealmMemoryStore(
+            (.realm, try RealmMemoryStore(
                 url: directory.appendingPathComponent("unicode-memory.realm")
             )),
         ]
@@ -1228,13 +1228,13 @@ final class RealmStoreTests: XCTestCase {
                 namespace: "assistant",
                 text: "cafe"
             ))
-            XCTAssertEqual(unaccented.matches, [], name)
+            XCTAssertEqual(unaccented.matches, [], name.rawValue)
 
             let decomposed = try await store.query(MemoryQuery(
                 namespace: "assistant",
                 text: "cafe\u{301}"
             ))
-            XCTAssertEqual(decomposed.matches.map(\.record.id), [record.id], name)
+            XCTAssertEqual(decomposed.matches.map(\.record.id), [record.id], name.rawValue)
         }
     }
 

@@ -122,7 +122,7 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
             for (key, value) in configuration.extraHeaders { request.setValue(value, forHTTPHeaderField: key) }
             let (bytes, response) = try await urlSession.bytes(for: request)
             guard let response = response as? HTTPURLResponse else {
-                throw AgentRuntimeError(code: "models_invalid_response", message: "Invalid model catalog response.")
+                throw AgentRuntimeError(code: .modelsInvalidResponse, message: "Invalid model catalog response.")
             }
             await rateLimitStore.update(CodexRateLimitParser.headers(response), accountID: cacheKey)
             if response.statusCode == 304, let cached {
@@ -142,7 +142,7 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
             var data = Data()
             for try await byte in bytes {
                 guard data.count < 8 * 1_024 * 1_024 else {
-                    throw AgentRuntimeError(code: "models_response_too_large", message: "Model catalog exceeded 8 MiB.")
+                    throw AgentRuntimeError(code: .modelsResponseTooLarge, message: "Model catalog exceeded 8 MiB.")
                 }
                 data.append(byte)
             }
@@ -171,7 +171,7 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
     static func decodeModels(_ data: Data) throws -> [CodexAvailableModel] {
         let value = try JSONDecoder().decode(JSONValue.self, from: data)
         guard let models = value.objectValue?["models"]?.arrayValue else {
-            throw AgentRuntimeError(code: "models_invalid_catalog", message: "Model catalog has no models array.")
+            throw AgentRuntimeError(code: .modelsInvalidCatalog, message: "Model catalog has no models array.")
         }
         var seen: Set<String> = []
         var catalog: [CodexAvailableModel] = []
@@ -181,15 +181,32 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
                   !slug.isEmpty, seen.insert(slug).inserted else { continue }
             let identifier = CodexModel(rawValue: slug)
             let known = identifier.info
-            let remoteLevels: [ReasoningEffort]? = m["supported_reasoning_levels"]?.arrayValue?.compactMap {
-                $0.objectValue?["effort"]?.stringValue.flatMap(ReasoningEffort.init(rawValue:))
+            let levels: [ReasoningEffort]
+            if let values = m["supported_reasoning_levels"]?.arrayValue {
+                // An explicit list is authoritative; future effort names remain custom values.
+                levels = values.compactMap { value in
+                    guard let effort = value.objectValue?["effort"]?.stringValue else { return nil }
+                    return ReasoningEffort(rawValue: effort)
+                }
+            } else {
+                levels = known?.supportedReasoningEfforts ?? []
             }
-            let levels = remoteLevels ?? known?.supportedReasoningEfforts ?? []
-            let defaultEffort: ReasoningEffort = m["default_reasoning_level"]?.stringValue
-                .flatMap(ReasoningEffort.init(rawValue:)) ?? .medium
-            let modalities: [CodexModelInputModality] = m["input_modalities"]?.arrayValue?.compactMap {
-                $0.stringValue.flatMap(CodexModelInputModality.init(rawValue:))
-            } ?? [.text, .image]
+            let defaultEffort: ReasoningEffort
+            if let name = m["default_reasoning_level"]?.stringValue,
+               let effort = ReasoningEffort(rawValue: name) {
+                defaultEffort = effort
+            } else {
+                defaultEffort = .medium
+            }
+            let modalities: [CodexModelInputModality]
+            if let values = m["input_modalities"]?.arrayValue {
+                modalities = values.compactMap { value in
+                    guard case let .string(name) = value else { return nil }
+                    return CodexModelInputModality(rawValue: name)
+                }
+            } else {
+                modalities = [.text, .image]
+            }
             let context: Int? = {
                 guard case let .number(n) = m["context_window"], n > 0 else { return known?.contextWindowTokenCount }
                 return Int(exactly: n)

@@ -75,7 +75,7 @@ public final class ChatGPTAuthProvider: Sendable {
         case .deviceCode:
             guard let deviceCodePresenter else {
                 throw AgentRuntimeError(
-                    code: "device_code_presenter_missing",
+                    code: .deviceCodePresenterMissing,
                     message: "ChatGPT device-code auth requires a presenter."
                 )
             }

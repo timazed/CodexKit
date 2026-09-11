@@ -57,7 +57,7 @@ struct InMemoryDiagnosticsSnapshot: Sendable {
 
     func makeDiagnostics(
         namespace: String,
-        implementation: String,
+        implementation: MemoryStoreImplementation,
         schemaVersion: Int?
     ) -> MemoryStoreDiagnostics {
         MemoryStoreDiagnostics(

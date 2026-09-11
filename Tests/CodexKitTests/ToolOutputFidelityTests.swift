@@ -62,10 +62,10 @@ final class ToolOutputFidelityTests: XCTestCase {
     func testReopenedDatabaseContextRetainsEveryToolTextBlock() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        for adapter in ["sqlite", "realm"] {
-            let url = directory.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.sqlite, .realm] {
+            let url = directory.appendingPathComponent(adapter.rawValue)
             let openStore: () throws -> any RuntimeStateStoring = {
-                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
             let thread = AgentThread(id: "thread")
             let invocation = ToolInvocation(id: "call", threadID: thread.id, turnID: "turn", toolName: "lookup", arguments: .null)
@@ -83,7 +83,7 @@ final class ToolOutputFidelityTests: XCTestCase {
             let reopened = try openStore()
             let activation = try await reopened.loadThreadActivationState(id: thread.id, policy: .init())
             let tool = try XCTUnwrap(activation.effectiveMessages.first { $0.role == .tool })
-            XCTAssertEqual(tool.text, "Tool lookup completed: First result\n\nSecond result", adapter)
+            XCTAssertEqual(tool.text, "Tool lookup completed: First result\n\nSecond result", adapter.rawValue)
             XCTAssertEqual(tool.toolInteraction?.result, result)
         }
     }

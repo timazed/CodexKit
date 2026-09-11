@@ -10,8 +10,7 @@ final class RuntimeConcurrencyStressTests: XCTestCase {
 }
 
 private struct RuntimeStressHarness: Sendable {
-    enum Adapter: String, Sendable { case file, sqlite, realm }
-    let adapter: Adapter
+    let adapter: TestStorageBackend
     private let workerCount = 6
     private let policy = AgentThreadActivationPolicy(
         maximumMessageCount: 8, maximumEstimatedTokens: 4_000, maximumHistoryRecordCount: 16)
@@ -246,11 +245,7 @@ private struct RuntimeStressHarness: Sendable {
             threadActivationPolicy: policy))
     }
     private func openStore(_ url: URL) throws -> any RuntimeStateStoring {
-        switch adapter {
-        case .file: FileRuntimeStateStore(url: url)
-        case .sqlite: try SQLiteRuntimeStateStore(url: url)
-        case .realm: try RealmRuntimeStateStore(url: url)
-        }
+        try adapter.open(at: url)
     }
     private static let imageBytes = Data(base64Encoded:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")!

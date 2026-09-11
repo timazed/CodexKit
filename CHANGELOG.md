@@ -13,6 +13,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Changed
 
+- Replaced string-based domain choices across runtime, storage, auth, schema validation, demos, and verification helpers with enums. Search progress status and memory-store implementation are now typed; use `.rawValue` when a string is required. Existing string constructors and serialized values remain supported.
 - Remote compaction now streams `/responses` with a compaction trigger, validates the encrypted checkpoint and terminal event, and retains bounded recent user context locally. Transient compaction retries share the response budget.
 
 ### Fixed

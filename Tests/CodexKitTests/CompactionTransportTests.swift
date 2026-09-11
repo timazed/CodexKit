@@ -126,10 +126,10 @@ final class CompactionTransportTests: XCTestCase {
         XCTAssertEqual(compacted.effectiveMessages.flatMap(\.images).map(\.data), [image.data])
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        for adapter in ["sqlite", "realm"] {
-            let url = directory.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.sqlite, .realm] {
+            let url = directory.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
             let store = try open()
             try await store.saveState(.init(threads: [.init(id: "thread")], contextStateByThread: ["thread": .init(

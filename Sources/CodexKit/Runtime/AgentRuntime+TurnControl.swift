@@ -76,6 +76,6 @@ extension AgentRuntime {
     }
 
     private func inactiveTurnError() -> AgentRuntimeError {
-        .init(code: "turn_not_active", message: "The expected turn is no longer active.")
+        .init(code: .turnNotActive, message: "The expected turn is no longer active.")
     }
 }

@@ -10,14 +10,14 @@ final class RuntimeHistoryValidationTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let stores: [(String, any RuntimeStateStoring)] = [
-            ("in-memory", InMemoryRuntimeStateStore()),
-            ("file", FileRuntimeStateStore(url: directory.appendingPathComponent("runtime.json"))),
-            ("sqlite", try SQLiteRuntimeStateStore(
+        let stores: [(TestStorageBackend, any RuntimeStateStoring)] = [
+            (.inMemory, InMemoryRuntimeStateStore()),
+            (.file, FileRuntimeStateStore(url: directory.appendingPathComponent("runtime.json"))),
+            (.sqlite, try SQLiteRuntimeStateStore(
                 url: directory.appendingPathComponent("runtime.sqlite"),
                 importingLegacyStateFrom: directory.appendingPathComponent("missing-legacy.json")
             )),
-            ("realm", try RealmRuntimeStateStore(
+            (.realm, try RealmRuntimeStateStore(
                 url: directory.appendingPathComponent("runtime.realm"),
                 importingLegacyStateFrom: directory.appendingPathComponent("missing-legacy.json")
             )),

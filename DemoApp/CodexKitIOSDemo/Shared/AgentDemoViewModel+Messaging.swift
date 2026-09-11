@@ -258,7 +258,7 @@ extension AgentDemoViewModel {
         var terminalNotice = "Turn failed"
         if tracksTurn {
             guard sendingThreadIDs.insert(threadID).inserted else {
-                throw AgentRuntimeError(code: "thread_busy", message: "This thread already has a running turn.")
+                throw AgentRuntimeError(code: .threadBusy, message: "This thread already has a running turn.")
             }
             turnActivities[threadID] = DemoTurnActivity()
         }

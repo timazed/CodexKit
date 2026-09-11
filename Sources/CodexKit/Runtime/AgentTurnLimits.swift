@@ -16,7 +16,7 @@ public struct AgentTurnLimits: Hashable, Sendable {
     func validate() throws {
         guard maximumToolCalls.map({ $0 >= 0 }) ?? true,
               maximumDuration.map({ $0.isFinite && $0 > 0 && $0 <= 31_536_000 }) ?? true else {
-            throw AgentRuntimeError(code: "invalid_turn_limits",
+            throw AgentRuntimeError(code: .invalidTurnLimits,
                 message: "Tool limits must be nonnegative; duration must be positive and at most one year, or nil for unlimited.")
         }
     }
@@ -32,12 +32,12 @@ public enum AgentExecutionLimit: String, Sendable {
 
 public extension AgentRuntimeError {
     var executionLimit: AgentExecutionLimit? {
-        switch code {
-        case "turn_tool_limit_exceeded": .toolCalls
-        case "turn_model_pass_limit_exceeded": .modelPasses
-        case "turn_time_limit_exceeded": .duration
-        case "turn_response_byte_limit_exceeded": .responseBytes
-        case "turn_response_item_limit_exceeded": .responseItems
+        switch knownCode {
+        case .turnToolLimitExceeded: .toolCalls
+        case .turnModelPassLimitExceeded: .modelPasses
+        case .turnTimeLimitExceeded: .duration
+        case .turnResponseByteLimitExceeded: .responseBytes
+        case .turnResponseItemLimitExceeded: .responseItems
         default: nil
         }
     }
@@ -45,15 +45,15 @@ public extension AgentRuntimeError {
     static func executionLimitExceeded(_ limit: AgentExecutionLimit) -> AgentRuntimeError {
         switch limit {
         case .toolCalls:
-            .init(code: "turn_tool_limit_exceeded", message: "The turn exceeded its configured tool-call limit.")
+            .init(code: .turnToolLimitExceeded, message: "The turn exceeded its configured tool-call limit.")
         case .modelPasses:
-            .init(code: "turn_model_pass_limit_exceeded", message: "The turn exceeded its configured model-pass limit.")
+            .init(code: .turnModelPassLimitExceeded, message: "The turn exceeded its configured model-pass limit.")
         case .duration:
-            .init(code: "turn_time_limit_exceeded", message: "The turn exceeded its configured duration.")
+            .init(code: .turnTimeLimitExceeded, message: "The turn exceeded its configured duration.")
         case .responseBytes:
-            .init(code: "turn_response_byte_limit_exceeded", message: "The turn exceeded its configured response-byte limit.")
+            .init(code: .turnResponseByteLimitExceeded, message: "The turn exceeded its configured response-byte limit.")
         case .responseItems:
-            .init(code: "turn_response_item_limit_exceeded", message: "The turn exceeded the supported response-item limit.")
+            .init(code: .turnResponseItemLimitExceeded, message: "The turn exceeded the supported response-item limit.")
         }
     }
 }

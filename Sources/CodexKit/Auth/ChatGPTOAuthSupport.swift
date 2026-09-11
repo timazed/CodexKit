@@ -5,7 +5,7 @@ import Security
 extension URL {
     var isLoopbackOAuthRedirect: Bool {
         guard let scheme = scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
+              URLScheme(rawValue: scheme)?.isHTTP == true,
               let host = host?.lowercased(),
               host == "localhost" || host == "127.0.0.1",
               port != nil else {
@@ -18,7 +18,7 @@ extension URL {
 
 struct AuthorizationCodeExchangeRequest: Encodable {
     let clientID: String
-    let grantType: String
+    let grantType: OAuthGrantType
     let code: String
     let redirectURI: String
     let codeVerifier: String
@@ -34,7 +34,7 @@ struct AuthorizationCodeExchangeRequest: Encodable {
 
 struct RefreshTokenRequest: Encodable {
     let clientID: String
-    let grantType: String
+    let grantType: OAuthGrantType
     let refreshToken: String
 
     enum CodingKeys: String, CodingKey {
@@ -63,7 +63,7 @@ struct OAuthCallback {
     init(url: URL) throws {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw AgentRuntimeError(
-                code: "oauth_callback_invalid",
+                code: .oauthCallbackInvalid,
                 message: "The ChatGPT sign-in callback URL could not be parsed."
             )
         }
@@ -72,20 +72,20 @@ struct OAuthCallback {
 
         if let errorDescription = queryItems.first(where: { $0.name == "error_description" || $0.name == "error" })?.value {
             throw AgentRuntimeError(
-                code: "oauth_callback_failed",
+                code: .oauthCallbackFailed,
                 message: "ChatGPT sign-in failed: \(errorDescription)"
             )
         }
 
         guard let code = queryItems.first(where: { $0.name == "code" })?.value, !code.isEmpty else {
             throw AgentRuntimeError(
-                code: "oauth_callback_missing_code",
+                code: .oauthCallbackMissingCode,
                 message: "The ChatGPT sign-in callback did not include an authorization code."
             )
         }
         guard let state = queryItems.first(where: { $0.name == "state" })?.value, !state.isEmpty else {
             throw AgentRuntimeError(
-                code: "oauth_callback_missing_state",
+                code: .oauthCallbackMissingState,
                 message: "The ChatGPT sign-in callback did not include a state parameter."
             )
         }
@@ -143,7 +143,7 @@ struct JWTClaims: Decodable {
         let parts = jwt.split(separator: ".")
         guard parts.count >= 2 else {
             throw AgentRuntimeError(
-                code: "jwt_invalid",
+                code: .jwtInvalid,
                 message: "A ChatGPT token could not be decoded."
             )
         }
@@ -239,7 +239,7 @@ private extension Data {
 
         guard let data = Data(base64Encoded: normalized) else {
             throw AgentRuntimeError(
-                code: "jwt_payload_invalid",
+                code: .jwtPayloadInvalid,
                 message: "A ChatGPT token payload could not be decoded."
             )
         }

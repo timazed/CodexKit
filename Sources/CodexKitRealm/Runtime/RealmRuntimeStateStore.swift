@@ -196,7 +196,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
                 realm.add(structuredOutputObjects, update: .modified)
                 for object in historyObjects {
                     RealmRuntimeAttachmentReferences.replace(
-                        ownerType: "history",
+                        ownerType: .history,
                         ownerKey: object.key,
                         threadID: object.threadID,
                         storageKeys: try writeCodec.attachmentStorageKeys(from: object),
@@ -205,7 +205,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
                 }
                 for object in contextObjects {
                     RealmRuntimeAttachmentReferences.replace(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: object.threadID,
                         threadID: object.threadID,
                         storageKeys: try writeCodec.attachmentStorageKeys(from: object),
@@ -541,7 +541,7 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
 
 extension RealmRuntimeStateStore: StoreMigrationIdentifying, StoreMigrationCoordinating {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
-        StoreMigrationIdentity(kind: "runtime", url: url)
+        StoreMigrationIdentity(kind: .runtime, url: url)
     }
 
     package nonisolated var migrationCoordinationRootURL: URL {

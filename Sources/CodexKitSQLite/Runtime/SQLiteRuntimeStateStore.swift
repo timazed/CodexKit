@@ -585,7 +585,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
 
 extension SQLiteRuntimeStateStore: StoreMigrationIdentifying, StoreMigrationCoordinating {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
-        StoreMigrationIdentity(kind: "runtime", url: url)
+        StoreMigrationIdentity(kind: .runtime, url: url)
     }
 
     package nonisolated var migrationCoordinationRootURL: URL {

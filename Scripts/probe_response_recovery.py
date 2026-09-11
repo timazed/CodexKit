@@ -7,6 +7,7 @@ Each POST is explicit; there are no retries or replacement requests on failure.
 Socket timeouts bound this diagnostic only, not SDK generation policy.
 """
 import argparse
+from enum import Enum
 import datetime
 import json
 import pathlib
@@ -17,13 +18,31 @@ import uuid
 BASE = "https://chatgpt.com/backend-api/codex/responses"
 
 
+class ProbeMode(str, Enum):
+    COMPLETED_CONTROL = "completed_control"
+    DROP_AFTER_CREATED = "drop_after_created"
+    DROP_MID_TEXT = "drop_mid_text"
+    WITHHOLD_TERMINAL = "withhold_terminal"
+
+    def __str__(self):
+        return self.value
+
+
+class ProbeEventType(str, Enum):
+    CREATED = "response.created"
+    TEXT_DELTA = "response.output_text.delta"
+    COMPLETED = "response.completed"
+    FAILED = "response.failed"
+    INCOMPLETE = "response.incomplete"
+    ERROR = "error"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true", required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
-    parser.add_argument("--modes", nargs="+", default=["completed_control", "drop_after_created",
-                        "drop_mid_text", "withhold_terminal"], choices=["completed_control",
-                        "drop_after_created", "drop_mid_text", "withhold_terminal"])
+    parser.add_argument("--modes", nargs="+", type=ProbeMode,
+                        default=list(ProbeMode), choices=list(ProbeMode))
     args = parser.parse_args()
     tokens = json.loads((pathlib.Path.home() / ".codex/auth.json").read_text())["tokens"]
     headers = {
@@ -104,7 +123,7 @@ def main():
         response = open_request(mode, "POST", body=body(prompt_cache_key=identity),
             extra=request_headers)
         if response is None:
-            if mode == "completed_control":
+            if mode == ProbeMode.COMPLETED_CONTROL:
                 return
             continue
         response_id, cursor, terminal, delivered_terminal, count = None, None, False, False, 0
@@ -118,19 +137,19 @@ def main():
                 cursor = event.get("sequence_number", cursor)
                 response_id = event.get("response", {}).get("id", response_id)
                 event_type = event.get("type")
-                if event_type in ("response.failed", "response.incomplete", "error"):
+                if event_type in (ProbeEventType.FAILED, ProbeEventType.INCOMPLETE, ProbeEventType.ERROR):
                     record({"label": mode, "terminal_failure": event_type})
                     break
-                if event_type == "response.completed":
+                if event_type == ProbeEventType.COMPLETED:
                     terminal = True
                     delivered_terminal = mode != "withhold_terminal"
                     if delivered_terminal:
                         client_cursor = cursor
                     break
                 client_cursor = cursor
-                if mode == "drop_after_created" and event_type == "response.created":
+                if mode == ProbeMode.DROP_AFTER_CREATED and event_type == ProbeEventType.CREATED:
                     break
-                if mode == "drop_mid_text" and event_type == "response.output_text.delta":
+                if mode == ProbeMode.DROP_MID_TEXT and event_type == ProbeEventType.TEXT_DELTA:
                     break
         finally:
             response.close()
@@ -141,7 +160,7 @@ def main():
                 "terminal_delivered_to_simulated_client": delivered_terminal})
         if response_id:
             retrieve(mode, response_id, client_cursor, request_headers)
-        if mode == "completed_control" and not terminal:
+        if mode == ProbeMode.COMPLETED_CONTROL and not terminal:
             return
 
     for label, changes in [("store_true", {"store": True}), ("background_true", {"background": True})]:

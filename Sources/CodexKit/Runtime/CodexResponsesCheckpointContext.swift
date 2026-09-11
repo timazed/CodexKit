@@ -36,19 +36,19 @@ package enum CodexResponsesCheckpointContext {
         -> (count: Int, checkpointAndSuffix: [JSONValue])? {
         guard context?.providerID == CodexResponsesProviderState.providerID,
               let items = context?.payload.objectValue?["items"]?.arrayValue,
-              let index = items.lastIndex(where: { $0.objectValue?["type"] == .string("compaction") }),
+              let index = items.lastIndex(where: { $0.objectValue?["type"] == ResponsesItemType.compaction.jsonValue }),
               let encrypted = items[index].objectValue?["encrypted_content"]?.stringValue, !encrypted.isEmpty,
               index <= messages.count else { return nil }
         // Match the saved prefix rather than treating any pending user input as complete.
         for (item, message) in zip(items.prefix(index), messages) {
-            guard let object = item.objectValue, object["type"] == .string("message"),
+            guard let object = item.objectValue, object["type"] == ResponsesItemType.message.jsonValue,
                   object["role"] == .string(message.role.rawValue),
                   let content = object["content"]?.arrayValue,
                   content.compactMap({ $0.objectValue?["text"]?.stringValue }).joined(separator: "\n") == message.text,
                   let expected = try? CodexResponsesImageReferences.externalize([
                     WorkingHistoryItem.visibleMessage(message).jsonValue
                   ]).first?.objectValue?["content"]?.arrayValue else { return nil }
-            let imageContent: (JSONValue) -> Bool = { $0.objectValue?["type"] == .string("input_image") }
+            let imageContent: (JSONValue) -> Bool = { $0.objectValue?["type"] == ResponsesContentType.inputImage.jsonValue }
             guard content.filter(imageContent) == expected.filter(imageContent) else { return nil }
         }
         return (index, Array(items[index...]))

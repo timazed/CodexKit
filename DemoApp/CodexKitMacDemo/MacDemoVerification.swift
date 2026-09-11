@@ -384,15 +384,15 @@ private struct MacDemoOfflineBackend: AgentBackend {
                 do {
                     let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
                     continuation.yield(.turnStarted(turn))
-                    let toolNames: [String]
-                    if thread.skillIDs.contains("travel_planner") { toolNames = ["travel_planner_build_day_plan"] }
-                    else if message.text.contains("demo_prepare_draft") { toolNames = ["demo_prepare_draft"] }
-                    else if message.text.contains("demo_lookup_weather") { toolNames = ["demo_lookup_weather", "demo_lookup_transport"] }
+                    let toolNames: [MacDemoToolName]
+                    if thread.skillIDs.contains("travel_planner") { toolNames = [.travelPlanner] }
+                    else if message.text.contains(MacDemoToolName.prepareDraft.rawValue) { toolNames = [.prepareDraft] }
+                    else if message.text.contains(MacDemoToolName.lookupWeather.rawValue) { toolNames = [.lookupWeather, .lookupTransport] }
                     else { toolNames = [] }
                     if !toolNames.isEmpty {
                         let invocations = toolNames.map { name in
-                            ToolInvocation(id: UUID().uuidString, threadID: thread.id, turnID: turn.id, toolName: name,
-                                arguments: name == "travel_planner_build_day_plan" ? .object(["destination": .string("Sydney")]) : .object([:]))
+                            ToolInvocation(id: UUID().uuidString, threadID: thread.id, turnID: turn.id, toolName: name.rawValue,
+                                arguments: name == .travelPlanner ? .object(["destination": .string("Sydney")]) : .object([:]))
                         }
                         continuation.yield(.toolCallsRequested(invocations))
                         var count = 0
@@ -433,9 +433,9 @@ private struct MacDemoOfflineBackend: AgentBackend {
 
     private static func payload(_ name: String?) -> String {
         switch name {
-        case "shipping_reply_draft": #"{"subject":"Delivery update","reply":"We will check the tracking status.","urgency":"high"}"#
-        case "imported_content_summary": #"{"title":"CodexKit","keyPoints":["Streaming","Tools","Memory"],"followUpAction":"Try the demo"}"#
-        case "streamed_delivery_update": #"{"statusHeadline":"Delayed","customerPromise":"We will investigate","nextAction":"Check tracking"}"#
+        case StructuredShippingReplyDraft.responseFormat.name: #"{"subject":"Delivery update","reply":"We will check the tracking status.","urgency":"high"}"#
+        case StructuredImportedContentSummary.responseFormat.name: #"{"title":"CodexKit","keyPoints":["Streaming","Tools","Memory"],"followUpAction":"Try the demo"}"#
+        case StreamedStructuredDeliveryUpdate.responseFormat.name: #"{"statusHeadline":"Delayed","customerPromise":"We will investigate","nextAction":"Check tracking"}"#
         default: #"{"memories":[]}"#
         }
     }

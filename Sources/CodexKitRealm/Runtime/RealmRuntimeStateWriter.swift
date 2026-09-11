@@ -98,7 +98,7 @@ struct RealmRuntimeStateWriter {
                     forPrimaryKey: threadID
                 )
                 let previousStorageKeys = try RealmRuntimeAttachmentReferences.storageKeys(
-                    ownerType: "context",
+                    ownerType: .context,
                     ownerKey: threadID,
                     in: realm
                 )
@@ -107,7 +107,7 @@ struct RealmRuntimeStateWriter {
                     let newStorageKeys = try writeCodec.attachmentStorageKeys(from: object)
                     realm.add(object, update: .modified)
                     RealmRuntimeAttachmentReferences.replace(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: threadID,
                         threadID: threadID,
                         storageKeys: newStorageKeys,
@@ -118,7 +118,7 @@ struct RealmRuntimeStateWriter {
                     if let previousObject {
                         realm.delete(previousObject)
                     }
-                    RealmRuntimeAttachmentReferences.delete(ownerType: "context", ownerKey: threadID, in: realm)
+                    RealmRuntimeAttachmentReferences.delete(ownerType: .context, ownerKey: threadID, in: realm)
                     attachmentCleanup.formUnion(previousStorageKeys)
                 }
 
@@ -128,12 +128,12 @@ struct RealmRuntimeStateWriter {
                     forPrimaryKey: threadID
                 ) {
                     attachmentCleanup.formUnion(try RealmRuntimeAttachmentReferences.storageKeys(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: threadID,
                         in: realm
                     ))
                     realm.delete(object)
-                    RealmRuntimeAttachmentReferences.delete(ownerType: "context", ownerKey: threadID, in: realm)
+                    RealmRuntimeAttachmentReferences.delete(ownerType: .context, ownerKey: threadID, in: realm)
                 }
 
             case let .setPendingState(threadID, pendingState):
@@ -286,7 +286,7 @@ struct RealmRuntimeStateWriter {
             let object = try writeCodec.makeHistoryObject(from: record, threadID: threadID)
             realm.add(object)
             RealmRuntimeAttachmentReferences.replace(
-                ownerType: "history",
+                ownerType: .history,
                 ownerKey: object.key,
                 threadID: threadID,
                 storageKeys: try writeCodec.attachmentStorageKeys(from: object),
@@ -408,7 +408,7 @@ struct RealmRuntimeStateWriter {
             let redactedObject = try writeCodec.makeHistoryObject(from: redacted, threadID: threadID)
             realm.add(redactedObject, update: .modified)
             RealmRuntimeAttachmentReferences.replace(
-                ownerType: "history",
+                ownerType: .history,
                 ownerKey: redactedObject.key,
                 threadID: threadID,
                 storageKeys: try writeCodec.attachmentStorageKeys(from: redactedObject),
@@ -426,12 +426,12 @@ struct RealmRuntimeStateWriter {
             forPrimaryKey: threadID
         ) {
             attachmentStorageKeys.formUnion(try RealmRuntimeAttachmentReferences.storageKeys(
-                ownerType: "context",
+                ownerType: .context,
                 ownerKey: threadID,
                 in: realm
             ))
             realm.delete(context)
-            RealmRuntimeAttachmentReferences.delete(ownerType: "context", ownerKey: threadID, in: realm)
+            RealmRuntimeAttachmentReferences.delete(ownerType: .context, ownerKey: threadID, in: realm)
         }
         try rebuildSummary(threadID: threadID, in: realm)
         return attachmentStorageKeys

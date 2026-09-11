@@ -31,6 +31,10 @@ final class AgentHTTPFailureTests: XCTestCase {
         XCTAssertEqual(AgentHTTPFailure.retryAfter("Thu, 01 Jan 1970 00:00:30 GMT", now: now), 30)
         XCTAssertEqual(AgentHTTPFailure.retryAfter("99999999999", now: now), 86_400)
         for value in ["NaN", "inf", "-1", "unparseable"] { XCTAssertNil(AgentHTTPFailure.retryAfter(value, now: now)) }
+        for value: Double in [.nan, .infinity, -1] {
+            XCTAssertNil(AgentHTTPFailure(statusCode: 429, retryAfter: value).retryAfter)
+        }
+        XCTAssertEqual(AgentHTTPFailure(statusCode: 429, retryAfter: 100_000).retryAfter, 86_400)
         let policy = RequestRetryPolicy(initialBackoff: .infinity, maxBackoff: .nan, jitterFactor: .nan)
         XCTAssertEqual(policy.delayBeforeRetry(attempt: Int.max), 0)
         XCTAssertEqual(policy.delayBeforeRetry(attempt: Int.min), 0)

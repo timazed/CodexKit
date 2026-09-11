@@ -18,7 +18,7 @@ public indirect enum JSONSchema: Hashable, Sendable {
         switch self {
         case let .string(values):
             var object: [String: JSONValue] = [
-                "type": .string("string"),
+                "type": .string(JSONSchemaValueType.string.rawValue),
             ]
             if !values.isEmpty {
                 object["enum"] = .array(values.map(JSONValue.string))
@@ -27,28 +27,28 @@ public indirect enum JSONSchema: Hashable, Sendable {
 
         case .integer:
             return .object([
-                "type": .string("integer"),
+                "type": .string(JSONSchemaValueType.integer.rawValue),
             ])
 
         case .number:
             return .object([
-                "type": .string("number"),
+                "type": .string(JSONSchemaValueType.number.rawValue),
             ])
 
         case .boolean:
             return .object([
-                "type": .string("boolean"),
+                "type": .string(JSONSchemaValueType.boolean.rawValue),
             ])
 
         case let .array(items):
             return .object([
-                "type": .string("array"),
+                "type": .string(JSONSchemaValueType.array.rawValue),
                 "items": items.jsonValue,
             ])
 
         case let .object(properties, required, additionalProperties):
             var object: [String: JSONValue] = [
-                "type": .string("object"),
+                "type": .string(JSONSchemaValueType.object.rawValue),
                 "properties": .object(properties.mapValues(\.jsonValue)),
                 "additionalProperties": .bool(additionalProperties),
             ]
@@ -61,7 +61,7 @@ public indirect enum JSONSchema: Hashable, Sendable {
             return .object([
                 "anyOf": .array([
                     schema.jsonValue,
-                    .object(["type": .string("null")]),
+                    .object(["type": .string(JSONSchemaValueType.null.rawValue)]),
                 ]),
             ])
 

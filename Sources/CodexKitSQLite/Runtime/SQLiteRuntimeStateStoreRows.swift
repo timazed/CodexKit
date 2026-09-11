@@ -179,7 +179,7 @@ struct RuntimeAttachmentCleanupRow: Codable, FetchableRecord, PersistableRecord,
 struct RuntimeAttachmentReferenceRow: Codable, FetchableRecord, PersistableRecord, TableRecord {
     static let databaseTableName = "runtime_attachment_references"
 
-    let ownerType: String
+    let ownerType: RuntimeAttachmentOwner
     let ownerKey: String
     let threadID: String
     let storageKey: String

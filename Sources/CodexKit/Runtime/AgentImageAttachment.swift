@@ -118,7 +118,7 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
 
     public init?(
         base64String: String,
-        mimeType: String = "image/png",
+        mimeType: String = AgentImageMIMEType.png.rawValue,
         id: String = UUID().uuidString,
         generationMetadata: AgentImageGenerationMetadata? = nil,
         detail: AgentImageDetail?
@@ -144,7 +144,7 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
         self.init(dataURLString: dataURLString, id: id, detail: nil)
     }
 
-    public init?(base64String: String, mimeType: String = "image/png", id: String = UUID().uuidString,
+    public init?(base64String: String, mimeType: String = AgentImageMIMEType.png.rawValue, id: String = UUID().uuidString,
         generationMetadata: AgentImageGenerationMetadata? = nil) {
         self.init(base64String: base64String, mimeType: mimeType, id: id,
             generationMetadata: generationMetadata, detail: nil)
@@ -159,7 +159,7 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
 
     var responsesInputImage: JSONValue {
         var image: [String: JSONValue] = [
-            "type": .string("input_image"), "image_url": .string(dataURLString)
+            "type": ResponsesContentType.inputImage.jsonValue, "image_url": .string(dataURLString)
         ]
         if let detail { image["detail"] = .string(detail.rawValue) }
         return .object(image)

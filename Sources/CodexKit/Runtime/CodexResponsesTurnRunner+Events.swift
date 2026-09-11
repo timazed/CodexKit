@@ -34,16 +34,8 @@ extension CodexResponsesTurnRunner {
                     value: item.rawValue
                 )
             )
-            if let object = item.rawValue.objectValue, let id = object["id"]?.stringValue {
-                if object["type"]?.stringValue == "message" {
-                    try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
-                        content: .messageCompleted(itemID: id,
-                            phase: object["phase"]?.stringValue.map(AgentMessagePhase.init(rawValue:))))))
-                } else if object["type"]?.stringValue == "web_search_call" {
-                    try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID,
-                        content: .webSearch(itemID: id, status: object["status"]?.stringValue ?? "completed",
-                            action: object["action"])) ))
-                }
+            if let progress = item.completedProgress {
+                try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID, content: progress)))
             }
             switch item.kind {
             case let .message(messageItem):
@@ -80,7 +72,7 @@ extension CodexResponsesTurnRunner {
                 )
                 if let previous = state.toolCallsByID[functionCall.callID] {
                     guard previous.name == functionCall.name, previous.argumentsRaw == functionCall.argumentsRaw else {
-                        throw AgentRuntimeError(code: "responses_tool_call_conflict", message: "A repeated tool call ID changed its arguments.")
+                        throw AgentRuntimeError(code: .responsesToolCallConflict, message: "A repeated tool call ID changed its arguments.")
                     }
                     return .none
                 }
@@ -117,7 +109,7 @@ extension CodexResponsesTurnRunner {
                 )
                 return .assistantMessage
 
-            case .other:
+            case .webSearchCall, .other:
                 return .none
             }
 

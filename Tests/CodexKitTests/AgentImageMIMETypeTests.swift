@@ -44,14 +44,10 @@ final class AgentImageMIMETypeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let images = [AgentImageAttachment(mimeType: .png, data: Data([1, 2, 3])),
             AgentImageAttachment(mimeType: AgentImageMIMEType(rawValue: "image/avif"), data: Data([4, 5, 6]))]
-        for adapter in ["file", "sqlite", "realm"] {
-            let url = root.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.file, .sqlite, .realm] {
+            let url = root.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                switch adapter {
-                case "sqlite": return try SQLiteRuntimeStateStore(url: url)
-                case "realm": return try RealmRuntimeStateStore(url: url)
-                default: return FileRuntimeStateStore(url: url)
-                }
+                return try adapter.open(at: url)
             }
             let store = try open()
             try await store.saveState(.init(threads: [.init(id: "thread")], messagesByThread: ["thread": [

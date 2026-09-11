@@ -220,7 +220,7 @@ final class MacDemoFeatures {
             let restricted = try await newThread("Policy Probe: Required Travel Tool", skills: ["travel_planner"])
             await chat.send("Briefly describe a day in Sydney without using any tools.")
             let messages = await runtime.messages(for: restricted.id)
-            let toolUsed = messages.contains { $0.toolInteraction?.invocation.toolName == "travel_planner_build_day_plan" }
+            let toolUsed = messages.contains { $0.toolInteraction?.invocation.toolName == MacDemoToolName.travelPlanner.rawValue }
             result = "General conversation: \(normal.title ?? "General"). Required travel tool executed: \(toolUsed)."
             return
         default:

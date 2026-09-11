@@ -6,7 +6,7 @@ extension AgentRuntime {
         policyTracker: TurnSkillPolicyTracker?, registrations: [String: ToolRegistry.Entry], storesTurnState: Bool, sink: AgentToolEventSink
     ) async throws {
         guard Set(invocations.map(\.id)).count == invocations.count else {
-            throw AgentRuntimeError(code: "duplicate_tool_call", message: "A tool batch contains duplicate call IDs.")
+            throw AgentRuntimeError(code: .duplicateToolCall, message: "A tool batch contains duplicate call IDs.")
         }
         var parallel: [ToolInvocation] = []
         for invocation in invocations {

@@ -17,7 +17,7 @@ extension MacDemoModel {
                 guard size <= 10 * 1_024 * 1_024 else { throw MacDemoFeatureError("Choose images smaller than 10 MB each.") }
                 let data = try Data(contentsOf: url)
                 guard NSImage(data: data) != nil else { throw MacDemoFeatureError("The selected file is not a readable image.") }
-                return AgentImageAttachment(mimeType: url.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg", data: data)
+                return AgentImageAttachment(mimeType: url.pathExtension.lowercased() == "png" ? .png : .jpeg, data: data)
             }
             pendingImages += attachments
         } catch { errorMessage = error.localizedDescription }
