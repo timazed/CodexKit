@@ -25,6 +25,7 @@ public enum AgentLogCategory: String, Sendable, Codable, Hashable, CaseIterable 
     case tools
     case approvals
     case structuredOutput
+    case recovery
     case memory
 }
 

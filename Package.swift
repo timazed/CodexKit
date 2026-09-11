@@ -30,6 +30,11 @@ let package = Package(
         .package(url: "https://github.com/realm/realm-swift.git", from: "20.0.5"),
     ],
     targets: [
+        .target(name: "RecoveryIntegrationSupport", dependencies: ["CodexKit"], path: "Tests/RecoveryIntegrationSupport"),
+        .executableTarget(name: "RecoveryIntegrationFixture", dependencies: ["CodexKit", "RecoveryIntegrationSupport"],
+                          path: "Tests/RecoveryIntegrationFixture"),
+        .testTarget(name: "CodexKitRecoveryIntegrationTests", dependencies: ["CodexKit", "RecoveryIntegrationSupport", "RecoveryIntegrationFixture"],
+                    path: "Tests/CodexKitRecoveryIntegrationTests"),
         .target(
             name: "CodexKit",
             dependencies: [],

@@ -152,3 +152,11 @@ try await runtime.updateThreadConfiguration(
     reasoningEffort: .medium
 )
 ```
+
+## Per-request selection and backend wrappers
+
+The existing fixed backend/thread defaults remain the default behavior. Apps that need purpose- or account-aware selection can inject `CodexModelSelecting` into `CodexResponsesBackend`, choose explicit ordered candidates with `PreferredAvailableCodexModelSelector`, or implement their own actor/class/closure policy. `Request.modelOverride` pins a single request; `selectionPurpose` is host-owned routing metadata.
+
+Selection happens during request preparation, before model-dependent runtime work. Custom wrappers can delegate that preparation and the separate structured-recovery adapter without moving application model policies into CodexKit. Recoverable operations freeze the effective configuration and canonical body; only an explicit new operation/reselection can change it.
+
+See [request preparation and model selection](request-preparation-and-model-selection.md) for precedence, fine-grained fallback control, and the public wrapper fixture, and [structured recovery](structured-request-recovery.md) for lifecycle and durable-budget semantics.

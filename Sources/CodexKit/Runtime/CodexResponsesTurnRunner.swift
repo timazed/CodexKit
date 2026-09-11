@@ -352,7 +352,7 @@ struct CodexResponsesTurnRunner {
     func makeRequest(
         for state: TurnRunState, session: ChatGPTSession? = nil
     ) throws -> URLRequest {
-        try requestFactory.buildURLRequest(
+        var wire = try requestFactory.buildURLRequest(
             threadConfiguration: threadConfiguration,
             instructions: instructions,
             responseContract: responseContract,
@@ -361,6 +361,8 @@ struct CodexResponsesTurnRunner {
             tools: tools,
             session: session ?? self.session
         )
+        if let body = AgentStructuredRecoveryContext.current?.frozenBody { wire.httpBody = body }
+        return wire
     }
 
     func consumeEventStream(

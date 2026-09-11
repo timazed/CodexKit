@@ -9,11 +9,12 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | Guide | Topics |
 | --- | --- |
 | [Backend configuration and models](backend-configuration.md) | Account auth, retries, response budgets, GPT-6 Astra, reasoning, response state |
+| [Request preparation and model selection](request-preparation-and-model-selection.md) | Fixed, account-aware, and host-defined selection; exact overrides; delegating wrappers |
 | [Local Codex login on macOS](auth-on-macos.md) | Read-only discovery, external ownership, renewal, and disconnect |
 | [Runtime progress, tools, and turn control](upstream-runtime-features.md) | Parallel tools, progress, model discovery, usage limits, steering, interruption |
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
-| [Structured request recovery](structured-request-recovery.md) | Account-bound completed receipts, host-budgeted replacement, cancellation, cold reopen |
+| [Structured request recovery](structured-request-recovery.md) | Frozen requests, lifecycle suspension, bounded retries, completed receipts, schema upgrades, retention |
 | [Persistence and observation](persistence.md) | SQLite/Realm integration, migration, queries, Combine, context compaction |
 | [Memory](memory.md) | Capture, retrieval, guided writing, raw stores, attribution |
 | [Personas and skills](personas-and-skills.md) | Layered instructions, tool policies, dynamic definitions, previews |

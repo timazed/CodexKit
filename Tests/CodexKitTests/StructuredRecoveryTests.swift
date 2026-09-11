@@ -154,7 +154,7 @@ final class StructuredRecoveryTests: XCTestCase {
         XCTAssertEqual(status.attemptsUsed, 2)
     }
 
-    func testCancellationPersistsAndNeverReplays() async throws {
+    func testTaskCancellationSuspendsAndExplicitCancellationNeverReplays() async throws {
         RecoveryProbeURLProtocol.configure([.init(body: created + delta, holdOpen: true)])
         let runtime = try runtime()
         let handle = try await prepare(runtime)
@@ -163,6 +163,10 @@ final class StructuredRecoveryTests: XCTestCase {
         try await waitForCursor(handle, 1)
         task.cancel()
         do { _ = try await task.value; XCTFail("Cancelled") } catch { XCTAssertTrue(error is CancellationError) }
+        let suspended = try await runtime.structuredRecoveryStatus(handle, store: store)
+        XCTAssertEqual(suspended.availability, .suspended)
+        XCTAssertEqual(suspended.attemptsUsed, 1)
+        try await runtime.cancelStructuredRecovery(handle, store: store)
         let reopened = try self.runtime()
         do {
             _ = try await reopened.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in true }

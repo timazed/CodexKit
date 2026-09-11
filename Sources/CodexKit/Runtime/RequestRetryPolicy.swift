@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RequestRetryPolicy: Sendable, Equatable {
+public struct RequestRetryPolicy: Sendable, Equatable, Codable {
     public let maxAttempts: Int
     public let initialBackoff: TimeInterval
     public let maxBackoff: TimeInterval

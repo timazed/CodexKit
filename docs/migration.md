@@ -4,6 +4,22 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Host-app recovery and request preparation
+
+This is one opt-in recovery and request-preparation change, not a rollout with mixed budget semantics. Ordinary `send` retains its default selection and transient retry behavior. The new model-selector initializer argument defaults to `nil`; existing backend wrappers do not gain new mandatory `AgentBackend` requirements.
+
+- Adopt `AgentBackendRequestPreparing` when a wrapper customizes request configuration, and delegate `AgentBackendStructuredRecoverySupporting.structuredRecoveryAdapter` to its underlying `CodexResponsesBackend`. Selecting a model only in the wrapper's `beginTurn` is too late for preparation and cannot freeze a recoverable request. See [request preparation and model selection](request-preparation-and-model-selection.md).
+- Task cancellation, sign-out interruption, and background expiration suspend an active recovery execution. Call `cancelStructuredRecovery` for a permanent, terminal decision. Alpha.30 records already marked cancelled remain cancelled; this upgrade never revives them.
+- New records use version 2, preserving the version-1 handle UUID and all consumed attempts. A pending legacy request is upgraded lazily before transmission using its saved thread configuration and original instructions; its first v2 preparation freezes the canonical body. Version 1 did not save that body, so exact pre-upgrade serialization cannot be reconstructed if SDK serialization has changed. Endpoint and recorded reasoning-summary settings must still match. Legacy records retain their no-delay recovery behavior; new records persist their configured backoff and cooldown.
+- Additive record fields decode as optional. Unknown record versions and unreadable files are retained and return typed errors. Never delete a record and silently start a fresh operation as a migration strategy. Host job/contract metadata is absent in v1; recover the association from the app's own persisted handle mapping.
+- Generation expiry no longer hides an already-saved completion. Read it with the original type or `structuredRecoveryReceipt`, migrate its original contract in the host, and acknowledge only after an atomic, idempotent commit. Supply `expectedContractVersion` when the same JSON schema can have different application semantics.
+- Acknowledgement is idempotent and writes a small disposition marker before removing prompts and responses. Normal `sendRecovering` after acknowledgement still reports unavailable state. Status can distinguish acknowledged from missing until the host explicitly cleans up that marker.
+- Manual retry requires `retryStructuredRecovery` with a host-persisted user-action UUID. It creates a new operation and bounded budget, leaving the source untouched. Persist the returned child handle before sending it; replay the same action if the app crashes before saving that association. Automatic reopen never resets a budget.
+- Recovery status and error enums gain cases, and `AgentLogCategory` gains `recovery`. Update exhaustive switches. Older serialized status values remain readable. Transport interruptions retain their typed underlying cause; do not replace existing domain/code handling with message parsing.
+- Added defaulted parameters preserve ordinary call sites, not exact initializer or method function-reference types. Wrap stored function references in closures when adopting the new signatures. Alpha snapshots are not an ABI-stability promise.
+
+There is no runtime database migration: recovery storage remains separate. See [structured request recovery](structured-request-recovery.md) for durability boundaries, state transitions, failure policies, and retention responsibilities.
+
 ## Structured recovery (alpha.30)
 
 The new [structured recovery API](structured-request-recovery.md) is opt-in and does not change existing `send` retry policy. It uses separate local storage; no runtime database migration is required. Responses URL failures now carry `AgentRuntimeError.interruption` rather than escaping as raw `URLError`. Read `interruption.transportErrorDomain` and `transportErrorCode` when mapping transport failures to app UI. Cancellation continues to use `CancellationError`.

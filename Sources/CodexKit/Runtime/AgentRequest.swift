@@ -21,6 +21,12 @@ public struct Request: Codable, Hashable, Sendable {
     public var personaOverride: AgentPersonaStack?
     public var skillSelection: AgentSkillSelection
     public var memorySelection: MemorySelection?
+    /// Host-only routing information. Never added to model input.
+    public var selectionPurpose: String?
+    /// A binding per-request override; a selector cannot replace it.
+    public var modelOverride: AgentThreadConfiguration?
+    public var modelRequirements: AgentModelRequirements?
+    var resolvedModelSelection: CodexModelSelection?
     var context: CompiledRequestContext?
     var options: CompiledRequestOptions?
 
@@ -41,6 +47,10 @@ public struct Request: Codable, Hashable, Sendable {
         self.personaOverride = personaOverride
         self.skillSelection = skillSelection
         self.memorySelection = memorySelection
+        self.selectionPurpose = nil
+        self.modelOverride = nil
+        self.modelRequirements = nil
+        self.resolvedModelSelection = nil
     }
 
     public init<Context: Encodable & Sendable, Options: RequestOptionsRepresentable>(
@@ -193,6 +203,7 @@ public struct Request: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case selectionPurpose, modelOverride, modelRequirements
         case text
         case images
         case clientRequestID
@@ -215,5 +226,9 @@ public struct Request: Codable, Hashable, Sendable {
         personaOverride = try container.decodeIfPresent(AgentPersonaStack.self, forKey: .personaOverride)
         skillSelection = try container.decodeIfPresent(AgentSkillSelection.self, forKey: .skillSelection) ?? .none
         memorySelection = try container.decodeIfPresent(MemorySelection.self, forKey: .memorySelection)
+        selectionPurpose = try container.decodeIfPresent(String.self, forKey: .selectionPurpose)
+        modelOverride = try container.decodeIfPresent(AgentThreadConfiguration.self, forKey: .modelOverride)
+        modelRequirements = try container.decodeIfPresent(AgentModelRequirements.self, forKey: .modelRequirements)
+        resolvedModelSelection = nil
     }
 }

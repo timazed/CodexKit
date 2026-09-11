@@ -158,6 +158,7 @@ public actor CodexResponsesBackend: AgentBackend {
     public let defaultThreadConfiguration: AgentThreadConfiguration?
 
     let configuration: CodexResponsesBackendConfiguration
+    let modelSelector: (any CodexModelSelecting)?
     let logger: AgentLogger
     let urlSession: URLSession
     let encoder = JSONEncoder()
@@ -168,9 +169,11 @@ public actor CodexResponsesBackend: AgentBackend {
 
     public init(
         configuration: CodexResponsesBackendConfiguration = CodexResponsesBackendConfiguration(),
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        modelSelector: (any CodexModelSelecting)? = nil
     ) {
         self.configuration = configuration
+        self.modelSelector = modelSelector
         self.logger = AgentLogger(configuration: configuration.logging)
         self.urlSession = urlSession
         self.baseInstructions = configuration.instructions
@@ -225,6 +228,11 @@ public actor CodexResponsesBackend: AgentBackend {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentTurnStream {
+        var thread = thread
+        if modelSelector != nil || message.modelOverride != nil || message.resolvedModelSelection != nil {
+            thread.configuration = try await prepareModelSelection(for: message, in: thread,
+                responseFormat: responseFormat ?? streamedStructuredOutput?.responseFormat, session: session).configuration
+        }
         let responseContract: AgentResponseContract?
         if let streamedStructuredOutput {
             responseContract = AgentResponseContract(

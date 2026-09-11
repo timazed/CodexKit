@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Added injectable request preparation and fixed, ordered account-aware, and custom model selectors on `CodexResponsesBackend`. Host-defined purpose routing and per-request overrides resolve before model-dependent runtime work; recovery freezes the effective configuration and canonical body before any generation.
+- Added a narrowly scoped recovery adapter that backend wrappers can delegate without replacing the SDK's authentication, endpoint, attempt-authorization, or tool-safety gates.
+- Added lifecycle suspension, durable cooldowns and attempt history, explicit idempotent manual retry with linked operations, actionable status, original-contract receipt access, account/scope cleanup, and structured recovery events through `AgentLogSink`.
+- Added public-API integration coverage for independent concurrent jobs, dynamic selection, disconnects, account changes, persisted budgets, and actual process crashes around idempotent host commits and acknowledgement.
+
+### Changed
+
+- Cancelling an owning structured-recovery task or exhausting background execution now suspends the operation. Explicit `cancelStructuredRecovery` remains terminal. Neither path publishes a result into the cancelled execution; hosts must also guard their own lifecycle and commit transaction.
+- Recovery records now use version 2. Existing alpha.30 handles, attempt counts, saved receipts, and permanent cancellation remain supported; unknown versions and incompatible contracts fail without deleting records or generating replacements.
+- Receipt acknowledgement removes sensitive content but retains a small disposition marker until explicit cleanup. Recovery expiry governs new attempt authorization, not access to a saved completion. See the [migration guide](docs/migration.md#host-app-recovery-and-request-preparation).
+
 ## [2.0.0-alpha.30] - 2026-09-10
 
 This prerelease adds local completed-result recovery and explicitly authorized replacement attempts for tool-free structured requests. It does not resume a remote provider stream. See the [verification report](docs/release-readiness-alpha30-2026-09-10.md).

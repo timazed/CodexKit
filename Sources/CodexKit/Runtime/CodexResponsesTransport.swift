@@ -11,7 +11,8 @@ struct CodexResponsesRequestFactory: Sendable {
         threadID: String,
         items: [WorkingHistoryItem],
         tools: [ToolDefinition],
-        session: ChatGPTSession
+        session: ChatGPTSession,
+        recoveryMode: Bool = false
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
             model: threadConfiguration.model,
@@ -24,13 +25,13 @@ struct CodexResponsesRequestFactory: Sendable {
                 )
             ),
             input: items.map(\.jsonValue),
-            tools: AgentStructuredRecoveryContext.current == nil ? responsesTools(
+            tools: !recoveryMode && AgentStructuredRecoveryContext.current == nil ? responsesTools(
                 from: tools,
                 enableWebSearch: configuration.enableWebSearch,
                 enableImageGeneration: configuration.enableImageGeneration,
                 imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
             ) : [],
-            toolChoice: AgentStructuredRecoveryContext.current == nil ? "auto" : "none",
+            toolChoice: !recoveryMode && AgentStructuredRecoveryContext.current == nil ? "auto" : "none",
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
             store: false,
             stream: true,
@@ -41,7 +42,7 @@ struct CodexResponsesRequestFactory: Sendable {
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
         request.httpMethod = "POST"
         request.timeoutInterval = configuration.streamIdleTimeout
-        if AgentStructuredRecoveryContext.current != nil {
+        if recoveryMode || AgentStructuredRecoveryContext.current != nil {
             let stableEncoder = JSONEncoder()
             stableEncoder.outputFormatting = [.sortedKeys]
             request.httpBody = try stableEncoder.encode(requestBody)
@@ -115,6 +116,8 @@ struct CodexResponsesEventStreamClient: Sendable {
                 "body_length": "\(request.httpBody?.count ?? 0)"
             ]
         )
+        try await AgentStructuredRecoveryContext.current?.beforeTransmission()
+        try Task.checkCancellation()
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(

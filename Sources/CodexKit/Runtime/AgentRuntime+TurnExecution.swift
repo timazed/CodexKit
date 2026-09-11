@@ -16,14 +16,16 @@ extension AgentRuntime {
         if let responseContract { try AgentJSONSchemaValidator.validateSchema(responseContract.format.schema) }
         guard request.hasContent else { throw AgentRuntimeError.invalidMessageContent() }
         try validateClientRequestID(request.clientRequestID)
-        guard let thread = thread(for: threadID) else { throw AgentRuntimeError.threadNotFound(threadID) }
+        guard let existingThread = thread(for: threadID) else { throw AgentRuntimeError.threadNotFound(threadID) }
         let authenticated = try await sessionManager.requireSession()
-        try validateThreadAuthentication(thread, session: authenticated)
-        if thread.authenticationBinding == nil, let index = state.threads.firstIndex(where: { $0.id == threadID }) {
+        try validateThreadAuthentication(existingThread, session: authenticated)
+        if existingThread.authenticationBinding == nil, let index = state.threads.firstIndex(where: { $0.id == threadID }) {
             state.threads[index].authenticationBinding = authenticated.binding
             enqueueStoreOperation(.upsertThread(state.threads[index]))
             try await persistState()
         }
+        let (request, thread) = try await resolveRequestConfiguration(request, thread: existingThread,
+            responseFormat: responseContract?.format, session: authenticated)
         let execution = request.isEphemeral ? nil : try reserveTurn(in: threadID)
         logger.info(.runtime, "Starting streamed message.", metadata: [
             "thread_id": threadID,
