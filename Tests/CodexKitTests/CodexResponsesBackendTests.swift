@@ -623,7 +623,7 @@ final class CodexResponsesBackendTests: XCTestCase {
         XCTAssertEqual(assistantMessage?.text, "A tiny blue square")
         XCTAssertEqual(assistantMessage?.images.count, 1)
         XCTAssertEqual(assistantMessage?.images.first?.id, "ig_123")
-        XCTAssertEqual(assistantMessage?.images.first?.mimeType, "image/png")
+        XCTAssertEqual(assistantMessage?.images.first?.mimeType, .png)
         XCTAssertEqual(assistantMessage?.images.first?.data, pngBytes)
         XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.id, "ig_123")
         XCTAssertEqual(assistantMessage?.images.first?.generationMetadata?.status, "generating")
@@ -921,7 +921,7 @@ final class CodexResponsesBackendTests: XCTestCase {
 
         XCTAssertEqual(assistantMessage?.text, "Here you go")
         XCTAssertEqual(assistantMessage?.images.count, 1)
-        XCTAssertEqual(assistantMessage?.images.first?.mimeType, "image/png")
+        XCTAssertEqual(assistantMessage?.images.first?.mimeType, .png)
         XCTAssertEqual(assistantMessage?.images.first?.data, pngBytes)
     }
 
@@ -1448,12 +1448,7 @@ final class CodexResponsesBackendTests: XCTestCase {
 
         await TestURLProtocol.enqueue(.init(
             headers: ["Content-Type": "application/json"],
-            body: Data("""
-            {"id":"cmp_response","object":"response.compaction","output":[
-              {"id":"msg_user","type":"message","status":"completed","role":"user","content":[{"type":"input_text","text":"Original question"}]},
-              {"id":"cmp_1","type":"compaction","encrypted_content":"compacted-ciphertext"}
-            ]}
-            """.utf8),
+            body: streamedCompactionReply(encryptedContent: "compacted-ciphertext"),
             inspect: { request in
                 let body = try XCTUnwrap(requestBodyData(for: request))
                 let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])

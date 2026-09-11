@@ -20,11 +20,13 @@ public struct CodexAvailableModel: Codable, Hashable, Sendable, Identifiable {
     public let contextWindowTokenCount: Int?
     public let hidden: Bool
     public let supportsParallelToolCalls: Bool?
+    public let supportsImageDetailOriginal: Bool?
 
     public init(model: CodexModel, displayName: String, summary: String,
                 defaultReasoningEffort: ReasoningEffort, supportedReasoningEfforts: [ReasoningEffort],
                 inputModalities: [CodexModelInputModality], contextWindowTokenCount: Int? = nil,
-                hidden: Bool = false, supportsParallelToolCalls: Bool? = nil) {
+                hidden: Bool = false, supportsParallelToolCalls: Bool? = nil,
+                supportsImageDetailOriginal: Bool?) {
         self.model = model
         self.displayName = displayName
         self.summary = summary
@@ -34,7 +36,19 @@ public struct CodexAvailableModel: Codable, Hashable, Sendable, Identifiable {
         self.contextWindowTokenCount = contextWindowTokenCount
         self.hidden = hidden
         self.supportsParallelToolCalls = supportsParallelToolCalls
+        self.supportsImageDetailOriginal = supportsImageDetailOriginal
     }
+
+    public init(model: CodexModel, displayName: String, summary: String,
+        defaultReasoningEffort: ReasoningEffort, supportedReasoningEfforts: [ReasoningEffort],
+        inputModalities: [CodexModelInputModality], contextWindowTokenCount: Int? = nil,
+        hidden: Bool = false, supportsParallelToolCalls: Bool? = nil) {
+        self.init(model: model, displayName: displayName, summary: summary,
+            defaultReasoningEffort: defaultReasoningEffort, supportedReasoningEfforts: supportedReasoningEfforts,
+            inputModalities: inputModalities, contextWindowTokenCount: contextWindowTokenCount,
+            hidden: hidden, supportsParallelToolCalls: supportsParallelToolCalls, supportsImageDetailOriginal: nil)
+    }
+
 }
 
 public struct CodexModelCatalogSnapshot: Sendable {
@@ -186,7 +200,8 @@ extension CodexResponsesBackend: AgentBackendModelDiscovering, AgentBackendRateL
                 summary: m["description"]?.stringValue ?? "", defaultReasoningEffort: defaultEffort,
                 supportedReasoningEfforts: levels, inputModalities: modalities,
                 contextWindowTokenCount: context, hidden: m["visibility"]?.stringValue != "list",
-                supportsParallelToolCalls: parallel
+                supportsParallelToolCalls: parallel,
+                supportsImageDetailOriginal: m["supports_image_detail_original"] == .bool(true)
             ))
         }
         return catalog
@@ -199,7 +214,8 @@ extension CodexModelCatalogSnapshot {
             .init(model: $0.model, displayName: $0.displayName, summary: $0.summary,
                   defaultReasoningEffort: $0.defaultReasoningEffort, supportedReasoningEfforts: $0.supportedReasoningEfforts,
                   inputModalities: $0.inputModalities, contextWindowTokenCount: $0.contextWindowTokenCount,
-                  hidden: !CodexModel.userFacingModels.contains($0.model))
+                  hidden: !CodexModel.userFacingModels.contains($0.model),
+                  supportsImageDetailOriginal: $0.supportsImageDetailOriginal)
         }, source: .bundled, fetchedAt: nil, isStale: true)
     }
 }

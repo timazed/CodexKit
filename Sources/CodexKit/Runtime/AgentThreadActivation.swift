@@ -188,10 +188,16 @@ package enum AgentThreadContextWindow {
         }
     }
 
+    package static func boundedMessages(_ messages: [AgentMessage], policy: AgentThreadActivationPolicy,
+        requireClosedTurns: Bool) -> [AgentMessage] {
+        boundedMessages(messages, policy: policy, requireClosedTurns: requireClosedTurns, completedMessageIDs: [])
+    }
+
     package static func boundedMessages(
         _ messages: [AgentMessage],
         policy: AgentThreadActivationPolicy,
-        requireClosedTurns: Bool
+        requireClosedTurns: Bool,
+        completedMessageIDs: Set<String>
     ) -> [AgentMessage] {
         let maximumMessageCount = min(
             max(0, policy.maximumMessageCount),
@@ -214,7 +220,7 @@ package enum AgentThreadContextWindow {
         var selectedTokenCount = 0
 
         for unit in units.reversed() {
-            if requireClosedTurns, !isClosed(unit) {
+            if requireClosedTurns, !isClosed(unit), !unit.allSatisfy({ completedMessageIDs.contains($0.id) }) {
                 continue
             }
 

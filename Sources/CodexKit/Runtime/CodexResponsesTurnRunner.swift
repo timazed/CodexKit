@@ -42,6 +42,7 @@ struct CodexResponsesTurnRunner {
         tools: [ToolDefinition],
         session: ChatGPTSession,
         pendingToolResults: PendingToolResults,
+        supportsImageDetailOriginal: Bool? = nil,
         control: CodexTurnControl = CodexTurnControl(),
         rateLimitObserver: @escaping @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in },
         streamReady: @escaping @Sendable () async -> Void = {},
@@ -52,7 +53,8 @@ struct CodexResponsesTurnRunner {
         self.instructions = instructions
         self.responseContract = responseContract
         self.threadConfiguration = threadConfiguration
-        self.requestFactory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder)
+        self.requestFactory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder,
+            supportsImageDetailOriginal: supportsImageDetailOriginal)
         self.streamClient = CodexResponsesEventStreamClient(
             urlSession: urlSession,
             decoder: decoder,

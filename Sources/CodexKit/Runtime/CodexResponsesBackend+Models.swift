@@ -56,26 +56,6 @@ struct ResponsesRequestBody: Encodable {
     }
 }
 
-struct ResponsesCompactRequestBody: Encodable {
-    let model: String
-    let reasoning: ResponsesReasoningConfiguration
-    let instructions: String
-    let text: ResponsesTextConfiguration
-    let input: [JSONValue]
-    let tools: [JSONValue]
-    let parallelToolCalls: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case model
-        case reasoning
-        case instructions
-        case text
-        case input
-        case tools
-        case parallelToolCalls = "parallel_tool_calls"
-    }
-}
-
 struct ResponsesReasoningConfiguration: Encodable {
     let effort: String
     let summary: String?
@@ -184,10 +164,7 @@ enum WorkingHistoryItem: Sendable {
 
             if message.role == .user {
                 content.append(contentsOf: message.images.map { image in
-                    .object([
-                        "type": .string("input_image"),
-                        "image_url": .string(image.dataURLString),
-                    ])
+                    image.responsesInputImage
                 })
             }
         }

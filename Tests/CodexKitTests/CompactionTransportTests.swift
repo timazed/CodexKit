@@ -16,7 +16,7 @@ final class CompactionTransportTests: XCTestCase {
         for limit in [compactReply.count, nil] {
             await TestURLProtocol.enqueue(.init(body: compactReply))
             let result = try await compact(configuration: .init(maximumResponseBytes: limit))
-            XCTAssertEqual(result.effectiveMessages.first?.text, "Summary")
+            XCTAssertEqual(result.providerContext?.payload.objectValue?["items"]?.arrayValue?.last?.objectValue?["encrypted_content"], .string("Summary"))
         }
     }
 
@@ -52,7 +52,7 @@ final class CompactionTransportTests: XCTestCase {
             XCTAssertEqual(body.count, size)
             await TestURLProtocol.enqueue(.init(headers: ["Content-Length": "1"], body: body))
             let result = try await compact(configuration: .init(maximumResponseBytes: size))
-            XCTAssertEqual(result.effectiveMessages.first?.text, text)
+            XCTAssertEqual(result.providerContext?.payload.objectValue?["items"]?.arrayValue?.last?.objectValue?["encrypted_content"], .string(text))
             await TestURLProtocol.enqueue(.init(body: body))
             do {
                 _ = try await compact(configuration: .init(maximumResponseBytes: size - 1))
@@ -62,7 +62,7 @@ final class CompactionTransportTests: XCTestCase {
     }
 
     func testDownloadFailureCannotCommitAPartiallyBufferedResponse() async throws {
-        var body = compactReply
+        var body = Data("data: {\"type\":\"response.created\"}\n\n".utf8)
         body.append(Data(repeating: 32, count: 70_000))
         await TestURLProtocol.enqueue(.init(body: body, completionError: URLError(.networkConnectionLost)))
         do { _ = try await compact(); XCTFail("Expected interrupted download") }
@@ -84,7 +84,7 @@ final class CompactionTransportTests: XCTestCase {
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
         await TestURLProtocol.enqueue(.init(body: compactReply, inspect: { request in
             let value = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
-            XCTAssertEqual(value.objectValue?["input"]?.arrayValue, raw)
+            XCTAssertEqual(value.objectValue?["input"]?.arrayValue, raw + [.object(["type": .string("compaction_trigger")])])
         }))
         do {
             _ = try await backend.compactContext(thread: .init(id: "thread"), effectiveHistory: [], providerContext: context,
@@ -104,7 +104,7 @@ final class CompactionTransportTests: XCTestCase {
         ]))
         await TestURLProtocol.enqueue(.init(body: compactReply, inspect: { request in
             let value = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
-            XCTAssertEqual(value.objectValue?["input"]?.arrayValue, [item])
+            XCTAssertEqual(value.objectValue?["input"]?.arrayValue, [item, .object(["type": .string("compaction_trigger")])])
             XCTAssertNil(value.objectValue?["previous_response_id"])
         }))
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
@@ -114,18 +114,16 @@ final class CompactionTransportTests: XCTestCase {
 
     func testCompactionResponseImagesStayInBlobsAndResolveAfterDatabaseReopen() async throws {
         let image = AgentImageAttachment(mimeType: "image/png", data: Data([137, 80, 78, 71]))
-        let output: [JSONValue] = [WorkingHistoryItem.visibleMessage(.init(threadID: "thread", role: .user,
-            text: "Image summary", images: [image])).jsonValue,
-            .object(["type": .string("image_generation_call"), "id": .string("generated"),
-                "status": .string("completed"), "result": .string(image.data.base64EncodedString())])]
-        let body = try JSONEncoder().encode(JSONValue.object(["output": .array(output)]))
-        await TestURLProtocol.enqueue(.init(body: body))
-        let compacted = try await compact()
+        let message = AgentMessage(threadID: "thread", role: .user, text: "Image summary", images: [image])
+        let output = [WorkingHistoryItem.visibleMessage(message).jsonValue]
+        await TestURLProtocol.enqueue(.init(body: compactReply))
+        let compacted = try await CodexResponsesBackend(urlSession: makeTestURLSession()).compactContext(
+            thread: .init(id: "thread"), effectiveHistory: [message], instructions: "", tools: [], session: demoSession())
         let compactedPayload = try JSONEncoder().encode(compacted.providerContext)
         let payloadText = String(decoding: compactedPayload, as: UTF8.self)
         XCTAssertFalse(payloadText.contains(image.data.base64EncodedString()))
         XCTAssertTrue(payloadText.contains("codexkit-image-ref:"))
-        XCTAssertEqual(compacted.effectiveMessages.flatMap(\.images).map(\.data), [image.data, image.data])
+        XCTAssertEqual(compacted.effectiveMessages.flatMap(\.images).map(\.data), [image.data])
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         for adapter in ["sqlite", "realm"] {
@@ -140,7 +138,10 @@ final class CompactionTransportTests: XCTestCase {
             let activation = try await reopened.loadThreadActivationState(id: "thread", policy: .init())
             await TestURLProtocol.enqueue(.init(body: compactReply, inspect: { request in
                 let value = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
-                XCTAssertEqual(value.objectValue?["input"]?.arrayValue, output)
+                let input = try XCTUnwrap(value.objectValue?["input"]?.arrayValue)
+                XCTAssertEqual(Array(input.prefix(1)), output)
+                XCTAssertEqual(input.dropFirst().first?.objectValue?["type"], .string("compaction"))
+                XCTAssertEqual(input.last?.objectValue?["type"], .string("compaction_trigger"))
             }))
             _ = try await CodexResponsesBackend(urlSession: makeTestURLSession()).compactContext(thread: activation.thread,
                 effectiveHistory: activation.effectiveMessages, providerContext: activation.contextState?.providerContext,
@@ -160,7 +161,7 @@ final class CompactionTransportTests: XCTestCase {
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer recovered")
             }))
             let result = try await runtime.compactThreadContext(id: thread.id)
-            XCTAssertEqual(result.effectiveMessages.first?.text, "Summary")
+            XCTAssertEqual(result.providerContext?.payload.objectValue?["items"]?.arrayValue?.last?.objectValue?["encrypted_content"], .string("Summary"))
             let recoveries = await provider.recoveries
             XCTAssertEqual(recoveries, 1)
         }
@@ -220,20 +221,20 @@ final class CompactionTransportTests: XCTestCase {
         catch { XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled) }
     }
 
-    private func compact(configuration: CodexResponsesBackendConfiguration = .init()) async throws -> AgentCompactionResult {
+    private func compact(configuration: CodexResponsesBackendConfiguration = .init(requestRetryPolicy: .disabled)) async throws -> AgentCompactionResult {
         try await CodexResponsesBackend(configuration: configuration, urlSession: makeTestURLSession()).compactContext(
             thread: .init(id: "thread"), effectiveHistory: [], instructions: "", tools: [], session: demoSession())
     }
 
     private func runtime(provider: CompactionSessionProvider, strategy: AgentContextCompactionStrategy,
         store: any RuntimeStateStoring = InMemoryRuntimeStateStore()) throws -> AgentRuntime {
-        try .init(configuration: .init(sessionProvider: provider, backend: CodexResponsesBackend(urlSession: makeTestURLSession()),
+        try .init(configuration: .init(sessionProvider: provider, backend: CodexResponsesBackend(configuration: .init(requestRetryPolicy: .disabled), urlSession: makeTestURLSession()),
             approvalPresenter: AutoApprovalPresenter(), stateStore: store,
             contextCompaction: .init(isEnabled: true, mode: .manual, strategy: strategy)))
     }
 
     private var compactReply: Data {
-        Data(#"{"output":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Summary"}]}]}"#.utf8)
+        streamedCompactionReply()
     }
 }
 

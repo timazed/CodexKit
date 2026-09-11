@@ -52,9 +52,10 @@ fileprivate struct RuntimeAttachmentWriteKey: Hashable, Sendable {
     let recordID: String
     let index: Int
     let attachmentID: String
-    let mimeType: String
+    let mimeType: AgentImageMIMEType
     let contentDigest: String
     let generationMetadata: AgentImageGenerationMetadata?
+    let detail: AgentImageDetail?
 
     init(
         attachment: AgentImageAttachment,
@@ -69,6 +70,7 @@ fileprivate struct RuntimeAttachmentWriteKey: Hashable, Sendable {
         self.mimeType = attachment.mimeType
         self.contentDigest = RuntimeAttachmentStore.digest(attachment.data)
         self.generationMetadata = attachment.generationMetadata
+        self.detail = attachment.detail
     }
 }
 
@@ -270,7 +272,8 @@ package struct RuntimeAttachmentStore: Sendable {
             id: attachment.id,
             mimeType: attachment.mimeType,
             data: data,
-            generationMetadata: attachment.generationMetadata
+            generationMetadata: attachment.generationMetadata,
+            detail: attachment.detail
         )
     }
 
@@ -379,9 +382,10 @@ package struct RuntimeAttachmentStore: Sendable {
     ) -> PersistedImageAttachment {
         PersistedImageAttachment(
             id: attachment.id,
-            mimeType: attachment.mimeType,
+            mimeType: attachment.mimeType.rawValue,
             storageKey: storageKey,
-            generationMetadata: attachment.generationMetadata
+            generationMetadata: attachment.generationMetadata,
+            detail: attachment.detail
         )
     }
 
@@ -395,7 +399,7 @@ package struct RuntimeAttachmentStore: Sendable {
         let recordComponent = Self.safePathComponent(recordID)
         let attachmentComponent = Self.safePathComponent(attachment.id)
         let contentComponent = Self.digest(attachment.data)
-        let fileName = "\(index)-\(attachmentComponent)-\(contentComponent).\(fileExtension(for: attachment.mimeType))"
+        let fileName = "\(index)-\(attachmentComponent)-\(contentComponent).\(fileExtension(for: attachment.mimeType.rawValue))"
         return threadComponent + "/" + recordComponent + "/" + fileName
     }
 

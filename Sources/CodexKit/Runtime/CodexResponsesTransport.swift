@@ -3,6 +3,7 @@ import Foundation
 struct CodexResponsesRequestFactory: Sendable {
     let configuration: CodexResponsesBackendConfiguration
     let encoder: JSONEncoder
+    var supportsImageDetailOriginal: Bool? = nil
 
     func buildURLRequest(
         threadConfiguration: AgentThreadConfiguration,
@@ -11,7 +12,8 @@ struct CodexResponsesRequestFactory: Sendable {
         threadID: String,
         items: [WorkingHistoryItem],
         tools: [ToolDefinition],
-        session: ChatGPTSession
+        session: ChatGPTSession,
+        isCompaction: Bool = false
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
             model: threadConfiguration.model,
@@ -23,7 +25,9 @@ struct CodexResponsesRequestFactory: Sendable {
                     responseFormat: responseContract?.textFormat
                 )
             ),
-            input: items.map(\.jsonValue),
+            input: CodexResponsesImageDetail.normalize(items.map(\.jsonValue),
+                supportsOriginal: supportsImageDetailOriginal
+                    ?? CodexModel(rawValue: threadConfiguration.model).info?.supportsImageDetailOriginal ?? false),
             tools: AgentStructuredRecoveryContext.current == nil ? responsesTools(
                 from: tools,
                 enableWebSearch: configuration.enableWebSearch,
@@ -60,6 +64,11 @@ struct CodexResponsesRequestFactory: Sendable {
             request.setValue(value, forHTTPHeaderField: header)
         }
 
+        if isCompaction {
+            let key = "x-codex-beta-features"
+            let features = request.value(forHTTPHeaderField: key).map { $0 + "," } ?? ""
+            request.setValue(features + "remote_compaction_v2", forHTTPHeaderField: key)
+        }
         return request
     }
 
@@ -233,6 +242,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         policy: RequestRetryPolicy
     ) -> Bool {
         if let runtimeError = error as? AgentRuntimeError {
+            if runtimeError.http?.isQuotaExceeded == true || runtimeError.code == "quota_exceeded" { return false }
             if let code = runtimeError.interruption?.transportErrorCode {
                 return policy.retryableURLErrorCodes.contains(code)
             }
@@ -314,7 +324,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         return Int(errorCode.dropFirst(prefix.count))
     }
 
-    private func parseStreamEvent(
+    func parseStreamEvent(
         from payload: SSEEventPayload
     ) throws -> CodexResponsesStreamEvent? {
         guard !payload.data.isEmpty else {

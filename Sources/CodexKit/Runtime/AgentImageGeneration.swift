@@ -11,14 +11,14 @@ public enum AgentImageOutputFormat: String, Codable, Hashable, Sendable {
     case jpeg
     case webp
 
-    var mimeType: String {
+    var mimeType: AgentImageMIMEType {
         switch self {
         case .png:
-            "image/png"
+            .png
         case .jpeg:
-            "image/jpeg"
+            .jpeg
         case .webp:
-            "image/webp"
+            .webp
         }
     }
 }
@@ -227,12 +227,7 @@ public actor AgentImageGenerationClient {
                 "text": .string(prompt),
             ]),
         ]
-        content.append(contentsOf: images.map { image in
-            .object([
-                "type": .string("input_image"),
-                "image_url": .string(image.dataURLString),
-            ])
-        })
+        content.append(contentsOf: images.map(\.responsesInputImage))
 
         var tool: [String: JSONValue] = [
             "type": .string("image_generation"),
@@ -251,12 +246,13 @@ public actor AgentImageGenerationClient {
 
         let body = ImageGenerationRequestBody(
             model: configuration.model,
-            input: [
+            input: CodexResponsesImageDetail.normalize([
                 .object([
+                    "type": .string("message"),
                     "role": .string("user"),
                     "content": .array(content),
                 ]),
-            ],
+            ], supportsOriginal: CodexModel(rawValue: configuration.model).info?.supportsImageDetailOriginal ?? false),
             tools: [.object(tool)],
             store: false
         )
@@ -279,12 +275,12 @@ public actor AgentImageGenerationClient {
 
     private func validateEditableImages(_ images: [AgentImageAttachment]) throws {
         if let unsupported = images.first(where: { !Self.isSupportedEditableImageMimeType($0.mimeType) }) {
-            throw AgentRuntimeError.unsupportedImageMimeType(unsupported.mimeType)
+            throw AgentRuntimeError.unsupportedImageMimeType(unsupported.mimeType.rawValue)
         }
     }
 
-    private static func isSupportedEditableImageMimeType(_ mimeType: String) -> Bool {
-        switch mimeType.lowercased() {
+    private static func isSupportedEditableImageMimeType(_ mimeType: AgentImageMIMEType) -> Bool {
+        switch mimeType.rawValue.lowercased() {
         case "image/png", "image/jpeg", "image/webp":
             true
         default:

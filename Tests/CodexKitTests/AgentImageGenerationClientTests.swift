@@ -78,7 +78,7 @@ final class AgentImageGenerationClientTests: XCTestCase {
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results.first?.id, "ig_123")
         XCTAssertEqual(results.first?.revisedPrompt, "Make the background transparent.")
-        XCTAssertEqual(results.first?.image.mimeType, "image/png")
+        XCTAssertEqual(results.first?.image.mimeType, .png)
         XCTAssertEqual(results.first?.image.data, generatedBytes)
     }
 

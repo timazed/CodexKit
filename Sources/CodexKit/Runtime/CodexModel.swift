@@ -56,6 +56,13 @@ public struct CodexModelInfo: Codable, Hashable, Sendable, Identifiable {
     public let contextWindowTokenCount: Int
     public let inputModalities: [CodexModelInputModality]
     public let availability: CodexModelAvailability
+    public let supportsImageDetailOriginal: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case model, displayName, summary, defaultReasoningEffort, supportedReasoningEfforts
+        case contextWindowTokenCount, inputModalities, availability
+        case supportsImageDetailOriginal
+    }
 
     public var id: CodexModel { model }
 
@@ -67,7 +74,8 @@ public struct CodexModelInfo: Codable, Hashable, Sendable, Identifiable {
         supportedReasoningEfforts: [ReasoningEffort],
         contextWindowTokenCount: Int,
         inputModalities: [CodexModelInputModality],
-        availability: CodexModelAvailability = .standard
+        availability: CodexModelAvailability = .standard,
+        supportsImageDetailOriginal: Bool
     ) {
         self.model = model
         self.displayName = displayName
@@ -77,11 +85,36 @@ public struct CodexModelInfo: Codable, Hashable, Sendable, Identifiable {
         self.contextWindowTokenCount = contextWindowTokenCount
         self.inputModalities = inputModalities
         self.availability = availability
+        self.supportsImageDetailOriginal = supportsImageDetailOriginal
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(model: try c.decode(CodexModel.self, forKey: .model),
+            displayName: try c.decode(String.self, forKey: .displayName),
+            summary: try c.decode(String.self, forKey: .summary),
+            defaultReasoningEffort: try c.decode(ReasoningEffort.self, forKey: .defaultReasoningEffort),
+            supportedReasoningEfforts: try c.decode([ReasoningEffort].self, forKey: .supportedReasoningEfforts),
+            contextWindowTokenCount: try c.decode(Int.self, forKey: .contextWindowTokenCount),
+            inputModalities: try c.decode([CodexModelInputModality].self, forKey: .inputModalities),
+            availability: try c.decode(CodexModelAvailability.self, forKey: .availability),
+            supportsImageDetailOriginal: try c.decodeIfPresent(Bool.self, forKey: .supportsImageDetailOriginal) ?? false)
     }
 
     public func supports(_ effort: ReasoningEffort) -> Bool {
         supportedReasoningEfforts.contains(effort)
     }
+
+    public init(model: CodexModel, displayName: String, summary: String,
+        defaultReasoningEffort: ReasoningEffort, supportedReasoningEfforts: [ReasoningEffort],
+        contextWindowTokenCount: Int, inputModalities: [CodexModelInputModality],
+        availability: CodexModelAvailability = .standard) {
+        self.init(model: model, displayName: displayName, summary: summary,
+            defaultReasoningEffort: defaultReasoningEffort, supportedReasoningEfforts: supportedReasoningEfforts,
+            contextWindowTokenCount: contextWindowTokenCount, inputModalities: inputModalities,
+            availability: availability, supportsImageDetailOriginal: false)
+    }
+
 }
 
 public extension CodexModel {
@@ -105,7 +138,8 @@ public extension CodexModel {
             defaultReasoningEffort: .low,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
             contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image]
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt56Sol,
@@ -114,7 +148,8 @@ public extension CodexModel {
             defaultReasoningEffort: .low,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
             contextWindowTokenCount: 372_000,
-            inputModalities: [.text, .image]
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt56Terra,
@@ -123,7 +158,8 @@ public extension CodexModel {
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
             contextWindowTokenCount: 372_000,
-            inputModalities: [.text, .image]
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt56Luna,
@@ -132,7 +168,8 @@ public extension CodexModel {
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max],
             contextWindowTokenCount: 372_000,
-            inputModalities: [.text, .image]
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt55,
@@ -141,7 +178,8 @@ public extension CodexModel {
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
             contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image]
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt54,
@@ -150,7 +188,8 @@ public extension CodexModel {
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
             contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image]
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt54Mini,
@@ -188,7 +227,8 @@ public extension CodexModel {
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
             contextWindowTokenCount: 272_000,
             inputModalities: [.text, .image],
-            availability: .internalUse
+            availability: .internalUse,
+            supportsImageDetailOriginal: true
         ),
     ]
 

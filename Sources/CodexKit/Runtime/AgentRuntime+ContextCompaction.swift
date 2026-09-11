@@ -56,7 +56,9 @@ extension AgentRuntime {
             effectiveMessages: boundedEffectiveMessages,
             providerContext: boundedEffectiveMessages == candidateEffectiveMessages
                 ? current.providerContext
-                : nil,
+                : (boundedEffectiveMessages.last == message ? CodexResponsesCheckpointContext.rebase(
+                    context: current.providerContext, original: current.effectiveMessages,
+                    retained: Array(boundedEffectiveMessages.dropLast())) : nil),
             generation: current.generation,
             lastCompactedAt: current.lastCompactedAt,
             lastCompactionReason: current.lastCompactionReason,
@@ -320,17 +322,13 @@ extension AgentRuntime {
             createdAt: markerTime,
         )
 
-        let preservesCompactedPrefix = if pendingUserMessage != nil {
-            Array(effectiveMessages.dropLast()) == compaction.result.effectiveMessages
-        } else {
-            effectiveMessages == compaction.result.effectiveMessages
-        }
+        let retainedCompactedMessages = pendingUserMessage != nil
+            ? Array(effectiveMessages.dropLast()) : effectiveMessages
         let updated = AgentThreadContextState(
             threadID: threadID,
             effectiveMessages: effectiveMessages,
-            providerContext: preservesCompactedPrefix
-                ? compaction.result.providerContext
-                : nil,
+            providerContext: CodexResponsesCheckpointContext.rebase(context: compaction.result.providerContext,
+                original: compaction.result.effectiveMessages, retained: retainedCompactedMessages),
             generation: nextGeneration,
             lastCompactedAt: markerTime,
             lastCompactionReason: reason,

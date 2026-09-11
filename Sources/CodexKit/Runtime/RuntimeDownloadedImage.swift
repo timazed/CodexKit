@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 enum RuntimeDownloadedImage {
     /// Inspect and decode a tiny thumbnail without changing the stored bytes.
-    static func mimeType(for data: Data) -> String? {
+    static func mimeType(for data: Data) -> AgentImageMIMEType? {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard !data.isEmpty,
               let source = CGImageSourceCreateWithData(data as CFData, options),
@@ -21,6 +21,6 @@ enum RuntimeDownloadedImage {
         ] as CFDictionary
         guard CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) != nil,
               CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return nil }
-        return mimeType
+        return AgentImageMIMEType(rawValue: mimeType)
     }
 }

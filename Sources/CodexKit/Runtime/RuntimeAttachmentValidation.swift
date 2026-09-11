@@ -56,8 +56,8 @@ extension RuntimeAttachmentStore {
     func validate(_ attachment: AgentImageAttachment) throws {
         guard !attachment.id.isEmpty,
               attachment.id.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount,
-              !attachment.mimeType.isEmpty,
-              attachment.mimeType.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount else {
+              !attachment.mimeType.rawValue.isEmpty,
+              attachment.mimeType.rawValue.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount else {
             throw RuntimeAttachmentStoreError.invalidAttachmentMetadata
         }
         guard attachment.data.count <= AgentStoreLimits.maximumImageByteCount else {

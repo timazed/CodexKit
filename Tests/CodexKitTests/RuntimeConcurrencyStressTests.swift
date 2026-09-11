@@ -228,7 +228,7 @@ private struct RuntimeStressHarness: Sendable {
             XCTAssertEqual(message.threadID, threadID)
             XCTAssertEqual(message.images.count, message.role == .user ? 1 : 0)
             for image in message.images {
-                XCTAssertEqual(image.mimeType, "image/png")
+                XCTAssertEqual(image.mimeType, .png)
                 XCTAssertEqual(image.data, Self.imageBytes)
             }
         }

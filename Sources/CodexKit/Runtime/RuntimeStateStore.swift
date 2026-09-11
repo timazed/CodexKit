@@ -121,15 +121,16 @@ public extension RuntimeStateStoring {
         let effectiveMessages = AgentThreadContextWindow.boundedMessages(
             sourceMessages,
             policy: policy,
-            requireClosedTurns: true
+            requireClosedTurns: true,
+            completedMessageIDs: CodexResponsesCheckpointContext.completedMessageIDs(
+                context: persistedContextState?.providerContext, messages: sourceMessages)
         )
         let contextState = persistedContextState.map { contextState in
             AgentThreadContextState(
                 threadID: contextState.threadID,
                 effectiveMessages: effectiveMessages,
-                providerContext: effectiveMessages == contextState.effectiveMessages
-                    ? contextState.providerContext
-                    : nil,
+                providerContext: CodexResponsesCheckpointContext.rebase(context: contextState.providerContext,
+                    original: contextState.effectiveMessages, retained: effectiveMessages),
                 generation: contextState.generation,
                 lastCompactedAt: contextState.lastCompactedAt,
                 lastCompactionReason: contextState.lastCompactionReason,

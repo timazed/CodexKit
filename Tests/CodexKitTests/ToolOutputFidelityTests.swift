@@ -109,13 +109,13 @@ final class ToolOutputFidelityTests: XCTestCase {
             await TestURLProtocol.enqueue(.init(body: data))
             let images = await downloadedImages()
             XCTAssertEqual(images.count, 1)
-            XCTAssertEqual(images.first?.mimeType, type.preferredMIMEType)
+            XCTAssertEqual(images.first?.mimeType.rawValue, type.preferredMIMEType)
             XCTAssertEqual(images.first?.data, data)
         }
         let png = try imageData(type: .png)
         await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "text/plain"], body: png))
         let images = await downloadedImages()
-        XCTAssertEqual(images.first?.mimeType, "image/png", "Actual image bytes determine the media type")
+        XCTAssertEqual(images.first?.mimeType, .png, "Actual image bytes determine the media type")
     }
 
     func testOversizedRemoteImageIsRejectedFromHeaders() async throws {

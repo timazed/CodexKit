@@ -215,7 +215,7 @@ final class DeepAuditRegressionTests: XCTestCase {
     }
 
     private var compactReply: Data {
-        Data(#"{"output":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Summary"}]}]}"#.utf8)
+        streamedCompactionReply()
     }
 }
 

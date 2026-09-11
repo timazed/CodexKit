@@ -31,45 +31,56 @@ public struct AgentImageGenerationMetadata: Codable, Hashable, Sendable {
     }
 }
 
+/// Requested input-image fidelity. Unsupported `original` detail is sent as `high`.
+public enum AgentImageDetail: String, Codable, Hashable, Sendable {
+    case auto, low, high, original
+}
+
 public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
     public let id: String
-    public let mimeType: String
+    public let mimeType: AgentImageMIMEType
     public let data: Data
+    public let detail: AgentImageDetail?
     public let generationMetadata: AgentImageGenerationMetadata?
 
     public init(
         id: String = UUID().uuidString,
-        mimeType: String,
+        mimeType: AgentImageMIMEType,
         data: Data,
-        generationMetadata: AgentImageGenerationMetadata? = nil
+        generationMetadata: AgentImageGenerationMetadata? = nil,
+        detail: AgentImageDetail? = nil
     ) {
         self.id = id
         self.mimeType = mimeType
         self.data = data
+        self.detail = detail
         self.generationMetadata = generationMetadata
     }
 
     public static func png(
         _ data: Data,
-        id: String = UUID().uuidString
+        id: String = UUID().uuidString,
+        detail: AgentImageDetail?
     ) -> AgentImageAttachment {
-        AgentImageAttachment(id: id, mimeType: "image/png", data: data)
+        AgentImageAttachment(id: id, mimeType: .png, data: data, detail: detail)
     }
 
     public static func jpeg(
         _ data: Data,
-        id: String = UUID().uuidString
+        id: String = UUID().uuidString,
+        detail: AgentImageDetail?
     ) -> AgentImageAttachment {
-        AgentImageAttachment(id: id, mimeType: "image/jpeg", data: data)
+        AgentImageAttachment(id: id, mimeType: .jpeg, data: data, detail: detail)
     }
 
     public var dataURLString: String {
-        "data:\(mimeType);base64,\(data.base64EncodedString())"
+        "data:\(mimeType.rawValue);base64,\(data.base64EncodedString())"
     }
 
     public init?(
         dataURLString: String,
-        id: String = UUID().uuidString
+        id: String = UUID().uuidString,
+        detail: AgentImageDetail?
     ) {
         let prefix = "data:"
         guard dataURLString.hasPrefix(prefix),
@@ -88,20 +99,70 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
               let data = Self.decodeBoundedBase64(base64) else {
             return nil
         }
-        self.init(id: id, mimeType: mimeType, data: data)
+        self.init(id: id, mimeType: mimeType, data: data, detail: detail)
+    }
+
+    public init?(
+        base64String: String,
+        mimeType: AgentImageMIMEType,
+        id: String = UUID().uuidString,
+        generationMetadata: AgentImageGenerationMetadata? = nil,
+        detail: AgentImageDetail? = nil
+    ) {
+        guard let data = Self.decodeBoundedBase64(base64String) else {
+            return nil
+        }
+
+        self.init(id: id, mimeType: mimeType, data: data, generationMetadata: generationMetadata, detail: detail)
     }
 
     public init?(
         base64String: String,
         mimeType: String = "image/png",
         id: String = UUID().uuidString,
-        generationMetadata: AgentImageGenerationMetadata? = nil
+        generationMetadata: AgentImageGenerationMetadata? = nil,
+        detail: AgentImageDetail?
     ) {
-        guard let data = Self.decodeBoundedBase64(base64String) else {
-            return nil
-        }
+        self.init(base64String: base64String, mimeType: AgentImageMIMEType(rawValue: mimeType),
+            id: id, generationMetadata: generationMetadata, detail: detail)
+    }
 
-        self.init(id: id, mimeType: mimeType, data: data, generationMetadata: generationMetadata)
+    public init(id: String = UUID().uuidString, mimeType: String, data: Data,
+        generationMetadata: AgentImageGenerationMetadata? = nil) {
+        self.init(id: id, mimeType: mimeType, data: data, generationMetadata: generationMetadata, detail: nil)
+    }
+
+    public static func png(_ data: Data, id: String = UUID().uuidString) -> AgentImageAttachment {
+        png(data, id: id, detail: nil)
+    }
+
+    public static func jpeg(_ data: Data, id: String = UUID().uuidString) -> AgentImageAttachment {
+        jpeg(data, id: id, detail: nil)
+    }
+
+    public init?(dataURLString: String, id: String = UUID().uuidString) {
+        self.init(dataURLString: dataURLString, id: id, detail: nil)
+    }
+
+    public init?(base64String: String, mimeType: String = "image/png", id: String = UUID().uuidString,
+        generationMetadata: AgentImageGenerationMetadata? = nil) {
+        self.init(base64String: base64String, mimeType: mimeType, id: id,
+            generationMetadata: generationMetadata, detail: nil)
+    }
+
+    /// Compatibility for MIME strings supplied by existing integrations.
+    public init(id: String = UUID().uuidString, mimeType: String, data: Data,
+        generationMetadata: AgentImageGenerationMetadata? = nil, detail: AgentImageDetail?) {
+        self.init(id: id, mimeType: AgentImageMIMEType(rawValue: mimeType), data: data,
+            generationMetadata: generationMetadata, detail: detail)
+    }
+
+    var responsesInputImage: JSONValue {
+        var image: [String: JSONValue] = [
+            "type": .string("input_image"), "image_url": .string(dataURLString)
+        ]
+        if let detail { image["detail"] = .string(detail.rawValue) }
+        return .object(image)
     }
 
     package static var maximumBase64ByteCount: Int {
@@ -122,4 +183,5 @@ public struct AgentImageAttachment: Identifiable, Codable, Hashable, Sendable {
         }
         return data
     }
+
 }

@@ -7,6 +7,16 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
     public let requestID: String?
     public let retryAfter: TimeInterval?
 
+    /// Exhausted quota requires an account/billing change rather than backoff.
+    public var isQuotaExceeded: Bool {
+        guard statusCode == 429 else { return false }
+        return providerType == "insufficient_quota" || [
+            "insufficient_quota", "credit_balance_exhausted",
+            "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+            "organization_usage_limit_exceeded"
+        ].contains(providerCode ?? "")
+    }
+
     public init(statusCode: Int, providerCode: String? = nil, providerType: String? = nil,
         requestID: String? = nil, retryAfter: TimeInterval? = nil) {
         self.statusCode = statusCode
@@ -63,9 +73,15 @@ extension AgentHTTPFailure {
 
 extension AgentRuntimeError {
     static func httpFailure(response: HTTPURLResponse, body: Data = Data(), prefix: String, message: String) -> Self {
+        let failure = AgentHTTPFailure(response: response, body: body)
+        if failure.isQuotaExceeded {
+            return .init(code: "quota_exceeded",
+                message: "The account's quota, credit balance, or spending limit is exhausted. Check account usage and limits before trying again.",
+                http: failure)
+        }
         let unauthorized = response.statusCode == 401
         return .init(code: unauthorized ? "unauthorized" : "\(prefix)_http_status_\(response.statusCode)",
-            message: message, http: .init(response: response, body: body))
+            message: message, http: failure)
     }
 
     func withRetryInformation(_ information: AgentRetryInformation) -> Self {

@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Added `AgentImageMIMEType` and typed image constructors. The attachment MIME property is now typed; use `.rawValue` when a string is needed. Existing string constructor overloads and stored MIME strings remain supported.
+- Optional input-image detail preferences, persisted through attachment storage, with model-aware `original` to `high` normalization on outgoing Responses requests.
+
+### Changed
+
+- Remote compaction now streams `/responses` with a compaction trigger, validates the encrypted checkpoint and terminal event, and retains bounded recent user context locally. Transient compaction retries share the response budget.
+
+### Fixed
+
+- Exhausted quota, credit balances, and spending/usage limits now surface as `quota_exceeded` instead of retrying HTTP 429 as a temporary rate limit.
+
 ## [2.0.0-alpha.30] - 2026-09-10
 
 This prerelease adds local completed-result recovery and explicitly authorized replacement attempts for tool-free structured requests. It does not resume a remote provider stream. See the [verification report](docs/release-readiness-alpha30-2026-09-10.md).
