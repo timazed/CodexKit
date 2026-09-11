@@ -7,8 +7,8 @@ import XCTest
 final class RecoveryCompatibilityTests: XCTestCase {
     var directory: URL!
     var store: AgentStructuredRecoveryStore { .init(directory: directory) }
-    override func setUp() { directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }
-    override func tearDown() { try? FileManager.default.removeItem(at: directory) }
+    override func setUp() async throws { directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }
+    override func tearDown() async throws { try? FileManager.default.removeItem(at: directory) }
     func prepare(_ runtime: AgentRuntime, expiry: Date? = nil) async throws -> AgentStructuredRecoveryHandle {
         let thread = try await runtime.createThread()
         return try await runtime.prepareStructuredRecovery(Request(text: "news", executionMode: .ephemeral), in: thread.id,

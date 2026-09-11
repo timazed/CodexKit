@@ -6,8 +6,8 @@ import XCTest
 @MainActor
 final class ModelSelectionTests: XCTestCase {
     var directory: URL!
-    override func setUp() { directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }
-    override func tearDown() { try? FileManager.default.removeItem(at: directory) }
+    override func setUp() async throws { directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }
+    override func tearDown() async throws { try? FileManager.default.removeItem(at: directory) }
 
     func testBuiltInPolicySelectsSupportedPairFromAccountCatalog() async throws {
         let catalog: [String: Any] = ["models": [["slug": "gpt-5.6-sol", "visibility": "list",

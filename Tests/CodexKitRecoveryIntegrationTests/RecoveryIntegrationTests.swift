@@ -8,10 +8,10 @@ final class RecoveryIntegrationTests: XCTestCase {
     var directory: URL!
     var store: AgentStructuredRecoveryStore { .init(directory: directory.appendingPathComponent("receipts")) }
     let noBackoff = AgentRecoveryRetryPolicy(backoff: .init(initialBackoff: 0, maxBackoff: 0))
-    override func setUp() {
+    override func setUp() async throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     }
-    override func tearDown() {
+    override func tearDown() async throws {
         FixtureTransport.releaseHeld()
         try? FileManager.default.removeItem(at: directory)
     }
