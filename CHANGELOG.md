@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.31] - 2026-09-11
+
+This prerelease adds host-controlled request preparation and lifecycle-aware structured recovery through backend wrappers. It preserves local completed-result handoff and bounded replacement attempts; it does not resume provider streams or retrieve results that were never saved locally. See the [verification report](docs/release-readiness-alpha31-2026-09-11.md) for coverage and remaining live-provider validation limits, and the [migration guide](docs/migration.md#host-app-recovery-and-request-preparation) before upgrading.
+
 ### Added
 
 - Added injectable request preparation and fixed, ordered account-aware, and custom model selectors on `CodexResponsesBackend`. Host-defined purpose routing and per-request overrides resolve before model-dependent runtime work; recovery freezes the effective configuration and canonical body before any generation.
@@ -26,6 +30,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 ### Fixed
 
 - Exhausted quota, credit balances, and spending/usage limits now surface as `quota_exceeded` instead of retrying HTTP 429 as a temporary rate limit.
+- Made recovery integration test setup and teardown asynchronous so actor-isolated fixtures compile with the supported Swift toolchains and warnings treated as errors. This does not change SDK session-restoration APIs.
 
 ## [2.0.0-alpha.30] - 2026-09-10
 
