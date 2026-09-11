@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
 
+private let supportedCodexAuthenticationMode = "chatgpt"
+
 public enum CodexCredentialStorage: String, Codable, Sendable { case file, keyring, auto, ephemeral }
 public enum CodexAuthKeyringBackend: String, Codable, Sendable { case direct, secrets }
 
@@ -68,7 +70,7 @@ public actor CodexLocalSessionSource: ChatGPTExternalSessionSource {
             let config = try await configuration()
             try Task.checkCancellation()
             if let selectedConfiguration, selectedConfiguration != config { throw ChatGPTSessionError.configurationChanged }
-            guard config.forcedLoginMethod == nil || config.forcedLoginMethod == "chatgpt",
+            guard config.forcedLoginMethod == nil || config.forcedLoginMethod == supportedCodexAuthenticationMode,
                   config.chatGPTBaseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                     == "https://chatgpt.com/backend-api" else { throw ChatGPTSessionError.unsupportedAuthentication }
             guard config.codexHome.isFileURL else { throw ChatGPTSessionError.unsupportedStorage }
@@ -155,7 +157,7 @@ private struct CodexStoredCredentials: Decodable {
     static func decode(_ data: Data, sourceID: String, now: Date) throws -> ChatGPTSession {
         do {
             let stored = try JSONDecoder().decode(Self.self, from: data)
-            guard stored.auth_mode == nil || stored.auth_mode == "chatgpt",
+            guard stored.auth_mode == nil || stored.auth_mode == supportedCodexAuthenticationMode,
                   stored.OPENAI_API_KEY == nil, stored.agent_identity == nil,
                   stored.personal_access_token == nil, stored.bedrock_api_key == nil,
                   stored.bedrock_access_keys == nil else { throw ChatGPTSessionError.unsupportedAuthentication }

@@ -125,6 +125,7 @@ public struct AgentRecoveryRetryPolicy: Codable, Equatable, Sendable {
     func canReplace(_ error: Error) -> Bool {
         if retriesInvalidStructuredOutput, error is DecodingError { return true }
         guard let failure = error as? AgentRuntimeError else { return false }
+        if failure.http?.isQuotaExceeded == true || failure.knownCode == .quotaExceeded { return false }
         if failure.interruption?.hasToolActivity == true || failure.executionLimit != nil { return false }
         if retriesInvalidStructuredOutput, failure.code.hasPrefix("structured_output_") { return true }
         guard let interruption = failure.interruption, !interruption.providerCompleted else { return false }

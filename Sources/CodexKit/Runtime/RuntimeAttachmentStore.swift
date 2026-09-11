@@ -52,9 +52,10 @@ fileprivate struct RuntimeAttachmentWriteKey: Hashable, Sendable {
     let recordID: String
     let index: Int
     let attachmentID: String
-    let mimeType: String
+    let mimeType: AgentImageMIMEType
     let contentDigest: String
     let generationMetadata: AgentImageGenerationMetadata?
+    let detail: AgentImageDetail?
 
     init(
         attachment: AgentImageAttachment,
@@ -69,6 +70,7 @@ fileprivate struct RuntimeAttachmentWriteKey: Hashable, Sendable {
         self.mimeType = attachment.mimeType
         self.contentDigest = RuntimeAttachmentStore.digest(attachment.data)
         self.generationMetadata = attachment.generationMetadata
+        self.detail = attachment.detail
     }
 }
 
@@ -270,7 +272,8 @@ package struct RuntimeAttachmentStore: Sendable {
             id: attachment.id,
             mimeType: attachment.mimeType,
             data: data,
-            generationMetadata: attachment.generationMetadata
+            generationMetadata: attachment.generationMetadata,
+            detail: attachment.detail
         )
     }
 
@@ -379,9 +382,10 @@ package struct RuntimeAttachmentStore: Sendable {
     ) -> PersistedImageAttachment {
         PersistedImageAttachment(
             id: attachment.id,
-            mimeType: attachment.mimeType,
+            mimeType: attachment.mimeType.rawValue,
             storageKey: storageKey,
-            generationMetadata: attachment.generationMetadata
+            generationMetadata: attachment.generationMetadata,
+            detail: attachment.detail
         )
     }
 
@@ -399,14 +403,15 @@ package struct RuntimeAttachmentStore: Sendable {
         return threadComponent + "/" + recordComponent + "/" + fileName
     }
 
-    private func fileExtension(for mimeType: String) -> String {
-        switch mimeType.lowercased() {
-        case "image/jpeg", "image/jpg": "jpg"
-        case "image/png": "png"
-        case "image/gif": "gif"
-        case "image/webp": "webp"
-        case "image/heic": "heic"
-        default: "bin"
+    private func fileExtension(for mimeType: AgentImageMIMEType) -> String {
+        let normalized = AgentImageMIMEType(rawValue: mimeType.rawValue.lowercased())
+        return switch normalized {
+        case .jpeg: "jpg"
+        case .png: "png"
+        case .gif: "gif"
+        case .webp: "webp"
+        case .heic: "heic"
+        default: normalized.rawValue == "image/jpg" ? "jpg" : "bin"
         }
     }
 

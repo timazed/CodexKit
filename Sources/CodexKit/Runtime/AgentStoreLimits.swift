@@ -484,7 +484,7 @@ package enum AgentStoreLimitValidator {
         }
         for image in message.images {
             try validateIdentifier(image.id, name: "image ID")
-            try validateIdentifier(image.mimeType, name: "image MIME type")
+            try validateIdentifier(image.mimeType.rawValue, name: "image MIME type")
             guard image.data.count <= AgentStoreLimits.maximumImageByteCount else {
                 throw invalid(
                     "an image must not exceed \(AgentStoreLimits.maximumImageByteCount) bytes"

@@ -57,7 +57,7 @@ struct ResponsesAttemptObservation {
             hasOutput = true
             if case .functionCall = item.kind { hasToolActivity = true }
             if case .imageGenerationCall = item.kind { hasToolActivity = true }
-            if item.rawValue.objectValue?["type"]?.stringValue == "web_search_call" { hasToolActivity = true }
+            if item.type == .webSearchCall { hasToolActivity = true }
         default: break
         }
     }
@@ -66,17 +66,17 @@ struct ResponsesAttemptObservation {
         let original = error as? AgentRuntimeError
         let transport = Self.transportError(error)
         let outcome: AgentResponseInterruption.Outcome
-        switch original?.code {
-        case "responses_stream_disconnected": outcome = .disconnected
-        case "responses_stream_failed": outcome = .providerFailed
-        case "responses_stream_incomplete": outcome = .providerIncomplete
+        switch original?.knownCode {
+        case .responsesStreamDisconnected: outcome = .disconnected
+        case .responsesStreamFailed: outcome = .providerFailed
+        case .responsesStreamIncomplete: outcome = .providerIncomplete
         default:
             if error is CancellationError || transport?.code == URLError.cancelled.rawValue { outcome = .cancelled }
             else if transport != nil { outcome = .disconnected }
             else if original?.http != nil { outcome = .requestRejected }
             else { outcome = .other }
         }
-        return .init(code: original?.code ?? (transport == nil ? "responses_stream_error" : "responses_transport_error"),
+        return .init(code: original?.code ?? (transport == nil ? AgentRuntimeErrorCode.responsesStreamError.rawValue : AgentRuntimeErrorCode.responsesTransportError.rawValue),
             message: original?.message ?? error.localizedDescription, http: original?.http, retry: original?.retry,
             interruption: .init(outcome: outcome, clientRequestID: clientRequestID, requestID: requestID,
                 responseID: responseID, lastSequenceNumber: lastSequenceNumber, hasOutput: hasOutput,

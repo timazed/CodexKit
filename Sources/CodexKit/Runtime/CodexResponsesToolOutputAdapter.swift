@@ -37,7 +37,7 @@ struct CodexResponsesToolOutputAdapter: Sendable {
     }
 
     private func imageAttachment(from url: URL) async -> AgentImageAttachment? {
-        if url.scheme?.lowercased() == "data" {
+        if URLScheme.data.matches(url) {
             let encodedLimit = AgentImageAttachment.maximumDataURLByteCount * 3
             guard url.absoluteString.utf8.count <= encodedLimit else { return nil }
             let decoded = url.absoluteString.removingPercentEncoding ?? url.absoluteString
@@ -45,12 +45,12 @@ struct CodexResponsesToolOutputAdapter: Sendable {
         }
 
         if url.isFileURL {
-            guard let mimeType = RuntimeImageMimeType(pathExtension: url.pathExtension),
+            guard let mimeType = AgentImageMIMEType(pathExtension: url.pathExtension),
                   let data = try? readBoundedFile(url),
                   !data.isEmpty else {
                 return nil
             }
-            return AgentImageAttachment(mimeType: mimeType.rawValue, data: data)
+            return AgentImageAttachment(mimeType: mimeType, data: data)
         }
 
         do {
@@ -88,26 +88,5 @@ struct CodexResponsesToolOutputAdapter: Sendable {
         defer { try? handle.close() }
         let data = try handle.read(upToCount: AgentStoreLimits.maximumImageByteCount + 1) ?? Data()
         return data.count <= AgentStoreLimits.maximumImageByteCount ? data : Data()
-    }
-}
-
-private enum RuntimeImageMimeType: String {
-    case png = "image/png"
-    case jpeg = "image/jpeg"
-    case gif = "image/gif"
-    case webp = "image/webp"
-    case heic = "image/heic"
-    case heif = "image/heif"
-
-    init?(pathExtension: String) {
-        switch pathExtension.lowercased() {
-        case "png": self = .png
-        case "jpg", "jpeg": self = .jpeg
-        case "gif": self = .gif
-        case "webp": self = .webp
-        case "heic": self = .heic
-        case "heif": self = .heif
-        default: return nil
-        }
     }
 }

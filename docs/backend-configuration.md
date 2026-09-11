@@ -68,11 +68,15 @@ The pending steering queue accepts at most `AgentStoreLimits.maximumPendingSteer
 
 ## Context compaction transport
 
-Each compact response has its own `maximumResponseBytes` budget (256 MiB by default). Declared oversized success bodies are rejected before reading; unknown or understated lengths are checked as bytes arrive. Error bodies are capped at the smaller of that budget and 1 MiB, while preserving HTTP status for session recovery. Downloads are cancelled on rejection or cancellation. Compact requests use `streamIdleTimeout` as their request timeout.
+Compaction uses streamed `POST /responses` with a final `compaction_trigger` input item and the `remote_compaction_v2` beta header. It sends client-managed history with `store: false`; it never sends `previous_response_id` or calls `/responses/compact`.
 
-Runtime compaction retries an HTTP 401 once through the configured session provider. Recovery must retain the same authentication binding. HTTP 403 permission errors propagate without renewal. Failed recovery, a second authentication failure, or cancellation propagates instead of silently installing a local summary. `preferRemoteThenLocal` can still fall back locally for ordinary remote failures; `remoteOnly` reports them. Compact HTTP errors expose `AgentRuntimeError.http`.
+CodexKit commits a checkpoint only after `response.completed` and exactly one nonempty encrypted `compaction` item. Incomplete, failed, missing, or duplicate checkpoint output is rejected. Additional output items are ignored and tools are not executed during compaction. The encrypted checkpoint stays in provider context, not visible conversation text. Recent user messages are retained within an approximate 64,000-token budget (UTF-8 text bytes divided by four, with an image allowance); older assistant and tool context is represented by the checkpoint. The visible transcript is unchanged. Activation and tighter host history limits can trim retained user messages while preserving the encrypted checkpoint.
 
-Client-managed compact requests expand internal image references using effective-history attachments. Missing attachments fail with `responses_missing_persisted_image` before sending. Server-managed requests with a previous response ID omit input. Compacted message and generated-image output retain attachment bytes in disk blobs through the storage adapters; provider context holds internal references. Debug request/response formatting runs only when network debug logging is enabled.
+Each compaction operation shares `maximumResponseBytes` across its stream attempts (256 MiB by default). Declared oversized success bodies are rejected before reading; unknown or understated lengths are checked at SSE line boundaries, with a separate per-event limit. Error bodies are capped at the smaller of that budget and 1 MiB, preserving HTTP status for session recovery. Downloads are cancelled on completion, rejection, or cancellation. Requests use `streamIdleTimeout`.
+
+Transient failures use `requestRetryPolicy`, capped at three attempts, and honor `Retry-After`. Exhausted quota is never retried. Runtime compaction separately recovers an HTTP 401 once through the session provider, retaining the same authentication binding. Failed authentication recovery and cancellation propagate. `preferRemoteThenLocal` can still fall back locally for ordinary remote failures; `remoteOnly` reports them.
+
+Compaction expands internal image references using effective-history attachments. Missing attachments fail with `responses_missing_persisted_image` before sending. Retained images stay in attachment blobs and provider context stores internal references, including their original detail preference.
 
 ## Models and reasoning
 
@@ -160,3 +164,23 @@ The existing fixed backend/thread defaults remain the default behavior. Apps tha
 Selection happens during request preparation, before model-dependent runtime work. Custom wrappers can delegate that preparation and the separate structured-recovery adapter without moving application model policies into CodexKit. Recoverable operations freeze the effective configuration and canonical body; only an explicit new operation/reselection can change it.
 
 See [request preparation and model selection](request-preparation-and-model-selection.md) for precedence, fine-grained fallback control, and the public wrapper fixture, and [structured recovery](structured-request-recovery.md) for lifecycle and durable-budget semantics.
+
+## Quota errors and image detail
+
+Recognized HTTP 429 quota/credit/spending-limit errors surface as `AgentRuntimeError.code == "quota_exceeded"`, with `error.http?.isQuotaExceeded == true` and the original provider code, type, and request ID. They bypass automatic retries. Ordinary `rate_limit_exceeded` and `slow_down` responses retain the configured retry behavior.
+
+`AgentImageAttachment` accepts an optional `detail` (`.auto`, `.low`, `.high`, `.original`). Nil preserves the existing provider default. Normal Responses requests and compaction downgrade `.original` to `.high` when the receiving model does not advertise support. This covers message images and image content in function/custom tool outputs. Saved attachments and provider history retain the requested detail so a later model switch can restore `.original`.
+
+A cached account model catalog's `supports_image_detail_original` capability takes precedence over bundled model metadata. Unknown models and remote entries without the capability use `.high` for an `.original` request. Call `runtime.listModels(policy: .refresh)` to refresh capabilities. No implicit discovery request is added to a turn.
+
+### Typed image MIME values
+
+`AgentImageAttachment.mimeType` and the primary initializer now use `AgentImageMIMEType`:
+
+```swift
+let image = AgentImageAttachment(mimeType: .png, data: imageData, detail: .original)
+let customType = AgentImageMIMEType(rawValue: "image/avif")
+let mimeString = image.mimeType.rawValue
+```
+
+Common constants are `.png`, `.jpeg`, `.gif`, `.webp`, `.heic`, and `.heif`. Custom values remain possible; MIME declarations do not replace image-byte validation or endpoint format restrictions. Existing string-based constructor overloads still work. Code that reads `mimeType` as a `String` should use `.mimeType.rawValue`. Codable and attachment storage continue encoding a plain MIME string, so existing saved attachments remain readable. Constructors and compatibility overloads live in the main attachment/model types.

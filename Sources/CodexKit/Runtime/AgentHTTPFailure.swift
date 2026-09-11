@@ -7,13 +7,33 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
     public let requestID: String?
     public let retryAfter: TimeInterval?
 
+    /// Exhausted quota requires an account/billing change rather than backoff.
+    public var isQuotaExceeded: Bool {
+        guard statusCode == 429 else { return false }
+        if providerType == QuotaCode.insufficientQuota.rawValue { return true }
+        guard let providerCode else { return false }
+        return QuotaCode(rawValue: providerCode) != nil
+    }
+
+    private enum QuotaCode: String {
+        case insufficientQuota = "insufficient_quota"
+        case creditBalanceExhausted = "credit_balance_exhausted"
+        case organizationSpendLimitExceeded = "organization_spend_limit_exceeded"
+        case projectSpendLimitExceeded = "project_spend_limit_exceeded"
+        case organizationUsageLimitExceeded = "organization_usage_limit_exceeded"
+    }
+
     public init(statusCode: Int, providerCode: String? = nil, providerType: String? = nil,
         requestID: String? = nil, retryAfter: TimeInterval? = nil) {
         self.statusCode = statusCode
         self.providerCode = providerCode
         self.providerType = providerType
         self.requestID = requestID
-        self.retryAfter = retryAfter.flatMap { $0.isFinite && $0 >= 0 ? min($0, 86_400) : nil }
+        if let retryAfter, retryAfter.isFinite, retryAfter >= 0 {
+            self.retryAfter = min(retryAfter, 86_400)
+        } else {
+            self.retryAfter = nil
+        }
     }
 }
 
@@ -63,9 +83,15 @@ extension AgentHTTPFailure {
 
 extension AgentRuntimeError {
     static func httpFailure(response: HTTPURLResponse, body: Data = Data(), prefix: String, message: String) -> Self {
+        let failure = AgentHTTPFailure(response: response, body: body)
+        if failure.isQuotaExceeded {
+            return .init(code: .quotaExceeded,
+                message: "The account's quota, credit balance, or spending limit is exhausted. Check account usage and limits before trying again.",
+                http: failure)
+        }
         let unauthorized = response.statusCode == 401
-        return .init(code: unauthorized ? "unauthorized" : "\(prefix)_http_status_\(response.statusCode)",
-            message: message, http: .init(response: response, body: body))
+        return .init(code: unauthorized ? AgentRuntimeErrorCode.unauthorized.rawValue : "\(prefix)_http_status_\(response.statusCode)",
+            message: message, http: failure)
     }
 
     func withRetryInformation(_ information: AgentRetryInformation) -> Self {

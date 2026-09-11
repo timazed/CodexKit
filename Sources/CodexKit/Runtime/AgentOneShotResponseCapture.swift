@@ -19,7 +19,7 @@ actor AgentOneShotResponseCapture<Output: Decodable & Sendable> {
 
     func validate(_ message: AgentMessage) throws {
         guard message.text.utf8.count <= AgentStoreLimits.maximumEmbeddedPayloadByteCount else {
-            throw AgentRuntimeError(code: "structured_output_validation_limit",
+            throw AgentRuntimeError(code: .structuredOutputValidationLimit,
                 message: "Structured output exceeds the supported payload size.")
         }
         let data = Data(message.text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)

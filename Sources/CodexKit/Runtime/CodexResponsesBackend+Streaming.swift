@@ -26,7 +26,7 @@ struct SSEEventParser {
             guard !overflow,
                   nextCount <= AgentStoreLimits.maximumResponseEventByteCount else {
                 throw AgentRuntimeError(
-                    code: "responses_event_too_large",
+                    code: .responsesEventTooLarge,
                     message: "A Responses stream event exceeded the supported size limit."
                 )
             }
@@ -63,50 +63,46 @@ struct SSEEventParser {
     }
 }
 
-struct StreamEnvelope: Decodable {
-    let type: String
-    let delta: String?
-    let item: StreamItem?
-    let response: StreamResponsePayload?
-    let outputIndex: Int?
-    let sequenceNumber: Int?
-    let itemID: String?
-    let summaryIndex: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case delta
-        case item
-        case response
-        case outputIndex = "output_index"
-        case sequenceNumber = "sequence_number"
-        case itemID = "item_id"
-        case summaryIndex = "summary_index"
-    }
-}
-
 struct StreamItem: Decodable, Sendable {
     let rawValue: JSONValue
     let kind: StreamItemKind
+    let type: ResponsesItemType?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         rawValue = try container.decode(JSONValue.self)
         let object = rawValue.objectValue ?? [:]
-        let type = object["type"]?.stringValue
+        type = ResponsesItemType(wireValue: object["type"])
 
         switch type {
-        case "message":
-            let data = try JSONEncoder().encode(object)
-            kind = .message(try JSONDecoder().decode(StreamMessageItem.self, from: data))
-        case "function_call":
-            let data = try JSONEncoder().encode(object)
-            kind = .functionCall(try JSONDecoder().decode(StreamFunctionCallItem.self, from: data))
-        case "image_generation_call":
-            let data = try JSONEncoder().encode(object)
-            kind = .imageGenerationCall(try JSONDecoder().decode(StreamImageGenerationCallItem.self, from: data))
+        case .message:
+            kind = .message(try StreamMessageItem(from: decoder))
+        case .functionCall:
+            kind = .functionCall(try StreamFunctionCallItem(from: decoder))
+        case .imageGenerationCall:
+            kind = .imageGenerationCall(try StreamImageGenerationCallItem(from: decoder))
+        case .webSearchCall:
+            kind = .webSearchCall(try StreamWebSearchCallItem(from: decoder))
         default:
             kind = .other
+        }
+    }
+
+    var startedProgress: AgentProgress? { progress(completed: false) }
+    var completedProgress: AgentProgress? { progress(completed: true) }
+
+    private func progress(completed: Bool) -> AgentProgress? {
+        switch kind {
+        case let .message(message):
+            guard let id = message.id else { return nil }
+            return completed ? .messageCompleted(itemID: id, phase: message.phase)
+                : .messageStarted(itemID: id, phase: message.phase)
+        case let .webSearchCall(search):
+            guard let id = search.id else { return nil }
+            let status = search.status ?? (completed ? .completed : .inProgress)
+            return .webSearch(itemID: id, status: status, action: search.action)
+        case .functionCall, .imageGenerationCall, .other:
+            return nil
         }
     }
 }
@@ -115,7 +111,14 @@ enum StreamItemKind: Sendable {
     case message(StreamMessageItem)
     case functionCall(StreamFunctionCallItem)
     case imageGenerationCall(StreamImageGenerationCallItem)
+    case webSearchCall(StreamWebSearchCallItem)
     case other
+}
+
+struct StreamWebSearchCallItem: Decodable, Sendable {
+    let id: String?
+    let status: AgentWebSearchStatus?
+    let action: JSONValue?
 }
 
 struct StreamMessageItem: Decodable, Sendable {
@@ -139,8 +142,14 @@ struct StreamMessageContent: Decodable, Sendable {
     }
 
     static func parseImageAttachment(from object: [String: JSONValue]) -> AgentImageAttachment? {
+        let detail: AgentImageDetail?
+        if let value = object["detail"]?.stringValue {
+            detail = AgentImageDetail(rawValue: value)
+        } else {
+            detail = nil
+        }
         if let dataURL = object["image_url"]?.stringValue,
-           let attachment = AgentImageAttachment(dataURLString: dataURL) {
+           let attachment = AgentImageAttachment(dataURLString: dataURL, detail: detail) {
             return attachment
         }
 

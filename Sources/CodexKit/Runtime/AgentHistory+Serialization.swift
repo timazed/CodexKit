@@ -184,20 +184,20 @@ extension AgentHistoryItem {
     package var relationshipKey: String? {
         switch self {
         case let .message(message):
-            return Self.relationshipKey(kind: "message", id: message.id)
+            return Self.relationshipKey(kind: .message, id: message.id)
         case let .structuredOutput(output):
-            return output.messageID.map { Self.relationshipKey(kind: "message", id: $0) }
+            return output.messageID.map { Self.relationshipKey(kind: .message, id: $0) }
         case let .toolCall(call):
-            return Self.relationshipKey(kind: "tool", id: call.invocation.id)
+            return Self.relationshipKey(kind: .tool, id: call.invocation.id)
         case let .toolResult(result):
-            return Self.relationshipKey(kind: "tool", id: result.result.invocationID)
+            return Self.relationshipKey(kind: .tool, id: result.result.invocationID)
         case .approval, .systemEvent:
             return nil
         }
     }
 
-    package static func relationshipKey(kind: String, id: String) -> String {
-        "k\(kind.utf8.count):\(kind)i\(id.utf8.count):\(id)"
+    package static func relationshipKey(kind: AgentHistoryRelationship.StorageKind, id: String) -> String {
+        "k\(kind.rawValue.utf8.count):\(kind.rawValue)i\(id.utf8.count):\(id)"
     }
 
     package var messageRole: AgentRole? {

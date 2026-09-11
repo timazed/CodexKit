@@ -45,6 +45,19 @@ final class StructuredValidationTests: XCTestCase {
         }
     }
 
+    func testInvalidTypeListEntriesCannotBeDiscardedDuringValueValidation() {
+        for invalidType: JSONValue in [.string("future_type"), .number(42), .null] {
+            let schema = JSONSchema.raw(.object(["type": .array([.string("string"), invalidType])]))
+            XCTAssertThrowsError(try AgentJSONSchemaValidator.validateSchema(schema))
+            for partial in [false, true] {
+                XCTAssertThrowsError(try AgentJSONSchemaValidator.validate(.string("matches valid entry"),
+                    schema: schema, partial: partial)) { error in
+                    XCTAssertEqual((error as? AgentRuntimeError)?.code, "structured_output_schema_invalid")
+                }
+            }
+        }
+    }
+
     func testValidationBudgetCannotBeSwallowedByNegation() throws {
         let schema = JSONSchema.raw(.object(["not": .object(["$ref": .string("#")])]))
         try AgentJSONSchemaValidator.validateSchema(schema)

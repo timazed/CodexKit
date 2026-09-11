@@ -81,7 +81,7 @@ extension AgentDemoViewModel {
             activity.title = "Thinking"
             activity.reasoningSummary = String((activity.reasoningSummary + delta).suffix(4_000))
         case let .webSearch(_, status, _):
-            activity.title = status == "completed" ? "Search complete" : "Searching the web"
+            activity.title = status == .completed ? "Search complete" : "Searching the web"
         }
         turnActivities[progress.threadID] = activity
     }

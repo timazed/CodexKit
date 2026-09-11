@@ -3,19 +3,6 @@ import Foundation
 /// Validates the SDK schema vocabulary and a documented subset of raw JSON
 /// Schema. Unsupported assertions fail explicitly instead of being ignored.
 enum AgentJSONSchemaValidator {
-    private static let annotations: Set<String> = [
-        "$schema", "$id", "$comment", "title", "description", "default", "examples",
-        "deprecated", "readOnly", "writeOnly",
-    ]
-    private static let assertions: Set<String> = [
-        "type", "properties", "required", "additionalProperties", "items", "enum", "const",
-        "anyOf", "oneOf", "allOf", "not", "$defs", "definitions", "$ref",
-        "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
-        "minLength", "maxLength", "minItems", "maxItems", "uniqueItems",
-        "minProperties", "maxProperties",
-    ]
-    private static let types: Set<String> = ["string", "integer", "number", "boolean", "array", "object", "null"]
-
     static func validateSchema(_ schema: JSONSchema) throws {
         let root = schema.jsonValue
         var remaining = AgentStoreLimits.maximumEmbeddedPayloadNodeCount
@@ -31,7 +18,7 @@ enum AgentJSONSchemaValidator {
 
     private static func consumeBudget(depth: Int, remaining: inout Int) throws {
         guard depth <= AgentStoreLimits.maximumEmbeddedPayloadDepth, remaining > 0 else {
-            throw AgentRuntimeError(code: "structured_output_validation_limit", message: "Schema validation exceeded its nesting or work limit.")
+            throw AgentRuntimeError(code: .structuredOutputValidationLimit, message: "Schema validation exceeded its nesting or work limit.")
         }
         remaining -= 1
     }
@@ -40,14 +27,11 @@ enum AgentJSONSchemaValidator {
         try consumeBudget(depth: depth, remaining: &remaining)
         if case .bool = schema { return }
         guard let object = schema.objectValue else { throw invalid("A schema must be an object or Boolean.") }
-        for key in object.keys where !annotations.contains(key) && !assertions.contains(key) {
-            throw AgentRuntimeError(code: "unsupported_schema_keyword", message: "Local schema validation does not support '\(key)'.")
+        for key in object.keys where JSONSchemaKeyword(rawValue: key) == nil {
+            throw AgentRuntimeError(code: .unsupportedSchemaKeyword, message: "Local schema validation does not support '\(key)'.")
         }
         if let type = object["type"] {
-            let names = type.arrayValue ?? [type]
-            guard !names.isEmpty, names.allSatisfy({ $0.stringValue.map(types.contains) == true }) else {
-                throw invalid("Invalid schema type.")
-            }
+            _ = try parseTypes(type)
         }
         if let reference = object["$ref"] {
             let target = try resolve(reference, root: root)
@@ -64,9 +48,9 @@ enum AgentJSONSchemaValidator {
         for key in ["items", "additionalProperties", "not"] {
             if let child = object[key] { try checkSchema(child, root: root, depth: depth + 1, remaining: &remaining, references: &references) }
         }
-        for key in ["anyOf", "oneOf", "allOf"] {
-            if let value = object[key] {
-                guard let children = value.arrayValue, !children.isEmpty else { throw invalid("\(key) must be a nonempty array.") }
+        for key in JSONSchemaComposition.allCases {
+            if let value = object[key.rawValue] {
+                guard let children = value.arrayValue, !children.isEmpty else { throw invalid("\(key.rawValue) must be a nonempty array.") }
                 for child in children { try checkSchema(child, root: root, depth: depth + 1, remaining: &remaining, references: &references) }
             }
         }
@@ -83,10 +67,10 @@ enum AgentJSONSchemaValidator {
                 }
             }
         }
-        for key in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"] {
-            if let value = object[key] {
-                guard case let .number(number) = value, number.isFinite, key != "multipleOf" || number > 0 else {
-                    throw invalid("\(key) must be a valid numeric bound.")
+        for key in JSONSchemaNumericBound.allCases {
+            if let value = object[key.rawValue] {
+                guard case let .number(number) = value, number.isFinite, key != .multipleOf || number > 0 else {
+                    throw invalid("\(key.rawValue) must be a valid numeric bound.")
                 }
             }
         }
@@ -111,13 +95,13 @@ enum AgentJSONSchemaValidator {
                 partial: partial, depth: depth + 1, remaining: &remaining)
         }
         if let type = object["type"] {
-            let names = (type.arrayValue ?? [type]).compactMap(\.stringValue)
+            let names = try parseTypes(type)
             guard names.contains(where: { matches(value, type: $0) }) else { throw invalid("\(path) has the wrong type.") }
         }
         if let values = object["enum"]?.arrayValue, !values.contains(value) { throw invalid("\(path) is outside the permitted enum.") }
         if let constant = object["const"], constant != value { throw invalid("\(path) differs from the required constant.") }
-        for key in ["allOf", "anyOf", "oneOf"] {
-            guard let branches = object[key]?.arrayValue else { continue }
+        for key in JSONSchemaComposition.allCases {
+            guard let branches = object[key.rawValue]?.arrayValue else { continue }
             var matches = 0
             for branch in branches {
                 do {
@@ -125,11 +109,11 @@ enum AgentJSONSchemaValidator {
                         depth: depth + 1, remaining: &remaining)
                     matches += 1
                 } catch {
-                    if (error as? AgentRuntimeError)?.code != "structured_output_schema_invalid" { throw error }
+                    if (error as? AgentRuntimeError)?.knownCode != .structuredOutputSchemaInvalid { throw error }
                 }
             }
-            let valid = key == "allOf" ? matches == branches.count : key == "anyOf" ? matches > 0 : matches == 1
-            if !valid { throw invalid("\(path) does not satisfy \(key).") }
+            let valid = key.accepts(matches: matches, branchCount: branches.count)
+            if !valid { throw invalid("\(path) does not satisfy \(key.rawValue).") }
         }
         if let excluded = object["not"] {
             var excludedMatches = true
@@ -137,7 +121,7 @@ enum AgentJSONSchemaValidator {
                 try checkValue(value, schema: excluded, root: root, path: path, partial: partial,
                     depth: depth + 1, remaining: &remaining)
             } catch {
-                if (error as? AgentRuntimeError)?.code != "structured_output_schema_invalid" { throw error }
+                if (error as? AgentRuntimeError)?.knownCode != .structuredOutputSchemaInvalid { throw error }
                 excludedMatches = false
             }
             if excludedMatches { throw invalid("\(path) matches an excluded schema.") }
@@ -170,17 +154,8 @@ enum AgentJSONSchemaValidator {
             guard number.isFinite else { throw invalid("\(path) must be finite.") }
             for (key, bound) in object {
                 guard case let .number(limit) = bound else { continue }
-                let valid: Bool
-                switch key {
-                case "minimum": valid = number >= limit
-                case "maximum": valid = number <= limit
-                case "exclusiveMinimum": valid = number > limit
-                case "exclusiveMaximum": valid = number < limit
-                case "multipleOf":
-                    let quotient = number / limit
-                    valid = quotient.isFinite && abs(quotient - quotient.rounded()) <= max(1, abs(quotient)) * 1e-12
-                default: continue
-                }
+                guard let constraint = JSONSchemaNumericBound(rawValue: key) else { continue }
+                let valid = constraint.accepts(number, limit: limit)
                 if !valid { throw invalid("\(path) violates \(key).") }
             }
         case .bool, .null: break
@@ -192,10 +167,22 @@ enum AgentJSONSchemaValidator {
         if case let .number(limit) = maximum, Double(count) > limit { throw invalid("\(path) exceeds its maximum size.") }
     }
 
-    private static func matches(_ value: JSONValue, type: String) -> Bool {
+    private static func parseTypes(_ value: JSONValue) throws -> [JSONSchemaValueType] {
+        let values = value.arrayValue ?? [value]
+        guard !values.isEmpty else { throw invalid("Invalid schema type.") }
+        return try values.map { value in
+            guard case let .string(name) = value,
+                  let type = JSONSchemaValueType(rawValue: name) else {
+                throw invalid("Invalid schema type.")
+            }
+            return type
+        }
+    }
+
+    private static func matches(_ value: JSONValue, type: JSONSchemaValueType) -> Bool {
         switch (value, type) {
-        case (.string, "string"), (.number, "number"), (.bool, "boolean"), (.object, "object"), (.array, "array"), (.null, "null"): true
-        case let (.number(value), "integer"): value.isFinite && value.rounded() == value
+        case (.string, .string), (.number, .number), (.bool, .boolean), (.object, .object), (.array, .array), (.null, .null): true
+        case let (.number(value), .integer): value.isFinite && value.rounded() == value
         default: false
         }
     }
@@ -219,6 +206,6 @@ enum AgentJSONSchemaValidator {
     }
 
     private static func invalid(_ message: String) -> AgentRuntimeError {
-        .init(code: "structured_output_schema_invalid", message: message)
+        .init(code: .structuredOutputSchemaInvalid, message: message)
     }
 }

@@ -10,6 +10,10 @@ struct HealthCoachToolSnapshot: Sendable {
 }
 
 struct DemoToolOutputFactory {
+    enum TravelBudget: String, CaseIterable {
+        case low, medium, high
+    }
+
     func makeHealthCoachProgress(
         invocation: ToolInvocation,
         snapshot: HealthCoachToolSnapshot
@@ -35,9 +39,12 @@ struct DemoToolOutputFactory {
         let destination = arguments["destination"]?.stringValue?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let tripDays = max(Int(arguments["trip_days"]?.numberValue ?? 3), 1)
-        let budget = arguments["budget_level"]?.stringValue?
+        let budgetValue = arguments["budget_level"]?.stringValue?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? "medium"
+            .lowercased() ?? TravelBudget.medium.rawValue
+        guard let budget = TravelBudget(rawValue: budgetValue) else {
+            return .failure(invocation: invocation, message: "budget_level must be low, medium, or high.")
+        }
         let companions = arguments["companions"]?.stringValue?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? "solo"
@@ -47,13 +54,13 @@ struct DemoToolOutputFactory {
         }
 
         let planLines = (1 ... min(tripDays, 10)).map { day in
-            "day\(day):arrival_walk=\(budget == "high" ? "taxi+priority-pass" : "public-transit"),focus=\(companions == "family" ? "kid-friendly highlight + early dinner" : "local highlight + flexible dinner")"
+            "day\(day):arrival_walk=\(budget == .high ? "taxi+priority-pass" : "public-transit"),focus=\(companions == "family" ? "kid-friendly highlight + early dinner" : "local highlight + flexible dinner")"
         }
 
         return .success(
             invocation: invocation,
             text: """
-            travel_day_plan[destination=\(destination), tripDays=\(tripDays), budget=\(budget), companions=\(companions), plan=\(planLines.joined(separator: " | "))]
+            travel_day_plan[destination=\(destination), tripDays=\(tripDays), budget=\(budget.rawValue), companions=\(companions), plan=\(planLines.joined(separator: " | "))]
             """
         )
     }
@@ -99,6 +106,7 @@ extension AgentDemoViewModel {
                         "budget_level": .object([
                             "type": .string("string"),
                             "description": .string("Budget level: low, medium, or high."),
+                            "enum": .array(DemoToolOutputFactory.TravelBudget.allCases.map { .string($0.rawValue) }),
                         ]),
                         "companions": .object([
                             "type": .string("string"),

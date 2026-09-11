@@ -32,7 +32,7 @@ package struct PersistedToolResultEnvelope: Codable, Hashable {
             case let .text(text):
                 return .text(text)
             case let .image(url):
-                guard url.scheme?.lowercased() == "data" else {
+                guard URLScheme.data.matches(url) else {
                     return .image(url)
                 }
                 let attachment = try RuntimeEmbeddedAttachmentCollector.inlineAttachment(
@@ -306,7 +306,7 @@ package enum RuntimeEmbeddedAttachmentCollector {
         var images: [AgentImageAttachment] = []
         for value in result.content {
             guard case let .image(url) = value,
-                  url.scheme?.lowercased() == "data" else {
+                  URLScheme.data.matches(url) else {
                 continue
             }
             images.append(try inlineAttachment(

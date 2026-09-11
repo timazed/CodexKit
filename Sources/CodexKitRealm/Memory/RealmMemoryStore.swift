@@ -272,7 +272,7 @@ public actor RealmMemoryStore: MemoryStoring {
         }
         return MemoryStoreDiagnostics(
             namespace: namespace,
-            implementation: "realm",
+            implementation: .realm,
             schemaVersion: Int(RealmMemoryStoreMigration.schemaVersion),
             totalRecords: snapshot?.totalRecords ?? 0,
             activeRecords: snapshot?.activeRecords ?? 0,
@@ -509,9 +509,9 @@ public actor RealmMemoryStore: MemoryStoring {
 extension RealmMemoryStore: StoreMigrationIdentifying, StoreMigrationCoordinating {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
         guard let url = configuration.fileURL else {
-            return StoreMigrationIdentity(kind: "memory", instanceID: migrationInstanceID)
+            return StoreMigrationIdentity(kind: .memory, instanceID: migrationInstanceID)
         }
-        return StoreMigrationIdentity(kind: "memory", url: url)
+        return StoreMigrationIdentity(kind: .memory, url: url)
     }
 
     package nonisolated var migrationCoordinationRootURL: URL {

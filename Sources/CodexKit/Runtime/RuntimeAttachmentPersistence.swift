@@ -5,6 +5,7 @@ package struct PersistedImageAttachment: Codable, Hashable {
     let mimeType: String
     let storageKey: String
     let generationMetadata: AgentImageGenerationMetadata?
+    let detail: AgentImageDetail?
 }
 
 package struct PersistedAgentMessage: Codable, Hashable {
@@ -91,7 +92,8 @@ package struct PersistedAgentMessage: Codable, Hashable {
                     id: $0.id,
                     mimeType: $0.mimeType,
                     data: Data(),
-                    generationMetadata: $0.generationMetadata
+                    generationMetadata: $0.generationMetadata,
+                    detail: $0.detail
                 )
             },
             phase: phase,

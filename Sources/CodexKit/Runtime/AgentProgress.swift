@@ -21,7 +21,11 @@ public enum AgentProgress: Hashable, Sendable {
     case messageStarted(itemID: String, phase: AgentMessagePhase?)
     case messageCompleted(itemID: String, phase: AgentMessagePhase?)
     case reasoningSummaryDelta(itemID: String, summaryIndex: Int, delta: String)
-    case webSearch(itemID: String, status: String, action: JSONValue?)
+    case webSearch(itemID: String, status: AgentWebSearchStatus, action: JSONValue?)
+
+    public static func webSearch(itemID: String, status: String, action: JSONValue?) -> Self {
+        .webSearch(itemID: itemID, status: AgentWebSearchStatus(rawValue: status), action: action)
+    }
 }
 
 public struct AgentTurnProgress: Hashable, Sendable {

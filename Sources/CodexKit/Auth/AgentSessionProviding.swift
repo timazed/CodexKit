@@ -36,6 +36,6 @@ extension ChatGPTSessionManager: AgentSessionManaging {}
 
 extension AgentRuntimeError {
     static func sessionManagementUnsupported() -> Self {
-        .init(code: "session_management_unsupported", message: "This session provider is managed by the host app.")
+        .init(code: .sessionManagementUnsupported, message: "This session provider is managed by the host app.")
     }
 }

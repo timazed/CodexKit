@@ -86,11 +86,11 @@ final class ExternalSessionRuntimeTests: XCTestCase {
         _ = try await runtime.listModels(policy: .refresh)
         let thread = try await runtime.createThread()
         await source.set(externalSession(token: "third"))
-        await TestURLProtocol.enqueue(.init(body: Data(#"{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Summary"}]}]}"#.utf8), inspect: { request in
+        await TestURLProtocol.enqueue(.init(body: streamedCompactionReply(), inspect: { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer third")
         }))
         let compacted = try await runtime.compactThreadContext(id: thread.id)
-        XCTAssertEqual(compacted.effectiveMessages.first?.text, "Summary")
+        XCTAssertEqual(compacted.providerContext?.payload.objectValue?["items"]?.arrayValue?.last?.objectValue?["type"], .string("compaction"))
     }
 
     func testPersistedConversationCannotResumeUnderDifferentUserOrSource() async throws {

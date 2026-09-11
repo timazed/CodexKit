@@ -20,7 +20,7 @@ enum DemoRecoveryVerification {
                     in: baselineThread.id, response: Output.self)
                 throw Failure("Baseline unexpectedly completed: \(name)")
             } catch let error as AgentRuntimeError {
-                try require(error.code == "responses_stream_disconnected", "Unexpected baseline error")
+                try require(error.knownCode == .responsesStreamDisconnected, "Unexpected baseline error")
             }
             try require(DemoRecoveryTransport.count == 1, "Baseline request count")
 
@@ -60,8 +60,61 @@ enum DemoRecoveryVerification {
         do { _ = try await task.value; throw Failure("Cancelled generation returned output") }
         catch is CancellationError {}
         let cancelledStatus = try await cancelled.structuredRecoveryStatus(cancelledHandle, store: store)
-        try require(cancelledStatus.state == .cancelled && DemoRecoveryTransport.count == 1, "Cancellation retried")
-        checks.append("cancellation after output saves cancelled state with exactly 1 POST")
+        try require(cancelledStatus.availability == .suspended && cancelledStatus.attemptsUsed == 1
+            && DemoRecoveryTransport.count == 1, "Task cancellation did not suspend safely")
+        DemoRecoveryTransport.configure([created + message + completed])
+        let resumed = try runtime()
+        let resumedValue = try await resumed.sendRecovering(cancelledHandle, response: Output.self, store: store) {
+            $0.number == 2
+        }
+        let resumedStatus = try await resumed.structuredRecoveryStatus(cancelledHandle, store: store)
+        try require(resumedValue.value == "ok" && resumedStatus.attemptsUsed == 2
+            && DemoRecoveryTransport.count == 1, "Suspension lost its original attempt budget")
+        try await resumed.acknowledgeStructuredRecovery(cancelledHandle, store: store)
+        checks.append("task cancellation suspends after 1 POST; reopening uses exactly attempt 2")
+
+        DemoRecoveryTransport.configure([created + delta], hold: true)
+        let permanent = try runtime()
+        let permanentHandle = try await prepare(permanent, store: store)
+        let permanentTask = Task {
+            try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in true }
+        }
+        try await waitForCursor(permanentHandle, store: store)
+        try await permanent.cancelStructuredRecovery(permanentHandle, store: store)
+        do { _ = try await permanentTask.value; throw Failure("Permanent cancellation returned output") }
+        catch is CancellationError {}
+        do {
+            _ = try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in
+                throw Failure("Permanently cancelled operation requested authorization")
+            }
+            throw Failure("Permanently cancelled operation restarted")
+        } catch AgentRecoveryError.cancelled {}
+        try require(DemoRecoveryTransport.count == 1, "Permanent cancellation retried")
+        checks.append("explicit permanent cancellation remains terminal with exactly 1 POST")
+
+        DemoRecoveryTransport.configure([created + delta], hold: true)
+        let background = ExpiringBackgroundActivity()
+        let expiring = try runtime(background: background)
+        let expiringHandle = try await prepare(expiring, store: store)
+        let expiringTask = Task {
+            try await expiring.sendRecovering(expiringHandle, response: Output.self, store: store) { _ in true }
+        }
+        try await waitForCursor(expiringHandle, store: store)
+        background.expire()
+        do { _ = try await expiringTask.value; throw Failure("Expired background activity returned output") }
+        catch is CancellationError {}
+        let expiredStatus = try await expiring.structuredRecoveryStatus(expiringHandle, store: store)
+        try require(expiredStatus.availability == .suspended && expiredStatus.attemptsUsed == 1
+            && DemoRecoveryTransport.count == 1, "Background expiration lost its saved budget")
+        DemoRecoveryTransport.configure([created + message + completed])
+        let foreground = try runtime()
+        let foregroundValue = try await foreground.sendRecovering(expiringHandle, response: Output.self, store: store) {
+            $0.number == 2
+        }
+        try require(foregroundValue.value == "ok" && DemoRecoveryTransport.count == 1,
+            "Background-suspended operation did not recover in the next lifecycle")
+        try await foreground.acknowledgeStructuredRecovery(expiringHandle, store: store)
+        checks.append("injected background expiration suspends with no output; foreground recovery uses attempt 2")
 
         // Leave a completed receipt unacknowledged. The harness terminates this process and reopens it.
         DemoRecoveryTransport.configure([created + message + completed])
@@ -94,13 +147,37 @@ enum DemoRecoveryVerification {
             in: thread.id, response: Output.self, store: store, maximumAttempts: 3)
     }
 
-    private static func runtime() throws -> AgentRuntime {
+    private static func runtime(
+        background: any AgentBackgroundActivityProviding = NoOpAgentBackgroundActivityProvider()
+    ) throws -> AgentRuntime {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DemoRecoveryTransport.self]
         return try AgentRuntime(configuration: .init(sessionProvider: Session(),
             backend: CodexResponsesBackend(configuration: .init(requestRetryPolicy: .disabled),
                 urlSession: URLSession(configuration: configuration)), approvalPresenter: Approvals(),
-            stateStore: InMemoryRuntimeStateStore(), turnLimits: .init(maximumDuration: nil)))
+            stateStore: InMemoryRuntimeStateStore(), turnLimits: .init(maximumDuration: nil),
+            backgroundActivityProvider: background))
+    }
+
+    private final class ExpiringBackgroundActivity: AgentBackgroundActivityProviding, AgentBackgroundActivity, @unchecked Sendable {
+        private let lock = NSLock()
+        private var expirationHandler: (@Sendable () -> Void)?
+
+        func beginActivity(named name: String, expirationHandler: @escaping @Sendable () -> Void) async -> any AgentBackgroundActivity {
+            lock.withLock { self.expirationHandler = expirationHandler }
+            return self
+        }
+
+        func end() { lock.withLock { expirationHandler = nil } }
+
+        func expire() {
+            let action = lock.withLock {
+                let action = expirationHandler
+                expirationHandler = nil
+                return action
+            }
+            action?()
+        }
     }
 
     private static func waitForCursor(_ handle: AgentStructuredRecoveryHandle, store: AgentStructuredRecoveryStore) async throws {

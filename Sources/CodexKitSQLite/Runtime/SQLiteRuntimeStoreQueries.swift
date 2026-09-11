@@ -3,6 +3,17 @@ import CodexKit
 import GRDB
 
 struct SQLiteRuntimeStoreQueries: Sendable {
+    private enum HistoryOrderColumn: String {
+        case sequenceNumber, createdAt
+
+        var tieBreaker: Self {
+            switch self {
+            case .sequenceNumber: .createdAt
+            case .createdAt: .sequenceNumber
+            }
+        }
+    }
+
     let attachmentStore: RuntimeAttachmentStore
 
     func fetchHistoryQuery(
@@ -14,14 +25,14 @@ struct SQLiteRuntimeStoreQueries: Sendable {
         }
 
         var (clauses, arguments) = historyFilter(query)
-        let orderColumn: String
+        let orderColumn: HistoryOrderColumn
         let requestedOrder: AgentSortOrder
         switch query.sort {
         case let .sequence(order):
-            orderColumn = "sequenceNumber"
+            orderColumn = .sequenceNumber
             requestedOrder = order
         case let .createdAt(order):
-            orderColumn = "createdAt"
+            orderColumn = .createdAt
             requestedOrder = order
         }
 
@@ -57,12 +68,12 @@ struct SQLiteRuntimeStoreQueries: Sendable {
                     arguments.append(anchor.sequenceNumber)
                 }
             }
-            let tieColumn = orderColumn == "sequenceNumber" ? "createdAt" : "sequenceNumber"
+            let tieColumn = orderColumn.tieBreaker
             let fetched = try RuntimeHistoryRowsRequest(
                 sql: """
                 SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
                 WHERE \(clauses.joined(separator: " AND "))
-                ORDER BY \(orderColumn) ASC, \(tieColumn) ASC
+                ORDER BY \(orderColumn.rawValue) ASC, \(tieColumn.rawValue) ASC
                 LIMIT \(agentOverfetchLimit(limit))
                 """,
                 arguments: StatementArguments(arguments)
@@ -132,13 +143,13 @@ struct SQLiteRuntimeStoreQueries: Sendable {
             }
         }
 
-        let descendingTieColumn = orderColumn == "sequenceNumber" ? "createdAt" : "sequenceNumber"
+        let descendingTieColumn = orderColumn.tieBreaker
         let overfetchLimit = agentOverfetchLimit(limit)
         let fetched = try RuntimeHistoryRowsRequest(
             sql: """
             SELECT * FROM \(RuntimeHistoryRow.databaseTableName)
             WHERE \(clauses.joined(separator: " AND "))
-            ORDER BY \(orderColumn) DESC, \(descendingTieColumn) DESC
+            ORDER BY \(orderColumn.rawValue) DESC, \(descendingTieColumn.rawValue) DESC
             LIMIT \(overfetchLimit)
             """,
             arguments: StatementArguments(arguments)

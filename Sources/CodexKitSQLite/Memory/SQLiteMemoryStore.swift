@@ -356,7 +356,7 @@ private enum SQLiteMemoryStoreInternalError: Error {
 
 extension SQLiteMemoryStore: StoreMigrationIdentifying, StoreMigrationCoordinating {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
-        StoreMigrationIdentity(kind: "memory", url: url)
+        StoreMigrationIdentity(kind: .memory, url: url)
     }
 
     package nonisolated var migrationCoordinationRootURL: URL {

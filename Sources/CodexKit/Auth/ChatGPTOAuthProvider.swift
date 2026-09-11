@@ -121,7 +121,7 @@ public final class ChatGPTOAuthProvider: Sendable {
 
         guard callback.state == state.value else {
             throw AgentRuntimeError(
-                code: "oauth_state_mismatch",
+                code: .oauthStateMismatch,
                 message: "The ChatGPT sign-in response could not be validated."
             )
         }
@@ -139,7 +139,7 @@ public final class ChatGPTOAuthProvider: Sendable {
     ) async throws -> ChatGPTSession {
         guard let refreshToken = session.refreshToken, !refreshToken.isEmpty else {
             throw AgentRuntimeError(
-                code: "missing_refresh_token",
+                code: .missingRefreshToken,
                 message: "This ChatGPT session cannot be refreshed because no refresh token is available."
             )
         }
@@ -197,7 +197,7 @@ public final class ChatGPTOAuthProvider: Sendable {
 
         guard let url = components?.url else {
             throw AgentRuntimeError(
-                code: "oauth_authorize_url_invalid",
+                code: .oauthAuthorizeUrlInvalid,
                 message: "The ChatGPT authorize URL could not be created."
             )
         }
@@ -209,12 +209,12 @@ public final class ChatGPTOAuthProvider: Sendable {
         codeVerifier: String
     ) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         applyDefaultAuthHeaders(to: &request)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = urlEncodedFormBody(
             [
-                ("grant_type", "authorization_code"),
+                ("grant_type", OAuthGrantType.authorizationCode.rawValue),
                 ("code", code),
                 ("redirect_uri", configuration.redirectURI.absoluteString),
                 ("client_id", configuration.clientID),
@@ -226,12 +226,12 @@ public final class ChatGPTOAuthProvider: Sendable {
 
     private func refreshAccessToken(_ refreshToken: String) async throws -> TokenResponse {
         var request = URLRequest(url: configuration.issuerURL.appendingPathComponent("oauth/token"))
-        request.httpMethod = "POST"
+        request.httpMethod = HTTPMethod.post.rawValue
         applyDefaultAuthHeaders(to: &request)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = urlEncodedFormBody(
             [
-                ("grant_type", "refresh_token"),
+                ("grant_type", OAuthGrantType.refreshToken.rawValue),
                 ("client_id", configuration.clientID),
                 ("refresh_token", refreshToken),
             ]
@@ -243,7 +243,7 @@ public final class ChatGPTOAuthProvider: Sendable {
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AgentRuntimeError(
-                code: "oauth_token_response_invalid",
+                code: .oauthTokenResponseInvalid,
                 message: "The ChatGPT token exchange returned an invalid response."
             )
         }
@@ -251,7 +251,7 @@ public final class ChatGPTOAuthProvider: Sendable {
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = simplifyAuthErrorBody(data)
             throw AgentRuntimeError(
-                code: "oauth_token_exchange_failed",
+                code: .oauthTokenExchangeFailed,
                 message: "ChatGPT token exchange failed with status \(httpResponse.statusCode): \(body)"
             )
         }

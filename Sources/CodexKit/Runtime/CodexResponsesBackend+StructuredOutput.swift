@@ -154,7 +154,7 @@ struct CodexResponsesStructuredStreamParser {
     private mutating func appendStructured(_ fragment: Substring) throws {
         let count = fragment.utf8.count
         guard count <= maximumPayloadBytes - structuredByteCount else {
-            throw AgentRuntimeError(code: "structured_output_too_large", message: "Structured output exceeded its byte limit.")
+            throw AgentRuntimeError(code: .structuredOutputTooLarge, message: "Structured output exceeded its byte limit.")
         }
         structuredByteCount += count
         structuredBuffer.append(contentsOf: fragment)

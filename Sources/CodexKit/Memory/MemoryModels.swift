@@ -182,7 +182,7 @@ public struct MemoryRecordListCursor: Codable, Hashable, Sendable {
 
 public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
     public var namespace: String
-    public var implementation: String
+    public var implementation: MemoryStoreImplementation
     public var schemaVersion: Int?
     public var totalRecords: Int
     public var activeRecords: Int
@@ -192,7 +192,7 @@ public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
 
     public init(
         namespace: String,
-        implementation: String,
+        implementation: MemoryStoreImplementation,
         schemaVersion: Int?,
         totalRecords: Int,
         activeRecords: Int,
@@ -208,6 +208,21 @@ public struct MemoryStoreDiagnostics: Codable, Hashable, Sendable {
         self.archivedRecords = archivedRecords
         self.countsByScope = countsByScope
         self.countsByCategory = countsByCategory
+    }
+
+    public init(
+        namespace: String,
+        implementation: String,
+        schemaVersion: Int?,
+        totalRecords: Int,
+        activeRecords: Int,
+        archivedRecords: Int,
+        countsByScope: [MemoryScope: Int],
+        countsByCategory: [String: Int]
+    ) {
+        self.init(namespace: namespace, implementation: MemoryStoreImplementation(rawValue: implementation),
+            schemaVersion: schemaVersion, totalRecords: totalRecords, activeRecords: activeRecords,
+            archivedRecords: archivedRecords, countsByScope: countsByScope, countsByCategory: countsByCategory)
     }
 }
 

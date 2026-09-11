@@ -95,6 +95,7 @@ A callback denial is not permanent cancellation and does not spend a generation 
 | --- | --- | --- |
 | Network loss, timeout, premature EOF/missing completion | Eligible transport interruptions can trigger a tool-free replacement after backoff. Partial output is discarded. | Inspect the underlying transport cause; suspend while offline or reopen the same handle. |
 | HTTP 429 | Apply configured retry policy and persist server cooldown. | Wait/resume; an exhausted budget requires deliberate manual retry. |
+| Recognized quota, credit, or spending-limit exhaustion | Initial `quota_exceeded`, even for HTTP 429. Reopening reports `permanentlyFailed`, retaining the quota cause in `status.lastFailure`; no replacement or new authorization. | Resolve the account limit, then deliberately request an eligible bounded manual retry. |
 | Retryable HTTP provider failure | Replace only for configured retryable statuses and within budget. | Use typed HTTP/provider diagnostics; do not treat every server error as transient. |
 | HTTP 401 | Attempt existing same-account authentication recovery; a reissued POST consumes another authorization and attempt. | If renewal is unavailable/fails, sign in to the same account/source before reopening. |
 | HTTP 403 or nonretryable HTTP rejection | No blanket refresh or automatic downgrade. | Correct authorization/configuration or explicitly initiate an eligible manual retry. |

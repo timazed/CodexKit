@@ -33,7 +33,7 @@ package enum AgentHistorySequence {
         detail: String
     ) -> AgentRuntimeError {
         AgentRuntimeError(
-            code: "invalid_history_sequence",
+            code: .invalidHistorySequence,
             message: "Cannot allocate history for thread \(threadID): \(detail)."
         )
     }

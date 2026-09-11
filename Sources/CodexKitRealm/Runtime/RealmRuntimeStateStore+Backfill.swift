@@ -97,7 +97,7 @@ extension RealmRuntimeStateStore {
                     )
                     object.generation = try codec.decodeContextState(from: object).generation
                     RealmRuntimeAttachmentReferences.replace(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: object.threadID,
                         threadID: object.threadID,
                         storageKeys: try codec.attachmentStorageKeys(from: object),
@@ -139,7 +139,7 @@ extension RealmRuntimeStateStore {
                     object.hasStructuredOutput = projection.hasStructuredOutput
                     object.systemEventType = projection.systemEventType
                     RealmRuntimeAttachmentReferences.replace(
-                        ownerType: "history",
+                        ownerType: .history,
                         ownerKey: object.key,
                         threadID: object.threadID,
                         storageKeys: try codec.attachmentStorageKeys(from: object),

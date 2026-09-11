@@ -25,7 +25,7 @@ public final class KeychainSessionSecureStore: Sendable {
         case errSecSuccess:
             guard let data = result as? Data else {
                 throw AgentRuntimeError(
-                    code: "keychain_invalid_payload",
+                    code: .keychainInvalidPayload,
                     message: "Keychain returned an unexpected session payload."
                 )
             }
@@ -34,7 +34,7 @@ public final class KeychainSessionSecureStore: Sendable {
             return nil
         default:
             throw AgentRuntimeError(
-                code: "keychain_read_failed",
+                code: .keychainReadFailed,
                 message: "Failed to read the stored ChatGPT session from Keychain."
             )
         }
@@ -54,7 +54,7 @@ public final class KeychainSessionSecureStore: Sendable {
 
         guard addStatus == errSecDuplicateItem else {
             throw AgentRuntimeError(
-                code: "keychain_write_failed",
+                code: .keychainWriteFailed,
                 message: "Failed to store the ChatGPT session in Keychain."
             )
         }
@@ -69,7 +69,7 @@ public final class KeychainSessionSecureStore: Sendable {
 
         guard updateStatus == errSecSuccess else {
             throw AgentRuntimeError(
-                code: "keychain_update_failed",
+                code: .keychainUpdateFailed,
                 message: "Failed to update the ChatGPT session in Keychain."
             )
         }
@@ -79,7 +79,7 @@ public final class KeychainSessionSecureStore: Sendable {
         let status = SecItemDelete(baseQuery() as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw AgentRuntimeError(
-                code: "keychain_delete_failed",
+                code: .keychainDeleteFailed,
                 message: "Failed to remove the ChatGPT session from Keychain."
             )
         }

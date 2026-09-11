@@ -27,17 +27,25 @@ private extension JSONValue {
 }
 
 struct ResponsesRequestBody: Encodable {
+    enum ToolChoice: String, Encodable {
+        case auto, none
+    }
+
+    enum IncludedField: String, Encodable {
+        case encryptedReasoning = "reasoning.encrypted_content"
+    }
+
     let model: String
     let reasoning: ResponsesReasoningConfiguration
     let instructions: String
     let text: ResponsesTextConfiguration
     let input: [JSONValue]
     let tools: [JSONValue]
-    let toolChoice: String
+    let toolChoice: ToolChoice
     let parallelToolCalls: Bool
     let store: Bool
     let stream: Bool
-    let include: [String]
+    let include: [IncludedField]
     let promptCacheKey: String?
 
     enum CodingKeys: String, CodingKey {
@@ -56,31 +64,15 @@ struct ResponsesRequestBody: Encodable {
     }
 }
 
-struct ResponsesCompactRequestBody: Encodable {
-    let model: String
-    let reasoning: ResponsesReasoningConfiguration
-    let instructions: String
-    let text: ResponsesTextConfiguration
-    let input: [JSONValue]
-    let tools: [JSONValue]
-    let parallelToolCalls: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case model
-        case reasoning
-        case instructions
-        case text
-        case input
-        case tools
-        case parallelToolCalls = "parallel_tool_calls"
-    }
-}
-
 struct ResponsesReasoningConfiguration: Encodable {
-    let effort: String
-    let summary: String?
+    enum Summary: String, Encodable {
+        case auto
+    }
 
-    init(effort: ReasoningEffort, summary: String? = nil) {
+    let effort: String
+    let summary: Summary?
+
+    init(effort: ReasoningEffort, summary: Summary? = nil) {
         self.summary = summary
         self.effort = effort.apiValue
     }
@@ -91,7 +83,12 @@ struct ResponsesTextConfiguration: Encodable {
 }
 
 struct ResponsesTextFormat: Encodable {
-    let type: String
+    enum FormatType: String, Encodable {
+        case text
+        case jsonSchema = "json_schema"
+    }
+
+    let type: FormatType
     let name: String?
     let description: String?
     let schema: JSONValue?
@@ -99,13 +96,13 @@ struct ResponsesTextFormat: Encodable {
 
     init(responseFormat: AgentStructuredOutputFormat?) {
         if let responseFormat {
-            type = "json_schema"
+            type = .jsonSchema
             name = responseFormat.name
             description = responseFormat.description
             schema = responseFormat.schema.jsonValue
             strict = responseFormat.strict
         } else {
-            type = "text"
+            type = .text
             name = nil
             description = nil
             schema = nil
@@ -135,14 +132,14 @@ enum WorkingHistoryItem: Sendable {
             Self.developerMessageJSONValue(text: text)
         case let .functionCall(functionCall):
             .object([
-                "type": .string("function_call"),
+                "type": ResponsesItemType.functionCall.jsonValue,
                 "name": .string(functionCall.name),
                 "arguments": .string(functionCall.argumentsRaw),
                 "call_id": .string(functionCall.callID),
             ])
         case let .functionCallOutput(callID, output):
             .object([
-                "type": .string("function_call_output"),
+                "type": ResponsesItemType.functionCallOutput.jsonValue,
                 "call_id": .string(callID),
                 "output": .string(output),
             ])
@@ -169,7 +166,7 @@ enum WorkingHistoryItem: Sendable {
         case .assistant:
             if !message.text.isEmpty {
                 content.append(.object([
-                    "type": .string("output_text"),
+                    "type": ResponsesContentType.outputText.jsonValue,
                     "text": .string(message.text),
                 ]))
             }
@@ -177,23 +174,20 @@ enum WorkingHistoryItem: Sendable {
         default:
             if !message.text.isEmpty {
                 content.append(.object([
-                    "type": .string("input_text"),
+                    "type": ResponsesContentType.inputText.jsonValue,
                     "text": .string(message.text),
                 ]))
             }
 
             if message.role == .user {
                 content.append(contentsOf: message.images.map { image in
-                    .object([
-                        "type": .string("input_image"),
-                        "image_url": .string(image.dataURLString),
-                    ])
+                    image.responsesInputImage
                 })
             }
         }
 
         var object: [String: JSONValue] = [
-            "type": .string("message"),
+            "type": ResponsesItemType.message.jsonValue,
             "role": .string(roleValue),
             "content": .array(content),
         ]
@@ -205,11 +199,11 @@ enum WorkingHistoryItem: Sendable {
 
     private static func developerMessageJSONValue(text: String) -> JSONValue {
         .object([
-            "type": .string("message"),
+            "type": ResponsesItemType.message.jsonValue,
             "role": .string("developer"),
             "content": .array([
                 .object([
-                    "type": .string("input_text"),
+                    "type": ResponsesContentType.inputText.jsonValue,
                     "text": .string(text),
                 ]),
             ]),
@@ -242,7 +236,7 @@ struct CodexResponsesProviderState: Sendable {
     func validateClientManagedState() throws {
         guard previousResponseID != nil, items.isEmpty else { return }
         throw AgentRuntimeError(
-            code: "responses_server_state_unsupported",
+            code: .responsesServerStateUnsupported,
             message: "This saved context requires unsupported server-managed Responses state. Start a new conversation or rebuild client-managed context from saved history."
         )
     }
@@ -352,7 +346,7 @@ struct CodexResponsesStreamEvent: Sendable {
 extension ToolDefinition {
     var responsesJSONValue: JSONValue {
         .object([
-            "type": .string("function"),
+            "type": ResponsesToolType.function.jsonValue,
             "name": .string(name),
             "description": .string(description),
             "strict": .bool(false),

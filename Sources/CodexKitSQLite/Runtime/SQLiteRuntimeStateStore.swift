@@ -253,14 +253,15 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
                 let effectiveMessages = AgentThreadContextWindow.boundedMessages(
                     persistedContextState.effectiveMessages,
                     policy: policy,
-                    requireClosedTurns: true
+                    requireClosedTurns: true,
+                    completedMessageIDs: CodexResponsesCheckpointContext.completedMessageIDs(
+                        context: persistedContextState.providerContext, messages: persistedContextState.effectiveMessages)
                 )
                 let contextState = AgentThreadContextState(
                     threadID: id,
                     effectiveMessages: effectiveMessages,
-                    providerContext: effectiveMessages == persistedContextState.effectiveMessages
-                        ? persistedContextState.providerContext
-                        : nil,
+                    providerContext: CodexResponsesCheckpointContext.rebase(context: persistedContextState.providerContext,
+                        original: persistedContextState.effectiveMessages, retained: effectiveMessages),
                     generation: persistedContextState.generation,
                     lastCompactedAt: persistedContextState.lastCompactedAt,
                     lastCompactionReason: persistedContextState.lastCompactionReason,
@@ -584,7 +585,7 @@ public actor SQLiteRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspectin
 
 extension SQLiteRuntimeStateStore: StoreMigrationIdentifying, StoreMigrationCoordinating {
     package nonisolated var storeMigrationIdentity: StoreMigrationIdentity {
-        StoreMigrationIdentity(kind: "runtime", url: url)
+        StoreMigrationIdentity(kind: .runtime, url: url)
     }
 
     package nonisolated var migrationCoordinationRootURL: URL {

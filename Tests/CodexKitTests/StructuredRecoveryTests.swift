@@ -154,6 +154,42 @@ final class StructuredRecoveryTests: XCTestCase {
         XCTAssertEqual(status.attemptsUsed, 2)
     }
 
+    func testQuotaExhaustionNeverConsumesReplacementBudget() async throws {
+        let quota = #"{"error":{"code":"insufficient_quota","type":"insufficient_quota","message":"Quota exhausted"}}"#
+        RecoveryProbeURLProtocol.configure([
+            .init(body: quota, statusCode: 429),
+            .init(body: message + completed)
+        ])
+        let runtime = try runtime()
+        let handle = try await prepare(runtime)
+        do {
+            _ = try await runtime.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in true }
+            XCTFail("Quota exhaustion must not trigger replacement generation")
+        } catch {
+            XCTAssertEqual((error as? AgentRuntimeError)?.knownCode, .quotaExceeded)
+            XCTAssertEqual((error as? AgentRuntimeError)?.http?.isQuotaExceeded, true)
+        }
+        XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
+        let status = try await runtime.structuredRecoveryStatus(handle, store: store)
+        XCTAssertEqual(status.attemptsUsed, 1)
+        XCTAssertEqual(status.state, .failed)
+        let reopened = try self.runtime()
+        do {
+            _ = try await reopened.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in
+                XCTFail("Reopening a quota failure must not authorize a replacement")
+                return true
+            }
+            XCTFail("Reopening must preserve the terminal quota failure")
+        } catch {
+            XCTAssertEqual(error as? AgentRecoveryError, .permanentlyFailed)
+        }
+        let reopenedStatus = try await reopened.structuredRecoveryStatus(handle, store: store)
+        XCTAssertEqual(reopenedStatus.lastFailure?.knownCode, .quotaExceeded)
+        XCTAssertEqual(reopenedStatus.lastFailure?.http?.isQuotaExceeded, true)
+        XCTAssertEqual(reopenedStatus.attemptsUsed, 1)
+        XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
+    }
+
     func testTaskCancellationSuspendsAndExplicitCancellationNeverReplays() async throws {
         RecoveryProbeURLProtocol.configure([.init(body: created + delta, holdOpen: true)])
         let runtime = try runtime()

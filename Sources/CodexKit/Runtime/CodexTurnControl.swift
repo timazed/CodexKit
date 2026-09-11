@@ -8,10 +8,10 @@ actor CodexTurnControl {
     func steer(_ message: AgentMessage) throws {
         try Task.checkCancellation()
         guard !closed else {
-            throw AgentRuntimeError(code: "turn_not_active", message: "The turn has already ended.")
+            throw AgentRuntimeError(code: .turnNotActive, message: "The turn has already ended.")
         }
         guard queued.count < AgentStoreLimits.maximumPendingSteeringMessageCount else {
-            throw AgentRuntimeError(code: "steering_queue_full", message: "The turn's pending input queue is full. Wait for the next model pass before adding more input.")
+            throw AgentRuntimeError(code: .steeringQueueFull, message: "The turn's pending input queue is full. Wait for the next model pass before adding more input.")
         }
         queued.append(message)
     }

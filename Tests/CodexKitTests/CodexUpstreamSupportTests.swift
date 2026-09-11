@@ -23,6 +23,32 @@ final class CodexUpstreamSupportTests: XCTestCase {
     }
     private let completed = #"{"type":"response.completed","response":{"id":"r","usage":{"input_tokens":1,"output_tokens":1}}}"#
 
+    func testUnknownProtocolValuesDoNotInterruptOrLoseProviderHistory() async throws {
+        let opaqueItem = #"{"type":"future_item","id":"opaque","payload":{"keep":true}}"#
+        await enqueue([
+            #"{"type":"response.future_event","sequence_number":1}"#,
+            "{\"type\":\"response.output_item.done\",\"item\":\(opaqueItem)}",
+            #"{"type":"response.output_item.done","item":{"id":"m","type":"message","role":"assistant","content":[{"type":"future_content","text":"Answer"}]}}"#,
+            completed
+        ])
+        let stream = try await begin(backend())
+        var context: AgentProviderContext?
+        var messages: [AgentMessage] = []
+        var completions = 0
+        for try await event in stream.events {
+            switch event {
+            case let .providerContextUpdated(_, value): context = value
+            case let .assistantMessageCompleted(value): messages.append(value)
+            case .turnCompleted: completions += 1
+            default: break
+            }
+        }
+        XCTAssertEqual(completions, 1)
+        XCTAssertEqual(messages.map(\.text), ["Answer"])
+        let expected = try JSONDecoder().decode(JSONValue.self, from: Data(opaqueItem.utf8))
+        XCTAssertTrue(context?.payload.objectValue?["items"]?.arrayValue?.contains(expected) == true)
+    }
+
     func testPrematureEOFIsFailureAndRetriesOnlyBeforeCommittedOutput() async throws {
         await enqueue([])
         let first = try await begin(backend())
@@ -54,7 +80,9 @@ final class CodexUpstreamSupportTests: XCTestCase {
         await enqueue([
             #"{"type":"response.output_item.added","item":{"id":"m","type":"message","role":"assistant","phase":"commentary","content":[]}}"#,
             #"{"type":"response.reasoning_summary_text.delta","item_id":"reason","summary_index":0,"delta":"Checking options"}"#,
+            #"{"type":"response.web_search_call.in_progress","item_id":"search"}"#,
             #"{"type":"response.web_search_call.searching","item_id":"search"}"#,
+            #"{"type":"response.web_search_call.completed","item_id":"search"}"#,
             #"{"type":"response.output_item.done","item":{"id":"search","type":"web_search_call","status":"completed","action":{"type":"search","query":"options"}}}"#,
             #"{"type":"codex.rate_limits","metered_limit_name":"codex-other","rate_limits":{"primary":{"used_percent":30,"window_minutes":300,"reset_at":123456}}}"#,
             #"{"type":"response.output_item.done","item":{"id":"m","type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Answer"}]}}"#,
@@ -74,6 +102,9 @@ final class CodexUpstreamSupportTests: XCTestCase {
         }
         XCTAssertTrue(progress.contains(.reasoningSummaryDelta(itemID: "reason", summaryIndex: 0, delta: "Checking options")))
         XCTAssertTrue(progress.contains(.messageStarted(itemID: "m", phase: .commentary)))
+        for status in ["in_progress", "searching", "completed"] {
+            XCTAssertTrue(progress.contains(.webSearch(itemID: "search", status: status, action: nil)))
+        }
         XCTAssertEqual(messages.map(\.text), ["Answer"])
         XCTAssertEqual(messages.first?.phase, .finalAnswer)
         let restored = try JSONDecoder().decode(AgentMessage.self, from: JSONEncoder().encode(messages[0]))
@@ -122,6 +153,23 @@ final class CodexUpstreamSupportTests: XCTestCase {
         } catch {}
         let limits = await backend.rateLimits(session: session())
         XCTAssertEqual(limits.first?.primary?.remainingPercent, 0)
+    }
+
+    func testCatalogDistinguishesMissingListsFromExplicitListsAndPreservesFutureEfforts() throws {
+        let data = Data(#"{"models":[{"slug":"gpt-6-astra"},{"slug":"empty","supported_reasoning_levels":[],"input_modalities":[]},{"slug":"mixed","default_reasoning_level":"future_effort","supported_reasoning_levels":[{"effort":"high"},{"effort":"future_effort"},{"effort":42},null],"input_modalities":["text","future_modality",42]}]}"#.utf8)
+        let catalog = try CodexResponsesBackend.decodeModels(data)
+        XCTAssertEqual(catalog.count, 3)
+        let missing = try XCTUnwrap(catalog.first)
+        XCTAssertEqual(missing.supportedReasoningEfforts, CodexModel.gpt6Astra.info?.supportedReasoningEfforts)
+        XCTAssertEqual(missing.inputModalities, [.text, .image])
+        XCTAssertEqual(missing.defaultReasoningEffort, .medium)
+        let empty = try XCTUnwrap(catalog.first { $0.model.rawValue == "empty" })
+        XCTAssertTrue(empty.supportedReasoningEfforts.isEmpty)
+        XCTAssertTrue(empty.inputModalities.isEmpty)
+        let mixed = try XCTUnwrap(catalog.first { $0.model.rawValue == "mixed" })
+        XCTAssertEqual(mixed.supportedReasoningEfforts, [.high, .custom("future_effort")])
+        XCTAssertEqual(mixed.defaultReasoningEffort, .custom("future_effort"))
+        XCTAssertEqual(mixed.inputModalities, [.text])
     }
 
     func testAstraMetadataAndUnknownPhaseRoundTrip() throws {

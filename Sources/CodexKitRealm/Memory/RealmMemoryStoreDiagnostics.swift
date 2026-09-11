@@ -1,6 +1,10 @@
 import CodexKit
 import RealmSwift
 
+enum RealmMemoryDiagnosticDimension: String {
+    case total, status, scope, category, active, archived
+}
+
 struct RealmMemoryNamespaceDiagnosticsDelta {
     var totalRecords = 0
     var activeRecords = 0
@@ -64,14 +68,14 @@ struct RealmMemoryDiagnosticsDelta {
         count: Int
     ) {
         var delta = byNamespace[namespace, default: RealmMemoryNamespaceDiagnosticsDelta()]
-        switch dimension {
-        case "total":
+        switch RealmMemoryDiagnosticDimension(rawValue: dimension) {
+        case .total:
             delta.totalRecords += count
-        case "status":
+        case .status:
             adjustStatus(value, by: count, in: &delta)
-        case "scope":
+        case .scope:
             delta.countsByScope[value, default: 0] += count
-        case "category":
+        case .category:
             delta.countsByCategory[value, default: 0] += count
         default:
             break
@@ -119,10 +123,10 @@ struct RealmMemoryDiagnosticsDelta {
         by amount: Int,
         in delta: inout RealmMemoryNamespaceDiagnosticsDelta
     ) {
-        switch status {
-        case MemoryRecordStatus.active.rawValue:
+        switch MemoryRecordStatus(rawValue: status) {
+        case .active:
             delta.activeRecords += amount
-        case MemoryRecordStatus.archived.rawValue:
+        case .archived:
             delta.archivedRecords += amount
         default:
             break
@@ -131,8 +135,8 @@ struct RealmMemoryDiagnosticsDelta {
 }
 
 enum RealmMemoryDiagnosticsError: Error {
-    case countUnderflow(namespace: String, dimension: String, value: String?)
-    case countOverflow(namespace: String, dimension: String, value: String?)
+    case countUnderflow(namespace: String, dimension: RealmMemoryDiagnosticDimension, value: String?)
+    case countOverflow(namespace: String, dimension: RealmMemoryDiagnosticDimension, value: String?)
     case inconsistentEmptySnapshot(namespace: String)
 }
 
@@ -220,30 +224,30 @@ struct RealmMemoryDiagnosticsWriter {
                 snapshot.totalRecords,
                 by: delta.totalRecords,
                 namespace: namespace,
-                dimension: "total"
+                dimension: .total
             )
             snapshot.activeRecords = try adjusted(
                 snapshot.activeRecords,
                 by: delta.activeRecords,
                 namespace: namespace,
-                dimension: MemoryRecordStatus.active.rawValue
+                dimension: .active
             )
             snapshot.archivedRecords = try adjusted(
                 snapshot.archivedRecords,
                 by: delta.archivedRecords,
                 namespace: namespace,
-                dimension: MemoryRecordStatus.archived.rawValue
+                dimension: .archived
             )
             try applyCounts(
                 delta.countsByScope,
                 namespace: namespace,
-                dimension: "scope",
+                dimension: .scope,
                 to: snapshot.countsByScope
             )
             try applyCounts(
                 delta.countsByCategory,
                 namespace: namespace,
-                dimension: "category",
+                dimension: .category,
                 to: snapshot.countsByCategory
             )
             if snapshot.totalRecords == 0 {
@@ -273,7 +277,7 @@ struct RealmMemoryDiagnosticsWriter {
     private func applyCounts(
         _ deltas: [String: Int],
         namespace: String,
-        dimension: String,
+        dimension: RealmMemoryDiagnosticDimension,
         to counts: Map<String, Int>
     ) throws {
         for (value, delta) in deltas where delta != 0 {
@@ -281,7 +285,7 @@ struct RealmMemoryDiagnosticsWriter {
                counts[value] == nil,
                counts.count >= MemoryStoreLimits.maximumDiagnosticDimensionValueCount {
                 throw MemoryStoreError.invalidRecord(
-                    "namespace \(namespace) exceeds the \(dimension) diagnostics limit of \(MemoryStoreLimits.maximumDiagnosticDimensionValueCount)."
+                    "namespace \(namespace) exceeds the \(dimension.rawValue) diagnostics limit of \(MemoryStoreLimits.maximumDiagnosticDimensionValueCount)."
                 )
             }
             let current = counts[value] ?? 0
@@ -312,7 +316,7 @@ struct RealmMemoryDiagnosticsWriter {
         _ current: Int,
         by delta: Int,
         namespace: String,
-        dimension: String
+        dimension: RealmMemoryDiagnosticDimension
     ) throws -> Int {
         let (value, overflow) = current.addingReportingOverflow(delta)
         guard !overflow else {

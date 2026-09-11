@@ -12,12 +12,20 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Added a narrowly scoped recovery adapter that backend wrappers can delegate without replacing the SDK's authentication, endpoint, attempt-authorization, or tool-safety gates.
 - Added lifecycle suspension, durable cooldowns and attempt history, explicit idempotent manual retry with linked operations, actionable status, original-contract receipt access, account/scope cleanup, and structured recovery events through `AgentLogSink`.
 - Added public-API integration coverage for independent concurrent jobs, dynamic selection, disconnects, account changes, persisted budgets, and actual process crashes around idempotent host commits and acknowledgement.
+- Added `AgentImageMIMEType` and typed image constructors. The attachment MIME property is now typed; use `.rawValue` when a string is needed. Existing string constructor overloads and stored MIME strings remain supported.
+- Optional input-image detail preferences, persisted through attachment storage, with model-aware `original` to `high` normalization on outgoing Responses requests.
 
 ### Changed
 
 - Cancelling an owning structured-recovery task or exhausting background execution now suspends the operation. Explicit `cancelStructuredRecovery` remains terminal. Neither path publishes a result into the cancelled execution; hosts must also guard their own lifecycle and commit transaction.
 - Recovery records now use version 2. Existing alpha.30 handles, attempt counts, saved receipts, and permanent cancellation remain supported; unknown versions and incompatible contracts fail without deleting records or generating replacements.
 - Receipt acknowledgement removes sensitive content but retains a small disposition marker until explicit cleanup. Recovery expiry governs new attempt authorization, not access to a saved completion. See the [migration guide](docs/migration.md#host-app-recovery-and-request-preparation).
+- Replaced string-based domain choices across runtime, storage, auth, schema validation, demos, and verification helpers with enums. Search progress status and memory-store implementation are now typed; use `.rawValue` when a string is required. Existing string constructors and serialized values remain supported.
+- Remote compaction now streams `/responses` with a compaction trigger, validates the encrypted checkpoint and terminal event, and retains bounded recent user context locally. Transient compaction retries share the response budget.
+
+### Fixed
+
+- Exhausted quota, credit balances, and spending/usage limits now surface as `quota_exceeded` instead of retrying HTTP 429 as a temporary rate limit.
 
 ## [2.0.0-alpha.30] - 2026-09-10
 

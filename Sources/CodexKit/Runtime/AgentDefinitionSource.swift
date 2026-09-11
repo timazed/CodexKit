@@ -6,6 +6,18 @@ public enum AgentDefinitionSource: Hashable, Sendable {
 }
 
 public struct AgentDefinitionSourceError: Error, LocalizedError, Equatable, Sendable {
+    enum Code: String {
+        case definitionTooLarge = "definition_too_large"
+        case emptyInstructions = "empty_instructions"
+        case invalidDefinitionFile = "invalid_definition_file"
+        case invalidDefinitionLimit = "invalid_definition_limit"
+        case invalidSkillDefinition = "invalid_skill_definition"
+        case invalidSkillId = "invalid_skill_id"
+        case missingSkillIdentity = "missing_skill_identity"
+        case unreadableContent = "unreadable_content"
+        case unsupportedRemoteResponse = "unsupported_remote_response"
+    }
+
     public let code: String
     public let message: String
 
@@ -14,51 +26,55 @@ public struct AgentDefinitionSourceError: Error, LocalizedError, Equatable, Send
         self.message = message
     }
 
+    init(code: Code, message: String) {
+        self.init(code: code.rawValue, message: message)
+    }
+
     public var errorDescription: String? {
         message
     }
 
     public static func unsupportedRemoteResponse(_ statusCode: Int) -> AgentDefinitionSourceError {
         AgentDefinitionSourceError(
-            code: "unsupported_remote_response",
+            code: .unsupportedRemoteResponse,
             message: "Remote definition request failed with status code \(statusCode)."
         )
     }
 
     public static func unreadableContent() -> AgentDefinitionSourceError {
         AgentDefinitionSourceError(
-            code: "unreadable_content",
+            code: .unreadableContent,
             message: "The definition content could not be decoded as UTF-8 text."
         )
     }
 
     public static func emptyInstructions() -> AgentDefinitionSourceError {
         AgentDefinitionSourceError(
-            code: "empty_instructions",
+            code: .emptyInstructions,
             message: "The definition did not contain any usable instructions."
         )
     }
 
     public static func missingSkillIdentity() -> AgentDefinitionSourceError {
         AgentDefinitionSourceError(
-            code: "missing_skill_identity",
+            code: .missingSkillIdentity,
             message: "A skill loaded from this source must include an id and name, or they must be provided by the caller."
         )
     }
 
     public static func invalidSkillID(_ skillID: String) -> AgentDefinitionSourceError {
         AgentDefinitionSourceError(
-            code: "invalid_skill_id",
+            code: .invalidSkillId,
             message: "The skill ID \(skillID) is invalid. Skill IDs must match ^[a-zA-Z0-9_-]+$."
         )
     }
 
     public static func invalidSkillDefinition() -> AgentDefinitionSourceError {
-        .init(code: "invalid_skill_definition", message: "The JSON skill definition or its execution policy is invalid. Check field names, value types, tool names, and nonnegative tool-call limits.")
+        .init(code: .invalidSkillDefinition, message: "The JSON skill definition or its execution policy is invalid. Check field names, value types, tool names, and nonnegative tool-call limits.")
     }
 
     public static func definitionTooLarge(maximumBytes: Int) -> AgentDefinitionSourceError {
-        .init(code: "definition_too_large", message: "Definition content exceeds the configured limit of \(maximumBytes) bytes.")
+        .init(code: .definitionTooLarge, message: "Definition content exceeds the configured limit of \(maximumBytes) bytes.")
     }
 }
 
@@ -173,7 +189,7 @@ public actor AgentDefinitionSourceLoader {
     public func loadText(from source: AgentDefinitionSource) async throws -> String {
         try Task.checkCancellation()
         guard maximumDefinitionBytes > 0 else {
-            throw AgentDefinitionSourceError(code: "invalid_definition_limit", message: "The definition byte limit must be positive.")
+            throw AgentDefinitionSourceError(code: .invalidDefinitionLimit, message: "The definition byte limit must be positive.")
         }
         let data: Data
         switch source {
@@ -201,11 +217,11 @@ public actor AgentDefinitionSourceLoader {
 
     private func readFile(_ url: URL) throws -> Data {
         guard url.isFileURL else {
-            throw AgentDefinitionSourceError(code: "invalid_definition_file", message: "A file definition must be a regular local file.")
+            throw AgentDefinitionSourceError(code: .invalidDefinitionFile, message: "A file definition must be a regular local file.")
         }
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true else {
-            throw AgentDefinitionSourceError(code: "invalid_definition_file", message: "A file definition must be a regular local file.")
+            throw AgentDefinitionSourceError(code: .invalidDefinitionFile, message: "A file definition must be a regular local file.")
         }
         guard (values.fileSize ?? 0) <= maximumDefinitionBytes else { throw sizeError() }
         let handle = try FileHandle(forReadingFrom: url)

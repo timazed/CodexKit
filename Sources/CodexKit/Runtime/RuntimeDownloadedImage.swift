@@ -4,16 +4,20 @@ import UniformTypeIdentifiers
 
 enum RuntimeDownloadedImage {
     /// Inspect and decode a tiny thumbnail without changing the stored bytes.
-    static func mimeType(for data: Data) -> String? {
+    static func mimeType(for data: Data) -> AgentImageMIMEType? {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard !data.isEmpty,
               let source = CGImageSourceCreateWithData(data as CFData, options),
               CGImageSourceGetStatus(source) == .statusComplete,
               CGImageSourceGetCount(source) > 0,
               let identifier = CGImageSourceGetType(source),
-              let mimeType = UTType(identifier as String)?.preferredMIMEType,
-              ["image/png", "image/jpeg", "image/gif", "image/webp", "image/heic", "image/heif"].contains(mimeType)
+              let rawMIMEType = UTType(identifier as String)?.preferredMIMEType
         else { return nil }
+        let mimeType = AgentImageMIMEType(rawValue: rawMIMEType)
+        switch mimeType {
+        case .png, .jpeg, .gif, .webp, .heic, .heif: break
+        default: return nil
+        }
         let thumbnailOptions = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 1,

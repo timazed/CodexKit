@@ -74,7 +74,7 @@ enum CodexResponsesImageReferences {
                 object["b64_json"] = .string(base64Prefix + digest(attachment.data))
                 transformedKeys.insert("b64_json")
             }
-            if object["type"]?.stringValue == "image_generation_call",
+            if object["type"] == ResponsesItemType.imageGenerationCall.jsonValue,
                let base64 = object["result"]?.stringValue,
                let attachment = AgentImageAttachment(base64String: base64) {
                 object["result"] = .string(base64Prefix + digest(attachment.data))
@@ -154,7 +154,7 @@ enum CodexResponsesImageReferences {
     }
 
     private static func missingImage() -> AgentRuntimeError {
-        AgentRuntimeError(code: "responses_missing_persisted_image",
+        AgentRuntimeError(code: .responsesMissingPersistedImage,
             message: "A persisted Responses image reference could not be resolved.")
     }
 

@@ -8,6 +8,8 @@ import Foundation
 /// Opt-in device verification. Creates and removes its own adapter-test threads; writes its own report.
 @MainActor
 enum DemoRuntimeVerification {
+    private enum Adapter: String, CaseIterable { case sqlite, realm }
+
     private static var hasRun = false
 
     static func runIfRequested() async {
@@ -33,13 +35,17 @@ enum DemoRuntimeVerification {
             report["recoveryChecks"] = try await DemoRecoveryVerification.run(directory: recoveryDirectory, smoke: smoke).joined(separator: "; ")
             report["recovery"] = "passed"
         } catch { report["recovery"] = failureCode(error) }
-        for adapter in ["sqlite", "realm"] {
+        var localAdaptersPassed = true
+        for adapter in Adapter.allCases {
             do {
                 try await verifyLocalAdapter(adapter)
-                report[adapter] = "passed"
-            } catch { report[adapter] = failureCode(error) }
+                report[adapter.rawValue] = "passed"
+            } catch {
+                localAdaptersPassed = false
+                report[adapter.rawValue] = failureCode(error)
+            }
         }
-        report["localAdapters"] = report["sqlite"] == "passed" && report["realm"] == "passed"
+        report["localAdapters"] = localAdaptersPassed
             ? "passed" : "failed: local_adapter_verification"
         if CommandLine.arguments.contains("--verify-local-only") {
             report["liveProvider"] = "skipped: local_only"
@@ -74,8 +80,8 @@ enum DemoRuntimeVerification {
         } else { return "skipped: no_current_session" }
     }
 
-    private static func makeLocalRuntime(adapter: String) throws -> AgentRuntime {
-        let store: any RuntimeStateStoring = adapter == "sqlite"
+    private static func makeLocalRuntime(adapter: Adapter) throws -> AgentRuntime {
+        let store: any RuntimeStateStoring = adapter == .sqlite
             ? try SQLiteRuntimeStateStore() : try RealmRuntimeStateStore()
         let session = ChatGPTSession(accessToken: "local-verification",
             account: .init(id: "local-verification", email: "verification@example.com", plan: .unknown))
@@ -86,7 +92,7 @@ enum DemoRuntimeVerification {
             backgroundActivityProvider: IOSBackgroundActivityProvider()))
     }
 
-    private static func verifyLocalAdapter(_ adapter: String) async throws {
+    private static func verifyLocalAdapter(_ adapter: Adapter) async throws {
         var runtime = try makeLocalRuntime(adapter: adapter)
         let thread = try await runtime.createThread(title: "CodexKit verification (temporary)")
         do {

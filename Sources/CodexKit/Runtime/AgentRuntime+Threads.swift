@@ -128,7 +128,7 @@ extension AgentRuntime {
         backendThread.authenticationBinding = resume.session.binding
         guard backendThread.id == id else {
             throw AgentRuntimeError(
-                code: "thread_resume_mismatch",
+                code: .threadResumeMismatch,
                 message: "The backend resumed thread \(backendThread.id) instead of the requested thread \(id)."
             )
         }
@@ -167,7 +167,7 @@ extension AgentRuntime {
                 logger.info(.runtime, "Thread resumed.", metadata: ["thread_id": id])
                 return projection.thread
             } catch let error as AgentRuntimeError
-                where error.code == "invalid_history_sequence"
+                where error.knownCode == .invalidHistorySequence
                     && attempt < maximumSequenceAllocationAttempts {
                 logger.debug(
                     .persistence,
@@ -356,7 +356,7 @@ extension AgentRuntime {
         }
         guard existing != nil || model != nil || reasoningEffort != nil else {
             throw AgentRuntimeError(
-                code: "thread_configuration_unavailable",
+                code: .threadConfigurationUnavailable,
                 message: "No thread configuration is available to update."
             )
         }

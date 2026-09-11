@@ -18,7 +18,7 @@ extension SQLiteRuntimeStoreSchema {
                 try persisted.validateAttachmentReferences(using: attachmentStore)
                 for storageKey in Set(persisted.attachmentStorageKeys) {
                     try RuntimeAttachmentReferenceRow(
-                        ownerType: "history",
+                        ownerType: .history,
                         ownerKey: row.storageID,
                         threadID: row.threadID,
                         storageKey: storageKey
@@ -41,7 +41,7 @@ extension SQLiteRuntimeStoreSchema {
                 try persisted.validate(using: attachmentStore)
                 for storageKey in Set(persisted.attachmentStorageKeys) {
                     try RuntimeAttachmentReferenceRow(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: row.threadID,
                         threadID: row.threadID,
                         storageKey: storageKey

@@ -71,14 +71,14 @@ public struct AgentTurnStream: Sendable {
 
     public func steer(_ message: AgentMessage) async throws {
         guard let steerHandler else {
-            throw AgentRuntimeError(code: "steering_unsupported", message: "This backend does not support steering.")
+            throw AgentRuntimeError(code: .steeringUnsupported, message: "This backend does not support steering.")
         }
         try await steerHandler(message)
     }
 
     public func submitToolResult(_ result: ToolResultEnvelope, for invocationID: String) async throws {
         guard result.invocationID == invocationID else {
-            throw AgentRuntimeError(code: "invalid_tool_result", message: "The result must identify the requested invocation.")
+            throw AgentRuntimeError(code: .invalidToolResult, message: "The result must identify the requested invocation.")
         }
         try await submitToolResultHandler(result, invocationID)
     }

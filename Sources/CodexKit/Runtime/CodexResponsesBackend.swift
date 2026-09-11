@@ -259,9 +259,19 @@ public actor CodexResponsesBackend: AgentBackend {
             message: message,
             tools: tools,
             session: session,
-            rateLimitStore: rateLimitStore
+            rateLimitStore: rateLimitStore,
+            supportsImageDetailOriginal: supportsImageDetailOriginal(
+                for: thread.configuration?.model ?? configuration.model, session: session)
         ).stream
     }
+
+    func supportsImageDetailOriginal(for model: String, session: ChatGPTSession) -> Bool {
+        if let remote = modelCatalogs[session.binding.cacheKey]?.models.first(where: { $0.model.rawValue == model }) {
+            return remote.supportsImageDetailOriginal ?? false
+        }
+        return CodexModel(rawValue: model).info?.supportsImageDetailOriginal ?? false
+    }
+
 }
 
 extension CodexResponsesBackend: AgentBackendProviderContextSupporting {}
@@ -327,7 +337,8 @@ private struct CodexResponsesTurnSession {
         message: Request,
         tools: [ToolDefinition],
         session: ChatGPTSession,
-        rateLimitStore: CodexRateLimitStore
+        rateLimitStore: CodexRateLimitStore,
+        supportsImageDetailOriginal: Bool
     ) {
         let pendingToolResults = PendingToolResults()
         let control = CodexTurnControl()
@@ -354,6 +365,7 @@ private struct CodexResponsesTurnSession {
                 tools: tools,
                 session: session,
                 pendingToolResults: pendingToolResults,
+                supportsImageDetailOriginal: supportsImageDetailOriginal,
                 control: control,
                 rateLimitObserver: { snapshots in
                     await rateLimitStore.update(snapshots, accountID: session.binding.cacheKey)

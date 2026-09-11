@@ -59,7 +59,7 @@ Available logging categories include:
 
 Network logging is split between `.debug` and `.verbose` so day-to-day diagnostics stay readable:
 
-- `.debug` includes lifecycle/status breadcrumbs plus the outbound `/responses` request JSON body, important received `/responses` payloads such as final output items and completion/failure events, and `/responses/compact` request/response JSON bodies.
+- `.debug` includes lifecycle/status breadcrumbs plus the outbound `/responses` request JSON body, important received `/responses` payloads such as final output items and completion/failure events, and streamed compaction request/output payloads. Encrypted compaction content is redacted.
 - `.verbose` additionally includes every raw streaming SSE event payload, including token-by-token deltas.
 
 Payload logs may include prompt text, request context, tool arguments, and model output, so use them only for developer diagnostics. Prefer `.debug` when you need request/response visibility without the streaming firehose, and `.verbose` when you need complete wire-level traces.

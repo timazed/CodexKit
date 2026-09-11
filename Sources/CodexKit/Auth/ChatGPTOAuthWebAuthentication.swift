@@ -38,7 +38,7 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
         let anchor = try await MainActor.run { () throws -> ASPresentationAnchor in
             guard let anchor = presentationAnchorProvider() else {
                 throw AgentRuntimeError(
-                    code: "oauth_presentation_anchor_unavailable",
+                    code: .oauthPresentationAnchorUnavailable,
                     message: "The ChatGPT sign-in sheet could not be presented because no active window was available."
                 )
             }
@@ -58,7 +58,7 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
 
                     continuation.resume(
                         throwing: error ?? AgentRuntimeError(
-                            code: "oauth_authentication_cancelled",
+                            code: .oauthAuthenticationCancelled,
                             message: "The ChatGPT sign-in flow did not complete."
                         )
                     )
@@ -84,7 +84,7 @@ public final class SystemChatGPTWebAuthenticationProvider: NSObject, ChatGPTWebA
                     self?.activePresentationContextProvider = nil
                     continuation.resume(
                         throwing: AgentRuntimeError(
-                            code: "oauth_authentication_start_failed",
+                            code: .oauthAuthenticationStartFailed,
                             message: "The ChatGPT sign-in flow could not be started."
                         )
                     )
@@ -138,7 +138,7 @@ private struct UnsupportedChatGPTWebAuthenticationProvider: ChatGPTWebAuthentica
         callbackScheme _: String
     ) async throws -> URL {
         throw AgentRuntimeError(
-            code: "oauth_authentication_unsupported",
+            code: .oauthAuthenticationUnsupported,
             message: "Browser-based ChatGPT sign-in is not supported on this platform."
         )
     }

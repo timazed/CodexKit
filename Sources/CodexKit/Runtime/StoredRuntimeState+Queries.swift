@@ -434,7 +434,7 @@ package struct StoredRuntimeStateProjectionBuilder: Sendable {
         let preview = toolResult.result.primaryText
         let session = toolResult.result.session
         let status: AgentToolSessionStatus
-        if toolResult.result.errorMessage == "Tool execution was denied by the user." {
+        if toolResult.result.outcome == .approvalDenied {
             status = .denied
         } else if let session, !session.isTerminal {
             status = .running

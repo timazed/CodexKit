@@ -5,10 +5,10 @@ import XCTest
 
 final class RuntimeGrowthTests: XCTestCase {
     func testEvictedToolResultsAreNotExecutedAgainAfterRuntimeReload() async throws {
-        for (adapter, historyLimit) in [("sqlite", 0), ("sqlite", 1), ("realm", 0), ("realm", 1)] {
+        for (adapter, historyLimit) in [(TestStorageBackend.sqlite, 0), (.sqlite, 1), (.realm, 0), (.realm, 1)] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: directory) }
-            let store: any RuntimeStateStoring = adapter == "sqlite"
+            let store: any RuntimeStateStoring = adapter == .sqlite
                 ? try SQLiteRuntimeStateStore(url: directory.appendingPathComponent("sqlite.sqlite"))
                 : try RealmRuntimeStateStore(url: directory.appendingPathComponent("realm.realm"))
             let secure = KeychainSessionSecureStore(service: "CodexKit.GrowthTests", account: UUID().uuidString)
@@ -35,7 +35,7 @@ final class RuntimeGrowthTests: XCTestCase {
             _ = try await second.resumeThread(id: thread.id)
             _ = try await second.send(Request(text: "Replay lookup"), in: thread.id)
             let count = await executions.count
-            XCTAssertEqual(count, 1, adapter)
+            XCTAssertEqual(count, 1, adapter.rawValue)
             let records = try await second.execute(HistoryItemsQuery(threadID: thread.id,
                 kinds: [.toolResult], relationship: .toolInvocation(id: "stable-call")))
             XCTAssertEqual(records.records.count, 1)

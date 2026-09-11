@@ -62,10 +62,10 @@ final class ToolOutputFidelityTests: XCTestCase {
     func testReopenedDatabaseContextRetainsEveryToolTextBlock() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        for adapter in ["sqlite", "realm"] {
-            let url = directory.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.sqlite, .realm] {
+            let url = directory.appendingPathComponent(adapter.rawValue)
             let openStore: () throws -> any RuntimeStateStoring = {
-                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
             let thread = AgentThread(id: "thread")
             let invocation = ToolInvocation(id: "call", threadID: thread.id, turnID: "turn", toolName: "lookup", arguments: .null)
@@ -83,7 +83,7 @@ final class ToolOutputFidelityTests: XCTestCase {
             let reopened = try openStore()
             let activation = try await reopened.loadThreadActivationState(id: thread.id, policy: .init())
             let tool = try XCTUnwrap(activation.effectiveMessages.first { $0.role == .tool })
-            XCTAssertEqual(tool.text, "Tool lookup completed: First result\n\nSecond result", adapter)
+            XCTAssertEqual(tool.text, "Tool lookup completed: First result\n\nSecond result", adapter.rawValue)
             XCTAssertEqual(tool.toolInteraction?.result, result)
         }
     }
@@ -109,13 +109,13 @@ final class ToolOutputFidelityTests: XCTestCase {
             await TestURLProtocol.enqueue(.init(body: data))
             let images = await downloadedImages()
             XCTAssertEqual(images.count, 1)
-            XCTAssertEqual(images.first?.mimeType, type.preferredMIMEType)
+            XCTAssertEqual(images.first?.mimeType.rawValue, type.preferredMIMEType)
             XCTAssertEqual(images.first?.data, data)
         }
         let png = try imageData(type: .png)
         await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "text/plain"], body: png))
         let images = await downloadedImages()
-        XCTAssertEqual(images.first?.mimeType, "image/png", "Actual image bytes determine the media type")
+        XCTAssertEqual(images.first?.mimeType, .png, "Actual image bytes determine the media type")
     }
 
     func testOversizedRemoteImageIsRejectedFromHeaders() async throws {

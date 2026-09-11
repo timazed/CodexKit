@@ -130,7 +130,7 @@ package enum AgentHistoryWriteValidator {
             }
             guard item.sequenceNumber == expectedSequence else {
                 throw AgentRuntimeError(
-                    code: "invalid_history_sequence",
+                    code: .invalidHistorySequence,
                     message: "Expected history sequence \(expectedSequence) for thread \(threadID), received \(item.sequenceNumber)."
                 )
             }
@@ -214,8 +214,8 @@ package enum AgentHistoryWriteValidator {
         for image in message.images {
             guard !image.id.isEmpty,
                   image.id.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount,
-                  !image.mimeType.isEmpty,
-                  image.mimeType.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount else {
+                  !image.mimeType.rawValue.isEmpty,
+                  image.mimeType.rawValue.utf8.count <= AgentStoreLimits.maximumIdentifierByteCount else {
                 throw AgentStoreError.invalidInput("image metadata is invalid")
             }
             guard image.data.count <= AgentStoreLimits.maximumImageByteCount else {

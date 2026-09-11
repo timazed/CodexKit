@@ -10,10 +10,10 @@ final class DeepAuditRegressionTests: XCTestCase {
     func testManualCompactionCannotOverwriteANewerCompletedTurn() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        for adapter in ["sqlite", "realm"] {
-            let url = root.appendingPathComponent(adapter)
+        for adapter in [TestStorageBackend.sqlite, .realm] {
+            let url = root.appendingPathComponent(adapter.rawValue)
             let open: () throws -> any RuntimeStateStoring = {
-                adapter == "sqlite" ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
+                adapter == .sqlite ? try SQLiteRuntimeStateStore(url: url) : try RealmRuntimeStateStore(url: url)
             }
             let store = try open()
             let backend = DeepCompactionBackend()
@@ -215,7 +215,7 @@ final class DeepAuditRegressionTests: XCTestCase {
     }
 
     private var compactReply: Data {
-        Data(#"{"output":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Summary"}]}]}"#.utf8)
+        streamedCompactionReply()
     }
 }
 

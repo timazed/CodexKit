@@ -136,7 +136,7 @@ struct SQLiteRuntimeStorePersistence: Sendable {
 
             case let .upsertThreadContextState(threadID, state):
                 let previousStorageKeys = try attachmentReferenceStorageKeys(
-                    ownerType: "context",
+                    ownerType: .context,
                     ownerKey: threadID,
                     in: db
                 )
@@ -145,7 +145,7 @@ struct SQLiteRuntimeStorePersistence: Sendable {
                     let newStorageKeys = try attachmentStorageKeys(from: row)
                     try row.save(db)
                     try replaceAttachmentReferences(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: threadID,
                         threadID: threadID,
                         storageKeys: newStorageKeys,
@@ -155,7 +155,7 @@ struct SQLiteRuntimeStorePersistence: Sendable {
                 } else {
                     _ = try RuntimeContextStateRow.deleteOne(db, key: threadID)
                     try deleteAttachmentReferences(
-                        ownerType: "context",
+                        ownerType: .context,
                         ownerKey: threadID,
                         in: db
                     )
@@ -164,13 +164,13 @@ struct SQLiteRuntimeStorePersistence: Sendable {
 
             case let .deleteThreadContextState(threadID):
                 attachmentCleanup.formUnion(try attachmentReferenceStorageKeys(
-                    ownerType: "context",
+                    ownerType: .context,
                     ownerKey: threadID,
                     in: db
                 ))
                 _ = try RuntimeContextStateRow.deleteOne(db, key: threadID)
                 try deleteAttachmentReferences(
-                    ownerType: "context",
+                    ownerType: .context,
                     ownerKey: threadID,
                     in: db
                 )
@@ -290,7 +290,7 @@ struct SQLiteRuntimeStorePersistence: Sendable {
             let historyRow = try makeHistoryRow(from: item)
             try historyRow.insert(db)
             try replaceAttachmentReferences(
-                ownerType: "history",
+                ownerType: .history,
                 ownerKey: historyRow.storageID,
                 threadID: threadID,
                 storageKeys: try attachmentStorageKeys(from: historyRow),
@@ -414,7 +414,7 @@ struct SQLiteRuntimeStorePersistence: Sendable {
         let referenceLimit = AgentStoreLimits.maximumRedactionMatchCount
             * AgentStoreLimits.maximumImageCountPerMessage + 1
         let attachmentRows = try RuntimeAttachmentReferenceRow
-            .filter(Column("ownerType") == "history")
+            .filter(Column("ownerType") == RuntimeAttachmentOwner.history.rawValue)
             .filter(storageIDs.contains(Column("ownerKey")))
             .select(Column("storageKey"), as: String.self)
             .limit(referenceLimit)
@@ -431,7 +431,7 @@ struct SQLiteRuntimeStorePersistence: Sendable {
             let redactedRow = try makeHistoryRow(from: redacted)
             try redactedRow.save(db)
             try replaceAttachmentReferences(
-                ownerType: "history",
+                ownerType: .history,
                 ownerKey: redactedRow.storageID,
                 threadID: threadID,
                 storageKeys: try self.attachmentStorageKeys(from: redactedRow),
@@ -442,12 +442,12 @@ struct SQLiteRuntimeStorePersistence: Sendable {
             }
         }
         attachmentStorageKeys.formUnion(try attachmentReferenceStorageKeys(
-            ownerType: "context",
+            ownerType: .context,
             ownerKey: threadID,
             in: db
         ))
         _ = try RuntimeContextStateRow.deleteOne(db, key: threadID)
-        try deleteAttachmentReferences(ownerType: "context", ownerKey: threadID, in: db)
+        try deleteAttachmentReferences(ownerType: .context, ownerKey: threadID, in: db)
         try rebuildSummary(threadID: threadID, in: db)
         return attachmentStorageKeys
     }

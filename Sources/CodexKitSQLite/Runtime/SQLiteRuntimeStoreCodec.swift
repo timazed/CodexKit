@@ -38,7 +38,7 @@ extension SQLiteRuntimeStorePersistence {
         for row in historyRows {
             try row.insert(db)
             try replaceAttachmentReferences(
-                ownerType: "history",
+                ownerType: .history,
                 ownerKey: row.storageID,
                 threadID: row.threadID,
                 storageKeys: try attachmentStorageKeys(from: row),
@@ -49,7 +49,7 @@ extension SQLiteRuntimeStorePersistence {
         for row in contextRows {
             try row.insert(db)
             try replaceAttachmentReferences(
-                ownerType: "context",
+                ownerType: .context,
                 ownerKey: row.threadID,
                 threadID: row.threadID,
                 storageKeys: try attachmentStorageKeys(from: row),
@@ -389,13 +389,13 @@ extension SQLiteRuntimeStorePersistence {
     }
 
     func attachmentReferenceStorageKeys(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         in db: Database
     ) throws -> Set<String> {
         let limit = AgentStoreLimits.maximumImageCountPerWrite + 1
         let keys = try RuntimeAttachmentReferenceRow
-            .filter(Column("ownerType") == ownerType)
+            .filter(Column("ownerType") == ownerType.rawValue)
             .filter(Column("ownerKey") == ownerKey)
             .select(Column("storageKey"), as: String.self)
             .limit(limit)
@@ -409,7 +409,7 @@ extension SQLiteRuntimeStorePersistence {
     }
 
     func replaceAttachmentReferences(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         threadID: String,
         storageKeys: some Sequence<String>,
@@ -427,12 +427,12 @@ extension SQLiteRuntimeStorePersistence {
     }
 
     func deleteAttachmentReferences(
-        ownerType: String,
+        ownerType: RuntimeAttachmentOwner,
         ownerKey: String,
         in db: Database
     ) throws {
         try RuntimeAttachmentReferenceRow
-            .filter(Column("ownerType") == ownerType)
+            .filter(Column("ownerType") == ownerType.rawValue)
             .filter(Column("ownerKey") == ownerKey)
             .deleteAll(db)
     }

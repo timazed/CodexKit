@@ -18,7 +18,7 @@ extension CodexResponsesTurnRunner {
             do { return try await consumeEventStream(request: retry, state: &state, retryState: &retryState) }
             catch {
                 if AgentRuntime.isUnauthorizedError(error), let failure = error as? AgentRuntimeError {
-                    throw AgentRuntimeError(code: "authentication_recovery_exhausted",
+                    throw AgentRuntimeError(code: .authenticationRecoveryExhausted,
                         message: "Authentication was rejected after renewal. Reconnect to continue.",
                         http: failure.http, interruption: failure.interruption)
                 }
