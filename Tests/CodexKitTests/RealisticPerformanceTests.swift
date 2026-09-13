@@ -7,13 +7,21 @@ import ImageIO
 import UniformTypeIdentifiers
 import XCTest
 
-/// Opt-in workloads report timing and process memory without timing assertions.
+/// Image smoke coverage always runs; opt-in workloads report timing and process memory.
 final class RealisticPerformanceTests: XCTestCase {
+    func testImageRequestConstructionAndCompactionSmoke() async throws {
+        try await verifyImageRequestConstructionAndCompaction(counts: [1], imageSideLength: 16)
+    }
+
     func testImageHeavyRequestConstructionAndCompaction() async throws {
         try requireOptIn()
+        try await verifyImageRequestConstructionAndCompaction(counts: [1, 4, 8], imageSideLength: 512)
+    }
+
+    private func verifyImageRequestConstructionAndCompaction(counts: [Int], imageSideLength: Int) async throws {
         await TestURLProtocol.reset()
-        for count in [1, 4, 8] {
-            let images = try (0..<count).map { try noiseImage(seed: UInt32($0 + 73)) }
+        for count in counts {
+            let images = try (0..<count).map { try noiseImage(seed: UInt32($0 + 73), sideLength: imageSideLength) }
             let attachmentBytes = images.reduce(0) { $0 + $1.data.count }
             let history = (0..<count).flatMap { index in [
                 AgentMessage(threadID: "images", role: .user, text: "Image \(index)", images: [images[index]]),
@@ -21,7 +29,8 @@ final class RealisticPerformanceTests: XCTestCase {
             ] }
             let items = history.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
             let context = CodexResponsesProviderState(items: try CodexResponsesImageReferences.externalize(items)).agentProviderContext
-            let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+            let backend = CodexResponsesBackend(configuration: .init(requestRetryPolicy: .disabled),
+                urlSession: makeTestURLSession())
             let requestBytes = BenchmarkByteCount()
             await TestURLProtocol.enqueue(.init(body: Data("""
             data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}
@@ -38,13 +47,16 @@ final class RealisticPerformanceTests: XCTestCase {
             for try await event in turn.events { if case .turnCompleted = event { completed = true } }
             XCTAssertTrue(completed)
             let requestMilliseconds = milliseconds(requestStart.duration(to: .now))
-            await TestURLProtocol.enqueue(.init(body: try JSONEncoder().encode(JSONValue.object(["output": .array(items)])),
+            await TestURLProtocol.enqueue(.init(body: streamedCompactionReply(),
                 inspect: { request in try requestBytes.inspect(request) }))
             let compactStart = ContinuousClock.now
             let compacted = try await backend.compactContext(thread: .init(id: "images"), effectiveHistory: history,
                 providerContext: context, instructions: "", tools: [], session: demoSession())
             let compactMilliseconds = milliseconds(compactStart.duration(to: .now))
-            XCTAssertEqual(compacted.effectiveMessages.flatMap(\.images).count, count)
+            XCTAssertEqual(compacted.effectiveMessages.flatMap(\.images).map(\.data), images.map(\.data))
+            let checkpoint = compacted.providerContext?.payload.objectValue?["items"]?.arrayValue?.last?.objectValue
+            XCTAssertEqual(checkpoint?["type"], .string("compaction"))
+            XCTAssertEqual(checkpoint?["encrypted_content"], .string("Summary"))
             let storedPayload = try JSONEncoder().encode(compacted.providerContext)
             XCTAssertLessThan(storedPayload.count, 32_768)
             let after = ProcessMeasurement()
@@ -147,16 +159,16 @@ final class RealisticPerformanceTests: XCTestCase {
         return String(format: "%.3f", Double(parts.seconds) * 1_000 + Double(parts.attoseconds) / 1e15)
     }
 
-    private func noiseImage(seed initialSeed: UInt32) throws -> AgentImageAttachment {
+    private func noiseImage(seed initialSeed: UInt32, sideLength: Int) throws -> AgentImageAttachment {
         var seed = initialSeed
-        var bytes = [UInt8](repeating: 255, count: 512 * 512 * 4)
+        var bytes = [UInt8](repeating: 255, count: sideLength * sideLength * 4)
         for index in bytes.indices where index % 4 != 3 {
             seed = seed &* 1_664_525 &+ 1_013_904_223
             bytes[index] = UInt8(truncatingIfNeeded: seed >> 24)
         }
         let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
-        let image = try XCTUnwrap(CGImage(width: 512, height: 512, bitsPerComponent: 8, bitsPerPixel: 32,
-            bytesPerRow: 512 * 4, space: CGColorSpaceCreateDeviceRGB(),
+        let image = try XCTUnwrap(CGImage(width: sideLength, height: sideLength, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: sideLength * 4, space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: .init(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider,
             decode: nil, shouldInterpolate: false, intent: .defaultIntent))
         let data = NSMutableData()
