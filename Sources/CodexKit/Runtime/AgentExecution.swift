@@ -36,6 +36,7 @@ final class AgentExecutionControl: @unchecked Sendable {
     private let lock = NSLock()
     private var backend: AgentTurnStream?
     private var finished = false
+    var outputStarted: (@Sendable () -> Bool)?
 
     init(threadID: String, execution: AgentActiveTurnExecution?) {
         id = execution?.id ?? UUID()
@@ -58,6 +59,7 @@ final class AgentExecutionControl: @unchecked Sendable {
 
     func steer(_ text: String, images: [AgentImageAttachment]) async throws {
         try Task.checkCancellation()
+        guard outputStarted?() != true else { throw AgentOutputError.protocolViolation("Steering is unavailable after structured output begins.") }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty else {
             throw AgentRuntimeError.invalidMessageContent()
         }

@@ -38,6 +38,7 @@ struct MacDemoFeatureView: View {
             Text("Structured output").font(.title2.bold())
             Text("Use the same typed Swift schemas and requests as the iOS demo. Results are saved in real conversations.")
                 .foregroundStyle(.secondary)
+            ProgressiveOutputDemoView(runtime: features.runtime)
             GroupBox("Shipping support") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(DemoStructuredOutputExamples.shippingCustomerMessage)

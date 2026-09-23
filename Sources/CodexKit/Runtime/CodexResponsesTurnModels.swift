@@ -25,6 +25,8 @@ struct TurnRunState {
     var pendingStructuredOutputMetadata: AgentStructuredOutputMetadata?
     var toolCallsByID: [String: FunctionCallRecord] = [:]
     var hasToolActivity = false
+    var outputPhases: [String: AgentMessagePhase] = [:]
+    var structuredOutputBegan = false
 
     mutating func beginAttempt() {
         structuredParser = CodexResponsesStructuredStreamParser()

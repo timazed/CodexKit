@@ -106,6 +106,8 @@ The [documentation index](docs/index.md) contains the full guide list, core conc
 - [Configure models and reasoning](docs/backend-configuration.md)
 - [Use host-managed sessions, execution handles, and async observation](docs/sdk-integration.md)
 - [Recover saved structured results and authorize bounded replacements](docs/structured-request-recovery.md)
+- [Stream and validate typed output (text, JSON, JSON Lines, and XML)](docs/streaming-output.md)
+- [Record codec benchmark and compact-format decision](docs/streaming-output-benchmarks.md)
 - [Reuse a local Codex session on macOS](docs/auth-on-macos.md)
 - [Add memory](docs/memory.md)
 - [Define personas and skills](docs/personas-and-skills.md)

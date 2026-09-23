@@ -35,7 +35,7 @@ extension AgentRuntime {
                     if waitDespiteCancellation { try await active.task.uninterruptibleValue }
                     else { try await active.task.value }
                 } catch {
-                    if Task.isCancelled { throw CancellationError() }
+                    if Task.isCancelled, !waitDespiteCancellation { throw CancellationError() }
                     clearActivePersistenceTask(id: active.id)
                     if hasUnfinishedPersistence(through: requestedGeneration) {
                         continue

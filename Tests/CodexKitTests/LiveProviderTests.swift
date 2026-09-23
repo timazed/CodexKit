@@ -8,6 +8,43 @@ import XCTest
 
 /// Explicitly opt in; ordinary CI never reads a real account or uses its quota.
 final class LiveProviderTests: XCTestCase {
+    func testLiveStreamingOutputFormats() async throws {
+        let session = try currentSession()
+        let backend = CodexResponsesBackend(configuration: .init(enableWebSearch: false, enableImageGeneration: false,
+            requestRetryPolicy: .disabled, maximumModelPasses: 1, maximumResponseBytes: 1_024 * 1_024))
+        let runtime = try AgentRuntime(configuration: .init(sessionProvider: LiveSessionProvider(session: session),
+            backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(),
+            turnLimits: .init(maximumToolCalls: 0, maximumDuration: 60)))
+        let recordSchema = JSONSchema.object(properties: ["index": .integer, "text": .string()], required: ["index", "text"])
+        let jsonThread = try await runtime.createThread()
+        let json = try await runtime.send(Request(text: "Return index 1 and text ok. Do not use tools."), in: jsonThread.id,
+            output: AgentJSONResponseFormat<LiveStreamingRecord>(name: "record", schema: recordSchema))
+        XCTAssertEqual(json.index, 1)
+
+        let recordsThread = try await runtime.createThread()
+        let recordsFormat = AgentRecordResponseFormat(name: "records", record: LiveStreamingRecord.self,
+            schema: recordSchema, minimumRecords: 3, maximumRecords: 3)
+        var previews = 0, committed = false
+        for try await event in try await runtime.stream(Request(text: "Return three records with index 1, 2, 3 and text of one short sentence each. Do not use tools."),
+            in: recordsThread.id, output: recordsFormat) {
+            if case .format(_, .recordCompleted) = event { previews += 1 }
+            if case let .outputCommitted(_, result) = event { XCTAssertEqual(result.records.map(\.index), [1, 2, 3]); committed = true }
+        }
+        XCTAssertEqual(previews, 3); XCTAssertTrue(committed)
+
+        let xmlThread = try await runtime.createThread()
+        let format = AgentXMLResponseFormat(name: "notes", schema: .element("response", children: .sequence([
+            .element("note", text: .string, attributes: ["priority": .required(.string(enum: ["low", "high"]))], occurs: .range(min: 3, max: 3))
+        ])))
+        var elements = 0
+        for try await event in try await runtime.stream(Request(text: "Return three concise notes about testing software. Set priority to low or high. Do not use tools."),
+            in: xmlThread.id, output: format) {
+            if case .format(_, .elementCompleted) = event { elements += 1 }
+            if case let .outputCommitted(_, document) = event { XCTAssertEqual(document.root.children.count, 3) }
+        }
+        XCTAssertEqual(elements, 3)
+    }
+
     func testLivePlainAndStructuredCompletion() async throws {
         let session = try currentSession()
         let backend = CodexResponsesBackend(configuration: .init(enableWebSearch: false, enableImageGeneration: false,
@@ -104,6 +141,11 @@ private struct LiveResult: AgentStructuredOutput {
     let value: String
     static let responseFormat = AgentStructuredOutputFormat(name: "result",
         schema: .object(properties: ["value": .string(enum: ["ok"])], required: ["value"], additionalProperties: false))
+}
+
+private struct LiveStreamingRecord: Codable, Sendable {
+    let index: Int
+    let text: String
 }
 
 private struct LiveImageResult: AgentStructuredOutput {

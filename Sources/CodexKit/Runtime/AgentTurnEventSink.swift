@@ -15,6 +15,16 @@ struct AgentTurnEventSink<Output: Sendable>: Sendable {
     let complete: @Sendable (Error?, [AgentEvent]) -> Void
     let onCancellation: @Sendable (@escaping @Sendable () -> Void) -> Void
 
+    init(emit: @escaping @Sendable (AgentEvent) async throws -> Void,
+         partial: @escaping @Sendable (Output) async throws -> Void,
+         committed: @escaping @Sendable (Output) async throws -> Void,
+         validationFailed: @escaping @Sendable (AgentStructuredOutputValidationFailure) async throws -> Void,
+         complete: @escaping @Sendable (Error?, [AgentEvent]) -> Void,
+         onCancellation: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void) {
+        self.emit = emit; self.partial = partial; self.committed = committed
+        self.validationFailed = validationFailed; self.complete = complete; self.onCancellation = onCancellation
+    }
+
     init(_ channel: AgentEventChannel<AgentEvent>) where Output == JSONValue {
         emit = { try await channel.yield($0) }
         partial = { _ in }

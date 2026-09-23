@@ -79,7 +79,7 @@ extension AgentRuntime {
 
         for try await event in turnStream.events {
             switch event {
-            case .progress, .rateLimitsUpdated, .userMessageAccepted:
+            case .progress, .rateLimitsUpdated, .userMessageAccepted, .assistantContentDelta:
                 break
             case let .toolCallsRequested(invocations):
                 for invocation in invocations {

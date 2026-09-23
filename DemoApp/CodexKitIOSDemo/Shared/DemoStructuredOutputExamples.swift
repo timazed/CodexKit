@@ -1,5 +1,6 @@
 import CodexKit
 import Foundation
+import SwiftUI
 
 struct ShippingReplyContext: Codable, Sendable {
     let orderRegion: String
@@ -178,5 +179,109 @@ enum DemoStructuredOutputExamples {
 
     static func streamedStructuredRequest() -> Request {
         Request(text: streamedStructuredPrompt)
+    }
+}
+
+private struct ProgressiveDemoRecord: Codable, Sendable {
+    let id: Int
+    let title: String
+    let text: String
+    static let schema = JSONSchema.object(properties: ["id": .integer, "title": .string(), "text": .string()],
+                                           required: ["id", "title", "text"])
+}
+
+/// Shared iOS/macOS example. Previews are visibly provisional until the runtime commits.
+@MainActor
+struct ProgressiveOutputDemoView: View {
+    let runtime: AgentRuntime
+    var enabled = true
+    @State private var previews: [String] = []
+    @State private var status = "Choose an output format to stream three small testing tips."
+    @State private var rawJSON = ""
+    @State private var running = false
+    @State private var task: Task<Void, Never>?
+
+    var body: some View {
+        GroupBox("Streaming records, XML, and native JSON") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Record and XML cards appear as units close. They are previews until the entire turn validates and is saved.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Button("JSON Lines") { run(.records) }
+                    Button("XML") { run(.xml) }
+                    Button("Native JSON") { run(.json) }
+                }.disabled(!enabled || running)
+                if running {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Button("Cancel") { task?.cancel() }
+                    }
+                }
+                Text(status).font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(previews.enumerated()), id: \.offset) { index, text in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Unit \(index + 1)").font(.caption.bold())
+                        Text(text).textSelection(.enabled)
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                }
+                if !rawJSON.isEmpty {
+                    Text(rawJSON).font(.caption.monospaced()).textSelection(.enabled)
+                }
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onDisappear { task?.cancel() }
+    }
+
+    private enum Mode { case records, xml, json }
+    private func run(_ mode: Mode) {
+        guard !running else { return }
+        previews = []; rawJSON = ""; running = true; status = "Provisional — waiting for output…"
+        task = Task {
+            defer { running = false; task = nil }
+            do {
+                let thread = try await runtime.createThread(title: "Progressive structured output")
+                switch mode {
+                case .records:
+                    let format = AgentRecordResponseFormat(name: "testing_tips", record: ProgressiveDemoRecord.self,
+                        schema: ProgressiveDemoRecord.schema, minimumRecords: 3, maximumRecords: 3)
+                    for try await event in try await runtime.stream(Request(text: "Give three software testing tips with id 1, 2, 3, a short title, and a paragraph of text. Finish any tool work first."),
+                        in: thread.id, output: format) {
+                        switch event {
+                        case let .format(_, .recordCompleted(_, record)): previews.append(record.title + "\n" + record.text)
+                        case .outputCommitted: status = "Committed — all three records validated and stored."
+                        default: break
+                        }
+                    }
+                case .xml:
+                    let format = AgentXMLResponseFormat(name: "testing_tips", schema: .element("response", children: .sequence([
+                        .element("tip", text: .string, attributes: ["id": .required(.integer), "priority": .required(.string(enum: ["low", "high"]))],
+                                 occurs: .range(min: 3, max: 3))
+                    ])), streaming: .init(identityAttribute: "id"))
+                    for try await event in try await runtime.stream(Request(text: "Give three software testing tips, with id 1, 2, 3 and low/high priority. Write a short paragraph in each tip."),
+                        in: thread.id, output: format) {
+                        switch event {
+                        case let .format(_, .elementCompleted(element)):
+                            previews.append(element.info.indexedPath + "\n" + element.text)
+                        case .outputCommitted: status = "Committed — the complete XML document passed XSD validation and was stored."
+                        default: break
+                        }
+                    }
+                case .json:
+                    let format = AgentJSONResponseFormat<ProgressiveDemoRecord>(name: "testing_tip", schema: ProgressiveDemoRecord.schema)
+                    for try await event in try await runtime.stream(Request(text: "Give one software testing tip with id 1, a short title, and a paragraph of text."),
+                        in: thread.id, output: format) {
+                        switch event {
+                        case let .format(_, .rawJSONDelta(delta)): rawJSON += delta
+                        case let .outputCommitted(_, record):
+                            previews = [record.title + "\n" + record.text]
+                            status = "Committed — native JSON Schema output validated and stored."
+                        default: break
+                        }
+                    }
+                }
+            } catch is CancellationError { status = "Cancelled — previews are not a committed result." }
+            catch { status = "Not committed: \(error.localizedDescription)" }
+        }
     }
 }

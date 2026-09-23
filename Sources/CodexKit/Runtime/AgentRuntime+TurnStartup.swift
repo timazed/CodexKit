@@ -12,7 +12,8 @@ extension AgentRuntime {
         responseContract: AgentResponseContract?,
         tools: [ToolDefinition],
         session: ChatGPTSession,
-        allowsContextCompaction: Bool = true
+        allowsContextCompaction: Bool = true,
+        outputInstructions: String? = nil
     ) async throws -> (
         turnStream: AgentTurnStream,
         session: ChatGPTSession
@@ -26,7 +27,7 @@ extension AgentRuntime {
                     history: history,
                     providerContext: providerContext,
                     message: message,
-                    instructions: resolvedInstructions.text,
+                    instructions: [resolvedInstructions.text, outputInstructions].compactMap { $0 }.joined(separator: "\n\n"),
                     responseFormat: responseContract?.textFormat,
                     streamedStructuredOutput: responseContract?.streamedRequest,
                     tools: tools,
@@ -63,7 +64,7 @@ extension AgentRuntime {
                     ),
                     providerContext: self.providerContext(for: thread.id),
                     message: message,
-                    instructions: resolvedInstructions.text,
+                    instructions: [resolvedInstructions.text, outputInstructions].compactMap { $0 }.joined(separator: "\n\n"),
                     responseFormat: responseContract?.textFormat,
                     streamedStructuredOutput: responseContract?.streamedRequest,
                     tools: tools,

@@ -4,9 +4,11 @@ import Foundation
 actor CodexTurnControl {
     private var queued: [AgentMessage] = []
     private var closed = false
+    private var outputBegan = false
 
     func steer(_ message: AgentMessage) throws {
         try Task.checkCancellation()
+        guard !outputBegan else { throw AgentOutputError.protocolViolation("Steering is unavailable after final output begins.") }
         guard !closed else {
             throw AgentRuntimeError(code: .turnNotActive, message: "The turn has already ended.")
         }
@@ -23,4 +25,9 @@ actor CodexTurnControl {
     }
 
     func close() { closed = true; queued.removeAll() }
+
+    func beginOutput() throws {
+        guard queued.isEmpty else { throw AgentOutputError.protocolViolation("Final output began before queued steering was consumed.") }
+        outputBegan = true
+    }
 }

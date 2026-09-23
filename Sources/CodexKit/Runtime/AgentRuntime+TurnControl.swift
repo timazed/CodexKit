@@ -16,6 +16,7 @@ struct AgentActiveTurnExecution {
     let id: UUID
     let cancellation = AgentTurnCancellationHandle()
     var isFinishing = false
+    var outputStarted = false
     var turnID: String?
     var stream: AgentTurnStream?
 }
@@ -32,6 +33,7 @@ extension AgentRuntime {
                       expectedTurnID: String) async throws {
         guard let execution = activeTurnExecutions[threadID], !execution.isFinishing, execution.turnID == expectedTurnID,
               let stream = execution.stream else { throw inactiveTurnError() }
+        guard !execution.outputStarted else { throw AgentOutputError.protocolViolation("Steering is unavailable after structured output begins.") }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty else {
             throw AgentRuntimeError.invalidMessageContent()
         }
