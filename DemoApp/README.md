@@ -146,7 +146,7 @@ The checked-in demo registers skill-specific tools (`health_coach_fetch_progress
 
 The signed-in header shows the account name when supplied by sign-in, with email as the fallback. Existing saved sessions acquire the name on their next token refresh or sign-in when the service provides it.
 
-For the `v2.0.0-alpha.27` candidate, follow the [manual demo checks](../docs/release-readiness-2026-09-09.md#manual-demo-checks) before publication.
+For release verification, run the signed offline smoke checks above and `python3 Scripts/verify_ios_simulator.py --mode smoke` from the repository root. The [verification guide](../docs/verification.md) describes the extended checks and live-session limits.
 
 The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, size, quality, format, and status come from `AgentImageAttachment.generationMetadata`.
 

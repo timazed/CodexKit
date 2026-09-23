@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.32] - 2026-09-23
+
+This prerelease adds turn-based streaming output with locally validated text, native JSON Schema, JSON Lines, and XML/XSD formats. It also adds skill-policy-aware tool rounds and hosted-search restrictions. See the [streaming output guide](docs/streaming-output.md) and [migration notes](docs/migration.md) before upgrading.
+
 ### Added
 
 - Added turn-based `output:` APIs for streaming text, native JSON Schema, JSON Lines records, and XML with attributes and XSD validation. Format events are provisional until the completed turn and its storage transaction succeed; typed results use a versioned persistence envelope.

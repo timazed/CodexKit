@@ -24,7 +24,6 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [Logging and troubleshooting](logging-and-troubleshooting.md) | Diagnostics, production checks, common failures |
 | [Migration and releases](migration.md) | Changes between alpha versions and release conventions |
 | [Verification](verification.md) | CI simulator execution, opt-in live tests, performance checks |
-| [Release readiness](release-readiness-2026-09-10.md) | Alpha.28 candidate verification and publication status |
 | [Workload measurements](performance-2026-09-08.md) | Images, database paging, cancellation, optimized pipeline |
 | [Demo app](../DemoApp/README.md) | Setup and a walkthrough of the runtime features |
 
