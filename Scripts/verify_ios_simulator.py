@@ -184,7 +184,8 @@ def main():
         verification_start = time.monotonic()
         run(["xcrun", "simctl", "launch", "--terminate-running-process",
              f"--stdout={output / 'app-stdout.log'}", f"--stderr={output / 'app-stderr.log'}",
-             simulator, bundle_id, "--verify-runtime", "--verify-local-only"] + mode_arguments, env=environment)
+             simulator, bundle_id, "--verify-runtime", "--verify-local-only"] + mode_arguments,
+            env=environment, timeout=180)
         print("Waiting for SQLite, Realm, completion, and cancellation checks.", flush=True)
         deadline = time.monotonic() + options.report_timeout
         while time.monotonic() < deadline:
@@ -194,7 +195,8 @@ def main():
                 validate_report(json.loads(report_bytes), run_id, options.mode)
                 run(["xcrun", "simctl", "terminate", simulator, bundle_id])
                 run(["xcrun", "simctl", "launch", simulator, bundle_id,
-                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"] + mode_arguments, env=environment)
+                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"] + mode_arguments,
+                    env=environment, timeout=180)
                 reopen_path = container / "Documents/CodexKitRecoveryReopen.json"
                 reopen_deadline = time.monotonic() + options.report_timeout
                 while not reopen_path.is_file() and time.monotonic() < reopen_deadline:
