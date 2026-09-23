@@ -59,6 +59,11 @@ enum MacDemoRuntimeFactory {
         executionPolicy: .init(allowedToolNames: [MacDemoToolName.travelPlanner.rawValue],
             requiredToolNames: [MacDemoToolName.travelPlanner.rawValue], maxToolCalls: 1))
 
+    static let parallelLookupsSkill = AgentSkill(id: "parallel_lookups", name: "Parallel Lookups",
+        instructions: "Request both independent sample lookups in one response, then summarize.",
+        executionPolicy: .init(allowedToolNames: [MacDemoToolName.lookupWeather.rawValue, MacDemoToolName.lookupTransport.rawValue],
+            maxToolCalls: 2, maxToolRounds: 1, maximumParallelToolCalls: 2))
+
     static var tools: [AgentRuntime.ToolRegistration] {
         let emptySchema: JSONValue = .object(["type": .string("object"), "properties": .object([:])])
         var tools: [AgentRuntime.ToolRegistration] = [

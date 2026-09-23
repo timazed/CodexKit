@@ -22,6 +22,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - Skill budget checks reserve in request order before execution, and policy-rejected calls now persist normal tool-result records with stable failure codes.
 - Remote compaction does not enable hosted web search. Tool-result output retains content alongside structured failure information.
+- The macOS Parallel Lookups demo registers its skill at startup so saved lookup conversations remain usable after relaunch.
 
 ## [2.0.0-alpha.31] - 2026-09-11
 

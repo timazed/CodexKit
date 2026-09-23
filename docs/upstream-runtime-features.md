@@ -236,7 +236,9 @@ The checked-in iOS demo uses account discovery for its model picker, including
 Astra when available, and displays catalog provenance and reported account limits.
 Its ordinary chat screen shows provider progress and message phases, with
 **Add to turn** and **Stop** controls. **Parallel Lookups** requests two independent
-sample tools and displays observed concurrency. The interactive backend enables
+sample tools under a skill limiting execution to those tools, two calls in one
+round, and at most two concurrent calls. Both demos display observed concurrency
+so the skill's limits can be compared with execution. The interactive backend enables
 reasoning summaries; model output still determines whether summaries arrive.
 
 See [Try the runtime features](../DemoApp/README.md#try-the-runtime-features) for
