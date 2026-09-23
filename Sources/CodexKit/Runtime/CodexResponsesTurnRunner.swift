@@ -361,7 +361,8 @@ struct CodexResponsesTurnRunner {
             threadID: threadID,
             items: state.workingHistory,
             tools: tools,
-            session: session ?? self.session
+            session: session ?? self.session,
+            webSearch: request.webSearch
         )
         if let body = AgentStructuredRecoveryContext.current?.frozenBody { wire.httpBody = body }
         return wire

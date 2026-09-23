@@ -37,7 +37,7 @@ extension AgentRuntime {
         contextCompactionConfiguration.isEnabled
     }
 
-    func appendEffectiveMessage(_ message: AgentMessage) {
+    func appendEffectiveMessage(_ message: AgentMessage, invocationOrder: [String] = []) {
         let currentEffectiveMessages = state.contextStateByThread[message.threadID]?.effectiveMessages
             ?? Array((state.messagesByThread[message.threadID] ?? []).dropLast())
         let current = state.contextStateByThread[message.threadID]
@@ -45,7 +45,17 @@ extension AgentRuntime {
                 threadID: message.threadID,
                 effectiveMessages: currentEffectiveMessages
             )
-        let candidateEffectiveMessages = current.effectiveMessages + [message]
+        var candidateEffectiveMessages = current.effectiveMessages + [message]
+        if !invocationOrder.isEmpty {
+            let positions = Dictionary(uniqueKeysWithValues: invocationOrder.enumerated().map { ($0.element, $0.offset) })
+            let indices = candidateEffectiveMessages.indices.filter {
+                candidateEffectiveMessages[$0].toolInteraction.map { positions[$0.invocation.id] != nil } ?? false
+            }
+            let ordered = indices.map { candidateEffectiveMessages[$0] }.sorted {
+                positions[$0.toolInteraction!.invocation.id]! < positions[$1.toolInteraction!.invocation.id]!
+            }
+            for (index, value) in zip(indices, ordered) { candidateEffectiveMessages[index] = value }
+        }
         let boundedEffectiveMessages = AgentThreadContextWindow.boundedMessages(
             candidateEffectiveMessages,
             policy: threadActivationPolicy,
@@ -71,7 +81,8 @@ extension AgentRuntime {
     func appendEffectiveToolInteraction(
         invocation: ToolInvocation,
         result: ToolResultEnvelope,
-        completedAt: Date = Date()
+        completedAt: Date = Date(),
+        invocationOrder: [String] = []
     ) {
         let resultText = result.combinedText
             ?? result.errorMessage
@@ -87,7 +98,8 @@ extension AgentRuntime {
                     result: result
                 ),
                 createdAt: completedAt
-            )
+            ),
+            invocationOrder: invocationOrder
         )
     }
 

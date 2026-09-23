@@ -4,6 +4,19 @@ struct CodexResponsesToolOutputAdapter: Sendable {
     let urlSession: URLSession
 
     func text(from result: ToolResultEnvelope) -> String {
+        let output = plainText(from: result)
+        guard let failure = result.failure else { return output }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let value: JSONValue = .object([
+            "success": .bool(result.success), "error": (try? .encoding(failure)) ?? .null,
+            "output": .string(output),
+        ])
+        guard let data = try? encoder.encode(value) else { return output }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func plainText(from result: ToolResultEnvelope) -> String {
         var segments: [String] = []
         if let text = result.combinedText {
             segments.append(text)

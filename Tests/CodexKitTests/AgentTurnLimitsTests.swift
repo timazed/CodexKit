@@ -118,7 +118,7 @@ final class AgentTurnLimitsTests: XCTestCase {
         var calls = 0
         do {
             for try await event in stream.events {
-                if case let .toolCallRequested(invocation) = event {
+                if case let .toolRoundRequested(round) = event, let invocation = round.calls.first {
                     calls += 1
                     try await stream.submitToolResult(.success(invocation: invocation, text: "Done"), for: invocation.id)
                 }

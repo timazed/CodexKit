@@ -47,26 +47,58 @@ let lookup = ToolDefinition(
 )
 ```
 
-`AgentRuntime.Configuration.maximumParallelToolCalls` bounds each batch; the
-default is four, and values below one are clamped to one. The Responses backend
-requests parallel calls when at least one registered tool opts in. It collects
-the response's calls and emits `AgentBackendEvent.toolCallsRequested`.
+`AgentRuntime.Configuration.maximumParallelToolCalls` bounds concurrent host calls
+within each turn's round; the default is four, and runtime values below one are
+clamped to one. It is not a semaphore shared by all active threads. A skill's
+`maximumParallelToolCalls` may narrow that ceiling (one forces serial execution)
+but cannot increase it. Tools opting in must be safe for overlapping invocations,
+including multiple invocations of the same tool.
 
-The runtime executes consecutive eligible calls together. A serial tool or an
-approval-gated tool is a barrier: preceding work finishes before it runs, and
-following work waits for it. Approval-gated tools remain exclusive even if their
-parallel flag is true. Turns with skill tool-policy constraints run tools
-serially to preserve call limits and sequencing.
+Skill constraints do not disable parallelism. The runtime resolves active skills
+once per turn, validates and reserves calls in provider order, and plans bounded
+execution waves before launching tools. Serial tools and approval-gated calls are
+exclusive barriers. Exact-prefix sequence entries also form barriers: with
+`toolSequence: ["a", "b"]`, the response `[a, b, x, y]` can run as
+`[a] -> [b] -> [x, y]` in one round. `[a, x, b]` rejects `x`; the planner does not
+reorder or defer invalid calls. See [policy composition](personas-and-skills.md#execution-policy-composition-and-budgets).
 
-Tool lifecycle events identify individual calls and may finish out of order.
-Provider call/result history retains the model's original call order. The
-thread's pending snapshot represents one outstanding wait; use tool lifecycle
-events to display all concurrent calls. Host tools remain responsible for their
-own resource synchronization and cooperative cancellation.
+The Responses backend gathers all host calls until `response.completed` and emits
+`AgentBackendEvent.toolRoundRequested(AgentToolRound)`, regardless of serial or
+parallel tool declarations. A round is one model response requesting one or more
+host calls. Four calls in one response consume one round, even if execution uses
+four serial waves. A response without host calls consumes zero rounds. Transport
+retries are not new tool rounds, and an incomplete response executes no host calls.
+The existing retry safety checks still disallow replay after observing tool activity.
 
-Custom backends can continue emitting `toolCallRequested` for one call, or emit
-`toolCallsRequested` for a batch and accept results by invocation ID. The existing
-`AgentTurnStream(events:submitToolResult:)` initializer remains available.
+Custom backends should emit one nonempty `AgentToolRound` per model response, with
+a unique round ID and unique invocation IDs in provider order. Legacy
+`toolCallRequested` and `toolCallsRequested` remain accepted; each event declares a
+complete round. Do not split one response into several legacy events when using
+round limits. Empty rounds, duplicate round IDs, and duplicate invocation IDs are
+protocol errors. No additional public parallel-execution lifecycle is introduced.
+
+Tool lifecycle events identify individual invocations and can start and finish in
+execution order. Audit history records requests in provider order and results
+chronologically. Provider results and model-visible tool context are invocation
+ordered, including persisted/restored context and compaction input. Completed
+results are saved individually; a slower sibling does not delay their audit record.
+Replaying a persisted invocation returns its original outcome without executing
+the tool again, even if a later skill policy is narrower.
+The thread's pending snapshot represents one outstanding wait; use lifecycle
+events to display concurrent calls. Interrupting a turn cancels active tasks and
+result/approval waiters; host executors must cooperate with cancellation. Completed
+external side effects remain the application's responsibility.
+
+Policy rejection produces a normal failed `ToolResultEnvelope` with a structured
+`failure` containing a stable string code, message, and optional details. Codes
+include `tool_budget_exceeded`, `tool_round_budget_exceeded`, `tool_not_allowed`,
+`tool_sequence_violation`, `tool_approval_denied`, `tool_unknown`, and
+`tool_execution_failed`, and `tool_cancelled` for an executor that cancels its own
+operation while the turn remains active. The Responses adapter sends structured failure information
+alongside the textual output. Audit persistence and lifecycle events use the same
+finalization path for policy rejection, approval denial, and executed tools.
+Cancellation uses interrupted-turn semantics rather than submitting results to an
+interrupted provider. Unknown/duplicate result submissions remain protocol errors.
 
 Every tool result must preserve the requested invocation ID and tool name. If a
 custom executor returns a different identity, the runtime records a failed result
@@ -217,3 +249,54 @@ Update exhaustive switches for the added event cases, `AgentTurnStatus.interrupt
 and `AgentSystemEventType.turnInterrupted`. Cancellation now produces interrupted
 status rather than failed status. Existing tools stay serial unless explicitly
 opted in, and existing stored messages decode with `phase == nil`.
+
+## Turn-effective hosted web search
+
+Backend configuration remains the default and upper capability bound:
+
+```swift
+let backend = CodexResponsesBackend(configuration: .init(
+    enableWebSearch: true,
+    webSearchPolicy: .init(mode: .live, allowedDomains: ["example.com"])
+))
+```
+
+`enableWebSearch: false` always disables search, including when a skill or request
+specifies `.live`. With the switch enabled and no policy, existing live-search
+behavior is preserved. A backend policy can narrow this to cached or indexed
+search and a domain allowlist. Skills use `executionPolicy.webSearch`; a host can
+also supply `Request(text: "...", webSearch: ...)`. These restrictions intersect
+and apply to every provider pass within the turn, including after host-tool
+results and request retries. Later turns resolve their own policies.
+
+Modes compose from most to least restrictive: `disabled`, `cached`, `indexed`,
+`live`. Disabled omits the hosted tool. Cached sends `external_web_access: false`;
+indexed sends `external_web_access: true` plus `indexed_web_access: true`; live
+sends `external_web_access: true`. Indexed retrieval is gated by the search index.
+These fields and the domain-filter shape follow the
+[upstream Codex hosted-tool implementation](https://github.com/openai/codex/blob/40eac3ce8a0c10cbcb9db910d529355eb2f8fc09/codex-rs/core/src/tools/hosted_spec.rs)
+and its
+[schema tests](https://github.com/openai/codex/blob/40eac3ce8a0c10cbcb9db910d529355eb2f8fc09/codex-rs/core/src/tools/hosted_spec_tests.rs).
+Remote compaction and tool-free structured recovery do not enable hosted search.
+
+`allowedDomains: nil` adds no domain restriction. `[]`, or a disjoint intersection,
+disables search; it never becomes unrestricted search. Allowlist entries cover
+subdomains, so intersecting `example.com` with `docs.example.com` retains
+`docs.example.com`. Entries are trimmed, lowercased, deduplicated and stripped of
+one trailing DNS dot. Use at most 100 ASCII/punycode DNS names. URLs, ports, paths,
+wildcards and IP addresses are rejected. Filters are emitted as
+`filters.allowed_domains`, never approximated in prompt text. These are hosted
+search-result filters, not a sandbox for host tools, connectors or other network
+traffic. See [OpenAI's search documentation](https://developers.openai.com/api/docs/guides/tools-web-search).
+
+Custom backends and wrappers advertise `AgentBackend.webSearchCapabilities` and
+must honor the resolved `Request.webSearch`. The default `nil` means enforcement
+is unadvertised: applying a search constraint fails with
+`unsupported_backend_capability`. Advertised backends reject unsupported modes or
+domain restrictions rather than silently dropping them. Wrappers should forward
+both capability information and the request. Capability declarations do not grant
+provider/account access; a provider can still reject unsupported requests.
+
+Host `maxToolCalls`, `maxToolRounds`, and per-tool limits do **not** budget hosted
+search. CodexKit cannot intercept those provider-executed calls before execution.
+For strict search-call budgets, expose search as a host-defined `ToolDefinition`.

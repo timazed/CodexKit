@@ -1,59 +1,53 @@
 import Foundation
 
 extension AgentRuntime {
-    func consumeToolInvocations(
-        _ invocations: [ToolInvocation], turnStream: AgentTurnStream, session: ChatGPTSession,
-        policyTracker: TurnSkillPolicyTracker?, registrations: [String: ToolRegistry.Entry], storesTurnState: Bool, sink: AgentToolEventSink
+    func consumeToolRound(
+        _ round: AgentToolRound, turnStream: AgentTurnStream, session: ChatGPTSession,
+        policyTracker: TurnSkillPolicyTracker, registrations: [String: ToolRegistry.Entry],
+        storesTurnState: Bool, sink: AgentToolEventSink
     ) async throws {
-        guard Set(invocations.map(\.id)).count == invocations.count else {
-            throw AgentRuntimeError(code: .duplicateToolCall, message: "A tool batch contains duplicate call IDs.")
-        }
-        var parallel: [ToolInvocation] = []
-        for invocation in invocations {
-            try Task.checkCancellation()
-            let definition = registrations[invocation.toolName]?.definition
-            // Skill sequences and call limits retain their existing serial semantics.
-            let canOverlap = policyTracker == nil && definition?.supportsParallelExecution == true
-                && definition?.approvalPolicy == .automatic
-            if canOverlap {
-                parallel.append(invocation)
-                if parallel.count == maximumParallelToolCalls {
-                    try await consumeParallelBatch(parallel, turnStream: turnStream, session: session,
-                                                   registrations: registrations, storesTurnState: storesTurnState, sink: sink)
-                    parallel.removeAll()
-                }
-            } else {
-                try await consumeParallelBatch(parallel, turnStream: turnStream, session: session,
-                                               registrations: registrations, storesTurnState: storesTurnState, sink: sink)
-                parallel.removeAll()
-                try await consumeToolInvocation(invocation, turnStream: turnStream, session: session,
-                    policyTracker: policyTracker, registration: registrations[invocation.toolName], storesTurnState: storesTurnState, sink: sink)
-            }
-        }
-        try await consumeParallelBatch(parallel, turnStream: turnStream, session: session,
-                                       registrations: registrations, storesTurnState: storesTurnState, sink: sink)
-    }
-
-    private func consumeParallelBatch(
-        _ invocations: [ToolInvocation], turnStream: AgentTurnStream, session: ChatGPTSession,
-        registrations: [String: ToolRegistry.Entry], storesTurnState: Bool, sink: AgentToolEventSink
-    ) async throws {
-        guard let first = invocations.first else { return }
+        try Task.checkCancellation()
+        let plan = try await policyTracker.plan(round, definitions: registrations.mapValues(\.definition),
+            maximumConcurrency: maximumParallelToolCalls)
+        let invocationOrder = round.calls.map(\.id)
+        // Persist requests before launching tasks; audit results remain chronological.
         if storesTurnState {
-            parallelToolWaits[first.turnID] = Dictionary(uniqueKeysWithValues: invocations.map {
-                ($0.id, AgentPendingToolWaitState(invocationID: $0.id, turnID: $0.turnID,
-                    toolName: $0.toolName))
-            })
-        }
-        defer { if storesTurnState { parallelToolWaits[first.turnID] = nil } }
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for invocation in invocations {
-                group.addTask {
-                    try await self.consumeToolInvocation(invocation, turnStream: turnStream, session: session,
-                        policyTracker: nil, registration: registrations[invocation.toolName], storesTurnState: storesTurnState, sink: sink)
+            for invocation in round.calls {
+                if !(try await hasStoredToolCall(invocationID: invocation.id, in: invocation.threadID)) {
+                    try appendHistoryItem(.toolCall(.init(invocation: invocation, requestedAt: Date())),
+                        threadID: invocation.threadID, createdAt: Date())
                 }
             }
-            try await group.waitForAll()
+            try await persistState()
+        }
+        for wave in plan.waves {
+            try Task.checkCancellation()
+            guard let first = wave.first else { continue }
+            let turnID = first.invocation.turnID
+            if storesTurnState {
+                parallelToolWaits[turnID] = Dictionary(uniqueKeysWithValues: wave.map {
+                    ($0.invocation.id, AgentPendingToolWaitState(invocationID: $0.invocation.id,
+                        turnID: turnID, toolName: $0.invocation.toolName))
+                })
+            }
+            defer { if storesTurnState { parallelToolWaits[turnID] = nil } }
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for admission in wave {
+                    group.addTask {
+                        try await self.consumeToolInvocation(admission, invocationOrder: invocationOrder,
+                            turnStream: turnStream, session: session, policyTracker: policyTracker,
+                            registration: registrations[admission.invocation.toolName], storesTurnState: storesTurnState, sink: sink)
+                    }
+                }
+                do {
+                    // Observe infrastructure failure promptly; ordinary tool failures
+                    // are envelopes and do not cancel sibling calls.
+                    for try await _ in group {}
+                } catch {
+                    group.cancelAll()
+                    throw error
+                }
+            }
         }
     }
 }

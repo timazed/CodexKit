@@ -125,6 +125,10 @@ extension AgentDemoViewModel {
     }
 
     func registerParallelDemoTools() async throws {
+        try await runtime.replaceSkill(.init(id: "parallel_lookups", name: "Parallel Lookups",
+            instructions: "Request both independent sample lookups in one response, then summarize.",
+            executionPolicy: .init(allowedToolNames: ["demo_lookup_weather", "demo_lookup_transport"],
+                maxToolCalls: 2, maxToolRounds: 1, maximumParallelToolCalls: 2)))
         for (name, description, output) in [
             ("demo_lookup_weather", "Read sample Sydney weather for the parallel-tools demo.", "Sample weather: Sydney, sunny, 22°C."),
             ("demo_lookup_transport", "Read sample Sydney transport for the parallel-tools demo.", "Sample transport: trains every 10 minutes; ferry every 30 minutes.")
@@ -141,7 +145,7 @@ extension AgentDemoViewModel {
 
     func runParallelToolsDemo() async {
         guard session != nil, canReconfigureRuntime else { return }
-        guard await createThreadInternal(title: "Parallel Lookups", personaStack: nil) != nil else { return }
+        guard await createThreadInternal(title: "Parallel Lookups", personaStack: nil, skillIDs: ["parallel_lookups"]) != nil else { return }
         await sendMessageInternal("Use demo_lookup_weather and demo_lookup_transport together to plan a short Sydney outing. These are independent sample lookups; request both in the same batch. Then summarize the sample results.")
     }
 }

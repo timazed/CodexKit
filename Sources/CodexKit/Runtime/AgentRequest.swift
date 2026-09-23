@@ -25,6 +25,8 @@ public struct Request: Codable, Hashable, Sendable {
     public var selectionPurpose: String?
     /// A binding per-request override; a selector cannot replace it.
     public var modelOverride: AgentThreadConfiguration?
+    /// Optional hosted-search restriction; combined with active skills and backend capability.
+    public var webSearch: AgentWebSearchPolicy?
     public var modelRequirements: AgentModelRequirements?
     var resolvedModelSelection: CodexModelSelection?
     var context: CompiledRequestContext?
@@ -36,7 +38,8 @@ public struct Request: Codable, Hashable, Sendable {
         executionMode: RequestExecutionMode = .threaded,
         personaOverride: AgentPersonaStack? = nil,
         skillSelection: AgentSkillSelection = .none,
-        memorySelection: MemorySelection? = nil
+        memorySelection: MemorySelection? = nil,
+        webSearch: AgentWebSearchPolicy? = nil
     ) {
         self.text = text
         self.images = images
@@ -47,6 +50,7 @@ public struct Request: Codable, Hashable, Sendable {
         self.personaOverride = personaOverride
         self.skillSelection = skillSelection
         self.memorySelection = memorySelection
+        self.webSearch = webSearch
         self.selectionPurpose = nil
         self.modelOverride = nil
         self.modelRequirements = nil
@@ -203,7 +207,7 @@ public struct Request: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case selectionPurpose, modelOverride, modelRequirements
+        case selectionPurpose, modelOverride, modelRequirements, webSearch
         case text
         case images
         case clientRequestID
@@ -229,6 +233,7 @@ public struct Request: Codable, Hashable, Sendable {
         selectionPurpose = try container.decodeIfPresent(String.self, forKey: .selectionPurpose)
         modelOverride = try container.decodeIfPresent(AgentThreadConfiguration.self, forKey: .modelOverride)
         modelRequirements = try container.decodeIfPresent(AgentModelRequirements.self, forKey: .modelRequirements)
+        webSearch = try container.decodeIfPresent(AgentWebSearchPolicy.self, forKey: .webSearch)
         resolvedModelSelection = nil
     }
 }

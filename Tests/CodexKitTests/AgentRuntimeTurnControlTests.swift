@@ -191,7 +191,7 @@ final class AgentRuntimeTurnControlTests: XCTestCase {
             session: .init(accessToken: "t", refreshToken: "r", account: .init(id: "test", email: "a@b.com", plan: .plus)))
         do {
             for try await event in stream.events {
-                if case .toolCallRequested = event { stream.interrupt() }
+                if case .toolRoundRequested = event { stream.interrupt() }
             }
             XCTFail("Expected cancellation")
         } catch is CancellationError {}

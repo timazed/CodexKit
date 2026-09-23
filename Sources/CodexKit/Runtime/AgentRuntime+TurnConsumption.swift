@@ -20,11 +20,7 @@ extension AgentRuntime {
         oneShotValidation: AgentOneShotResponseValidation? = nil,
         continuation: AgentTurnEventSink<Output>
     ) async {
-        let policyTracker: TurnSkillPolicyTracker? = if resolvedTurnSkills.compiledToolPolicy.hasConstraints {
-            TurnSkillPolicyTracker(policy: resolvedTurnSkills.compiledToolPolicy)
-        } else {
-            nil
-        }
+        let policyTracker = TurnSkillPolicyTracker(policy: resolvedTurnSkills.compiledToolPolicy)
         let toolSink = AgentToolEventSink { try await continuation.yield($0) }
         var assistantMessages: [AgentMessage] = []
         var sawStructuredCommit = false
@@ -142,7 +138,7 @@ extension AgentRuntime {
                     try budget.claimToolCalls(1)
                     try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
                         expectedThreadID: threadID, currentTurnID: currentTurnID)
-                    try await consumeToolInvocations([invocation], turnStream: turnStream, session: session,
+                    try await consumeToolRound(AgentToolRound(calls: [invocation]), turnStream: turnStream, session: session,
                         policyTracker: policyTracker, registrations: registrations, storesTurnState: storesTurnState, sink: toolSink)
 
                 case let .toolCallsRequested(invocations):
@@ -151,7 +147,16 @@ extension AgentRuntime {
                         try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
                             expectedThreadID: threadID, currentTurnID: currentTurnID)
                     }
-                    try await consumeToolInvocations(invocations, turnStream: turnStream, session: session,
+                    try await consumeToolRound(AgentToolRound(calls: invocations), turnStream: turnStream, session: session,
+                        policyTracker: policyTracker, registrations: registrations, storesTurnState: storesTurnState, sink: toolSink)
+
+                case let .toolRoundRequested(round):
+                    try budget.claimToolCalls(round.calls.count)
+                    for invocation in round.calls {
+                        try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
+                            expectedThreadID: threadID, currentTurnID: currentTurnID)
+                    }
+                    try await consumeToolRound(round, turnStream: turnStream, session: session,
                         policyTracker: policyTracker, registrations: registrations, storesTurnState: storesTurnState, sink: toolSink)
 
                 case let .userMessageAccepted(message):
@@ -180,7 +185,7 @@ extension AgentRuntime {
                         expectedThreadID: threadID,
                         currentTurnID: currentTurnID
                     )
-                    if let completionError = policyTracker?.completionError() { throw completionError }
+                    if let completionError = await policyTracker.completionError() { throw completionError }
                     if let structured, structured.options.required, !sawStructuredCommit {
                         throw AgentRuntimeError.structuredOutputMissing(formatName: structured.format.name)
                     }

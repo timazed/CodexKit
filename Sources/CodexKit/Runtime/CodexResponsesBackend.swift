@@ -16,6 +16,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
     public let extraHeaders: [String: String]
     public let enableReasoningSummaries: Bool
     public let enableWebSearch: Bool
+    public let webSearchPolicy: AgentWebSearchPolicy?
     public let enableImageGeneration: Bool
     public let imageGenerationOutputFormat: String
     public let stateManagement: CodexResponsesStateManagement
@@ -42,6 +43,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         extraHeaders: [String: String] = [:],
         enableReasoningSummaries: Bool = false,
         enableWebSearch: Bool = false,
+        webSearchPolicy: AgentWebSearchPolicy? = nil,
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
         stateManagement: CodexResponsesStateManagement = .clientManaged,
@@ -63,6 +65,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         self.extraHeaders = extraHeaders
         self.enableReasoningSummaries = enableReasoningSummaries
         self.enableWebSearch = enableWebSearch
+        self.webSearchPolicy = webSearchPolicy
         self.enableImageGeneration = enableImageGeneration
         self.imageGenerationOutputFormat = imageGenerationOutputFormat
         self.stateManagement = stateManagement
@@ -86,6 +89,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         extraHeaders: [String: String] = [:],
         enableReasoningSummaries: Bool = false,
         enableWebSearch: Bool = false,
+        webSearchPolicy: AgentWebSearchPolicy? = nil,
         enableImageGeneration: Bool = false,
         imageGenerationOutputFormat: String = "png",
         stateManagement: CodexResponsesStateManagement = .clientManaged,
@@ -106,6 +110,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
             extraHeaders: extraHeaders,
             enableReasoningSummaries: enableReasoningSummaries,
             enableWebSearch: enableWebSearch,
+            webSearchPolicy: webSearchPolicy,
             enableImageGeneration: enableImageGeneration,
             imageGenerationOutputFormat: imageGenerationOutputFormat,
             stateManagement: stateManagement,
@@ -228,6 +233,8 @@ public actor CodexResponsesBackend: AgentBackend {
         tools: [ToolDefinition],
         session: ChatGPTSession
     ) async throws -> AgentTurnStream {
+        var message = message
+        message.webSearch = try configuration.webSearchCapabilities.resolve(message.webSearch)
         var thread = thread
         if modelSelector != nil || message.modelOverride != nil || message.resolvedModelSelection != nil {
             thread.configuration = try await prepareModelSelection(for: message, in: thread,

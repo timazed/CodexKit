@@ -203,7 +203,11 @@ final class MacDemoFeatures {
         let thread: AgentThread
         switch action {
         case .parallel:
-            thread = try await newThread("Parallel Lookups")
+            try await runtime.replaceSkill(.init(id: "parallel_lookups", name: "Parallel Lookups",
+                instructions: "Request both independent sample lookups in one response, then summarize.",
+                executionPolicy: .init(allowedToolNames: ["demo_lookup_weather", "demo_lookup_transport"],
+                    maxToolCalls: 2, maxToolRounds: 1, maximumParallelToolCalls: 2)))
+            thread = try await newThread("Parallel Lookups", skills: ["parallel_lookups"])
             await chat.send("Use demo_lookup_weather and demo_lookup_transport in the same batch, then summarize the sample results.")
             result = "Peak parallel tools: \(chat.peakConcurrentTools)."
         case .approval:

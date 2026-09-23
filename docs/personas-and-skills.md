@@ -98,6 +98,70 @@ let stream = try await runtime.stream(
 )
 ```
 
+## Execution policy composition and budgets
+
+```swift
+let research = AgentSkill(
+    id: "research", name: "Research", instructions: "Compare the retrieved sources.",
+    executionPolicy: .init(
+        allowedToolNames: ["lookup_catalog", "read_cache"],
+        maxToolCalls: 8,
+        maxToolRounds: 3,
+        maxToolCallsByName: ["lookup_catalog": 2, "read_cache": 6],
+        maximumParallelToolCalls: 2,
+        webSearch: .init(mode: .cached, allowedDomains: ["example.com"])
+    )
+)
+```
+
+Active thread skills and per-request appended skills compose once for the turn.
+A replacement selection explicitly chooses a different active skill set.
+
+| Field | Composition and meaning |
+| --- | --- |
+| `allowedToolNames` | Intersect non-nil sets; empty denies all host tools. |
+| `requiredToolNames` | Union; completion still fails if required accepted calls are missing. |
+| `toolSequence` | Exact prefix; longest prefix-compatible sequence wins. Conflicting sequences throw `conflicting_skill_tool_sequences`. |
+| `maxToolCalls` | Minimum specified total admitted host calls per turn. |
+| `maxToolRounds` | Minimum specified model responses requesting host calls per turn. Waves do not count separately. |
+| `maxToolCallsByName` | Minimum specified limit for each name. Missing names are unrestricted by this field. |
+| `maximumParallelToolCalls` | Minimum of the runtime ceiling and all specified skill ceilings. Must be at least one. |
+| `webSearch` | Restrict backend/request modes and intersect domain subtrees; empty intersection disables search. |
+
+All budgets are optional (`nil` adds no restriction); zero denies calls/rounds.
+Per-tool names follow the same validation as other policy tool names. Skill limits
+are independent of hard runtime safety limits: `AgentTurnLimits.maximumToolCalls`
+counts all requested calls, including policy rejections, and rejects an oversized
+batch as a fatal turn limit. Backend `maximumModelPasses` bounds model iterations,
+including final responses; duration and response-size limits remain active.
+
+Skill call budgets reserve admitted calls in provider order before execution.
+Ordinary execution failures, unknown tools and approval denials consume their
+reserved slot; slots are not refunded. Policy-rejected calls consume no skill call
+slot. Every nonempty tool-bearing response attempts a round, even if every call is
+rejected. Exhausted budgets return failed tool results so the model can finish;
+repeated rejected requests remain bounded by hard runtime/backend limits.
+
+Required-tool and sequence accounting retains accepted-result semantics: a
+settled admitted result counts even if the tool failed, was unknown, or approval
+was denied. It is not a guarantee of successful external work. Budget reservation
+alone does not satisfy a requirement or advance the completed sequence position;
+sequence barriers wait for the preceding invocation to settle. Interrupted calls
+use interrupted-turn semantics. Impossible combinations (for example requiring a
+disallowed tool) still fail the final required-tool check.
+
+Independent tools must opt into `supportsParallelExecution`; serial tools,
+approval gates, and exact-prefix entries create barriers. Constrained skills can
+otherwise use the full effective concurrency. No workflow/dependency graph or
+automatic rescheduling is involved.
+
+`resolvedInstructionsPreviewDetails` now includes `effectiveToolPolicy` and
+`effectiveWebSearchPolicy`. The tool preview includes the runtime concurrency
+ceiling; hard turn limits remain separate. This is a configuration preview, not a
+reservation or live budget counter. It uses the same policy composition as turns.
+See [hosted search](upstream-runtime-features.md#turn-effective-hosted-web-search)
+for capability validation, normalization, provider fields and budget limitations.
+
 ## Dynamic Persona And Skill Sources
 
 You can load persona/skill instructions from local files or remote URLs at runtime.

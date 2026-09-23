@@ -6,17 +6,31 @@ public struct AgentSkillExecutionPolicy: Codable, Hashable, Sendable {
     public var requiredToolNames: [String] = []
     public var toolSequence: [String]? = nil
     public var maxToolCalls: Int? = nil
+    public var webSearch: AgentWebSearchPolicy? = nil
+    /// Number of model responses requesting host tools, including rejected rounds.
+    public var maxToolRounds: Int? = nil
+    public var maxToolCallsByName: [String: Int]? = nil
+    /// Narrows the runtime's per-round concurrency ceiling. Must be at least one.
+    public var maximumParallelToolCalls: Int? = nil
 
     public init(
         allowedToolNames: [String]? = nil,
         requiredToolNames: [String] = [],
         toolSequence: [String]? = nil,
-        maxToolCalls: Int? = nil
+        maxToolCalls: Int? = nil,
+        maxToolRounds: Int? = nil,
+        maxToolCallsByName: [String: Int]? = nil,
+        maximumParallelToolCalls: Int? = nil,
+        webSearch: AgentWebSearchPolicy? = nil
     ) {
         self.allowedToolNames = allowedToolNames
         self.requiredToolNames = requiredToolNames
         self.toolSequence = toolSequence
         self.maxToolCalls = maxToolCalls
+        self.maxToolRounds = maxToolRounds
+        self.maxToolCallsByName = maxToolCallsByName
+        self.maximumParallelToolCalls = maximumParallelToolCalls
+        self.webSearch = webSearch
     }
 
     enum CodingKeys: String, CodingKey {
@@ -24,6 +38,7 @@ public struct AgentSkillExecutionPolicy: Codable, Hashable, Sendable {
         case requiredToolNames
         case toolSequence
         case maxToolCalls
+        case maxToolRounds, maxToolCallsByName, maximumParallelToolCalls, webSearch
     }
 
     public init(from decoder: Decoder) throws {
@@ -32,6 +47,22 @@ public struct AgentSkillExecutionPolicy: Codable, Hashable, Sendable {
         requiredToolNames = try container.decodeIfPresent([String].self, forKey: .requiredToolNames) ?? []
         toolSequence = try container.decodeIfPresent([String].self, forKey: .toolSequence)
         maxToolCalls = try container.decodeIfPresent(Int.self, forKey: .maxToolCalls)
+        webSearch = try container.decodeIfPresent(AgentWebSearchPolicy.self, forKey: .webSearch)
+        maxToolRounds = try container.decodeIfPresent(Int.self, forKey: .maxToolRounds)
+        maxToolCallsByName = try container.decodeIfPresent([String: Int].self, forKey: .maxToolCallsByName)
+        maximumParallelToolCalls = try container.decodeIfPresent(Int.self, forKey: .maximumParallelToolCalls)
+    }
+
+    var hasValidLimits: Bool {
+        (maxToolCalls.map { $0 >= 0 } ?? true) &&
+        (maxToolRounds.map { $0 >= 0 } ?? true) &&
+        (maxToolCallsByName?.values.allSatisfy { $0 >= 0 } ?? true) &&
+        (maximumParallelToolCalls.map { $0 >= 1 } ?? true)
+    }
+
+    var policyToolNames: [String] {
+        (allowedToolNames ?? []) + requiredToolNames + (toolSequence ?? []) +
+        (maxToolCallsByName.map { Array($0.keys) } ?? [])
     }
 }
 

@@ -27,7 +27,7 @@ final class ToolOutputFidelityTests: XCTestCase {
             tools: [.init(name: "lookup", description: "Lookup", inputSchema: .object([:]))], session: demoSession())
         var reply: String?
         for try await event in stream.events {
-            if case let .toolCallRequested(invocation) = event {
+            if case let .toolRoundRequested(round) = event, let invocation = round.calls.first {
                 try await stream.submitToolResult(.init(invocationID: invocation.id, toolName: invocation.toolName,
                     success: true, content: [.text("First result"), .text("Second result")]), for: invocation.id)
             }
