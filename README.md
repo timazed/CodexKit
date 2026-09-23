@@ -1,19 +1,19 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.30-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.30)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.32-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.32)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.30](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.30). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.32](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.32). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease adds local Codex session reuse and the native macOS demo. See the [release verification report](docs/release-readiness-2026-09-10.md) for validation and publication status.
+This prerelease adds turn-based streaming output for text, native JSON Schema, JSON Lines, and XML/XSD, plus policy-aware tool rounds and hosted-search restrictions. See the [alpha.32 changelog](CHANGELOG.md#200-alpha32---2026-09-23) and [verification guide](docs/verification.md).
 
 ## Capabilities
 
-- Text and image input, streamed replies, and typed structured output.
+- Text and image input, streamed replies, and turn-based typed output with provisional events and a committed result.
 - Resumable threads with SQLite or Realm persistence and context compaction.
-- App-defined tools with approval gates and opt-in parallel execution.
+- App-defined tools with approval gates, skill-policy limits, and bounded opt-in parallel execution.
 - Personas, skills, and local memory for app-specific behavior.
 - GPT-6 Astra identifiers, account model discovery, and reported usage limits.
 - Provider progress, message phases, input added to active turns, and interruption.
@@ -35,6 +35,15 @@ Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode
 | `CodexKitRealm` | Realm persistence through RealmSwift |
 
 Choose one persistence adapter for normal application use. See [persistence integration](docs/persistence.md) for package configuration, storage locations, and migration.
+
+To build and test the package from a checkout on macOS with Xcode installed:
+
+```sh
+swift build --force-resolved-versions
+swift test --force-resolved-versions
+```
+
+The demos are separate Xcode targets; see [Demo Apps](#demo-apps) for their build and offline verification commands.
 
 ## Quickstart
 
@@ -116,7 +125,7 @@ The [documentation index](docs/index.md) contains the full guide list, core conc
 
 ## Demo Apps
 
-The native macOS demo includes local Codex session reuse, browser OAuth, device-code sign-in, streaming chat, tools and approvals, typed output, memory, and File/SQLite/Realm persistence. Both demos share `DemoApp/CodexKitDemo.xcodeproj`: select the `CodexKitMacDemo` scheme for macOS or `CodexKitIOSDemo` for iOS. Build and run the macOS offline checks with `python3 Scripts/verify_macos_demo.py`. See the [macOS walkthrough](DemoApp/README.md#macos-demo).
+The native macOS demo includes local Codex session reuse, browser OAuth, device-code sign-in, streaming chat, tools and approvals, typed output, memory, and File/SQLite/Realm persistence. Both demos share `DemoApp/CodexKitDemo.xcodeproj`: select the `CodexKitMacDemo` scheme for macOS or `CodexKitIOSDemo` for iOS. Build and run the signed macOS offline checks with `python3 Scripts/verify_macos_demo.py --mode smoke`. Build and verify the signed iOS simulator app with `python3 Scripts/verify_ios_simulator.py --mode smoke`. See the [demo walkthrough](DemoApp/README.md).
 
 The checked-in iOS app consumes the local package and demonstrates chat, structured output, memory, and Health Coach flows. It includes model refresh, account usage, live progress, **Add to turn**, **Stop**, and a **Parallel Lookups** example.
 

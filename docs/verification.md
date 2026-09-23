@@ -2,7 +2,7 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
-The latest published SDK is alpha.30; see its [release verification report](release-readiness-alpha30-2026-09-10.md). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
+For the current prerelease, see the [alpha.32 changelog](../CHANGELOG.md#200-alpha32---2026-09-23) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
 
 The 8 September deep-audit regressions are in `DeepAuditRegressionTests`, `CompactionTransportTests`, `PreparationCancellationTests`, and `OneShotValidationTests`. They cover conflicting/stale compaction, database reopen behavior, request and response image references, bounded compact bodies, session recovery, network cancellation, startup cancellation before/during persistence, strict root policy fields, and one-shot schema/Swift decoding before commit.
 

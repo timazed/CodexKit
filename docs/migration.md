@@ -4,6 +4,12 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Turn-based streaming output and tool policy (alpha.32)
+
+The new `output:` APIs are opt-in and leave the existing `response:` structured-reply and ordinary text-streaming APIs available. Format events are provisional; commit application state only after `.outputCommitted` or a successful `send(_:in:output:)`. JSON Lines and XML are instructed formats with local validation; native JSON Schema remains the constrained-generation format. Keep a compatible format/schema definition to restore a saved typed result. See [streaming structured output](streaming-output.md).
+
+Custom `AgentBackend` consumers must handle `AgentBackendEvent.toolRoundRequested`, including serial host calls, and execute tools after the response completes. Skill tool budgets and hosted-search restrictions now intersect with the request and backend policy; unsupported restrictions fail explicitly. See [personas and skills](personas-and-skills.md) and [runtime tools](upstream-runtime-features.md).
+
 ## Host-app recovery and request preparation
 
 This is one opt-in recovery and request-preparation change, not a rollout with mixed budget semantics. Ordinary `send` retains its default selection and transient retry behavior. The new model-selector initializer argument defaults to `nil`; existing backend wrappers do not gain new mandatory `AgentBackend` requirements.
