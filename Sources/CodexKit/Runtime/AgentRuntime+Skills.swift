@@ -118,54 +118,51 @@ extension AgentRuntime {
         return ResolvedTurnSkills(
             threadSkills: threadSkills,
             turnSkills: turnSkills,
-            compiledToolPolicy: compileToolPolicy(from: allSkills)
+            compiledToolPolicy: try compileToolPolicy(from: allSkills)
         )
     }
 
-    private func compileToolPolicy(from skills: [AgentSkill]) -> CompiledSkillToolPolicy {
-        var allowedToolNames: Set<String>?
-        var requiredToolNames: Set<String> = []
-        var toolSequence: [String]?
-        var maxToolCalls: Int?
-
+    private func compileToolPolicy(from skills: [AgentSkill]) throws -> CompiledSkillToolPolicy {
+        var policy = AgentSkillExecutionPolicy()
         for skill in skills {
-            guard let executionPolicy = skill.executionPolicy else {
-                continue
+            guard let incoming = skill.executionPolicy else { continue }
+            if let allowed = incoming.allowedToolNames {
+                policy.allowedToolNames = policy.allowedToolNames.map {
+                    Array(Set($0).intersection(allowed)).sorted()
+                } ?? Array(Set(allowed)).sorted()
             }
-
-            if let allowed = executionPolicy.allowedToolNames {
-                let allowedSet = Set(allowed)
-                if let existingAllowed = allowedToolNames {
-                    allowedToolNames = existingAllowed.intersection(allowedSet)
-                } else {
-                    allowedToolNames = allowedSet
-                }
+            policy.requiredToolNames = Array(Set(policy.requiredToolNames + incoming.requiredToolNames)).sorted()
+            if let sequence = incoming.toolSequence, !sequence.isEmpty {
+                if let existing = policy.toolSequence {
+                    guard existing.starts(with: sequence) || sequence.starts(with: existing) else {
+                        throw AgentRuntimeError(code: .conflictingSkillToolSequences,
+                            message: "Active skills require incompatible exact tool prefixes.")
+                    }
+                    if sequence.count > existing.count { policy.toolSequence = sequence }
+                } else { policy.toolSequence = sequence }
             }
-
-            if !executionPolicy.requiredToolNames.isEmpty {
-                requiredToolNames.formUnion(executionPolicy.requiredToolNames)
+            policy.maxToolCalls = Self.minimumLimit(policy.maxToolCalls, incoming.maxToolCalls)
+            policy.maxToolRounds = Self.minimumLimit(policy.maxToolRounds, incoming.maxToolRounds)
+            policy.maximumParallelToolCalls = Self.minimumLimit(policy.maximumParallelToolCalls, incoming.maximumParallelToolCalls)
+            if let search = incoming.webSearch {
+                policy.webSearch = try policy.webSearch.map { try $0.narrowed(by: search) } ?? search.normalized()
             }
-
-            if let sequence = executionPolicy.toolSequence,
-               !sequence.isEmpty {
-                toolSequence = sequence
-            }
-
-            if let maxCalls = executionPolicy.maxToolCalls {
-                if let existingMaxCalls = maxToolCalls {
-                    maxToolCalls = min(existingMaxCalls, maxCalls)
-                } else {
-                    maxToolCalls = maxCalls
-                }
+            if let limits = incoming.maxToolCallsByName {
+                var merged = policy.maxToolCallsByName ?? [:]
+                for (name, limit) in limits { merged[name] = min(merged[name] ?? limit, limit) }
+                policy.maxToolCallsByName = merged
             }
         }
+        return policy
+    }
 
-        return CompiledSkillToolPolicy(
-            allowedToolNames: allowedToolNames,
-            requiredToolNames: requiredToolNames,
-            toolSequence: toolSequence,
-            maxToolCalls: maxToolCalls
-        )
+    static func minimumLimit(_ lhs: Int?, _ rhs: Int?) -> Int? {
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?): min(lhs, rhs)
+        case let (lhs?, nil): lhs
+        case let (nil, rhs?): rhs
+        case (nil, nil): nil
+        }
     }
 
     private func resolveSkills(for skillIDs: [String]) -> [AgentSkill] {
@@ -204,10 +201,12 @@ extension AgentRuntime {
             throw AgentRuntimeError.invalidSkillMaxToolCalls(skillID: skill.id)
         }
 
-        let policyToolNames: [String] =
-            (executionPolicy.allowedToolNames ?? []) +
-            executionPolicy.requiredToolNames +
-            (executionPolicy.toolSequence ?? [])
+        guard executionPolicy.hasValidLimits else {
+            throw AgentRuntimeError(code: .invalidSkillDefinition,
+                message: "Skill budgets must be nonnegative and maximumParallelToolCalls must be at least one.")
+        }
+        _ = try executionPolicy.webSearch?.normalized()
+        let policyToolNames = executionPolicy.policyToolNames
 
         for toolName in policyToolNames {
             guard ToolDefinition.isValidName(toolName) else {

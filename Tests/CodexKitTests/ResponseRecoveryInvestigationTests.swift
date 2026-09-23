@@ -169,7 +169,10 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
     }
 
     func testCompletedToolEffectBeforeDisconnectIsNotAutomaticallyReplayed() async throws {
-        RecoveryProbeURLProtocol.configure([.init(body: created + tool, holdOpen: true)])
+        RecoveryProbeURLProtocol.configure([
+            .init(body: created + tool + completed),
+            .init(body: created + delta, holdOpen: true),
+        ])
         let counter = RecoveryEffectCounter()
         let runtime = try runtime(attempts: 3, tools: [.init(definition: .init(name: "write", description: "Synthetic effect",
             inputSchema: .object([:]), approvalPolicy: .automatic), executor: AnyToolExecutor { invocation, _ in
@@ -180,12 +183,27 @@ final class ResponseRecoveryInvestigationTests: XCTestCase {
         let stream = try await runtime.stream(Request(text: "Synthetic", executionMode: .ephemeral), in: thread.id)
         do {
             for try await event in stream {
-                if case .toolCallFinished = event { RecoveryProbeURLProtocol.endHeldConnection(.networkConnectionLost) }
+                if case .assistantMessageDelta = event { RecoveryProbeURLProtocol.endHeldConnection(.networkConnectionLost) }
             }
             XCTFail("Expected disconnect")
         } catch {}
         let count = await counter.count
         XCTAssertEqual(count, 1)
+        XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 2)
+    }
+
+    func testIncompleteToolRoundDoesNotExecuteOrRetry() async throws {
+        RecoveryProbeURLProtocol.configure([.init(body: created + tool)])
+        let runtime = try runtime(attempts: 3, tools: [.init(definition: .init(name: "write", description: "Synthetic effect",
+            inputSchema: .object([:])), executor: AnyToolExecutor { invocation, _ in
+                XCTFail("A partial response must not execute host tools")
+                return .success(invocation: invocation, text: "unexpected")
+            })])
+        let thread = try await runtime.createThread()
+        do {
+            _ = try await runtime.send(Request(text: "Synthetic", executionMode: .ephemeral), in: thread.id)
+            XCTFail("Expected disconnect")
+        } catch { XCTAssertEqual((error as? AgentRuntimeError)?.code, "responses_stream_disconnected") }
         XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
     }
 

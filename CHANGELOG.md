@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Policy-aware admission and bounded parallel execution of host-tool rounds. Skills can constrain `maxToolRounds`, `maxToolCallsByName`, and `maximumParallelToolCalls` without disabling independent parallel tools.
+- `AgentToolRound` / `AgentBackendEvent.toolRoundRequested`, structured `ToolFailure` codes, and effective tool/search policy inspection through `resolvedInstructionsPreviewDetails`.
+- Backend-bounded request and skill hosted-search restrictions (`disabled`, `cached`, `indexed`, `live`) and normalized, intersected domain allowlists. Unsupported backend restrictions fail explicitly.
+
+### Changed
+
+- The Responses backend gathers every response's host calls into one round, including serial tools. Tools execute after the response completes. Direct backend consumers must handle `toolRoundRequested`.
+- Skill sequences compose as exact prefixes: the longest compatible prefix wins; conflicting prefixes fail instead of allowing the last skill to override earlier constraints.
+- Model-visible tool context is invocation ordered, including after restoration. Activity/result audit history remains chronological. Both Parallel Lookups demos now exercise a constrained skill.
+
+### Fixed
+
+- Skill budget checks reserve in request order before execution, and policy-rejected calls now persist normal tool-result records with stable failure codes.
+- Remote compaction does not enable hosted web search. Tool-result output retains content alongside structured failure information.
+- The macOS Parallel Lookups demo registers its skill at startup so saved lookup conversations remain usable after relaunch.
+
 ## [2.0.0-alpha.31] - 2026-09-11
 
 This prerelease adds host-controlled request preparation and lifecycle-aware structured recovery through backend wrappers. It preserves local completed-result handoff and bounded replacement attempts; it does not resume provider streams or retrieve results that were never saved locally. See the [verification report](docs/release-readiness-alpha31-2026-09-11.md) for coverage and remaining live-provider validation limits, and the [migration guide](docs/migration.md#host-app-recovery-and-request-preparation) before upgrading.

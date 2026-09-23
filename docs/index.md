@@ -76,12 +76,14 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | Threaded runtime state + restore | Yes |
 | Streamed assistant output | Yes |
 | Host-defined tools + approval flow | Yes |
-| Independent parallel tools | Opt-in, bounded concurrency |
+| Independent parallel tools | Opt-in, bounded concurrency with composed skill policies and sequence/approval barriers |
+| Host-tool budgets | Total calls, per-tool calls, model tool rounds, and skill concurrency ceilings |
 | Reasoning summaries, search progress, message phases | Yes, when supplied by the model |
 | Account model discovery + usage-limit snapshots | Yes |
 | Add input to an active turn + interrupt | Yes |
 | Per-thread model + thinking level | Yes |
-| Web search toggle (`enableWebSearch`) | Yes |
+| Hosted web search | Backend upper bound plus request/skill restrictions: disabled, cached, indexed, live, and domain allowlists |
+| Effective policy preview | Resolved tool limits, concurrency and hosted-search policy |
 | Built-in request retry/backoff | Yes (configurable) |
 | Structured local memory layer | Yes |
 | Text + image input | Yes |

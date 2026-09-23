@@ -68,7 +68,8 @@ extension CodexResponsesTurnRunner {
                 let functionCall = FunctionCallRecord(
                     name: functionCallItem.name,
                     callID: functionCallItem.callID,
-                    argumentsRaw: functionCallItem.arguments
+                    argumentsRaw: functionCallItem.arguments,
+                    outputIndex: outputIndex
                 )
                 if let previous = state.toolCallsByID[functionCall.callID] {
                     guard previous.name == functionCall.name, previous.argumentsRaw == functionCall.argumentsRaw else {
@@ -86,11 +87,7 @@ extension CodexResponsesTurnRunner {
                         "tool_name": functionCall.name
                     ]
                 )
-                if tools.contains(where: \.supportsParallelExecution) {
-                    state.pendingFunctionCalls.append(functionCall)
-                } else {
-                    try await handleFunctionCall(functionCall, state: &state)
-                }
+                state.pendingFunctionCalls.append(functionCall)
                 return .toolCall
 
             case let .imageGenerationCall(imageGenerationCall):
@@ -278,23 +275,6 @@ extension CodexResponsesTurnRunner {
             return message.text
         }
         return fallbackTexts.joined(separator: "\n\n")
-    }
-
-    func handleFunctionCall(
-        _ functionCall: FunctionCallRecord,
-        state: inout TurnRunState
-    ) async throws {
-        let invocation = ToolInvocation(
-            id: functionCall.callID,
-            threadID: threadID,
-            turnID: turnID,
-            toolName: functionCall.name,
-            arguments: functionCall.arguments
-        )
-
-        try await pendingToolResults.register([invocation])
-        try await continuation.yield(.toolCallRequested(invocation))
-        try await collectToolResult(invocation, state: &state)
     }
 
     func collectToolResult(_ invocation: ToolInvocation, state: inout TurnRunState) async throws {

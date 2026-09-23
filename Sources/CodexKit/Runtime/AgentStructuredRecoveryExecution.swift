@@ -189,7 +189,7 @@ actor AgentStructuredRecoveryExecution {
             case let .assistantMessageCompleted(value):
                 guard turnID != nil, value.threadID == record.thread.id else { throw AgentRuntimeError.invalidBackendTurnEvent() }
                 message = value
-            case .toolCallRequested, .toolCallsRequested: throw AgentRecoveryError.toolsUnsupported
+            case .toolCallRequested, .toolCallsRequested, .toolRoundRequested: throw AgentRecoveryError.toolsUnsupported
             case let .turnCompleted(summary):
                 guard summary.turnID == turnID, summary.threadID == record.thread.id else { throw AgentRuntimeError.invalidTurnCompletion() }
                 guard let message else { throw AgentRuntimeError.assistantResponseMissing() }

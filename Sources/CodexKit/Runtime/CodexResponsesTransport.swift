@@ -14,8 +14,10 @@ struct CodexResponsesRequestFactory: Sendable {
         tools: [ToolDefinition],
         session: ChatGPTSession,
         recoveryMode: Bool = false,
-        isCompaction: Bool = false
+        isCompaction: Bool = false,
+        webSearch: AgentWebSearchPolicy? = nil
     ) throws -> URLRequest {
+        let search = try configuration.webSearchCapabilities.resolve(webSearch)
         let requestBody = ResponsesRequestBody(
             model: threadConfiguration.model,
             reasoning: .init(effort: threadConfiguration.reasoningEffort,
@@ -31,9 +33,10 @@ struct CodexResponsesRequestFactory: Sendable {
                     ?? CodexModel(rawValue: threadConfiguration.model).info?.supportsImageDetailOriginal ?? false),
             tools: !recoveryMode && AgentStructuredRecoveryContext.current == nil ? responsesTools(
                 from: tools,
-                enableWebSearch: configuration.enableWebSearch,
+                enableWebSearch: !isCompaction && search.mode != .disabled,
                 enableImageGeneration: configuration.enableImageGeneration,
-                imageGenerationOutputFormat: configuration.imageGenerationOutputFormat
+                imageGenerationOutputFormat: configuration.imageGenerationOutputFormat,
+                webSearchPolicy: search
             ) : [],
             toolChoice: !recoveryMode && AgentStructuredRecoveryContext.current == nil ? .auto : .none,
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
@@ -77,11 +80,19 @@ struct CodexResponsesRequestFactory: Sendable {
         from tools: [ToolDefinition],
         enableWebSearch: Bool,
         enableImageGeneration: Bool,
-        imageGenerationOutputFormat: String
+        imageGenerationOutputFormat: String,
+        webSearchPolicy: AgentWebSearchPolicy? = nil
     ) -> [JSONValue] {
         var responsesTools = tools.map(\.responsesJSONValue)
         if enableWebSearch {
-            responsesTools.append(.object(["type": ResponsesToolType.webSearch.jsonValue]))
+            let policy = webSearchPolicy ?? .init(mode: .live)
+            var search: [String: JSONValue] = ["type": ResponsesToolType.webSearch.jsonValue,
+                "external_web_access": .bool(policy.mode != .cached)]
+            if policy.mode == .indexed { search["indexed_web_access"] = .bool(true) }
+            if let domains = policy.allowedDomains {
+                search["filters"] = .object(["allowed_domains": .array(domains.map(JSONValue.string))])
+            }
+            responsesTools.append(.object(search))
         }
         if enableImageGeneration {
             responsesTools.append(.object([

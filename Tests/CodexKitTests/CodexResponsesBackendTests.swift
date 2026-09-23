@@ -456,7 +456,8 @@ final class CodexResponsesBackendTests: XCTestCase {
 
         for try await event in turnStream.events {
             switch event {
-            case let .toolCallRequested(invocation):
+            case let .toolRoundRequested(round):
+                let invocation = try XCTUnwrap(round.calls.first)
                 sawToolCall = true
                 XCTAssertEqual(invocation.toolName, "demo_lookup_profile")
                 try await turnStream.submitToolResult(
@@ -899,7 +900,8 @@ final class CodexResponsesBackendTests: XCTestCase {
 
         for try await event in turnStream.events {
             switch event {
-            case let .toolCallRequested(invocation):
+            case let .toolRoundRequested(round):
+                let invocation = try XCTUnwrap(round.calls.first)
                 let result = ToolResultEnvelope(
                     invocationID: invocation.id,
                     toolName: invocation.toolName,
@@ -1246,7 +1248,8 @@ final class CodexResponsesBackendTests: XCTestCase {
         var providerContext: AgentProviderContext?
         for try await event in turnStream.events {
             switch event {
-            case let .toolCallRequested(invocation):
+            case let .toolRoundRequested(round):
+                let invocation = try XCTUnwrap(round.calls.first)
                 try await turnStream.submitToolResult(
                     .success(invocation: invocation, text: "lookup-result"),
                     for: invocation.id
@@ -1338,7 +1341,8 @@ final class CodexResponsesBackendTests: XCTestCase {
         var providerContext: AgentProviderContext?
         for try await event in firstTurn.events {
             switch event {
-            case let .toolCallRequested(invocation):
+            case let .toolRoundRequested(round):
+                let invocation = try XCTUnwrap(round.calls.first)
                 try await firstTurn.submitToolResult(
                     .success(invocation: invocation, text: "stored-tool-result"),
                     for: invocation.id

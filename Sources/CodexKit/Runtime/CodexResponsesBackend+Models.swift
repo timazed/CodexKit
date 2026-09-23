@@ -313,6 +313,14 @@ struct FunctionCallRecord: Sendable {
     let name: String
     let callID: String
     let argumentsRaw: String
+    let outputIndex: Int
+
+    init(name: String, callID: String, argumentsRaw: String, outputIndex: Int = 0) {
+        self.name = name
+        self.callID = callID
+        self.argumentsRaw = argumentsRaw
+        self.outputIndex = outputIndex
+    }
 
     var arguments: JSONValue {
         guard let data = argumentsRaw.data(using: .utf8),

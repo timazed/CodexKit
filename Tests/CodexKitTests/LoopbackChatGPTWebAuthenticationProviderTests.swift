@@ -70,7 +70,7 @@ final class LoopbackChatGPTWebAuthenticationProviderTests: XCTestCase {
 
         let callbackReceived = expectation(description: "callback received")
         let capture = CallbackCapture()
-        Task {
+        _ = Task {
             let callbackURL = try await server.waitForCallback()
             await capture.set(callbackURL)
             callbackReceived.fulfill()

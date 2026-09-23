@@ -249,7 +249,26 @@ enum MacDemoVerification {
                 checks.append("ephemeral replies and bound memory prompt preview")
                 await features.execute(.parallel)
                 try require(features.error == nil && model.chat?.peakConcurrentTools == 2, "Parallel tools did not overlap")
-                checks.append("parallel sample tools execute concurrently")
+                guard let parallelThread = model.chat?.activeThread else { throw VerificationError("Missing parallel thread") }
+                let preview = try await features.runtime.resolvedInstructionsPreviewDetails(
+                    for: parallelThread.id, request: Request(text: "Inspect lookup limits"))
+                try require(parallelThread.skillIDs == ["parallel_lookups"] &&
+                    preview.effectiveToolPolicy?.allowedToolNames == ["demo_lookup_transport", "demo_lookup_weather"] &&
+                    preview.effectiveToolPolicy?.maxToolCalls == 2 && preview.effectiveToolPolicy?.maxToolRounds == 1 &&
+                    preview.effectiveToolPolicy?.maximumParallelToolCalls == 2,
+                    "Parallel Lookups did not attach the constrained skill")
+                checks.append("parallel sample tools overlap with the two-call, one-round skill policy")
+                let reopenedParallel = fixture.makeModel()
+                await reopenedParallel.restore()
+                await reopenedParallel.selectConversation(parallelThread.id)
+                try require(reopenedParallel.isConnected && reopenedParallel.chat?.activeThread?.id == parallelThread.id,
+                    "Parallel Lookups conversation did not restore")
+                await reopenedParallel.sendMessage("Use demo_lookup_weather and demo_lookup_transport again.")
+                try require(reopenedParallel.errorMessage == nil && reopenedParallel.chat?.lastError == nil &&
+                    reopenedParallel.chat?.peakConcurrentTools == 2,
+                    "Restored Parallel Lookups conversation lost its skill or failed to execute")
+                checks.append("restored parallel conversation keeps its skill and can run another constrained turn")
+                await reopenedParallel.disconnect()
                 let approval = Task { await features.execute(.approval) }
                 for _ in 0..<100 {
                     if model.approvals.currentRequest != nil { break }
@@ -394,7 +413,7 @@ private struct MacDemoOfflineBackend: AgentBackend {
                             ToolInvocation(id: UUID().uuidString, threadID: thread.id, turnID: turn.id, toolName: name.rawValue,
                                 arguments: name == .travelPlanner ? .object(["destination": .string("Sydney")]) : .object([:]))
                         }
-                        continuation.yield(.toolCallsRequested(invocations))
+                        continuation.yield(.toolRoundRequested(AgentToolRound(calls: invocations)))
                         var count = 0
                         for await _ in results.stream {
                             count += 1

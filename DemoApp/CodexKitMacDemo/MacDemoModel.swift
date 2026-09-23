@@ -300,7 +300,8 @@ final class MacDemoModel {
             enableImageGeneration: runtimeOptions.imageGeneration, logging: logging))
         let runtime = try AgentRuntime(configuration: .init(sessionProvider: MacDemoAuthenticatedSessionProvider(manager: manager), backend: backend,
             approvalPresenter: approvals, stateStore: stateStore, logging: logging, memory: memory,
-            tools: MacDemoRuntimeFactory.tools, skills: [MacDemoRuntimeFactory.travelSkill],
+            tools: MacDemoRuntimeFactory.tools,
+            skills: [MacDemoRuntimeFactory.travelSkill, MacDemoRuntimeFactory.parallelLookupsSkill],
             contextCompaction: .init(isEnabled: true, mode: .automatic, visibility: .hidden,
                 strategy: .preferRemoteThenLocal, trigger: .init(estimatedTokenThreshold: 8_000, retryOnContextLimitError: true))))
         let store = AgentRuntimeStore(runtime: runtime, approvalInbox: approvals, deviceCodeCoordinator: deviceCode)
