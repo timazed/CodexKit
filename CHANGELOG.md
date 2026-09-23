@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Added turn-based `output:` APIs for streaming text, native JSON Schema, JSON Lines records, and XML with attributes and XSD validation. Format events are provisional until the completed turn and its storage transaction succeed; typed results use a versioned persistence envelope.
+- Added the value-oriented XML schema DSL, bounded push/SAX decoding, configurable semantic events, typed record failures, and a streaming adapter for existing `AgentStructuredOutput` types. See [streaming output](docs/streaming-output.md).
+- Added shared iOS/macOS streaming examples and signed-app checks covering fresh-model restoration, validation failures, cancellation, and macOS host Stop/disconnect behavior.
+
+### Fixed
+
+- Isolated XSD preflight budgets from response depth/node limits, preserved record delivery/limit error types, and retained zero-based record indexes in validation failures.
+- Made streaming demo operations host-owned, with explicit operation/result states and integration into the host's busy and cancellation controls.
+
 ## [2.0.0-alpha.31] - 2026-09-11
 
 This prerelease adds host-controlled request preparation and lifecycle-aware structured recovery through backend wrappers. It preserves local completed-result handoff and bounded replacement attempts; it does not resume provider streams or retrieve results that were never saved locally. See the [verification report](docs/release-readiness-alpha31-2026-09-11.md) for coverage and remaining live-provider validation limits, and the [migration guide](docs/migration.md#host-app-recovery-and-request-preparation) before upgrading.

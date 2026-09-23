@@ -18,7 +18,7 @@ Native constrained generation is used for `AgentJSONResponseFormat`. JSON Lines 
 All formats use the same API shape. A streaming execution exposes lifecycle events and typed, provisional format events; `send` collects the same pipeline and returns after commit.
 
 ```swift
-let format = AgentRecordResponseFormat<Assessment>(
+let format = AgentRecordResponseFormat(
     name: "assessments",
     record: Assessment.self,
     schema: .object(
@@ -54,9 +54,15 @@ for try await event in execution.events {
 
 For one-shot use, call `send(_:in:output:)`. `sendWithSummary(_:in:output:)` returns the value, turn summary, request ID, and memory application result. `fetchLatestOutput(in:output:)` restores the latest compatible persisted result for a thread. A custom decoder can omit persistence only for an ephemeral request.
 
+Existing `AgentStructuredOutput` types can reuse their schema, description, and strictness with `AgentJSONResponseFormat(Assessment.self)`. For records, specify either `record: Assessment.self` as above or `AgentRecordResponseFormat<Assessment>(name: "assessments")`; the type need not be repeated.
+
+Generic consumers can refer to `Format.Event` and `Format.Output` without reaching through `Format.Decoder`. Custom formats may use throwing getters for `formatInstructions`, `schemaRepresentation`, and `persistence`; nonthrowing properties still conform. The runtime prepares these values once before starting the turn and retains that snapshot through commit. XML formats generate their XSD source once and propagate schema errors rather than substituting placeholder instructions.
+
 Events before `.outputCommitted` are provisional. The model may finish a syntactically complete root or record and still fail later, the backend may fail, the source text may not match the completed message, application validation may reject it, or storage may fail. In each case there is no committed typed result. Steering remains available until the final structured output begins; after that point, the runtime rejects steering so the candidate cannot silently mix multiple output attempts.
 
 The stream uses bounded event-count and byte budgets with awaited delivery. A slow consumer applies back pressure instead of allowing unbounded queued output. Configure `AgentStructuredOutputLimits` to fit the application's expected response size; CodexKit enforces input, encoded output, semantic-unit, nesting, schema, and event limits before commit.
+
+Malformed records throw `AgentRecordDecodingError`, with a zero-based `recordIndex` and `underlyingError`. The terminal `validationFailed` event exposes the same index and typed error through `AgentOutputFailure`. Cancellation, limit, and event-delivery failures retain their own types; they are not mislabeled as malformed records.
 
 ## XML schema and events
 
@@ -79,6 +85,8 @@ let format = AgentXMLResponseFormat(
 The DSL supports attributes (including required, optional, and enumerated values), simple content with attributes, nested sequence/choice/all groups, optional and repeated particles, namespaces, mixed content, reusable named types, and common XSD simple types/facets. For schema constructs outside the DSL, use `XMLSchema.xsd(_:root:)` with a self-contained XSD 1.0 document. The selected root is explicit. External schema resolution (`include`, `import`, and `redefine`) and XSD 1.1 are not supported.
 
 The XML decoder uses the system libxml2 push/SAX parser and XSD validator. It retains the exact UTF-8 source and an immutable ordered element/content tree. Element IDs are stable within that decoded document; names compare by namespace URI and local name, not prefix. `AgentXMLStreamingOptions` controls text deltas, completed subtree selection, and optional application-identity attributes.
+
+Schema preflight uses its own bounded parser configuration and respects `maximumSchemaBytes`. Response depth and node limits apply to the response, not the XSD that describes it; a one-element response can therefore use `maximumNestingDepth = 1` and `maximumSemanticUnits = 1`.
 
 ```swift
 let execution = try await runtime.start(request, in: thread.id, output: format)

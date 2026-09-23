@@ -45,22 +45,39 @@ enum AgentStrictJSON {
             guard let byte = current else { throw invalid("Empty or incomplete JSON record.") }
             switch byte {
             case 123:
-                index += 1; whitespace()
+                index += 1
+                whitespace()
                 var keys = Set<String>()
-                if current == 125 { index += 1; return }
+                if current == 125 {
+                    index += 1
+                    return
+                }
                 while true {
                     let key = try string()
                     guard keys.insert(key).inserted else { throw invalid("Duplicate JSON object key: \(key)") }
-                    try expect(58); try value(depth: depth + 1); whitespace()
-                    if current == 125 { index += 1; return }
+                    try expect(58)
+                    try value(depth: depth + 1)
+                    whitespace()
+                    if current == 125 {
+                        index += 1
+                        return
+                    }
                     try expect(44)
                 }
             case 91:
-                index += 1; whitespace()
-                if current == 93 { index += 1; return }
+                index += 1
+                whitespace()
+                if current == 93 {
+                    index += 1
+                    return
+                }
                 while true {
-                    try value(depth: depth + 1); whitespace()
-                    if current == 93 { index += 1; return }
+                    try value(depth: depth + 1)
+                    whitespace()
+                    if current == 93 {
+                        index += 1
+                        return
+                    }
                     try expect(44)
                 }
             case 34: _ = try string()

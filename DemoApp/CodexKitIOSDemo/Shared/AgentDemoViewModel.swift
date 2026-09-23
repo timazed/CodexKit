@@ -326,6 +326,7 @@ final class AgentDemoViewModel {
     var composerText = ""
     var isRunningStructuredOutputDemo = false
     var isRunningStructuredStreamingDemo = false
+    var progressiveOutput = ProgressiveOutputDemoModel()
     var structuredShippingReplyResult: StructuredOutputDemoDraftResult?
     var structuredImportedSummaryResult: StructuredOutputDemoImportResult?
     var structuredStreamingResult: StructuredStreamingDemoResult?
@@ -485,7 +486,7 @@ final class AgentDemoViewModel {
     }
 
     var canReconfigureRuntime: Bool {
-        sendingThreadIDs.isEmpty && !isAuthenticating && !isSwitchingPersistenceAdapter && activeRuntimeThreads.allSatisfy { thread in
+        sendingThreadIDs.isEmpty && !progressiveOutput.isBusy && !isAuthenticating && !isSwitchingPersistenceAdapter && activeRuntimeThreads.allSatisfy { thread in
             switch thread.status {
             case .idle, .failed:
                 true

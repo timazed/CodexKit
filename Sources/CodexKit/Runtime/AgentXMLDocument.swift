@@ -33,9 +33,18 @@ public struct AgentXMLElement: Codable, Hashable, Sendable, Identifiable {
     public var id: UInt64 { info.id }
     public var name: XMLName { info.name }
     public var attributes: [XMLName: String] { info.attributes }
-    public var children: [AgentXMLElement] { content.compactMap { if case let .element(value) = $0 { value } else { nil } } }
+    public var children: [AgentXMLElement] {
+        content.compactMap { if case let .element(value) = $0 { value } else { nil } }
+    }
     /// All descendant text in document order; scalar values remain lexical XML text.
-    public var text: String { content.map { switch $0 { case let .text(value): value; case let .element(value): value.text } }.joined() }
+    public var text: String {
+        content.map {
+            switch $0 {
+            case let .text(value): value
+            case let .element(value): value.text
+            }
+        }.joined()
+    }
 }
 
 public struct AgentXMLDocument: Codable, Hashable, Sendable {
@@ -70,9 +79,12 @@ public struct AgentXMLStreamingOptions: Sendable {
     public var completedElements: AgentXMLStreamingSelection
     public var emitTextDeltas: Bool
     public var identityAttribute: XMLName?
-    public init(completedElements: AgentXMLStreamingSelection = .directChildren,
-                emitTextDeltas: Bool = true, identityAttribute: XMLName? = nil) {
-        self.completedElements = completedElements; self.emitTextDeltas = emitTextDeltas
+    public init(
+        completedElements: AgentXMLStreamingSelection = .directChildren,
+        emitTextDeltas: Bool = true, identityAttribute: XMLName? = nil
+    ) {
+        self.completedElements = completedElements
+        self.emitTextDeltas = emitTextDeltas
         self.identityAttribute = identityAttribute
     }
 }

@@ -1,6 +1,7 @@
 #if DEBUG
 import CodexKit
 import Foundation
+import Observation
 
 /// Runs the actual shared demo consumer with synthetic, chunked responses and isolated storage.
 @MainActor
@@ -12,98 +13,129 @@ enum DemoStreamingVerification {
         var checks: [String] = []
         for mode in ProgressiveOutputDemoMode.allCases {
             let url = directory.appendingPathComponent("\(mode.id).json")
-            let backend = StreamingDemoBackend(source: source(mode))
+            let gate = DemoStreamingGate()
+            let backend = StreamingDemoBackend(source: DemoStreamingFixtures.source(mode), gate: gate)
             let runtime = try runtime(backend, store: FileRuntimeStateStore(url: url))
             let model = ProgressiveOutputDemoModel()
-            let task = Task { await model.run(mode, runtime: runtime, configuration: configuration) }
-            defer { task.cancel() }
+            model.start(mode, runtime: runtime, configuration: configuration)
+            defer { model.cancel() }
             try await waitForPreview(model)
-            try require(model.phase == .streaming, "\(mode): preview was promoted before commit")
+            try require(!model.isCommitted && model.isRunning, "\(mode): preview was promoted before commit")
             try require(mode != .json || model.units.isEmpty, "Raw JSON preview was decoded prematurely")
             guard let threadID = model.threadID else { throw Failure("Missing thread identity") }
             let provisional = try await runtime.fetchLatestStructuredOutputMetadata(id: threadID)
             try require(provisional == nil, "\(mode): preview was persisted")
-            await backend.release()
-            await task.value
-            try require(model.phase == .committed && model.error == nil, "\(mode): \(model.error ?? model.status)")
+            gate.release()
+            await model.waitUntilFinished()
+            try require(model.isCommitted && model.error == nil, "\(mode): \(model.error ?? model.status)")
             try require(model.context?.threadID == threadID, "\(mode): missing output identity")
             let units = model.units, rawText = model.rawText
             switch mode {
-            case .text: try require(rawText == source(mode), "Text deltas were lost")
+            case .text: try require(rawText == DemoStreamingFixtures.source(mode), "Text deltas were lost")
             case .records: try require(units.count == 3 && units.allSatisfy(\.isClosed), "Record cards were lost")
             case .xml:
-                try require(units.count == 3 && units[0].attributes.contains("priority=high")
-                    && units[0].text == "Test & verify.", "XML text or attributes were lost")
+                try require(
+                    units.count == 3 && units[0].attributes.contains("priority=high")
+                        && units[0].text == "Test & verify.", "XML text or attributes were lost")
             case .json: try require(units.count == 1 && units[0].title == "Boundaries", "JSON card was not decoded")
             }
             await runtime.deactivateThread(id: threadID)
-            let reopened = try self.runtime(StreamingDemoBackend(source: "must not be requested"), store: FileRuntimeStateStore(url: url))
+            let restoreBackend = StreamingDemoBackend(source: "must not be requested")
+            let reopened = try self.runtime(restoreBackend, store: FileRuntimeStateStore(url: url))
             _ = try await reopened.restore()
             _ = try await reopened.resumeThread(id: threadID)
-            await model.reload(runtime: reopened)
-            try require(model.restored && model.error == nil && model.units == units && model.rawText == rawText,
-                        "\(mode): saved output did not reload")
+            let restored = ProgressiveOutputDemoModel()
+            restored.restore(mode, threadID: threadID, runtime: reopened)
+            await restored.waitUntilFinished()
+            try require(
+                restored.restored && restored.error == nil && restored.units == units && restored.rawText == rawText,
+                "\(mode): saved output did not reload")
+            try require(
+                restored.context == model.context && restored.previewEvents == 0,
+                "\(mode): restoration retained old presentation state")
+            let requests = await restoreBackend.requestCount
+            try require(requests == 0, "\(mode): restoration made a model request")
             checks.append("streaming \(mode.rawValue): provisional events, commit, and saved-output restoration")
         }
 
         for mode in [ProgressiveOutputDemoMode.records, .xml] {
-            let invalid = mode == .records ? record + "\n" : source(.xml).replacingOccurrences(of: "high", with: "invalid")
+            let invalid =
+                mode == .records
+                ? DemoStreamingFixtures.record + "\n"
+                : DemoStreamingFixtures.source(.xml).replacingOccurrences(of: "high", with: "invalid")
             let backend = StreamingDemoBackend(source: invalid)
-            await backend.release()
             let runtime = try runtime(backend)
             let model = ProgressiveOutputDemoModel()
-            await model.run(mode, runtime: runtime, configuration: configuration)
-            try require(model.phase == .failed && model.previewEvents > 0 && model.error != nil,
-                        "Invalid \(mode) did not fail after previews")
-            let stored = try await runtime.fetchLatestStructuredOutputMetadata(id: model.threadID!)
+            model.start(mode, runtime: runtime, configuration: configuration)
+            await model.waitUntilFinished()
+            try require(
+                !model.isCommitted && model.previewEvents > 0 && model.error != nil,
+                "Invalid \(mode) did not fail after previews")
+            guard let threadID = model.threadID else { throw Failure("Missing invalid-output thread") }
+            let stored = try await runtime.fetchLatestStructuredOutputMetadata(id: threadID)
             try require(stored == nil, "Invalid \(mode) was saved")
         }
         checks.append("record count and XML XSD failures leave previews uncommitted")
 
-        let backend = StreamingDemoBackend(source: source(.records))
+        let backend = StreamingDemoBackend(source: DemoStreamingFixtures.source(.records), gate: DemoStreamingGate())
         let runtime = try runtime(backend)
         let model = ProgressiveOutputDemoModel()
-        let task = Task { await model.run(.records, runtime: runtime, configuration: configuration) }
-        defer { task.cancel() }
+        model.start(.records, runtime: runtime, configuration: configuration)
+        defer { model.cancel() }
         try await waitForPreview(model)
-        task.cancel()
-        await task.value
-        try require(model.phase == .cancelled && !model.isRunning, "Cancellation left the demo running or committed")
-        let stored = try await runtime.fetchLatestStructuredOutputMetadata(id: model.threadID!)
+        model.cancel()
+        await model.waitUntilFinished()
+        guard case .cancelled = model.result else { throw Failure("Cancellation did not produce a cancelled result") }
+        try require(!model.isBusy, "Cancellation left the demo running")
+        guard let threadID = model.threadID else { throw Failure("Missing cancelled-output thread") }
+        let stored = try await runtime.fetchLatestStructuredOutputMetadata(id: threadID)
         try require(stored == nil, "Cancelled preview was saved")
         checks.append("streaming demo cancellation stops the execution without committing previews")
         return checks
     }
 
     private static let configuration = AgentThreadConfiguration(model: CodexModel.gpt56Sol, reasoningEffort: .low)
-    static let record = #"{"id":1,"title":"Boundaries","text":"Test & verify."}"#
-    static func source(_ mode: ProgressiveOutputDemoMode) -> String {
-        switch mode {
-        case .text: "Test boundaries. Check errors. Verify cancellation."
-        case .records: (1...3).map { record.replacingOccurrences(of: "\"id\":1", with: "\"id\":\($0)") }.joined(separator: "\n") + "\n"
-        case .json: record
-        case .xml: "<response>" + (1...3).map { "<tip id=\"\($0)\" priority=\"high\">Test &amp; verify.</tip>" }.joined() + "</response>"
+
+    private static func runtime(
+        _ backend: StreamingDemoBackend,
+        store: any RuntimeStateStoring = InMemoryRuntimeStateStore()
+    ) throws -> AgentRuntime {
+        try AgentRuntime(
+            configuration: .init(
+                sessionProvider: Session(), backend: backend,
+                approvalPresenter: Approvals(), stateStore: store, maximumBufferedEvents: 1,
+                turnLimits: .init(maximumDuration: 5)))
+    }
+
+    static func waitForPreview(_ model: ProgressiveOutputDemoModel) async throws {
+        let changes = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        observePreview(model, continuation: changes.continuation)
+        for await _ in changes.stream { break }
+        try require(hasPreview(model), "No preview arrived: \(model.error ?? model.status)")
+    }
+
+    private static func observePreview(
+        _ model: ProgressiveOutputDemoModel, continuation: AsyncStream<Void>.Continuation
+    ) {
+        if hasPreview(model) || !model.isBusy {
+            continuation.yield(())
+            continuation.finish()
+            return
+        }
+        withObservationTracking {
+            _ = hasPreview(model)
+            _ = model.isBusy
+        } onChange: {
+            Task { @MainActor in observePreview(model, continuation: continuation) }
         }
     }
 
-    private static func runtime(_ backend: StreamingDemoBackend,
-                                store: any RuntimeStateStoring = InMemoryRuntimeStateStore()) throws -> AgentRuntime {
-        try AgentRuntime(configuration: .init(sessionProvider: Session(), backend: backend,
-            approvalPresenter: Approvals(), stateStore: store, maximumBufferedEvents: 1,
-            turnLimits: .init(maximumDuration: 5)))
-    }
-
-    private static func waitForPreview(_ model: ProgressiveOutputDemoModel) async throws {
-        for _ in 0..<400 {
-            let ready: Bool
-            switch model.mode {
-            case .records, .xml: ready = model.units.count == 3 && model.units.allSatisfy(\.isClosed)
-            case .text, .json: ready = !model.rawText.isEmpty
-            }
-            if model.previewEvents > 0 && ready { return }
-            try await Task.sleep(for: .milliseconds(5))
+    private static func hasPreview(_ model: ProgressiveOutputDemoModel) -> Bool {
+        guard model.previewEvents > 0 else { return false }
+        switch model.mode {
+        case .records, .xml: return model.units.count == 3 && model.units.allSatisfy(\.isClosed)
+        case .text, .json: return !model.rawText.isEmpty
         }
-        throw Failure("No preview arrived: \(model.error ?? model.status)")
     }
 
     private static func require(_ condition: Bool, _ message: String) throws {
@@ -115,7 +147,9 @@ enum DemoStreamingVerification {
     }
     private struct Session: AgentSessionProviding {
         func currentSession() async -> ChatGPTSession? {
-            .init(accessToken: "synthetic-streaming-demo", account: .init(id: "streaming-demo", email: "demo@example.invalid", plan: .unknown))
+            .init(
+                accessToken: "synthetic-streaming-demo",
+                account: .init(id: "streaming-demo", email: "demo@example.invalid", plan: .unknown))
         }
     }
     private struct Approvals: ApprovalPresenting {
@@ -123,21 +157,56 @@ enum DemoStreamingVerification {
     }
 }
 
+enum DemoStreamingFixtures {
+    static let record = #"{"id":1,"title":"Boundaries","text":"Test & verify."}"#
+
+    static func source(_ mode: ProgressiveOutputDemoMode) -> String {
+        switch mode {
+        case .text: "Test boundaries. Check errors. Verify cancellation."
+        case .records:
+            (1...3).map { record.replacingOccurrences(of: "\"id\":1", with: "\"id\":\($0)") }.joined(separator: "\n")
+                + "\n"
+        case .json: record
+        case .xml:
+            "<response>" + (1...3).map { "<tip id=\"\($0)\" priority=\"high\">Test &amp; verify.</tip>" }.joined()
+                + "</response>"
+        }
+    }
+}
+
+/// A one-shot, cancellation-aware gate; no timing assumptions or polling.
+final class DemoStreamingGate: Sendable {
+    private let channel = AsyncStream<Void>.makeStream()
+
+    func release() {
+        channel.continuation.finish()
+    }
+
+    func wait() async throws {
+        for await _ in channel.stream {}
+        try Task.checkCancellation()
+    }
+}
+
 actor StreamingDemoBackend: AgentBackend {
     let source: String
     let chunkDelay: Duration
-    private var released = false
-    init(source: String, chunkDelay: Duration = .zero) { self.source = source; self.chunkDelay = chunkDelay }
-    func release() { released = true }
-    private func waitForRelease() async throws {
-        while !released { try await Task.sleep(for: .milliseconds(5)) }
-        try Task.checkCancellation()
+    let gate: DemoStreamingGate?
+    private(set) var requestCount = 0
+
+    init(source: String, chunkDelay: Duration = .zero, gate: DemoStreamingGate? = nil) {
+        self.source = source
+        self.chunkDelay = chunkDelay
+        self.gate = gate
     }
     func createThread(session: ChatGPTSession) async throws -> AgentThread { .init(id: UUID().uuidString) }
     func resumeThread(id: String, session: ChatGPTSession) async throws -> AgentThread { .init(id: id) }
-    func beginTurn(thread: AgentThread, history: [AgentMessage], message: Request, instructions: String,
-                   responseFormat: AgentStructuredOutputFormat?, streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
-                   tools: [ToolDefinition], session: ChatGPTSession) async throws -> AgentTurnStream {
+    func beginTurn(
+        thread: AgentThread, history: [AgentMessage], message: Request, instructions: String,
+        responseFormat: AgentStructuredOutputFormat?, streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
+        tools: [ToolDefinition], session: ChatGPTSession
+    ) async throws -> AgentTurnStream {
+        requestCount += 1
         let channel = AsyncThrowingStream<AgentBackendEvent, Error>.makeStream()
         let task = Task {
             do {
@@ -148,12 +217,20 @@ actor StreamingDemoBackend: AgentBackend {
                 for start in stride(from: 0, to: characters.count, by: 11) {
                     if chunkDelay > .zero { try await Task.sleep(for: chunkDelay) }
                     let text = String(characters[start..<min(start + 11, characters.count)])
-                    channel.continuation.yield(.assistantContentDelta(.init(threadID: thread.id,
-                        turnID: turn.id, messageID: messageID, contentIndex: 0, phase: .finalAnswer, text: text)))
+                    channel.continuation.yield(
+                        .assistantContentDelta(
+                            .init(
+                                threadID: thread.id,
+                                turnID: turn.id, messageID: messageID, contentIndex: 0, phase: .finalAnswer, text: text)
+                        ))
                 }
-                try await waitForRelease()
-                channel.continuation.yield(.assistantMessageCompleted(.init(id: messageID,
-                    threadID: thread.id, role: .assistant, text: source, phase: .finalAnswer)))
+                try await gate?.wait()
+                try Task.checkCancellation()
+                channel.continuation.yield(
+                    .assistantMessageCompleted(
+                        .init(
+                            id: messageID,
+                            threadID: thread.id, role: .assistant, text: source, phase: .finalAnswer)))
                 channel.continuation.yield(.turnCompleted(.init(threadID: thread.id, turnID: turn.id)))
                 channel.continuation.finish()
             } catch { channel.continuation.finish(throwing: error) }

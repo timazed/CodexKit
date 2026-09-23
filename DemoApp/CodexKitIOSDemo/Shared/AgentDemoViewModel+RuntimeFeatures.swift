@@ -59,6 +59,8 @@ extension AgentDemoViewModel {
     }
 
     func resetRuntimeFeatures() {
+        progressiveOutput.cancel()
+        progressiveOutput = ProgressiveOutputDemoModel()
         runtimeFeaturesGeneration = UUID()
         modelCatalog = nil
         accountRateLimits = []
@@ -98,6 +100,11 @@ extension AgentDemoViewModel {
     }
 
     func stopTurn(in threadID: String) async {
+        if progressiveOutput.threadID == threadID, progressiveOutput.isBusy {
+            progressiveOutput.cancel()
+            await progressiveOutput.waitUntilFinished()
+            return
+        }
         guard let turnID = runningTurnIDs[threadID], !stoppingThreadIDs.contains(threadID) else { return }
         stoppingThreadIDs.insert(threadID)
         turnActivities[threadID]?.notice = "Stopping…"

@@ -102,9 +102,11 @@ The macOS Debug `--offline-demo` preview also supports all four formats with syn
 
 Cards and text are explicitly provisional until `outputCommitted`. **Cancel** interrupts the execution; failed or cancelled previews remain labeled uncommitted. The turn-identity disclosure shows the thread, turn, message, and document IDs. After a successful turn, **Reload Saved Output** uses `fetchLatestOutput(in:output:)` without making another model request.
 
+The host model owns the task, so navigating away from the view does not lose the running operation. Streaming participates in host busy state and turn cancellation. On macOS, the normal **Stop** and **Disconnect** actions also cancel the streaming example; disconnect removes the old presentation so it cannot reappear on a new connection. Operation state is separate from result state: a known saved result remains committed if cancellation arrives afterward.
+
 The shared implementation is in `CodexKitIOSDemo/Shared/ProgressiveOutputDemoModel.swift` and `ProgressiveOutputDemoView.swift`. The older `response:` examples remain available below it. See the [streaming output guide](../docs/streaming-output.md) for the API contract. JSON Lines is the shipped record codec; a compact wire format is not enabled.
 
-Both signed-app verification scripts exercise this same presentation model with chunked synthetic responses in smoke and full modes. Checks cover all four formats, provisional versus committed state, reopening saved output in a fresh runtime, XML attributes, invalid record counts / XSD validation, and cancellation. These offline checks do not establish live-model generation quality.
+Both signed-app verification scripts exercise this same presentation model with chunked synthetic responses in smoke and full modes. Checks cover all four formats, provisional versus committed state, reopening saved output in a fresh runtime and fresh presentation model with zero generation calls, XML attributes, invalid record counts / XSD validation, and cancellation. macOS additionally exercises the real host busy state, Stop, and Disconnect controls. Verification uses explicit stream gates rather than timing-based polling. These offline checks do not establish live-model generation quality.
 
 ## What the app does
 

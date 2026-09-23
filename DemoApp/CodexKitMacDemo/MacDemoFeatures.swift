@@ -16,7 +16,9 @@ enum MacDemoAction: String, CaseIterable {
 @MainActor
 @Observable
 final class MacDemoFeatures {
-    var isBusy = false
+    private var isExecuting = false
+    let progressiveOutput = ProgressiveOutputDemoModel()
+    var isBusy: Bool { isExecuting || progressiveOutput.isBusy }
     var error: String?
     var result = ""
     var structuredText = ""
@@ -51,6 +53,7 @@ final class MacDemoFeatures {
     func cancel() {
         isActive = false
         task?.cancel()
+        progressiveOutput.cancel()
         error = nil
         result = ""
         structuredText = ""
@@ -61,7 +64,22 @@ final class MacDemoFeatures {
 
     func stop() async {
         task?.cancel()
+        progressiveOutput.cancel()
+        await progressiveOutput.waitUntilFinished()
         await chat.interrupt()
+    }
+
+    func startProgressiveOutput(_ mode: ProgressiveOutputDemoMode) {
+        guard !isBusy, isActive else { return }
+        progressiveOutput.start(mode, runtime: runtime, configuration: configuration) { [weak self] threadID in
+            guard let self, self.isActive else { return }
+            await self.chat.activateThread(id: threadID)
+        }
+    }
+
+    func reloadProgressiveOutput() {
+        guard !isBusy, isActive else { return }
+        progressiveOutput.reload(runtime: runtime)
     }
 
     func run(_ action: MacDemoAction, completion: @escaping @MainActor () async -> Void) {
@@ -75,9 +93,9 @@ final class MacDemoFeatures {
     /// Shared by the UI and the signed app's integration tests.
     func execute(_ action: MacDemoAction) async {
         guard !isBusy, isActive else { return }
-        isBusy = true
+        isExecuting = true
         error = nil
-        defer { isBusy = false }
+        defer { isExecuting = false }
         do {
             try await validateSession()
             switch action {

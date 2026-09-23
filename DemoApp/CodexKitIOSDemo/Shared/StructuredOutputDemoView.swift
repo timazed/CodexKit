@@ -16,8 +16,14 @@ struct StructuredOutputDemoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 overviewCard
-                ProgressiveOutputDemoView(runtime: viewModel.runtime,
-                    configuration: viewModel.defaultThreadConfiguration, enabled: viewModel.session != nil)
+                ProgressiveOutputDemoView(
+                    model: viewModel.progressiveOutput,
+                    isConnected: viewModel.session != nil,
+                    isHostBusy: !viewModel.canReconfigureRuntime || viewModel.isRunningStructuredOutputDemo || viewModel.isRunningStructuredStreamingDemo,
+                    run: viewModel.runProgressiveOutput,
+                    reload: viewModel.reloadProgressiveOutput,
+                    cancel: { viewModel.progressiveOutput.cancel() }
+                )
                 streamedStructuredCard
                 shippingDraftCard
                 importedContentCard
