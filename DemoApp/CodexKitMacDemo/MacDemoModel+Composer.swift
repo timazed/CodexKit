@@ -46,4 +46,15 @@ extension MacDemoModel {
             await self.checkSession()
         }
     }
+
+    func runProgressiveOutput(_ mode: ProgressiveOutputDemoMode) {
+        guard isConnected, !isWorking, let features else { return }
+        features.configuration = .init(model: modelID, reasoningEffort: reasoningEffort)
+        features.startProgressiveOutput(mode)
+    }
+
+    func reloadProgressiveOutput() {
+        guard isConnected, !isWorking else { return }
+        features?.reloadProgressiveOutput()
+    }
 }

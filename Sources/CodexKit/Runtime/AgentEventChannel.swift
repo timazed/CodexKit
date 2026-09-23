@@ -6,6 +6,7 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
     private struct Sender {
         let id: UUID
         let element: Element
+        let byteCount: Int
         let continuation: CheckedContinuation<Void, Error>
     }
 
@@ -17,6 +18,9 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
 
     private let lock = NSLock()
     private var buffer: [Element?]
+    private var bufferBytes: [Int]
+    private var bufferedBytes = 0
+    private let maximumBufferedBytes: Int
     private var head = 0
     private var count = 0
     private var peakCount = 0
@@ -27,14 +31,16 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
     private var didCancel = false
     private var cancellationHandler: (@Sendable () -> Void)?
 
-    init(capacity: Int = 64) {
+    init(capacity: Int = 64, maximumBufferedBytes: Int = .max) {
         buffer = Array(repeating: nil, count: max(1, min(capacity, 4_096)))
+        bufferBytes = Array(repeating: 0, count: buffer.count)
+        self.maximumBufferedBytes = max(1, maximumBufferedBytes)
     }
 
-    static func makeStream(capacity: Int = 64) -> (
+    static func makeStream(capacity: Int = 64, maximumBufferedBytes: Int = .max) -> (
         stream: AsyncThrowingStream<Element, Error>, continuation: AgentEventChannel
     ) {
-        let channel = AgentEventChannel(capacity: capacity)
+        let channel = AgentEventChannel(capacity: capacity, maximumBufferedBytes: maximumBufferedBytes)
         let lifetime = Lifetime(channel)
         return (AsyncThrowingStream(unfolding: { try await lifetime.channel.next() }), channel)
     }
@@ -48,7 +54,8 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
         if invoke { handler() }
     }
 
-    func yield(_ element: Element) async throws {
+    func yield(_ element: Element, byteCount: Int = 0) async throws {
+        guard byteCount >= 0, byteCount <= maximumBufferedBytes else { throw AgentOutputError.limit("Event exceeds queue byte capacity.") }
         let id = UUID()
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
@@ -61,11 +68,11 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
                         receiver = receivers.removeFirst()
                         return .success(())
                     }
-                    if count < buffer.count {
-                        append(element)
+                    if senders.isEmpty, count < buffer.count, byteCount <= maximumBufferedBytes - bufferedBytes {
+                        append(element, byteCount: byteCount)
                         return .success(())
                     }
-                    senders.append(Sender(id: id, element: element, continuation: continuation))
+                    senders.append(Sender(id: id, element: element, byteCount: byteCount, continuation: continuation))
                     return nil
                 }
                 receiver?.resume(returning: element)
@@ -111,6 +118,8 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
             didCancel = true
             terminal = .failure(CancellationError())
             buffer = Array(repeating: nil, count: buffer.count)
+            bufferBytes = Array(repeating: 0, count: buffer.count)
+            bufferedBytes = 0
             count = 0
             terminalElements.removeAll()
             blocked = senders
@@ -139,12 +148,14 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
                     if Task.isCancelled { return .failure(CancellationError()) }
                     if count > 0 {
                         let element = buffer[head]
+                        bufferedBytes -= bufferBytes[head]
+                        bufferBytes[head] = 0
                         buffer[head] = nil
                         head = (head + 1) % buffer.count
                         count -= 1
-                        if !senders.isEmpty {
+                        if let first = senders.first, first.byteCount <= maximumBufferedBytes - bufferedBytes {
                             sender = senders.removeFirst()
-                            append(sender!.element)
+                            append(sender!.element, byteCount: sender!.byteCount)
                         }
                         return .success(element)
                     }
@@ -161,8 +172,10 @@ final class AgentEventChannel<Element: Sendable>: @unchecked Sendable {
         }
     }
 
-    private func append(_ element: Element) {
+    private func append(_ element: Element, byteCount: Int) {
         buffer[(head + count) % buffer.count] = element
+        bufferBytes[(head + count) % buffer.count] = byteCount
+        bufferedBytes += byteCount
         count += 1
         peakCount = max(peakCount, count)
     }

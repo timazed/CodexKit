@@ -3,12 +3,25 @@ import Foundation
 
 @MainActor
 extension AgentDemoViewModel {
+    func runProgressiveOutput(_ mode: ProgressiveOutputDemoMode) {
+        guard session != nil, canReconfigureRuntime,
+              !isRunningStructuredOutputDemo, !isRunningStructuredStreamingDemo else { return }
+        progressiveOutput.start(mode, runtime: runtime, configuration: defaultThreadConfiguration) { [weak self] threadID in
+            await self?.activateThread(id: threadID)
+        }
+    }
+
+    func reloadProgressiveOutput() {
+        guard session != nil, canReconfigureRuntime else { return }
+        progressiveOutput.reload(runtime: runtime)
+    }
+
     func runStructuredShippingReplyDemo() async {
         guard session != nil else {
             lastError = "Sign in before running the structured output demo."
             return
         }
-        guard !isRunningStructuredOutputDemo else {
+        guard !isRunningStructuredOutputDemo, !progressiveOutput.isBusy else {
             return
         }
 
@@ -60,7 +73,7 @@ extension AgentDemoViewModel {
             lastError = "Sign in before running the imported content demo."
             return
         }
-        guard !isRunningStructuredOutputDemo else {
+        guard !isRunningStructuredOutputDemo, !progressiveOutput.isBusy else {
             return
         }
 
@@ -111,7 +124,7 @@ extension AgentDemoViewModel {
             lastError = "Sign in before running the streamed structured output demo."
             return
         }
-        guard !isRunningStructuredStreamingDemo else {
+        guard !isRunningStructuredStreamingDemo, !progressiveOutput.isBusy else {
             return
         }
 

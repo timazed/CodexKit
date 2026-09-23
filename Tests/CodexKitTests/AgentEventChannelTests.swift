@@ -2,6 +2,21 @@
 import XCTest
 
 final class AgentEventChannelTests: XCTestCase {
+    func testByteBudgetBackpressuresBeforeCountBudget() async throws {
+        let channel = AgentEventChannel<Int>.makeStream(capacity: 10, maximumBufferedBytes: 10)
+        try await channel.continuation.yield(1, byteCount: 7)
+        let blocked = Task {
+            try await channel.continuation.yield(2, byteCount: 7)
+            channel.continuation.finish()
+        }
+        await waitUntilBlocked(channel.continuation)
+        XCTAssertEqual(channel.continuation.diagnostics.buffered, 1)
+        var values: [Int] = []
+        for try await value in channel.stream { values.append(value) }
+        try await blocked.value
+        XCTAssertEqual(values, [1, 2])
+    }
+
     func testBackpressurePreservesOrderAndReservedTerminalEvents() async throws {
         let channel = AgentEventChannel<Int>.makeStream(capacity: 2)
         let producer = Task {

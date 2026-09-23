@@ -15,6 +15,8 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
 | [Structured request recovery](structured-request-recovery.md) | Frozen requests, lifecycle suspension, bounded retries, completed receipts, schema upgrades, retention |
+| [Streaming structured output](streaming-output.md) | Turn-based typed streaming for text, native JSON, JSON Lines records, and XML/XSD |
+| [Record codec benchmark](streaming-output-benchmarks.md) | Local measurements and the decision to keep JSON Lines as the supported codec |
 | [Persistence and observation](persistence.md) | SQLite/Realm integration, migration, queries, Combine, context compaction |
 | [Memory](memory.md) | Capture, retrieval, guided writing, raw stores, attribution |
 | [Personas and skills](personas-and-skills.md) | Layered instructions, tool policies, dynamic definitions, previews |
@@ -55,6 +57,8 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
   Sign in, create a thread, and call `stream(...)` or `send(...)`.
 - Typed app flows
   Use `send(..., response:)` to get a `Decodable` value back.
+- Streaming typed output
+  Use `start(..., output:)` for provisional typed events and a result that commits only after validation and turn completion.
 - Guided retrieval/enrichment
   Use `Request.options` to tell the model how to fulfill the turn so the typed response contract can be satisfied.
 - Tool-driven agents
@@ -90,6 +94,7 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | Typed request context | Yes |
 | Declarative request fulfillment policy | Yes |
 | Typed structured output (`Decodable`) | Yes |
+| Turn-based typed output streaming | Yes: text, native JSON, JSON Lines, and XML/XSD |
 | Mixed streamed text + typed structured output | Yes |
 | Share/import helper (`AgentImportedContent`) | Yes |
 | App Intents / Shortcuts example | Yes |

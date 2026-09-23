@@ -338,6 +338,7 @@ struct CodexResponsesStreamEvent: Sendable {
         case rateLimits([AgentRateLimitSnapshot])
         case responseCreated(responseID: String?)
         case assistantTextDelta(String)
+        case identifiedTextDelta(messageID: String, contentIndex: Int, text: String)
         case outputItem(StreamItem, outputIndex: Int)
         case structuredOutputPartial(JSONValue)
         case structuredOutputCommitted(JSONValue)

@@ -15,6 +15,7 @@ public enum AgentBackendEvent: Sendable {
     case rateLimitsUpdated([AgentRateLimitSnapshot])
     case turnStarted(AgentTurn)
     case assistantMessageDelta(threadID: String, turnID: String, delta: String)
+    case assistantContentDelta(AgentAssistantContentDelta)
     case assistantMessageCompleted(AgentMessage)
     case structuredOutputPartial(JSONValue)
     case structuredOutputCommitted(JSONValue)

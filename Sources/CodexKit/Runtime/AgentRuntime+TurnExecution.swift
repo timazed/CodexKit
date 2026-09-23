@@ -70,6 +70,7 @@ extension AgentRuntime {
         structured: AgentStructuredTurnConfiguration<Output>?,
         completionCapture: AgentTurnCompletionCapture? = nil,
         oneShotValidation: AgentOneShotResponseValidation? = nil,
+        output: AnyAgentOutputExecution? = nil,
         sink: AgentTurnEventSink<Output>
     ) {
         authenticatedExecutionControls[control.id] = control
@@ -118,7 +119,8 @@ extension AgentRuntime {
                     providerContext: prepared.storesTurnState ? providerContext(for: threadID) : nil,
                     message: prepared.request, resolvedInstructions: instructions, resolvedTurnSkills: skills,
                     pendingUserMessage: prepared.userMessage, responseContract: prepared.responseContract,
-                    tools: tools, session: session, allowsContextCompaction: prepared.storesTurnState)
+                    tools: tools, session: session, allowsContextCompaction: prepared.storesTurnState,
+                    outputInstructions: output?.instructions)
                 control.install(start.turnStream)
                 await control.readiness.resolve(.success(()))
                 try await initialEvents
@@ -130,8 +132,9 @@ extension AgentRuntime {
                     session: start.session, budget: budget, control: control, registrations: registrations, resolvedTurnSkills: skills, resolvedInstructions: instructions,
                     clientRequestID: prepared.request.clientRequestID, storesTurnState: prepared.storesTurnState,
                     completionCapture: completionCapture, structured: structured,
-                    oneShotValidation: oneShotValidation, continuation: sink)
+                    oneShotValidation: oneShotValidation, output: output, continuation: sink)
             } catch {
+                await output?.cancel()
                 await control.readiness.resolve(.failure(budget.error ?? error))
                 await finishFailedTurn(error, in: threadID, turnID: nil, storesTurnState: prepared.storesTurnState, budget: budget, control: control, sink: sink)
             }
@@ -150,13 +153,14 @@ extension AgentRuntime {
 
     func finishFailedTurn<Output>(
         _ originalError: Error, in threadID: String, turnID: String?, storesTurnState: Bool,
-        budget: AgentTurnBudget, control: AgentExecutionControl, sink: AgentTurnEventSink<Output>
+        budget: AgentTurnBudget, control: AgentExecutionControl, sink: AgentTurnEventSink<Output>,
+        preserveErrorOnCancellation: Bool = false
     ) async {
         control.finish()
         let limitError = budget.error
         let error: Error = limitError ?? originalError
         budget.finish()
-        if limitError == nil, error is CancellationError || Task.isCancelled {
+        if limitError == nil, error is CancellationError || (Task.isCancelled && !preserveErrorOnCancellation) {
             let interruption = await recordInterruption(in: threadID, turnID: turnID, storesTurnState: storesTurnState)
             let events: [AgentEvent] = (storesTurnState ? [.threadStatusChanged(threadID: threadID, status: .idle)] : [])
                 + [.turnInterrupted(interruption)]

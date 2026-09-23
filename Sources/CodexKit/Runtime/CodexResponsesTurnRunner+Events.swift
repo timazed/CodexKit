@@ -7,6 +7,12 @@ extension CodexResponsesTurnRunner {
     ) async throws -> StreamEventResult {
         switch event.kind {
         case let .progress(progress):
+            if case let .messageStarted(id, phase) = progress, let phase {
+                if request.usesOutputRouting == true, let previous = state.outputPhases[id], previous != phase {
+                    throw AgentOutputError.protocolViolation("Output message changed its declared phase.")
+                }
+                state.outputPhases[id] = phase
+            }
             try await continuation.yield(.progress(.init(threadID: threadID, turnID: turnID, content: progress)))
             return .assistantDelta
 
@@ -24,6 +30,19 @@ extension CodexResponsesTurnRunner {
             let emittedDelta = try await handleAssistantTextDelta(delta, state: &state)
             return emittedDelta ? .assistantDelta : .none
 
+        case let .identifiedTextDelta(messageID, contentIndex, text):
+            guard request.usesOutputRouting == true else {
+                return try await handleAssistantTextDelta(text, state: &state) ? .assistantDelta : .none
+            }
+            let phase = state.outputPhases[messageID]
+            if phase == .finalAnswer {
+                try await control.beginOutput()
+                state.structuredOutputBegan = true
+            }
+            try await continuation.yield(.assistantContentDelta(.init(threadID: threadID, turnID: turnID,
+                messageID: messageID, contentIndex: contentIndex, phase: phase, text: text)))
+            return .assistantDelta
+
         case let .outputItem(item, outputIndex):
             try streamClient.responseBudget?.consumeItem()
             state.pendingResponseItems.append(
@@ -39,12 +58,23 @@ extension CodexResponsesTurnRunner {
             }
             switch item.kind {
             case let .message(messageItem):
-                let text = messageItem.content
+                if request.usesOutputRouting == true, let id = messageItem.id, let previous = state.outputPhases[id],
+                   messageItem.phase != previous {
+                    throw AgentOutputError.protocolViolation("Completed output changed its declared phase.")
+                }
+                if request.usesOutputRouting == true, messageItem.content.contains(where: { $0.type == "refusal" }) {
+                    throw AgentOutputError.invalidOutput("The provider refused the requested structured output.")
+                }
+                let rawText = messageItem.content
                     .compactMap(\.displayText)
                     .joined()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = request.usesOutputRouting == true ? rawText : rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if request.usesOutputRouting == true, messageItem.phase != .commentary {
+                    try await control.beginOutput()
+                    state.structuredOutputBegan = true
+                }
                 let images = messageItem.content.compactMap(\.imageAttachment)
-                guard !text.isEmpty || !images.isEmpty else {
+                guard request.usesOutputRouting == true || !text.isEmpty || !images.isEmpty else {
                     return .none
                 }
                 try await handleAssistantMessage(
@@ -61,6 +91,7 @@ extension CodexResponsesTurnRunner {
                 return .assistantMessage
 
             case let .functionCall(functionCallItem):
+                guard !state.structuredOutputBegan else { throw AgentOutputError.protocolViolation("Tool call after structured output began.") }
                 state.hasToolActivity = true
                 guard AgentStructuredRecoveryContext.current == nil else {
                     throw AgentRecoveryError.toolsUnsupported
@@ -91,6 +122,7 @@ extension CodexResponsesTurnRunner {
                 return .toolCall
 
             case let .imageGenerationCall(imageGenerationCall):
+                guard !state.structuredOutputBegan else { throw AgentOutputError.protocolViolation("Image tool activity after structured output began.") }
                 guard let image = imageGenerationCall.imageAttachment else {
                     return .none
                 }
@@ -106,7 +138,10 @@ extension CodexResponsesTurnRunner {
                 )
                 return .assistantMessage
 
-            case .webSearchCall, .other:
+            case .webSearchCall:
+                guard !state.structuredOutputBegan else { throw AgentOutputError.protocolViolation("Search tool activity after structured output began.") }
+                return .none
+            case .other:
                 return .none
             }
 
@@ -197,7 +232,7 @@ extension CodexResponsesTurnRunner {
             from: messageTemplate,
             state: &state
         )
-        let assistantText = resolvedAssistantText(
+        let assistantText = request.usesOutputRouting == true ? normalizedMessage.text : resolvedAssistantText(
             for: normalizedMessage,
             fallbackTexts: state.pendingToolFallbackTexts
         )

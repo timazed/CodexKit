@@ -34,7 +34,10 @@ struct CodexResponsesEventPayload: Decodable {
             guard let item = payload.item else { return .other }
             return .outputItem(item, outputIndex: payload.outputIndex ?? 0)
         case .outputTextDelta:
-            return try TextPayload(from: decoder).delta.map(CodexResponsesStreamEvent.Kind.assistantTextDelta) ?? .other
+            let payload = try TextPayload(from: decoder)
+            guard let delta = payload.delta else { return .other }
+            if let id = payload.itemID { return .identifiedTextDelta(messageID: id, contentIndex: payload.contentIndex ?? 0, text: delta) }
+            return .assistantTextDelta(delta)
         case .reasoningSummaryTextDelta:
             let payload = try ReasoningPayload(from: decoder)
             guard let itemID = payload.itemID, let delta = payload.delta else { return .other }
@@ -78,6 +81,9 @@ struct CodexResponsesEventPayload: Decodable {
 
     private struct TextPayload: Decodable {
         let delta: String?
+        let itemID: String?
+        let contentIndex: Int?
+        enum CodingKeys: String, CodingKey { case delta; case itemID = "item_id"; case contentIndex = "content_index" }
     }
 
     private struct ReasoningPayload: Decodable {

@@ -29,6 +29,10 @@ public struct Request: Codable, Hashable, Sendable {
     public var webSearch: AgentWebSearchPolicy?
     public var modelRequirements: AgentModelRequirements?
     var resolvedModelSelection: CodexModelSelection?
+    var usesOutputRouting: Bool?
+    /// Custom backends should emit identified content deltas for this request.
+    /// Without them, new output formats can decode only the completed message.
+    public var requiresOutputMessageIdentity: Bool { usesOutputRouting == true }
     var context: CompiledRequestContext?
     var options: CompiledRequestOptions?
 

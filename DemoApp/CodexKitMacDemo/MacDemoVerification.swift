@@ -65,6 +65,17 @@ enum MacDemoVerification {
         try require(restored.chat?.messages.contains(where: { $0.role == .assistant }) == true,
                     "Saved messages did not restore")
         checks.append("bound session and conversation restore")
+        checks += try await DemoStreamingVerification.run()
+        if let features = model.features {
+            for mode in ProgressiveOutputDemoMode.allCases {
+                model.runProgressiveOutput(mode)
+                let output = features.progressiveOutput
+                await output.waitUntilFinished()
+                try require(output.isCommitted, "Offline preview failed for \(mode): \(output.error ?? output.status)")
+            }
+            checks.append("offline preview supports all four streaming formats")
+        }
+        checks += try await verifyProgressiveLifecycle(fixture)
 
         if smoke {
             let request = Task { await restored.sendMessage("slow response") }
@@ -295,6 +306,43 @@ enum MacDemoVerification {
         return checks
     }
 
+    private static func verifyProgressiveLifecycle(_ fixture: MacDemoFixture) async throws -> [String] {
+        for disconnect in [false, true] {
+            let backend = StreamingDemoBackend(source: DemoStreamingFixtures.source(.records), gate: DemoStreamingGate())
+            let model = fixture.makeModel(backend: backend)
+            try await model.connectLocal()
+            guard let features = model.features else { throw VerificationError("Missing streaming features") }
+            model.runProgressiveOutput(.records)
+            try require(model.isWorking, "Streaming startup did not claim host busy state synchronously")
+            model.runProgressiveOutput(.xml)
+            model.runFeature(.shipping)
+            try await DemoStreamingVerification.waitForPreview(features.progressiveOutput)
+            let requests = await backend.requestCount
+            try require(requests == 1, "Host permitted overlapping example runs")
+            guard let threadID = features.progressiveOutput.threadID else { throw VerificationError("Missing streaming thread") }
+            try require(model.chat?.activeThread?.id == threadID, "Streaming thread was not activated in the host")
+            if disconnect {
+                await model.disconnect()
+            } else {
+                await model.stop()
+            }
+            await features.progressiveOutput.waitUntilFinished()
+            guard case .cancelled = features.progressiveOutput.result else {
+                throw VerificationError("Host cancellation did not stop the streaming example")
+            }
+            try require(!model.isWorking, "Host remained busy after cancellation")
+            if disconnect {
+                try require(model.features == nil && model.chat == nil && !model.isConnected,
+                            "A cancelled example restored disconnected UI")
+            } else {
+                let saved = try await features.runtime.fetchLatestStructuredOutputMetadata(id: threadID)
+                try require(saved == nil, "Stopped example committed output")
+                await model.disconnect()
+            }
+        }
+        return ["streaming examples share host busy state, Stop, and disconnect without late commits"]
+    }
+
     static func makePreview() async throws -> MacDemoModel {
         let fixture = try MacDemoFixture()
         // Preview fixtures live only in a temporary directory, cleaned when the app exits.
@@ -334,9 +382,9 @@ private final class MacDemoFixture: @unchecked Sendable {
     }
 
     @MainActor
-    func makeModel() -> MacDemoModel {
+    func makeModel(backend: any AgentBackend = MacDemoOfflineBackend()) -> MacDemoModel {
         let model = MacDemoModel(preferences: defaults, storageRoot: root.appendingPathComponent("state"),
-                                 sessionStore: secureStore, backend: MacDemoOfflineBackend())
+                                 sessionStore: secureStore, backend: backend)
         model.localSettings.home = root.appendingPathComponent("codex").path
         model.localSettings.storage = .file
         model.settingsConfirmed = true
@@ -396,6 +444,11 @@ private struct MacDemoOfflineBackend: AgentBackend {
     func beginTurn(thread: AgentThread, history: [AgentMessage], message: Request, instructions: String,
                    responseFormat: AgentStructuredOutputFormat?, streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
                    tools: [ToolDefinition], session: ChatGPTSession) async throws -> AgentTurnStream {
+        if let mode = ProgressiveOutputDemoMode.allCases.first(where: { $0.requestID == message.clientRequestID }) {
+            let backend = StreamingDemoBackend(source: DemoStreamingFixtures.source(mode), chunkDelay: .milliseconds(25))
+            return try await backend.beginTurn(thread: thread, history: history, message: message, instructions: instructions,
+                responseFormat: responseFormat, streamedStructuredOutput: streamedStructuredOutput, tools: tools, session: session)
+        }
         let results = AsyncStream<ToolResultEnvelope>.makeStream()
         let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
             let worker = Task {

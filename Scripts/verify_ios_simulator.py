@@ -68,7 +68,7 @@ def discover_runtimes(*, log, timeout=120):
 def validate_report(report, run_id, mode=VerificationMode.SMOKE):
     if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
-    for key in ("sqlite", "realm", "localAdapters", "recovery"):
+    for key in ("sqlite", "realm", "localAdapters", "recovery", "streaming"):
         if report.get(key) != "passed":
             raise RuntimeError(f"Simulator verification {key}: {report.get(key, 'missing')}")
     if report.get("liveProvider") != "skipped: local_only":
@@ -184,8 +184,9 @@ def main():
         verification_start = time.monotonic()
         run(["xcrun", "simctl", "launch", "--terminate-running-process",
              f"--stdout={output / 'app-stdout.log'}", f"--stderr={output / 'app-stderr.log'}",
-             simulator, bundle_id, "--verify-runtime", "--verify-local-only"] + mode_arguments, env=environment)
-        print("Waiting for SQLite, Realm, completion, and cancellation checks.", flush=True)
+             simulator, bundle_id, "--verify-runtime", "--verify-local-only"] + mode_arguments,
+            env=environment, timeout=180)
+        print("Waiting for SQLite, Realm, streaming output, and cancellation checks.", flush=True)
         deadline = time.monotonic() + options.report_timeout
         while time.monotonic() < deadline:
             if report_path.is_file():
@@ -194,7 +195,8 @@ def main():
                 validate_report(json.loads(report_bytes), run_id, options.mode)
                 run(["xcrun", "simctl", "terminate", simulator, bundle_id])
                 run(["xcrun", "simctl", "launch", simulator, bundle_id,
-                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"] + mode_arguments, env=environment)
+                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"] + mode_arguments,
+                    env=environment, timeout=180)
                 reopen_path = container / "Documents/CodexKitRecoveryReopen.json"
                 reopen_deadline = time.monotonic() + options.report_timeout
                 while not reopen_path.is_file() and time.monotonic() < reopen_deadline:
@@ -207,7 +209,7 @@ def main():
                         or not reopened.get("finishedAt") or reopened.get("mode") != options.mode):
                     raise RuntimeError(f"Cold recovery failed: {reopened}")
                 timings.record("execution_and_relaunch", time.monotonic() - verification_start)
-                print(f"Simulator {options.mode} verification passed: adapters, cancellation, and receipt recovery after app relaunch; no live access.", flush=True)
+                print(f"Simulator {options.mode} verification passed: adapters, streaming output, cancellation, and receipt recovery after app relaunch; no live access.", flush=True)
                 return 0
             time.sleep(1)
         raise RuntimeError(f"No verification report arrived within {options.report_timeout} seconds.")

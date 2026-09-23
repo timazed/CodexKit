@@ -36,6 +36,12 @@ enum DemoRuntimeVerification {
             report["recovery"] = "passed"
         } catch { report["recovery"] = failureCode(error) }
         var localAdaptersPassed = true
+        do {
+            report["streamingChecks"] = try await DemoStreamingVerification.run().joined(separator: "; ")
+            report["streaming"] = "passed"
+        } catch {
+            report["streaming"] = "failed: \(error.localizedDescription)"
+        }
         for adapter in Adapter.allCases {
             do {
                 try await verifyLocalAdapter(adapter)

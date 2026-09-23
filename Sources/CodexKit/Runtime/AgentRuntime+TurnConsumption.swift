@@ -18,6 +18,7 @@ extension AgentRuntime {
         completionCapture: AgentTurnCompletionCapture? = nil,
         structured: AgentStructuredTurnConfiguration<Output>? = nil,
         oneShotValidation: AgentOneShotResponseValidation? = nil,
+        output: AnyAgentOutputExecution? = nil,
         continuation: AgentTurnEventSink<Output>
     ) async {
         let policyTracker = TurnSkillPolicyTracker(policy: resolvedTurnSkills.compiledToolPolicy)
@@ -27,6 +28,8 @@ extension AgentRuntime {
         var sawOneShotResponse = false
         var currentTurnID: String?
         var currentTurnStartedAt: Date?
+        var stagedProviderContext: AgentProviderContext?
+        var submittedOutputCommit = false
 
         do {
             for try await backendEvent in turnStream.events {
@@ -84,6 +87,7 @@ extension AgentRuntime {
                         expectedThreadID: threadID,
                         currentTurnID: currentTurnID
                     )
+                    if output != nil { break }
                     try await continuation.yield(
                         .assistantMessageDelta(
                             threadID: eventThreadID,
@@ -92,12 +96,29 @@ extension AgentRuntime {
                         )
                     )
 
+                case let .assistantContentDelta(delta):
+                    try validateBackendTurnEvent(threadID: delta.threadID, turnID: delta.turnID,
+                        expectedThreadID: threadID, currentTurnID: currentTurnID)
+                    if output == nil || delta.phase == .commentary {
+                        try await continuation.yield(.assistantMessageDelta(threadID: threadID, turnID: delta.turnID, delta: delta.text))
+                    } else {
+                        try await output?.consume(delta)
+                        if output?.began() == true, storesTurnState { activeTurnExecutions[threadID]?.outputStarted = true }
+                    }
+
                 case let .assistantMessageCompleted(message):
                     try validateAssistantMessageEvent(
                         message,
                         expectedThreadID: threadID,
                         currentTurnID: currentTurnID
                     )
+                    if let output, let currentTurnID {
+                        try await output.message(message, currentTurnID)
+                        if message.phase != .commentary {
+                            if storesTurnState { activeTurnExecutions[threadID]?.outputStarted = true }
+                            break
+                        }
+                    }
                     if let oneShotValidation, message.phase != .commentary {
                         try await oneShotValidation.validate(message)
                         sawOneShotResponse = true
@@ -135,6 +156,7 @@ extension AgentRuntime {
                     }
 
                 case let .toolCallRequested(invocation):
+                    guard output?.began() != true else { throw AgentOutputError.protocolViolation("Tool call after structured output began.") }
                     try budget.claimToolCalls(1)
                     try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
                         expectedThreadID: threadID, currentTurnID: currentTurnID)
@@ -142,6 +164,7 @@ extension AgentRuntime {
                         policyTracker: policyTracker, registrations: registrations, storesTurnState: storesTurnState, sink: toolSink)
 
                 case let .toolCallsRequested(invocations):
+                    guard output?.began() != true else { throw AgentOutputError.protocolViolation("Tool call after structured output began.") }
                     try budget.claimToolCalls(invocations.count)
                     for invocation in invocations {
                         try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
@@ -151,6 +174,9 @@ extension AgentRuntime {
                         policyTracker: policyTracker, registrations: registrations, storesTurnState: storesTurnState, sink: toolSink)
 
                 case let .toolRoundRequested(round):
+                    guard output?.began() != true else {
+                        throw AgentOutputError.protocolViolation("Tool call after structured output began.")
+                    }
                     try budget.claimToolCalls(round.calls.count)
                     for invocation in round.calls {
                         try validateBackendTurnEvent(threadID: invocation.threadID, turnID: invocation.turnID,
@@ -160,6 +186,7 @@ extension AgentRuntime {
                         policyTracker: policyTracker, registrations: registrations, storesTurnState: storesTurnState, sink: toolSink)
 
                 case let .userMessageAccepted(message):
+                    guard output?.began() != true else { throw AgentOutputError.protocolViolation("Steering was accepted after structured output began.") }
                     try validateActiveTurn(expectedThreadID: threadID, currentTurnID: currentTurnID)
                     guard message.threadID == threadID, message.role == .user else {
                         throw AgentRuntimeError.invalidMessageContent()
@@ -174,6 +201,7 @@ extension AgentRuntime {
                         currentTurnID: currentTurnID
                     )
                     guard storesTurnState else { break }
+                    if output != nil { stagedProviderContext = context; break }
                     updateProviderContext(context, for: threadID)
                     try await persistState()
 
@@ -192,6 +220,12 @@ extension AgentRuntime {
                     if let oneShotValidation, !sawOneShotResponse {
                         throw AgentRuntimeError.structuredOutputMissing(formatName: oneShotValidation.format.name)
                     }
+                    let outputMessage = try await output?.finish()
+                    if let outputMessage, storesTurnState,
+                       try await hasCommittedMessage(id: outputMessage.id, in: threadID) {
+                        throw AgentOutputError.protocolViolation("The output message identity was already committed in another turn.")
+                    }
+                    try Task.checkCancellation()
                     try budget.acceptCompletion()
 
                     let memoryApplicationOutcome = makeMemoryApplicationOutcome(
@@ -204,6 +238,12 @@ extension AgentRuntime {
                     let memoryApplication = memoryApplicationOutcome.snapshot
 
                     if storesTurnState {
+                        submittedOutputCommit = outputMessage != nil
+                        if let outputMessage {
+                            try stageOutputMessage(outputMessage)
+                            assistantMessages.append(outputMessage)
+                        }
+                        if let stagedProviderContext { updateProviderContext(stagedProviderContext, for: threadID) }
                         try appendHistoryItem(
                             .systemEvent(
                                 AgentSystemEventRecord(
@@ -220,7 +260,9 @@ extension AgentRuntime {
                         )
                         try setLatestTurnStatus(.completed, for: threadID)
                         try setLatestPartialStructuredOutput(nil, for: threadID)
-                        try await setThreadStatus(.idle, for: threadID)
+                        // Once handed to storage, observe the actual final transaction
+                        // outcome even if the caller cancels its event subscription.
+                        try await setThreadStatus(.idle, for: threadID, waitDespiteCancellation: output != nil)
                         if let userMessage {
                             await automaticallyCaptureMemoriesIfConfigured(
                                 for: threadID,
@@ -247,7 +289,8 @@ extension AgentRuntime {
                         memoryApplication: memoryApplicationOutcome
                     )
                     notifyMemoryApplication(memoryApplication)
-                    let terminalEvents: [AgentEvent] = (storesTurnState ? [.threadStatusChanged(threadID: threadID, status: .idle)] : [])
+                    let terminalEvents: [AgentEvent] = (outputMessage.map { [.messageCommitted($0)] } ?? [])
+                        + (storesTurnState ? [.threadStatusChanged(threadID: threadID, status: .idle)] : [])
                         + [.turnCompleted(summary)]
                     control.finish()
                     budget.finish()
@@ -260,7 +303,20 @@ extension AgentRuntime {
             try Task.checkCancellation()
             throw AgentRuntimeError.turnSummaryMissing()
         } catch {
-            await finishFailedTurn(error, in: threadID, turnID: currentTurnID, storesTurnState: storesTurnState, budget: budget, control: control, sink: continuation)
+            await output?.cancel()
+            await finishFailedTurn(error, in: threadID, turnID: currentTurnID, storesTurnState: storesTurnState,
+                budget: budget, control: control, sink: continuation, preserveErrorOnCancellation: submittedOutputCommit)
         }
+    }
+
+    private func stageOutputMessage(_ message: AgentMessage) throws {
+        state.messagesByThread[message.threadID, default: []].append(message)
+        appendEffectiveMessage(message)
+        if lazyThreadActivationEnabled {
+            state.messagesByThread[message.threadID] = AgentThreadContextWindow.boundedMessages(
+                state.messagesByThread[message.threadID] ?? [], policy: threadActivationPolicy, requireClosedTurns: false)
+        }
+        try appendHistoryItem(.message(message), threadID: message.threadID, createdAt: message.createdAt)
+        if let metadata = message.structuredOutput { try setLatestStructuredOutputMetadata(metadata, for: message.threadID) }
     }
 }

@@ -16,6 +16,14 @@ struct StructuredOutputDemoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 overviewCard
+                ProgressiveOutputDemoView(
+                    model: viewModel.progressiveOutput,
+                    isConnected: viewModel.session != nil,
+                    isHostBusy: !viewModel.canReconfigureRuntime || viewModel.isRunningStructuredOutputDemo || viewModel.isRunningStructuredStreamingDemo,
+                    run: viewModel.runProgressiveOutput,
+                    reload: viewModel.reloadProgressiveOutput,
+                    cancel: { viewModel.progressiveOutput.cancel() }
+                )
                 streamedStructuredCard
                 shippingDraftCard
                 importedContentCard
@@ -32,7 +40,7 @@ private extension StructuredOutputDemoView {
             Text("Structured Output")
                 .font(.title2.weight(.semibold))
 
-            Text("Generate typed Swift models instead of freeform text. Each demo uses the same runtime as chat, writes the assistant turn into a real thread, and decodes the result into a `Decodable` model.")
+            Text("Stream text, typed JSON Lines records, XML with attributes, or native JSON Schema output. Each example uses the selected model and the same runtime and storage as chat. Previews are not saved results until the full turn validates and commits.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
