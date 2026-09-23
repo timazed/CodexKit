@@ -23,6 +23,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 
+- Revalidate JSON Lines record bounds, per-record budgets, and schema when restoring saved collections; classify XML parser budget failures as `.limit` while retaining `.invalidOutput` for malformed XML.
 - Isolated XSD preflight budgets from response depth/node limits, preserved record delivery/limit error types, and retained zero-based record indexes in validation failures.
 - Made streaming demo operations host-owned, with explicit operation/result states and integration into the host's busy and cancellation controls.
 - Skill budget checks reserve in request order before execution, and policy-rejected calls now persist normal tool-result records with stable failure codes.

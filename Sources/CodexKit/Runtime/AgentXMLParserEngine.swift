@@ -14,7 +14,7 @@ final class AgentXMLParserEngine: @unchecked Sendable {
     var parser: xmlParserCtxtPtr?
     var stack: [Frame] = []
     var root: AgentXMLElement?
-    var error: Error?
+    var error: AgentOutputError?
     var events: [(AgentXMLOutputEvent, Int)] = []
     var eventBytes = 0
     var nodeCount: UInt64 = 0
@@ -78,8 +78,11 @@ final class AgentXMLParserEngine: @unchecked Sendable {
     }
 
     func fail(_ message: String) {
+        fail(.invalidOutput(message))
+    }
+    func fail(_ failure: AgentOutputError) {
         guard error == nil else { return }
-        error = AgentOutputError.invalidOutput(message)
+        error = failure
         if let parser { xmlStopParser(parser) }
     }
     func emit(_ event: AgentXMLOutputEvent, size: Int) {
@@ -88,7 +91,7 @@ final class AgentXMLParserEngine: @unchecked Sendable {
         guard size <= limits.maximumSemanticUnitBytes, events.count < 256,
             size <= limits.maximumQueuedEventBytes - eventBytes
         else {
-            fail("XML callback batch exceeds limit.")
+            fail(.limit("XML callback batch exceeds limit."))
             return
         }
         events.append((event, size))
@@ -100,10 +103,14 @@ final class AgentXMLParserEngine: @unchecked Sendable {
         attributeCount: Int32, attributes: UnsafeMutablePointer<UnsafePointer<xmlChar>?>?
     ) {
         guard error == nil else { return }
+        guard attributeCount >= 0, namespaceCount >= 0 else {
+            fail("Invalid XML attribute or namespace count.")
+            return
+        }
         guard stack.count < limits.maximumNestingDepth, nodeCount < limits.maximumSemanticUnits,
-            attributeCount >= 0, attributeCount <= 1_024, namespaceCount >= 0, namespaceCount <= 1_024
+            attributeCount <= 1_024, namespaceCount <= 1_024
         else {
-            fail("XML depth, element, attribute, or namespace limit exceeded.")
+            fail(.limit("XML depth, element, attribute, or namespace limit exceeded."))
             return
         }
         let name = XMLName(xmlString(local), namespaceURI: optionalXMLString(uri))
@@ -144,7 +151,7 @@ final class AgentXMLParserEngine: @unchecked Sendable {
             applicationID: options.identityAttribute.flatMap { attrs[$0] })
         let size = (try? JSONEncoder().encode(info).count) ?? Int.max
         guard size <= limits.maximumOutputBytes - retainedBytes else {
-            fail("XML tree exceeds retained byte limit.")
+            fail(.limit("XML tree exceeds retained byte limit."))
             return
         }
         retainedBytes += size
@@ -154,7 +161,7 @@ final class AgentXMLParserEngine: @unchecked Sendable {
     func characters(_ text: UnsafePointer<xmlChar>?, count: Int32) {
         guard error == nil, count > 0, let text, !stack.isEmpty else { return }
         guard Int(count) <= limits.maximumOutputBytes - retainedBytes else {
-            fail("XML text exceeds retained byte limit.")
+            fail(.limit("XML text exceeds retained byte limit."))
             return
         }
         retainedBytes += Int(count)

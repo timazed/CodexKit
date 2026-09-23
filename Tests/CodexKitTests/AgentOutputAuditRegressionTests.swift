@@ -171,6 +171,117 @@ final class AgentOutputAuditRegressionTests: XCTestCase {
             XCTAssertNil(stored)
         }
     }
+
+    func testRecordRestorationRechecksBoundsDepthAndSchema() async throws {
+        let source = "{\"id\":1}\n{\"id\":2}\n"
+        let fixture = try await OutputRuntimeFixture(backend: OutputTestBackend(source: source))
+        defer { fixture.cleanUp() }
+        let schema = JSONSchema.raw(.object([
+            "type": .string("object"),
+            "properties": .object(["id": .object(["type": .string("integer"), "maximum": .number(2)])]),
+            "required": .array([.string("id")]),
+        ]))
+        let format = AgentRecordResponseFormat<Record>(
+            name: "records", schema: schema, minimumRecords: 2, maximumRecords: 2)
+        _ = try await fixture.runtime.send(Request(text: "Go"), in: fixture.thread.id, output: format)
+        let metadata = try await fixture.runtime.fetchLatestStructuredOutputMetadata(id: fixture.thread.id)
+        let representation = try XCTUnwrap(metadata?.outputRepresentation)
+        XCTAssertEqual(try representation.restore(using: format).records.count, 2)
+
+        var bounded = format
+        bounded.minimumRecords = 1
+        bounded.maximumRecords = 1
+        bounded.limits.maximumSemanticUnits = 1
+        XCTAssertThrowsError(try representation.restore(using: bounded)) { error in
+            guard case AgentOutputError.limit = error else { return XCTFail("Lost record count limit: \(error)") }
+        }
+        do {
+            _ = try await fixture.runtime.fetchLatestOutput(in: fixture.thread.id, output: bounded)
+            XCTFail("Runtime restored records above the current count limit")
+        } catch AgentOutputError.limit {}
+
+        var smallRecord = format
+        smallRecord.limits.maximumSemanticUnitBytes = 6
+        XCTAssertThrowsError(try representation.restore(using: smallRecord)) { error in
+            guard case AgentOutputError.limit = error else { return XCTFail("Lost record byte limit: \(error)") }
+        }
+
+        var shallow = format
+        shallow.limits.maximumNestingDepth = 1
+        XCTAssertThrowsError(try representation.restore(using: shallow)) { error in
+            guard case AgentOutputError.limit = error else { return XCTFail("Lost JSON depth limit: \(error)") }
+        }
+
+        let adapter = try XCTUnwrap(format.persistence)
+        XCTAssertThrowsError(try adapter.decode(JSONEncoder().encode(AgentRecordCollection(records: [Record(id: 1)])))) {
+            error in
+            guard case AgentOutputError.invalidOutput = error else {
+                return XCTFail("Lost minimum record bound: \(error)")
+            }
+        }
+        XCTAssertThrowsError(try adapter.decode(JSONEncoder().encode(AgentRecordCollection(records: [Record(id: 3), Record(id: 2)])))) {
+            error in
+            XCTAssertTrue(error is AgentRuntimeError, "Stored record bypassed its schema: \(error)")
+        }
+    }
+
+    func testXMLParserClassifiesBudgetsAsLimitsAndSyntaxAsInvalidOutput() async throws {
+        let xml = Data("<r><child>ok</child></r>".utf8)
+        let schema = XMLSchema.element("r", children: .sequence([.element("child", text: .string)]))
+        for configure in [
+            { (limits: inout AgentStructuredOutputLimits) in limits.maximumNestingDepth = 1 },
+            { (limits: inout AgentStructuredOutputLimits) in limits.maximumSemanticUnits = 1 },
+            { (limits: inout AgentStructuredOutputLimits) in limits.maximumOutputBytes = 32 },
+            { (limits: inout AgentStructuredOutputLimits) in limits.maximumSemanticUnitBytes = 4 },
+        ] {
+            var limits = AgentStructuredOutputLimits()
+            configure(&limits)
+            let format = AgentXMLResponseFormat(name: "xml", schema: schema, limits: limits)
+            let decoder = try format.makeDecoder()
+            let sink = AgentOutputEventSink<AgentXMLOutputEvent> { _, _ in }
+            do {
+                try await decoder.consume(xml, into: sink)
+                _ = try await decoder.finish(into: sink)
+                XCTFail("XML budget was accepted")
+            } catch {
+                guard case AgentOutputError.limit = error else { return XCTFail("Lost XML limit: \(error)") }
+            }
+            let adapter = try XCTUnwrap(format.persistence)
+            XCTAssertThrowsError(try adapter.decode(xml)) { error in
+                guard case AgentOutputError.limit = error else { return XCTFail("Lost restore limit: \(error)") }
+            }
+        }
+
+        let normal = AgentXMLResponseFormat(name: "xml", schema: schema)
+        let adapter = try XCTUnwrap(normal.persistence)
+        XCTAssertThrowsError(try adapter.decode(Data("<r><child></r>".utf8))) { error in
+            guard case AgentOutputError.invalidOutput = error else {
+                return XCTFail("Malformed XML was reported as a budget failure: \(error)")
+            }
+        }
+
+        var limits = AgentStructuredOutputLimits()
+        limits.maximumNestingDepth = 1
+        let bounded = AgentXMLResponseFormat(name: "xml", schema: schema, limits: limits)
+        let fixture = try await OutputRuntimeFixture(backend: OutputTestBackend(source: String(decoding: xml, as: UTF8.self)))
+        defer { fixture.cleanUp() }
+        var failure: AgentOutputFailure?
+        do {
+            for try await event in try await fixture.runtime.stream(
+                Request(text: "Go"), in: fixture.thread.id, output: bounded
+            ) {
+                if case let .validationFailed(_, value) = event { failure = value }
+                if case .outputCommitted = event { XCTFail("Over-limit XML committed") }
+            }
+            XCTFail("Over-limit XML stream succeeded")
+        } catch {
+            guard case AgentOutputError.limit = error else { return XCTFail("Lost stream limit: \(error)") }
+        }
+        let underlying = try XCTUnwrap(failure?.underlyingError)
+        guard case AgentOutputError.limit = underlying else {
+            return XCTFail("The validation event lost its XML limit: \(underlying)")
+        }
+    }
 }
 
 private struct CountingTextFormat: AgentOutputFormat {

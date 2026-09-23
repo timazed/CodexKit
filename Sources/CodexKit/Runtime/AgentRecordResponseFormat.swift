@@ -59,13 +59,46 @@ public struct AgentRecordResponseFormat<Record: Codable & Sendable>: AgentOutput
         \(schemaRepresentation.map { "Each record must match this JSON Schema: " + $0 } ?? "")
         """
     }
-    public var persistence: AgentOutputPersistence<AgentRecordCollection<Record>>? { .json }
-    public func makeDecoder() throws -> AgentJSONLinesDecoder<Record> {
+    public var persistence: AgentOutputPersistence<AgentRecordCollection<Record>>? {
+        let format = self
+        let json: AgentOutputPersistence<AgentRecordCollection<Record>> = .json
+        return .init(encode: json.encode, decode: { bytes in
+            try format.validateConfiguration()
+            guard bytes.count <= format.limits.maximumOutputBytes else {
+                throw AgentOutputError.limit("Stored records exceed output limit.")
+            }
+            let collection = try json.decode(bytes)
+            guard collection.records.count <= format.maximumRecords else {
+                throw AgentOutputError.limit("Record count exceeded.")
+            }
+            guard collection.records.count >= format.minimumRecords else {
+                throw AgentOutputError.invalidOutput("Too few records.")
+            }
+            var outputBytes = 16
+            for record in collection.records {
+                let data = try JSONEncoder().encode(record)
+                guard data.count <= format.limits.maximumSemanticUnitBytes,
+                    data.count + 1 <= format.limits.maximumOutputBytes - outputBytes
+                else {
+                    throw AgentOutputError.limit("Decoded records exceed their byte limit.")
+                }
+                try AgentRecordValidation.validate(data, schema: format.schema, limits: format.limits)
+                outputBytes += data.count + 1
+            }
+            return collection
+        })
+    }
+
+    private func validateConfiguration() throws {
         try limits.validate()
         guard minimumRecords >= 0, maximumRecords >= minimumRecords,
             maximumRecords <= limits.maximumSemanticUnits
         else { throw AgentOutputError.invalidFormat("Invalid record count bounds.") }
         if let schema { try AgentJSONSchemaValidator.validateSchema(schema) }
+    }
+
+    public func makeDecoder() throws -> AgentJSONLinesDecoder<Record> {
+        try validateConfiguration()
         return AgentJSONLinesDecoder(schema: schema, limits: limits, minimum: minimumRecords, maximum: maximumRecords)
     }
     public func validateFinal(_ output: AgentRecordCollection<Record>) async throws {
@@ -119,11 +152,7 @@ public actor AgentJSONLinesDecoder<Record: Codable & Sendable>: AgentOutputDecod
         line.removeAll(keepingCapacity: true)
         let record: Record
         do {
-            try AgentStrictJSON.validate(data, maximumDepth: limits.maximumNestingDepth)
-            if let schema {
-                let value = try JSONDecoder().decode(JSONValue.self, from: data)
-                try AgentJSONSchemaValidator.validate(value, schema: schema)
-            }
+            try AgentRecordValidation.validate(data, schema: schema, limits: limits)
             record = try JSONDecoder().decode(Record.self, from: data)
         } catch is CancellationError {
             throw CancellationError()
@@ -156,5 +185,15 @@ public actor AgentJSONLinesDecoder<Record: Codable & Sendable>: AgentOutputDecod
         ended = true
         line.removeAll()
         records.removeAll()
+    }
+}
+
+private enum AgentRecordValidation {
+    static func validate(_ data: Data, schema: JSONSchema?, limits: AgentStructuredOutputLimits) throws {
+        try AgentStrictJSON.validate(data, maximumDepth: limits.maximumNestingDepth)
+        if let schema {
+            let value = try JSONDecoder().decode(JSONValue.self, from: data)
+            try AgentJSONSchemaValidator.validate(value, schema: schema)
+        }
     }
 }

@@ -88,6 +88,8 @@ The XML decoder uses the system libxml2 push/SAX parser and XSD validator. It re
 
 Schema preflight uses its own bounded parser configuration and respects `maximumSchemaBytes`. Response depth and node limits apply to the response, not the XSD that describes it; a one-element response can therefore use `maximumNestingDepth = 1` and `maximumSemanticUnits = 1`.
 
+XML depth, element-count, retained-byte, and callback-byte budget failures report `AgentOutputError.limit`; malformed XML reports `AgentOutputError.invalidOutput`. The same distinction applies when restoring saved XML.
+
 ```swift
 let execution = try await runtime.start(request, in: thread.id, output: format)
 for try await event in execution.events {
@@ -110,6 +112,6 @@ Text callbacks are provisional and their chunk boundaries are unspecified. A com
 
 The committed result is stored in the existing structured-output metadata envelope, alongside the exact source message and versioned codec/schema identity. This avoids a parallel XML history record or store-specific schema migration. Fetch checks the codec, format version, and schema representation before decoding; incompatible results fail explicitly. Redacted metadata tombstones do not restore a result.
 
-Persisted output is decoded using the format's persistence adapter and checked against its codec/version/schema identity and limits. XML restoration reparses the source and reruns XSD validation; Codable-backed formats restore their encoded typed value. Keep a compatible format/schema definition available when restoring results. If the format changes incompatibly, use a new version/identity and an explicit migration or discard policy rather than interpreting old bytes under the new schema.
+Persisted output is decoded using the format's persistence adapter and checked against its codec/version/schema identity and limits. XML restoration reparses the source and reruns XSD validation. JSON Lines restoration also checks the current record count, per-record byte and nesting limits, and schema before returning the saved collection. Other Codable-backed formats restore their encoded typed value. Keep a compatible format/schema definition available when restoring results. If the format changes incompatibly, use a new version/identity and an explicit migration or discard policy rather than interpreting old bytes under the new schema.
 
 Existing `response:` APIs, ordinary text streams, and legacy structured outputs are unchanged. The new `output:` family is opt-in. Partial parser state is execution-local and is not resumed after process termination.
