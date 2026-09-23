@@ -141,6 +141,36 @@ final class AgentOutputAuditRegressionTests: XCTestCase {
         let metadata = try await fixture.runtime.fetchLatestStructuredOutputMetadata(id: fixture.thread.id)
         XCTAssertEqual(metadata?.outputRepresentation?.schema, "schema-1")
     }
+
+    func testToolRoundsAfterOutputBeginsAreRejectedBeforeAdmission() async throws {
+        for mode in [OutputTestBackend.Mode.toolAfterOutput, .toolRoundAfterOutput] {
+            let backend = OutputTestBackend(source: "{\"id\":1}\n", mode: mode)
+            let fixture = try await OutputRuntimeFixture(backend: backend)
+            defer { fixture.cleanUp() }
+            let format = AgentRecordResponseFormat<Record>(name: "records")
+            var sawPreview = false
+            do {
+                for try await event in try await fixture.runtime.stream(
+                    Request(text: "Go"), in: fixture.thread.id, output: format
+                ) {
+                    switch event {
+                    case .format: sawPreview = true
+                    case .lifecycle(.toolCallStarted): XCTFail("Late tool call was admitted: \(mode)")
+                    case .outputCommitted: XCTFail("Output committed after a late tool round: \(mode)")
+                    default: break
+                    }
+                }
+                XCTFail("Late tool round was accepted: \(mode)")
+            } catch {
+                guard case AgentOutputError.protocolViolation = error else {
+                    return XCTFail("Expected a protocol violation, got \(error)")
+                }
+            }
+            XCTAssertTrue(sawPreview)
+            let stored = try await fixture.runtime.fetchLatestOutput(in: fixture.thread.id, output: format)
+            XCTAssertNil(stored)
+        }
+    }
 }
 
 private struct CountingTextFormat: AgentOutputFormat {

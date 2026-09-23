@@ -33,7 +33,10 @@ final class RuntimeGrowthTests: XCTestCase {
             let second = try AgentRuntime(configuration: configuration)
             _ = try await second.restore()
             _ = try await second.resumeThread(id: thread.id)
-            _ = try await second.send(Request(text: "Replay lookup"), in: thread.id)
+            try await second.registerSkill(.init(id: "exhausted", name: "Exhausted", instructions: "No new calls.",
+                executionPolicy: .init(maxToolCalls: 0)))
+            let replay = try await second.send(Request(text: "Replay lookup", skillSelection: .replace(["exhausted"])), in: thread.id)
+            XCTAssertEqual(replay, "Saved result", "A narrower policy must not rewrite a persisted invocation outcome")
             let count = await executions.count
             XCTAssertEqual(count, 1, adapter.rawValue)
             let records = try await second.execute(HistoryItemsQuery(threadID: thread.id,

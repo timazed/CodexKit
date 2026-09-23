@@ -98,28 +98,7 @@ extension AgentRuntime {
             )
 
             guard decision == .approved else {
-                let denied = ToolResultEnvelope.denied(invocation: invocation)
-                if storesTurnState {
-                    try setLatestToolState(
-                        latestToolState(for: invocation, result: denied, updatedAt: resolution.decidedAt),
-                        for: invocation.threadID
-                    )
-                    try appendHistoryItem(
-                        .toolResult(
-                            AgentToolResultRecord(
-                                threadID: invocation.threadID,
-                                turnID: invocation.turnID,
-                                result: denied,
-                                completedAt: resolution.decidedAt
-                            )
-                        ),
-                        threadID: invocation.threadID,
-                        createdAt: resolution.decidedAt
-                    )
-                    updateThreadTimestamp(resolution.decidedAt, for: invocation.threadID)
-                    try await persistState()
-                }
-                return denied
+                return .denied(invocation: invocation)
             }
         }
 
@@ -161,64 +140,9 @@ extension AgentRuntime {
             result = await registration.execute(invocation, session: session)
             try await validateActiveAuthentication(session)
         } else {
-            result = .failure(invocation: invocation, message: "No tool named \(invocation.toolName) was registered for this turn.")
+            result = .failure(invocation: invocation, message: "No tool named \(invocation.toolName) was registered for this turn.", code: "tool_unknown")
         }
         try Task.checkCancellation()
-        let resultDate = Date()
-        logger.info(
-            .tools,
-            "Tool invocation completed.",
-            metadata: [
-                "thread_id": invocation.threadID,
-                "turn_id": invocation.turnID,
-                "invocation_id": invocation.id,
-                "tool_name": invocation.toolName,
-                "success": "\(result.errorMessage == nil)",
-                "duration_ms": "\(Int(resultDate.timeIntervalSince(toolWaitStartedAt) * 1000))",
-                "has_follow_up_session": "\(result.session?.isTerminal == false)"
-            ]
-        )
-        if storesTurnState {
-            try setLatestToolState(
-                latestToolState(for: invocation, result: result, updatedAt: resultDate),
-                for: invocation.threadID
-            )
-            if let session = result.session, !session.isTerminal {
-                try setPendingState(
-                    .toolWait(
-                        AgentPendingToolWaitState(
-                            invocationID: invocation.id,
-                            turnID: invocation.turnID,
-                            toolName: invocation.toolName,
-                            startedAt: toolWaitStartedAt,
-                            sessionID: session.sessionID,
-                            sessionStatus: session.status,
-                            metadata: session.metadata,
-                            resumable: session.resumable
-                        )
-                    ),
-                    for: invocation.threadID
-                )
-            } else {
-                parallelToolWaits[invocation.turnID]?[invocation.id] = nil
-                let remaining = parallelToolWaits[invocation.turnID]?.values.sorted { $0.invocationID < $1.invocationID }.first
-                try setPendingState(remaining.map(AgentThreadPendingState.toolWait), for: invocation.threadID)
-                try appendHistoryItem(
-                    .toolResult(
-                        AgentToolResultRecord(
-                            threadID: invocation.threadID,
-                            turnID: invocation.turnID,
-                            result: result,
-                            completedAt: resultDate
-                        )
-                    ),
-                    threadID: invocation.threadID,
-                    createdAt: resultDate
-                )
-            }
-            updateThreadTimestamp(resultDate, for: invocation.threadID)
-            try await persistState()
-        }
         return result
     }
 }

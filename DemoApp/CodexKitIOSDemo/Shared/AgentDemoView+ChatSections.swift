@@ -209,7 +209,7 @@ extension AgentDemoView {
 
                 DemoActionTile(
                     title: "Parallel Lookups",
-                    subtitle: "Try two independent sample tools, then inspect their activity in the thread.",
+                    subtitle: "Run two allowed sample lookups in one tool round, with up to two calls at once. Inspect the overlap in the thread.",
                     systemImage: "arrow.triangle.branch",
                     isDisabled: viewModel.session == nil || !viewModel.canReconfigureRuntime
                 ) {

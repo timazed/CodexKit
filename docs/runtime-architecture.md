@@ -218,7 +218,7 @@ Execution flow:
 5. runtime returns a normalized `ToolResultEnvelope`
 6. backend continues the active turn
 
-Consecutive independent calls from the same batch may overlap when their tool definitions opt in. Serial tools and tools requiring approval form barriers; skill tool-policy constraints preserve serial execution. Results retain provider order even when lifecycle events finish out of order.
+Each model response requesting host tools forms one `AgentToolRound`. Admission reserves skill budgets in provider order before execution. Independent permitted calls can overlap when their definitions opt in, up to the runtime and skill concurrency ceilings. Serial tools, approvals, and exact-prefix sequence entries form barriers. Provider results and restored model context retain invocation order; lifecycle events and result audit history record completion order. See [policy-aware execution](upstream-runtime-features.md#parallel-tools) for accounting and cancellation details.
 
 ## Turn control and discovery
 

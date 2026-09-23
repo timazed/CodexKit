@@ -57,13 +57,20 @@ public struct ResolvedMemoryInstructionsPreview: Codable, Hashable, Sendable {
 public struct ResolvedAgentInstructionsPreview: Codable, Hashable, Sendable {
     public let instructions: String
     public let memory: ResolvedMemoryInstructionsPreview?
+    public let effectiveWebSearchPolicy: AgentWebSearchPolicy?
+    /// Composed skill constraints, including the runtime's concurrency ceiling.
+    public let effectiveToolPolicy: AgentSkillExecutionPolicy?
 
     public init(
         instructions: String,
-        memory: ResolvedMemoryInstructionsPreview?
+        memory: ResolvedMemoryInstructionsPreview?,
+        effectiveToolPolicy: AgentSkillExecutionPolicy? = nil,
+        effectiveWebSearchPolicy: AgentWebSearchPolicy? = nil
     ) {
         self.instructions = instructions
         self.memory = memory
+        self.effectiveToolPolicy = effectiveToolPolicy
+        self.effectiveWebSearchPolicy = effectiveWebSearchPolicy
     }
 }
 

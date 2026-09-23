@@ -119,7 +119,7 @@ public final class MockAgentTurnSession {
         let turn = AgentTurn(id: UUID().uuidString, threadID: thread.id)
 
         let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
-            Task {
+            _ = Task {
                 continuation.yield(.turnStarted(turn))
 
                 if let selectedTool {

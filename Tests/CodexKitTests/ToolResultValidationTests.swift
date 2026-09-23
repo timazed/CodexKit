@@ -13,7 +13,7 @@ final class ToolResultValidationTests: XCTestCase {
             if case .turnStarted = event {
                 await assertRejected(stream, result: .success(invocation: unknown, text: "Unsolicited"), for: unknown.id)
             }
-            if case let .toolCallRequested(invocation) = event {
+            if case let .toolRoundRequested(round) = event, let invocation = round.calls.first {
                 try await stream.submitToolResult(.success(invocation: invocation, text: "Valid"), for: invocation.id)
             }
         }
@@ -23,7 +23,7 @@ final class ToolResultValidationTests: XCTestCase {
     func testBackendRejectsMismatchedResultsWithoutConsumingTheExpectedCall() async throws {
         let stream = try await begin()
         for try await event in stream.events {
-            guard case let .toolCallRequested(invocation) = event else { continue }
+            guard case let .toolRoundRequested(round) = event, let invocation = round.calls.first else { continue }
             for result in [
                 ToolResultEnvelope(invocationID: "other", toolName: invocation.toolName, success: true),
                 ToolResultEnvelope(invocationID: invocation.id, toolName: "other", success: true),
@@ -37,7 +37,8 @@ final class ToolResultValidationTests: XCTestCase {
     func testBackendRejectsDuplicateOutOfOrderResultsAndPreservesFirstSubmission() async throws {
         let stream = try await begin(parallel: true)
         for try await event in stream.events {
-            guard case let .toolCallsRequested(invocations) = event else { continue }
+            guard case let .toolRoundRequested(round) = event else { continue }
+            let invocations = round.calls
             XCTAssertEqual(invocations.count, 2)
             let first = invocations[0]
             let second = invocations[1]
@@ -69,7 +70,8 @@ final class ToolResultValidationTests: XCTestCase {
         var first: ToolInvocation?
         do {
             for try await event in stream.events {
-                guard case let .toolCallsRequested(invocations) = event else { continue }
+                guard case let .toolRoundRequested(round) = event else { continue }
+            let invocations = round.calls
                 first = invocations[0]
                 let second = invocations[1]
                 try await stream.submitToolResult(.success(invocation: second, text: "Buffered"), for: second.id)

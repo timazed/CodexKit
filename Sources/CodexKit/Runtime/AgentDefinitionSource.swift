@@ -99,16 +99,17 @@ public actor AgentDefinitionSourceLoader {
             if container.contains(.executionPolicy), try !container.decodeNil(forKey: .executionPolicy) {
                 let policyDecoder = try container.superDecoder(forKey: .executionPolicy)
                 let fields = try policyDecoder.container(keyedBy: DefinitionField.self).allKeys
-                let supported = Set(["allowedToolNames", "requiredToolNames", "toolSequence", "maxToolCalls"])
+                let supported = Set(["allowedToolNames", "requiredToolNames", "toolSequence", "maxToolCalls", "maxToolRounds", "maxToolCallsByName", "maximumParallelToolCalls", "webSearch"])
                 guard fields.allSatisfy({ supported.contains($0.stringValue) }) else {
                     throw AgentDefinitionSourceError.invalidSkillDefinition()
                 }
                 let policy = try AgentSkillExecutionPolicy(from: policyDecoder)
-                let names = (policy.allowedToolNames ?? []) + policy.requiredToolNames + (policy.toolSequence ?? [])
-                guard policy.maxToolCalls.map({ $0 >= 0 }) ?? true,
+                let names = policy.policyToolNames
+                guard policy.hasValidLimits,
                       names.allSatisfy(ToolDefinition.isValidName) else {
                     throw AgentDefinitionSourceError.invalidSkillDefinition()
                 }
+                _ = try policy.webSearch?.normalized()
                 executionPolicy = policy
             }
         }

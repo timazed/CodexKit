@@ -382,10 +382,15 @@ extension AgentRuntime {
             thread: thread,
             message: request
         )
-        return try await resolveInstructions(
+        let instructions = try await resolveInstructions(
             thread: thread,
             message: request,
             resolvedTurnSkills: resolvedTurnSkills
-        ).preview
+        )
+        var policy = resolvedTurnSkills.compiledToolPolicy
+        policy.maximumParallelToolCalls = min(maximumParallelToolCalls, policy.maximumParallelToolCalls ?? maximumParallelToolCalls)
+        return ResolvedAgentInstructionsPreview(instructions: instructions.text, memory: instructions.memory,
+            effectiveToolPolicy: policy,
+            effectiveWebSearchPolicy: try await effectiveWebSearch(request: request, skills: resolvedTurnSkills))
     }
 }

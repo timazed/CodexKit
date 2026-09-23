@@ -113,6 +113,8 @@ struct MacDemoFeatureView: View {
             GroupBox("Tools and skills") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack { action("Parallel Lookups", .parallel); action("Approval Example", .approval) }
+                    Text("Parallel Lookups uses a skill limited to the two sample tools: two calls in one round, with up to two calls at once.")
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack { action("Travel Skill", .travel); action("Compare Skill Policy", .policyProbe) }
                     Text("Tools return sample data. The approval example prepares a local draft and sends nothing.")
                         .font(.caption).foregroundStyle(.secondary)

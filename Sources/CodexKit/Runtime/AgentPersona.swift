@@ -160,9 +160,8 @@ enum AgentInstructionCompiler {
 
         var lines: [String] = []
 
-        if let allowedToolNames = policy.allowedToolNames,
-           !allowedToolNames.isEmpty {
-            lines.append("- allowed tools: \(allowedToolNames.joined(separator: ", "))")
+        if let allowedToolNames = policy.allowedToolNames {
+            lines.append("- allowed tools: \(allowedToolNames.isEmpty ? "none" : allowedToolNames.joined(separator: ", "))")
         }
 
         if !policy.requiredToolNames.isEmpty {
@@ -176,6 +175,17 @@ enum AgentInstructionCompiler {
 
         if let maxToolCalls = policy.maxToolCalls {
             lines.append("- max tool calls this turn: \(maxToolCalls)")
+        }
+        if let maxToolRounds = policy.maxToolRounds {
+            lines.append("- max host-tool rounds this turn: \(maxToolRounds)")
+        }
+        if let limits = policy.maxToolCallsByName {
+            for name in limits.keys.sorted() {
+                lines.append("- max calls to \(name) this turn: \(limits[name]!)")
+            }
+        }
+        if let maximum = policy.maximumParallelToolCalls {
+            lines.append("- maximum concurrent host tools: \(maximum)")
         }
 
         return lines

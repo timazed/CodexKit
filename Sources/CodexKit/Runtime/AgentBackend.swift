@@ -20,8 +20,11 @@ public enum AgentBackendEvent: Sendable {
     case structuredOutputPartial(JSONValue)
     case structuredOutputCommitted(JSONValue)
     case structuredOutputValidationFailed(AgentStructuredOutputValidationFailure)
+    /// Legacy single-call event: each event declares one complete tool round.
     case toolCallRequested(ToolInvocation)
+    /// Legacy batch event: each nonempty batch declares one complete tool round.
     case toolCallsRequested([ToolInvocation])
+    case toolRoundRequested(AgentToolRound)
     case userMessageAccepted(AgentMessage)
     case providerContextUpdated(threadID: String, context: AgentProviderContext)
     case turnCompleted(AgentTurnSummary)
@@ -86,6 +89,8 @@ public struct AgentTurnStream: Sendable {
 }
 
 public protocol AgentBackend: Sendable {
+    /// nil means hosted-search restrictions are not supported or advertised.
+    var webSearchCapabilities: AgentWebSearchCapabilities? { get async }
     var baseInstructions: String? { get async }
     var defaultThreadConfiguration: AgentThreadConfiguration? { get async }
     func createThread(session: ChatGPTSession) async throws -> AgentThread
@@ -117,6 +122,7 @@ public protocol AgentBackendProviderContextSupporting: AgentBackend {
 }
 
 public extension AgentBackend {
+    var webSearchCapabilities: AgentWebSearchCapabilities? { get async { nil } }
     var baseInstructions: String? { get async { nil } }
     var defaultThreadConfiguration: AgentThreadConfiguration? { get async { nil } }
 }

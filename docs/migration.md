@@ -67,7 +67,7 @@ If you are moving code forward from earlier 2.0 alpha snapshots, update these AP
 - one persistent turn runs per thread
   A concurrent send on the same thread throws `thread_busy`. Use `steer(_:images:in:expectedTurnID:)` to add input for the next model request, or `interrupt(in:expectedTurnID:)` to stop the turn. Ephemeral requests remain independent.
 - parallel tools require explicit opt-in
-  Existing tools remain serial. Set `ToolDefinition.supportsParallelExecution` for independent calls and configure `maximumParallelToolCalls` on the runtime. Approval-gated tools remain exclusive, and skill tool-policy constraints preserve serial execution.
+  Existing tools remain serial. Set `ToolDefinition.supportsParallelExecution` for independent calls and configure `maximumParallelToolCalls` on the runtime. Approval-gated tools remain exclusive. Skill constraints now permit safe parallel execution; exact-prefix sequence entries remain barriers.
 - incomplete Responses streams fail explicitly
   The built-in backend requires `response.completed`; premature termination throws `responses_stream_disconnected` and follows the existing safe-retry policy.
 - persistence adapters are separate SwiftPM products
@@ -161,3 +161,31 @@ This is the shape new examples and docs target on `main`.
 - Tags containing a hyphen, such as `v2.0.0-alpha.1`, are published as GitHub prereleases automatically
 - The release workflow also supports manual dispatch for an existing tag if you need to publish a release page after the tag already exists
 - Stable releases are cut with annotated tags (`vMAJOR.MINOR.PATCH`)
+
+## Policy-aware tool rounds
+
+Direct `CodexResponsesBackend` event consumers must now handle
+`toolRoundRequested(let round)` and submit one result for every `round.calls`
+invocation. Serial tools are also collected until `response.completed`; an
+incomplete response no longer starts a serial host tool. Runtime users retain
+existing per-invocation lifecycle events.
+
+Custom backends should emit one `AgentToolRound` for all calls in a model response.
+Legacy single/batch events are supported, but each event declares a complete
+round. Applications relying on last-skill-wins sequence composition must migrate:
+sequences now choose the longest compatible exact prefix, or fail explicitly when
+incompatible. Unrelated calls can execute concurrently after the prefix completes
+in the same response.
+
+Skill limits reserve calls before execution and report model-visible structured
+failures on exhaustion. Hard runtime call/time limits and backend model-pass
+limits still terminate the turn. `ToolResultEnvelope.failure` is additive; stored
+older envelopes continue to decode. Failure output to Responses is now JSON with
+`success`, `error` (code/message/details), and the original textual `output`.
+
+`AgentBackend.webSearchCapabilities` has a default `nil` implementation, so
+existing conformers compile. To support request/skill search restrictions,
+backends and wrappers must advertise enforcement and preserve `Request.webSearch`.
+Otherwise constrained turns fail explicitly. Backend `enableWebSearch: false`
+remains an absolute upper bound. See [policy composition](personas-and-skills.md#execution-policy-composition-and-budgets)
+and [search constraints](upstream-runtime-features.md#turn-effective-hosted-web-search).

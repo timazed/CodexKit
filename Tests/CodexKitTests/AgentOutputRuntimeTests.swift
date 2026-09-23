@@ -189,6 +189,7 @@ struct OutputRuntimeFixture {
 actor OutputTestBackend: AgentBackend {
     enum Mode: Sendable {
         case normal, mismatch, identity, reorder, duplicate, backendFailure, unclassified, completionOnly, latePhase, toolAfterOutput
+        case toolRoundAfterOutput
         static let failureModes: [Self] = [.mismatch, .identity, .reorder, .duplicate, .backendFailure, .toolAfterOutput]
     }
     let source: String
@@ -223,9 +224,14 @@ actor OutputTestBackend: AgentBackend {
                 }
                 await beforeCompletion()
                 if mode == .backendFailure { throw AgentOutputError.invalidOutput("Injected provider failure") }
-                if mode == .toolAfterOutput {
-                    try await channel.continuation.yield(.toolCallRequested(.init(id: "call", threadID: thread.id, turnID: turn.id,
-                        toolName: "never", arguments: .object([:]))))
+                if mode == .toolAfterOutput || mode == .toolRoundAfterOutput {
+                    let invocation = ToolInvocation(
+                        id: "call", threadID: thread.id, turnID: turn.id,
+                        toolName: "never", arguments: .object([:]))
+                    let event: AgentBackendEvent = mode == .toolRoundAfterOutput
+                        ? .toolRoundRequested(.init(calls: [invocation]))
+                        : .toolCallRequested(invocation)
+                    try await channel.continuation.yield(event)
                 }
                 let answer = AgentMessage(id: mode == .identity ? "wrong" : answerID, threadID: thread.id, role: .assistant,
                     text: mode == .mismatch ? source + " " : source, phase: .finalAnswer)

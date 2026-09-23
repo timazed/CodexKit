@@ -93,7 +93,8 @@ extension ToolRegistry.Entry {
             }
             return result
         } catch {
-            return .failure(invocation: invocation, message: error.localizedDescription)
+            return .failure(invocation: invocation, message: error.localizedDescription,
+                code: error is CancellationError ? "tool_cancelled" : "tool_execution_failed")
         }
     }
 }

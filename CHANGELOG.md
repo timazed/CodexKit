@@ -11,11 +11,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Added turn-based `output:` APIs for streaming text, native JSON Schema, JSON Lines records, and XML with attributes and XSD validation. Format events are provisional until the completed turn and its storage transaction succeed; typed results use a versioned persistence envelope.
 - Added the value-oriented XML schema DSL, bounded push/SAX decoding, configurable semantic events, typed record failures, and a streaming adapter for existing `AgentStructuredOutput` types. See [streaming output](docs/streaming-output.md).
 - Added shared iOS/macOS streaming examples and signed-app checks covering fresh-model restoration, validation failures, cancellation, and macOS host Stop/disconnect behavior.
+- Policy-aware admission and bounded parallel execution of host-tool rounds. Skills can constrain `maxToolRounds`, `maxToolCallsByName`, and `maximumParallelToolCalls` without disabling independent parallel tools.
+- `AgentToolRound` / `AgentBackendEvent.toolRoundRequested`, structured `ToolFailure` codes, and effective tool/search policy inspection through `resolvedInstructionsPreviewDetails`.
+- Backend-bounded request and skill hosted-search restrictions (`disabled`, `cached`, `indexed`, `live`) and normalized, intersected domain allowlists. Unsupported backend restrictions fail explicitly.
+
+### Changed
+
+- The Responses backend gathers every response's host calls into one round, including serial tools. Tools execute after the response completes. Direct backend consumers must handle `toolRoundRequested`.
+- Skill sequences compose as exact prefixes: the longest compatible prefix wins; conflicting prefixes fail instead of allowing the last skill to override earlier constraints.
+- Model-visible tool context is invocation ordered, including after restoration. Activity/result audit history remains chronological. Both Parallel Lookups demos now exercise a constrained skill.
 
 ### Fixed
 
 - Isolated XSD preflight budgets from response depth/node limits, preserved record delivery/limit error types, and retained zero-based record indexes in validation failures.
 - Made streaming demo operations host-owned, with explicit operation/result states and integration into the host's busy and cancellation controls.
+- Skill budget checks reserve in request order before execution, and policy-rejected calls now persist normal tool-result records with stable failure codes.
+- Remote compaction does not enable hosted web search. Tool-result output retains content alongside structured failure information.
+- The macOS Parallel Lookups demo registers its skill at startup so saved lookup conversations remain usable after relaunch.
 
 ## [2.0.0-alpha.31] - 2026-09-11
 

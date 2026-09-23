@@ -109,7 +109,7 @@ public struct ToolResultEnvelope: Hashable, Sendable {
     // Legacy envelopes encode denial in the error text. Keep that interpretation
     // at this boundary, rather than repeating the sentinel in history queries.
     var outcome: Outcome {
-        if errorMessage == Self.approvalDeniedMessage { return .approvalDenied }
+        if failure?.code == "tool_approval_denied" || errorMessage == Self.approvalDeniedMessage { return .approvalDenied }
         return success ? .succeeded : .failed
     }
 
@@ -118,6 +118,7 @@ public struct ToolResultEnvelope: Hashable, Sendable {
     public let success: Bool
     public let content: [ToolResultContent]
     public let errorMessage: String?
+    public let failure: ToolFailure?
     public let session: ToolSessionDescriptor?
 
     public init(
@@ -126,13 +127,15 @@ public struct ToolResultEnvelope: Hashable, Sendable {
         success: Bool,
         content: [ToolResultContent] = [],
         errorMessage: String? = nil,
-        session: ToolSessionDescriptor? = nil
+        session: ToolSessionDescriptor? = nil,
+        failure: ToolFailure? = nil
     ) {
         self.invocationID = invocationID
         self.toolName = toolName
         self.success = success
         self.content = content
         self.errorMessage = errorMessage
+        self.failure = failure
         self.session = session
     }
 
@@ -163,7 +166,8 @@ public struct ToolResultEnvelope: Hashable, Sendable {
     public static func failure(
         invocation: ToolInvocation,
         message: String,
-        session: ToolSessionDescriptor? = nil
+        session: ToolSessionDescriptor? = nil,
+        code: String = "tool_execution_failed"
     ) -> ToolResultEnvelope {
         ToolResultEnvelope(
             invocationID: invocation.id,
@@ -171,7 +175,8 @@ public struct ToolResultEnvelope: Hashable, Sendable {
             success: false,
             content: [.text(message)],
             errorMessage: message,
-            session: session
+            session: session,
+            failure: ToolFailure(code: code, message: message)
         )
     }
 
@@ -182,7 +187,8 @@ public struct ToolResultEnvelope: Hashable, Sendable {
         failure(
             invocation: invocation,
             message: approvalDeniedMessage,
-            session: session
+            session: session,
+            code: "tool_approval_denied"
         )
     }
 }

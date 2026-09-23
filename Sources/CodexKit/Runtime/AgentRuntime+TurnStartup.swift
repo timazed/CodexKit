@@ -18,6 +18,8 @@ extension AgentRuntime {
         turnStream: AgentTurnStream,
         session: ChatGPTSession
     ) {
+        var message = message
+        message.webSearch = try await effectiveWebSearch(request: message, skills: resolvedTurnSkills)
         do {
             let beginTurn = try await withUnauthorizedRecovery(
                 initialSession: session
