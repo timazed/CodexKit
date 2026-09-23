@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB2300000000000000000001 /* Streaming model iOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000007; };
+		AB2300000000000000000002 /* Streaming model macOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000007; };
+		AB2300000000000000000003 /* Streaming view iOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000008; };
+		AB2300000000000000000004 /* Streaming view macOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000008; };
+		AB2300000000000000000005 /* Streaming verification iOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000009; };
+		AB2300000000000000000006 /* Streaming verification macOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000009; };
 		AB2900000000000000000001 /* Recovery iOS */ = {isa = PBXBuildFile; fileRef = AB2900000000000000000003; };
 		AB2900000000000000000002 /* Recovery macOS */ = {isa = PBXBuildFile; fileRef = AB2900000000000000000003; };
 		F0C67F5047D94121B9882C4E /* DemoRuntimeVerification.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7039ACB63E945B799838C66 /* DemoRuntimeVerification.swift */; };
@@ -112,6 +118,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AB2300000000000000000007 /* ProgressiveOutputDemoModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveOutputDemoModel.swift; sourceTree = "<group>"; };
+		AB2300000000000000000008 /* ProgressiveOutputDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveOutputDemoView.swift; sourceTree = "<group>"; };
+		AB2300000000000000000009 /* DemoStreamingVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoStreamingVerification.swift; sourceTree = "<group>"; };
 		AB2900000000000000000003 /* DemoRecoveryVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRecoveryVerification.swift; sourceTree = "<group>"; };
 		C7039ACB63E945B799838C66 /* DemoRuntimeVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRuntimeVerification.swift; sourceTree = "<group>"; };
 		2481147A958D00EB4A70C928 /* AgentDemoViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDemoViewModel.swift; sourceTree = "<group>"; };
@@ -317,6 +326,9 @@
 				2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */,
 				2A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift */,
 				2A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift */,
+				AB2300000000000000000007 /* ProgressiveOutputDemoModel.swift */,
+				AB2300000000000000000008 /* ProgressiveOutputDemoView.swift */,
+				AB2300000000000000000009 /* DemoStreamingVerification.swift */,
 				2A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift */,
 				2A2B3C4D5E6F70000000000D /* DemoUIComponents.swift */,
 				2A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift */,
@@ -467,6 +479,9 @@
 				1A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift in Sources */,
 				1A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift in Sources */,
 				1A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift in Sources */,
+				AB2300000000000000000001 /* Streaming model iOS */,
+				AB2300000000000000000003 /* Streaming view iOS */,
+				AB2300000000000000000005 /* Streaming verification iOS */,
 				1A2B3C4D5E6F70000000000C /* AgentDemoViewModel+StructuredOutput.swift in Sources */,
 				1A2B3C4D5E6F70000000000D /* DemoUIComponents.swift in Sources */,
 				1A2B3C4D5E6F70000000000E /* StructuredOutputDemoView.swift in Sources */,
@@ -496,6 +511,9 @@
 			files = (
 				BBC000000000000000000002,
 				AB2900000000000000000002 /* Recovery macOS */,
+				AB2300000000000000000002 /* Streaming model macOS */,
+				AB2300000000000000000004 /* Streaming view macOS */,
+				AB2300000000000000000006 /* Streaming verification macOS */,
 				285A639DD3BD73BEAB029157,
 				ABC32155E3CB0FC626C18226,
 				118AE21C0D79186CAD1B57A0,

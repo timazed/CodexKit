@@ -14,7 +14,7 @@ The native SwiftUI demo includes:
 
 - Local Codex session reuse, browser OAuth (localhost callback on port 1455), and device-code sign-in.
 - An Assistant workspace with persisted conversations, model discovery, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
-- Structured shipping drafts, imported-content summaries, and streamed text with typed payloads using the iOS demo's shared schemas.
+- Turn-based streaming text, JSON Lines records, XML with attributes, and native JSON Schema using the iOS demo's shared UI and schemas, alongside the existing shipping, imported-content, and text-with-payload examples.
 - MemoryWriter and raw-record authoring, retrieval, prompt previews, explicit capture, and optional automatic capture after turns.
 - Tool approval/denial, parallel lookups, travel skills, skill-policy comparison, personas and per-request reviewer overrides.
 - Conversation renaming, instruction previews, ephemeral replies, manual/automatic context compaction, and bounded SDK diagnostics.
@@ -83,11 +83,28 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 ![CodexKit demo](../preview-220526-1.png)
 
 - **Assistant:** chat, authentication, model discovery, usage limits, turn controls, tools, personas, and skills.
-- **Structured:** typed shipping drafts, imported-content summaries, and streamed structured output.
+- **Structured:** turn-based text, JSON Lines, XML, and native JSON streaming, plus typed shipping drafts, imported-content summaries, and text with a typed payload.
 - **Memory:** automatic capture, guided writing, raw record management, and retrieval previews.
 - **Health Coach:** tools and memory combined with HealthKit context and local notifications.
 
 The shared `AgentRuntimeStore` keeps replies scoped to the selected conversation and upserts committed messages by ID during streaming. Interrupted streams can now fail after visible output instead of automatically replaying it. See the [streaming contract](../docs/messaging.md#streaming-validation-and-backend-completion).
+
+### Try the streaming output API
+
+In either app, connect a session, open **Structured**, and use **Turn-based streaming output**. Select a format and **Run New Turn**. Each run creates a saved conversation using the current model and reasoning settings.
+
+The macOS Debug `--offline-demo` preview also supports all four formats with synthetic responses, so you can explore the UI without credentials or network access.
+
+- **Text:** incremental final-answer text, followed by a committed string.
+- **JSON Lines:** three typed testing-tip cards, displayed as individual records close.
+- **XML:** incremental tip text, element paths, and `id` / `priority` attributes; the complete document must pass XSD validation before it commits.
+- **Native JSON:** raw JSON deltas, followed by a typed card only after final validation.
+
+Cards and text are explicitly provisional until `outputCommitted`. **Cancel** interrupts the execution; failed or cancelled previews remain labeled uncommitted. The turn-identity disclosure shows the thread, turn, message, and document IDs. After a successful turn, **Reload Saved Output** uses `fetchLatestOutput(in:output:)` without making another model request.
+
+The shared implementation is in `CodexKitIOSDemo/Shared/ProgressiveOutputDemoModel.swift` and `ProgressiveOutputDemoView.swift`. The older `response:` examples remain available below it. See the [streaming output guide](../docs/streaming-output.md) for the API contract. JSON Lines is the shipped record codec; a compact wire format is not enabled.
+
+Both signed-app verification scripts exercise this same presentation model with chunked synthetic responses in smoke and full modes. Checks cover all four formats, provisional versus committed state, reopening saved output in a fresh runtime, XML attributes, invalid record counts / XSD validation, and cancellation. These offline checks do not establish live-model generation quality.
 
 ## What the app does
 

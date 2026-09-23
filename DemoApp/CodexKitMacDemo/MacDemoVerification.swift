@@ -65,6 +65,15 @@ enum MacDemoVerification {
         try require(restored.chat?.messages.contains(where: { $0.role == .assistant }) == true,
                     "Saved messages did not restore")
         checks.append("bound session and conversation restore")
+        checks += try await DemoStreamingVerification.run()
+        if let features = model.features {
+            for mode in ProgressiveOutputDemoMode.allCases {
+                let output = ProgressiveOutputDemoModel()
+                await output.run(mode, runtime: features.runtime, configuration: features.configuration)
+                try require(output.phase == .committed, "Offline preview failed for \(mode): \(output.error ?? output.status)")
+            }
+            checks.append("offline preview supports all four streaming formats")
+        }
 
         if smoke {
             let request = Task { await restored.sendMessage("slow response") }
@@ -377,6 +386,12 @@ private struct MacDemoOfflineBackend: AgentBackend {
     func beginTurn(thread: AgentThread, history: [AgentMessage], message: Request, instructions: String,
                    responseFormat: AgentStructuredOutputFormat?, streamedStructuredOutput: AgentStreamedStructuredOutputRequest?,
                    tools: [ToolDefinition], session: ChatGPTSession) async throws -> AgentTurnStream {
+        if let mode = ProgressiveOutputDemoMode.allCases.first(where: { $0.request.text == message.text }) {
+            let backend = await StreamingDemoBackend(source: DemoStreamingVerification.source(mode), chunkDelay: .milliseconds(25))
+            await backend.release()
+            return try await backend.beginTurn(thread: thread, history: history, message: message, instructions: instructions,
+                responseFormat: responseFormat, streamedStructuredOutput: streamedStructuredOutput, tools: tools, session: session)
+        }
         let results = AsyncStream<ToolResultEnvelope>.makeStream()
         let events = AsyncThrowingStream<AgentBackendEvent, Error> { continuation in
             let worker = Task {
