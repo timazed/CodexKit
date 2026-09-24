@@ -50,16 +50,14 @@ final class ChatGPTOAuthProviderTests: XCTestCase {
             claims: [
                 "email": "taylor@example.com",
                 "name": "Taylor Morgan",
-                "chatgpt_account_id": "workspace-123",
-                "chatgpt_plan_type": "plus",
+                "https://api.openai.com/auth": ["chatgpt_account_id": "workspace-123", "chatgpt_plan_type": "plus"],
                 "iat": Int(now.timeIntervalSince1970),
                 "exp": Int(now.addingTimeInterval(3600).timeIntervalSince1970),
             ]
         )
         let accessToken = try makeUnsignedJWT(
             claims: [
-                "chatgpt_account_id": "workspace-123",
-                "chatgpt_plan_type": "plus",
+                "https://api.openai.com/auth": ["chatgpt_account_id": "workspace-123", "chatgpt_plan_type": "plus"],
                 "iat": Int(now.timeIntervalSince1970),
                 "exp": Int(now.addingTimeInterval(1800).timeIntervalSince1970),
             ]

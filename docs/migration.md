@@ -195,3 +195,5 @@ backends and wrappers must advertise enforcement and preserve `Request.webSearch
 Otherwise constrained turns fail explicitly. Backend `enableWebSearch: false`
 remains an absolute upper bound. See [policy composition](personas-and-skills.md#execution-policy-composition-and-budgets)
 and [search constraints](upstream-runtime-features.md#turn-effective-hosted-web-search).
+
+ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.

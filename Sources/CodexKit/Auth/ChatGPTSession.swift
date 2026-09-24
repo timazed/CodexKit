@@ -8,7 +8,25 @@ public enum ChatGPTPlanType: String, Codable, Hashable, Sendable {
     case business
     case enterprise
     case edu
+    case go
+    case proLite = "prolite"
+    case selfServeBusinessProLite = "self_serve_business_prolite"
+    case selfServeBusinessUsageBased = "self_serve_business_usage_based"
+    case ent26
+    case enterpriseCbpAutomation = "enterprise_cbp_automation"
+    case enterpriseCbpUsageBased = "enterprise_cbp_usage_based"
+    case eduPlus = "edu_plus"
+    case eduPro = "edu_pro"
     case unknown
+
+    static func resolve(_ raw: String?) -> Self {
+        switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "hc": return .enterprise
+        case "education": return .edu
+        case let value?: return Self(rawValue: value) ?? .unknown
+        case nil: return .unknown
+        }
+    }
 }
 
 public struct ChatGPTAccount: Codable, Hashable, Sendable {

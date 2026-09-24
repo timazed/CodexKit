@@ -10,8 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    subprocess.run(["swift", "build", "--target", "CodexKit"], cwd=ROOT, check=True)
-    output = subprocess.check_output(["swift", "build", "--show-bin-path"], cwd=ROOT, text=True).strip()
+    # The object-map linker below requires SwiftPM's native build layout, rather
+    # than the newer Swift Build default (which emits a combined target object).
+    build = ["swift", "build", "--build-system", "native", "--force-resolved-versions"]
+    subprocess.run([*build, "--target", "CodexKit"], cwd=ROOT, check=True)
+    output = subprocess.check_output([*build, "--show-bin-path"], cwd=ROOT, text=True).strip()
     binary_dir = Path(output)
     with tempfile.TemporaryDirectory(prefix="codexkit-auth-probe-") as temporary:
         app = Path(temporary) / "CodexKitAuthProbe.app"

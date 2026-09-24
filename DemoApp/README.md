@@ -225,3 +225,5 @@ Implementation examples live in `AgentDemoViewModel+RuntimeFeatures.swift`, `Run
 - `Sources/CodexKitUI/AgentRuntimeStore.swift`
 - `Sources/CodexKitUI/ApprovalInbox.swift`
 - `Sources/CodexKitUI/DeviceCodePromptCoordinator.swift`
+
+ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](../docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.

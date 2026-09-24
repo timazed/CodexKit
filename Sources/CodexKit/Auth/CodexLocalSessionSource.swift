@@ -132,28 +132,6 @@ private struct CodexStoredCredentials: Decodable {
         // The refresh token is intentionally not decoded or retained.
     }
 
-    struct Claims: Decodable {
-        let exp: Double?
-        let email: String?
-        let name: String?
-        let auth: Auth?
-        let profile: Profile?
-        enum CodingKeys: String, CodingKey {
-            case exp, email, name
-            case auth = "https://api.openai.com/auth"
-            case profile = "https://api.openai.com/profile"
-        }
-        struct Profile: Decodable { let email: String? }
-        struct Auth: Decodable {
-            let chatgpt_account_id: String?
-            let chatgpt_user_id: String?
-            let user_id: String?
-            let chatgpt_plan_type: String?
-            let chatgpt_account_is_fedramp: Bool?
-            var userID: String? { chatgpt_user_id ?? user_id }
-        }
-    }
-
     static func decode(_ data: Data, sourceID: String, now: Date) throws -> ChatGPTSession {
         do {
             let stored = try JSONDecoder().decode(Self.self, from: data)
@@ -162,36 +140,28 @@ private struct CodexStoredCredentials: Decodable {
                   stored.personal_access_token == nil, stored.bedrock_api_key == nil,
                   stored.bedrock_access_keys == nil else { throw ChatGPTSessionError.unsupportedAuthentication }
             guard let tokens = stored.tokens, !tokens.access_token.isEmpty else { throw ChatGPTSessionError.malformedCredentials }
-            let access = try claims(tokens.access_token)
-            let identity = try claims(tokens.id_token)
-            guard let expiry = access.exp, expiry.isFinite, expiry > 0,
-                  let account = tokens.account_id ?? identity.auth?.chatgpt_account_id ?? access.auth?.chatgpt_account_id,
+            let access = try JWTClaims.decode(from: tokens.access_token)
+            let identity = try JWTClaims.decode(from: tokens.id_token)
+            guard let expiry = access.expiresAt,
+                  let account = tokens.account_id ?? identity.chatGPTAccountID ?? access.chatGPTAccountID,
                   !account.isEmpty,
-                  let userID = identity.auth?.userID ?? access.auth?.userID, !userID.isEmpty else {
+                  let userID = identity.userID ?? access.userID, !userID.isEmpty else {
                 throw ChatGPTSessionError.malformedCredentials
             }
-            for claim in [identity.auth, access.auth].compactMap({ $0 }) {
-                if let id = claim.chatgpt_account_id, id != account { throw ChatGPTSessionError.accountChanged }
+            for claim in [identity, access] {
+                if let id = claim.chatGPTAccountID, id != account { throw ChatGPTSessionError.accountChanged }
                 if let id = claim.userID, id != userID { throw ChatGPTSessionError.accountChanged }
-                if claim.chatgpt_account_is_fedramp == true { throw ChatGPTSessionError.unsupportedAuthentication }
+                if claim.fedramp { throw ChatGPTSessionError.unsupportedAuthentication }
             }
+            var resolved = try AccountClaimsResolver.account(id: identity, access: access)
+            resolved.id = account
             return ChatGPTSession(accessToken: tokens.access_token,
-                account: .init(id: account, email: identity.email ?? identity.profile?.email ?? "",
-                               plan: ChatGPTPlanType(rawValue: identity.auth?.chatgpt_plan_type ?? "") ?? .unknown,
-                               name: identity.name),
+                account: resolved,
                 binding: .init(sourceID: sourceID, accountID: account, userID: userID),
-                expiresAt: Date(timeIntervalSince1970: expiry), acquiredAt: now,
+                expiresAt: expiry, acquiredAt: now,
                 credentialGeneration: CodexLocalSessionSource.digest(tokens.access_token))
         } catch let error as ChatGPTSessionError { throw error }
         catch { throw ChatGPTSessionError.malformedCredentials }
     }
 
-    private static func claims(_ token: String) throws -> Claims {
-        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 3, !parts[0].isEmpty, !parts[1].isEmpty else { throw ChatGPTSessionError.malformedCredentials }
-        var value = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        value += String(repeating: "=", count: (4 - value.count % 4) % 4)
-        guard let data = Data(base64Encoded: value) else { throw ChatGPTSessionError.malformedCredentials }
-        return try JSONDecoder().decode(Claims.self, from: data)
-    }
 }
