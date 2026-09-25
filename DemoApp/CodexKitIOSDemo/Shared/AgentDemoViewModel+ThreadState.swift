@@ -56,7 +56,7 @@ extension AgentDemoViewModel {
                 await refreshHealthCoachProgress()
             }
             developerLog(
-                "Sign-in finished. account=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
+                "Sign-in finished. threadCount=\(threads.count)"
             )
         } catch {
             await deviceCodePromptCoordinator.clear()
@@ -363,7 +363,7 @@ extension AgentDemoViewModel {
         }
 
         developerLog(
-            "Snapshot refreshed. session=\(session?.account.email ?? "<unknown>") threadCount=\(threads.count)"
+            "Snapshot refreshed with an active session. threadCount=\(threads.count)"
         )
 
         if modelCatalog == nil { await refreshModels() }

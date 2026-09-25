@@ -35,8 +35,8 @@ struct MacDemoView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(model.statusText, systemImage: model.isConnected ? "checkmark.circle.fill" : "person.crop.circle")
                         .font(.callout.weight(.medium))
-                    if let account = model.chat?.session?.account, !account.displayName.isEmpty {
-                        Text(account.displayName).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    if let account = model.chat?.session?.account {
+                        DemoAccountDetailsView(account: account)
                     }
                     if model.isOfflineDemo {
                         Text("Offline demo · synthetic credentials")

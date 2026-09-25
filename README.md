@@ -143,3 +143,5 @@ Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-featur
 - [Security policy](SECURITY.md)
 
 ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.
+
+The iOS and macOS demos display the resolved ChatGPT plan, name, email, and account ID for inspecting sign-in and restoration results.

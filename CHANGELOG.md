@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Show resolved ChatGPT plan, name, email, and account ID in both demos, with explicit unknown/missing labels and no account data in authentication lifecycle logs.
+
 ### Fixed
 
 - Resolve namespaced ChatGPT account/plan/profile claims consistently across OAuth, device-code, refresh, and local-session discovery. Repair and persist missing app-owned account metadata during offline restoration, preserving valid metadata and rejecting conflicting identities.

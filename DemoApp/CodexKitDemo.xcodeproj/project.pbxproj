@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AC1500000000000000000001 /* Account details iOS */ = {isa = PBXBuildFile; fileRef = AC1500000000000000000003 /* DemoAccountDetailsView.swift */; };
+        AC1500000000000000000002 /* Account details macOS */ = {isa = PBXBuildFile; fileRef = AC1500000000000000000003 /* DemoAccountDetailsView.swift */; };
 		AB2300000000000000000001 /* Streaming model iOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000007; };
 		AB2300000000000000000002 /* Streaming model macOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000007; };
 		AB2300000000000000000003 /* Streaming view iOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000008; };
@@ -118,6 +120,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        AC1500000000000000000003 /* DemoAccountDetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoAccountDetailsView.swift; sourceTree = "<group>"; };
 		AB2300000000000000000007 /* ProgressiveOutputDemoModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveOutputDemoModel.swift; sourceTree = "<group>"; };
 		AB2300000000000000000008 /* ProgressiveOutputDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveOutputDemoView.swift; sourceTree = "<group>"; };
 		AB2300000000000000000009 /* DemoStreamingVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoStreamingVerification.swift; sourceTree = "<group>"; };
@@ -308,6 +311,7 @@
 		F13A26169023E4737C83DBD3 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+                AC1500000000000000000003 /* DemoAccountDetailsView.swift */,
 				86F4DDC2A54DB0F7D9337A16 /* AgentDemoRuntimeFactory.swift */,
 				3CA22585116A120BA97F76B8 /* AgentDemoView.swift */,
 				2A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift */,
@@ -467,6 +471,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                AC1500000000000000000001 /* Account details in Sources */,
 				1A2B3C4D5E6F700000000001 /* AgentDemoView+ChatSections.swift in Sources */,
 				1A2B3C4D5E6F700000000017 /* AgentDemoView+Presentation.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* AgentDemoView+ComposerAndSheets.swift in Sources */,
@@ -509,6 +514,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                AC1500000000000000000002 /* Account details in Sources */,
 				BBC000000000000000000002,
 				AB2900000000000000000002 /* Recovery macOS */,
 				AB2300000000000000000002 /* Streaming model macOS */,
