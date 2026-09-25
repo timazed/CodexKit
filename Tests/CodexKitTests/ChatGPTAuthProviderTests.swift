@@ -14,10 +14,10 @@ final class ChatGPTAuthProviderTests: XCTestCase {
 
     func testRefreshReadsOptionalIDTokenNameForBothAuthenticationMethods() async throws {
         let cases: [(claims: [String: Any], name: String?, displayName: String)] = [
-            ([:], nil, "user@example.com"),
-            (["name": NSNull()], nil, "user@example.com"),
-            (["name": ""], "", "user@example.com"),
-            (["name": " \n "], " \n ", "user@example.com"),
+            ([:], "Old Name", "Old Name"),
+            (["name": NSNull()], "Old Name", "Old Name"),
+            (["name": ""], "Old Name", "Old Name"),
+            (["name": " \n "], "Old Name", "Old Name"),
             (["name": "Zoë 李"], "Zoë 李", "Zoë 李"),
         ]
         for method in [ChatGPTAuthenticationMethod.oauth, .deviceCode] {

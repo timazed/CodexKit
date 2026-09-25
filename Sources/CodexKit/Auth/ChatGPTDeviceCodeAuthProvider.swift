@@ -98,7 +98,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
         }
 
         let tokenResponse = try await refreshAccessToken(refreshToken)
-        return try makeSession(from: tokenResponse, fallbackRefreshToken: refreshToken)
+        return try tokenResponse.refreshedSession(previous: session)
     }
 
     public func signOut(session _: ChatGPTSession?) async {
@@ -240,26 +240,7 @@ public final class ChatGPTDeviceCodeAuthProvider: Sendable {
         from response: TokenResponse,
         fallbackRefreshToken: String? = nil
     ) throws -> ChatGPTSession {
-        let idClaims = try JWTClaims.decode(from: response.idToken)
-        let accessClaims = try JWTClaims.decode(from: response.accessToken)
-
-        let accountID = idClaims.chatGPTAccountID
-            ?? accessClaims.chatGPTAccountID
-            ?? "unknown-account"
-        let email = idClaims.email ?? accessClaims.email ?? "unknown@chatgpt.local"
-        let plan = ChatGPTPlanType(
-            rawValue: idClaims.planType ?? accessClaims.planType ?? "unknown"
-        ) ?? .unknown
-
-        return ChatGPTSession(
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken ?? fallbackRefreshToken,
-            idToken: response.idToken,
-            account: ChatGPTAccount(id: accountID, email: email, plan: plan, name: idClaims.name),
-            acquiredAt: accessClaims.issuedAt ?? Date(),
-            expiresAt: accessClaims.expiresAt,
-            isExternallyManaged: false
-        )
+        try response.makeSession(fallbackRefreshToken: fallbackRefreshToken)
     }
 
     private func applyDefaultAuthHeaders(to request: inout URLRequest) {

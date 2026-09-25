@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Show resolved ChatGPT plan, name, email, and account ID in both demos, with explicit unknown/missing labels and no account data in authentication lifecycle logs.
+
+### Fixed
+
+- Resolve namespaced ChatGPT account/plan/profile claims consistently across OAuth, device-code, refresh, and local-session discovery. Repair and persist missing app-owned account metadata during offline restoration, preserving valid metadata and rejecting conflicting identities.
+- Preserve distinct upstream Go, Pro Lite, business, enterprise, and education plan variants; retain unknown for unsupported claims. See [compatibility and Pocket POTUS integration](docs/account-metadata-compatibility.md).
+
 ## [2.0.0-alpha.32] - 2026-09-23
 
 This prerelease adds turn-based streaming output with locally validated text, native JSON Schema, JSON Lines, and XML/XSD formats. It also adds skill-policy-aware tool rounds and hosted-search restrictions. See the [streaming output guide](docs/streaming-output.md) and [migration notes](docs/migration.md) before upgrading.

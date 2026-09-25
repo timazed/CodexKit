@@ -48,6 +48,11 @@ public actor ChatGPTSessionManager {
             restored = nil
             authenticationFailure = .reconnectRequired
         }
+        if let stored = restored {
+            let repaired = try stored.repairingAccountMetadata()
+            if repaired != stored { try secureStore.saveSession(repaired) }
+            restored = repaired
+        }
         invalidatePendingAuthentication()
         if restored != nil { authenticationFailure = nil }
         rejectedAccessToken = nil

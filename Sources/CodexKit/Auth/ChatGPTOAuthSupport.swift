@@ -114,45 +114,6 @@ struct PKCECodes {
     }
 }
 
-struct JWTClaims: Decodable {
-    let email: String?
-    let name: String?
-    let chatGPTAccountID: String?
-    let planType: String?
-    let issuedAtSeconds: TimeInterval?
-    let expiresAtSeconds: TimeInterval?
-
-    enum CodingKeys: String, CodingKey {
-        case email
-        case name
-        case chatGPTAccountID = "chatgpt_account_id"
-        case planType = "chatgpt_plan_type"
-        case issuedAtSeconds = "iat"
-        case expiresAtSeconds = "exp"
-    }
-
-    var issuedAt: Date? {
-        issuedAtSeconds.map(Date.init(timeIntervalSince1970:))
-    }
-
-    var expiresAt: Date? {
-        expiresAtSeconds.map(Date.init(timeIntervalSince1970:))
-    }
-
-    static func decode(from jwt: String) throws -> JWTClaims {
-        let parts = jwt.split(separator: ".")
-        guard parts.count >= 2 else {
-            throw AgentRuntimeError(
-                code: .jwtInvalid,
-                message: "A ChatGPT token could not be decoded."
-            )
-        }
-
-        let payload = try Data(base64URLString: String(parts[1]))
-        return try JSONDecoder().decode(JWTClaims.self, from: payload)
-    }
-}
-
 func buildCodexLikeUserAgent(
     originator: String,
     product: String

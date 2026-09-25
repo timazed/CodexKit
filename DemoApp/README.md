@@ -225,3 +225,7 @@ Implementation examples live in `AgentDemoViewModel+RuntimeFeatures.swift`, `Run
 - `Sources/CodexKitUI/AgentRuntimeStore.swift`
 - `Sources/CodexKitUI/ApprovalInbox.swift`
 - `Sources/CodexKitUI/DeviceCodePromptCoordinator.swift`
+
+ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](../docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.
+
+Both demos show resolved account details: plan, name, email, and account ID. Unknown plans remain labeled **Unknown**, and missing metadata is shown as **Not available**. The iOS details appear in the main header; macOS shows them in the sidebar. Values update from the current SDK session after sign-in, restoration, or refresh. Credentials are never displayed.
