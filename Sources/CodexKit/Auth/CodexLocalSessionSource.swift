@@ -140,8 +140,8 @@ private struct CodexStoredCredentials: Decodable {
                   stored.personal_access_token == nil, stored.bedrock_api_key == nil,
                   stored.bedrock_access_keys == nil else { throw ChatGPTSessionError.unsupportedAuthentication }
             guard let tokens = stored.tokens, !tokens.access_token.isEmpty else { throw ChatGPTSessionError.malformedCredentials }
-            let access = try JWTClaims.decode(from: tokens.access_token)
-            let identity = try JWTClaims.decode(from: tokens.id_token)
+            let access = try ChatGPTSessionMetadata(token: tokens.access_token)
+            let identity = try ChatGPTSessionMetadata(token: tokens.id_token)
             guard let expiry = access.expiresAt,
                   let account = tokens.account_id ?? identity.chatGPTAccountID ?? access.chatGPTAccountID,
                   !account.isEmpty,
@@ -153,7 +153,7 @@ private struct CodexStoredCredentials: Decodable {
                 if let id = claim.userID, id != userID { throw ChatGPTSessionError.accountChanged }
                 if claim.fedramp { throw ChatGPTSessionError.unsupportedAuthentication }
             }
-            var resolved = try AccountClaimsResolver.account(id: identity, access: access)
+            var resolved = try ChatGPTAccountResolver(id: identity, access: access).account
             resolved.id = account
             return ChatGPTSession(accessToken: tokens.access_token,
                 account: resolved,

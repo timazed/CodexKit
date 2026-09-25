@@ -35,7 +35,7 @@ final class AccountMetadataResolutionTests: XCTestCase {
             for namespaced in [true, false] {
                 let claims: [String: Any] = ["chatgpt_account_id": "workspace", "chatgpt_plan_type": raw]
                 let jwt = try makeUnsignedJWT(claims: namespaced ? [auth: claims] : claims)
-                let result = try AccountClaimsResolver.session(from: .init(idToken: jwt, accessToken: jwt, refreshToken: nil))
+                let result = try TokenResponse(idToken: jwt, accessToken: jwt, refreshToken: nil).makeSession()
                 XCTAssertEqual(result.account.plan, expected)
                 XCTAssertEqual(result.account.id, "workspace")
             }
@@ -46,26 +46,26 @@ final class AccountMetadataResolutionTests: XCTestCase {
         let access = try token(plan: "pro")
         for invalid: Any in [NSNull(), 42, ["unexpected": true], "future_plan", ""] {
             let id = try makeUnsignedJWT(claims: [auth: ["chatgpt_plan_type": invalid], "chatgpt_plan_type": "free"])
-            let result = try AccountClaimsResolver.session(from: .init(idToken: id, accessToken: access, refreshToken: nil))
+            let result = try TokenResponse(idToken: id, accessToken: access, refreshToken: nil).makeSession()
             XCTAssertEqual(result.account.plan, .unknown)
             XCTAssertEqual(result.account.email, "fixture@example.test")
         }
         let malformedNamespace = try makeUnsignedJWT(claims: [auth: "invalid", "chatgpt_plan_type": "free"])
-        XCTAssertEqual(try AccountClaimsResolver.session(from: .init(idToken: malformedNamespace, accessToken: access, refreshToken: nil)).account.plan, .unknown)
+        XCTAssertEqual(try TokenResponse(idToken: malformedNamespace, accessToken: access, refreshToken: nil).makeSession().account.plan, .unknown)
         let preferred = try makeUnsignedJWT(claims: [auth: ["chatgpt_account_id": "workspace", "chatgpt_plan_type": "free"],
                                                     "chatgpt_account_id": "legacy", "chatgpt_plan_type": "pro",
                                                     profile: ["email": "preferred@example.test"], "email": "legacy@example.test"])
-        let result = try AccountClaimsResolver.session(from: .init(idToken: preferred, accessToken: access, refreshToken: nil))
+        let result = try TokenResponse(idToken: preferred, accessToken: access, refreshToken: nil).makeSession()
         XCTAssertEqual(result.account.id, "workspace")
         XCTAssertEqual(result.account.plan, .free)
         XCTAssertEqual(result.account.email, "preferred@example.test")
         for missing in ["malformed", try makeUnsignedJWT(claims: [:])] {
-            let fallback = try AccountClaimsResolver.session(from: .init(idToken: missing, accessToken: access, refreshToken: nil))
+            let fallback = try TokenResponse(idToken: missing, accessToken: access, refreshToken: nil).makeSession()
             XCTAssertEqual(fallback.account.plan, .pro)
         }
-        let unknown = try AccountClaimsResolver.session(from: .init(idToken: "bad", accessToken: "bad", refreshToken: nil))
+        let unknown = try TokenResponse(idToken: "bad", accessToken: "bad", refreshToken: nil).makeSession()
         XCTAssertEqual(unknown.account.plan, .unknown)
-        XCTAssertThrowsError(try AccountClaimsResolver.session(from: .init(idToken: token(account: "other"), accessToken: access, refreshToken: nil))) {
+        XCTAssertThrowsError(try TokenResponse(idToken: token(account: "other"), accessToken: access, refreshToken: nil).makeSession()) {
             XCTAssertEqual($0 as? ChatGPTSessionError, .accountChanged)
         }
     }
@@ -158,22 +158,22 @@ final class AccountMetadataResolutionTests: XCTestCase {
     func testUserConflictAndMissingRefreshMetadata() throws {
         let access = try token()
         let conflicting = try makeUnsignedJWT(claims: [auth: ["chatgpt_account_id": "workspace", "chatgpt_user_id": "other-user"]])
-        XCTAssertThrowsError(try AccountClaimsResolver.session(from: .init(idToken: conflicting, accessToken: access, refreshToken: nil))) {
+        XCTAssertThrowsError(try TokenResponse(idToken: conflicting, accessToken: access, refreshToken: nil).makeSession()) {
             XCTAssertEqual($0 as? ChatGPTSessionError, .accountChanged)
         }
         let previous = ChatGPTSession(accessToken: access, refreshToken: "saved-refresh", idToken: access,
             account: .init(id: "workspace", email: "saved@example.test", plan: .team, name: "Saved Name"))
         let empty = try makeUnsignedJWT(claims: [:])
-        let refreshed = try AccountClaimsResolver.refreshed(.init(idToken: empty, accessToken: empty, refreshToken: nil), previous: previous)
+        let refreshed = try TokenResponse(idToken: empty, accessToken: empty, refreshToken: nil).refreshedSession(previous: previous)
         XCTAssertEqual(refreshed.account, previous.account)
         for unsupported: Any in ["future", 42, NSNull()] {
             let jwt = try token(plan: unsupported)
-            let unknown = try AccountClaimsResolver.refreshed(.init(idToken: jwt, accessToken: jwt, refreshToken: nil), previous: previous)
+            let unknown = try TokenResponse(idToken: jwt, accessToken: jwt, refreshToken: nil).refreshedSession(previous: previous)
             XCTAssertEqual(unknown.account.plan, .unknown)
         }
         XCTAssertEqual(refreshed.binding, previous.binding)
         XCTAssertEqual(refreshed.refreshToken, previous.refreshToken)
-        XCTAssertThrowsError(try AccountClaimsResolver.refreshed(.init(idToken: conflicting, accessToken: conflicting, refreshToken: nil), previous: previous)) {
+        XCTAssertThrowsError(try TokenResponse(idToken: conflicting, accessToken: conflicting, refreshToken: nil).refreshedSession(previous: previous)) {
             XCTAssertEqual($0 as? ChatGPTSessionError, .accountChanged)
         }
     }

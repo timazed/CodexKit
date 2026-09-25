@@ -145,7 +145,7 @@ public final class ChatGPTOAuthProvider: Sendable {
         }
 
         let tokenResponse = try await refreshAccessToken(refreshToken)
-        return try AccountClaimsResolver.refreshed(tokenResponse, previous: session)
+        return try tokenResponse.refreshedSession(previous: session)
     }
 
     public func signOut(session _: ChatGPTSession?) async {}
@@ -263,7 +263,7 @@ public final class ChatGPTOAuthProvider: Sendable {
         from response: TokenResponse,
         fallbackRefreshToken: String? = nil
     ) throws -> ChatGPTSession {
-        try AccountClaimsResolver.session(from: response, fallbackRefreshToken: fallbackRefreshToken)
+        try response.makeSession(fallbackRefreshToken: fallbackRefreshToken)
     }
 
     private func applyDefaultAuthHeaders(to request: inout URLRequest) {
