@@ -1,6 +1,6 @@
 # CodexKit Demo App
 
-This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime.
+This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime. In alpha.33, both apps show the resolved ChatGPT account type (plan), name, email, and account ID after sign-in, restoration, or refresh.
 
 ## macOS demo
 
@@ -19,7 +19,7 @@ The native SwiftUI demo includes:
 - Tool approval/denial, parallel lookups, travel skills, skill-policy comparison, personas and per-request reviewer overrides.
 - Conversation renaming, instruction previews, ephemeral replies, manual/automatic context compaction, and bounded SDK diagnostics.
 - File, SQLite, and Realm conversation stores with account-specific memory storage.
-- Session status and expiry, same-account credential rereads, and reconnect guidance.
+- Account plan, name, email and ID, session status and expiry, same-account credential rereads, and reconnect guidance.
 - Conversation storage partitioned by source, workspace, and user binding.
 - Disconnect that survives relaunch and leaves externally owned credentials intact.
 

@@ -67,7 +67,7 @@ CodexKit does not accept host-provided file URLs for its Realm stores. It derive
 
 SQLite stores follow the same managed-location rule. `SQLiteRuntimeStateStore()` and `SQLiteMemoryStore()` use `<bundle-id>/CodexKit/SQLite/runtime-state.sqlite` and `<bundle-id>/CodexKit/SQLite/memory.sqlite`; the public API cannot point either store at an application database. This prevents CodexKit's GRDB migrations and tables from being applied to a host-owned SQLite file. Earlier alpha releases accepted arbitrary SQLite URLs, so databases at those caller-selected locations are not discovered automatically after updating.
 
-Realm persistence is new in this unreleased line, so both Realm stores ship with schema version 1. Development iterations are intentionally folded into that initial schema rather than exposed as fictional public migrations. SQLite migrations, by contrast, advance only from previously released SQLite schema versions.
+Realm persistence was introduced in the 2.0 prerelease line; both Realm stores currently use schema version 1. Pre-release development iterations were folded into that initial schema. SQLite migrations, by contrast, advance only from previously released SQLite schema versions.
 
 For account isolation or an app-owned shared container, all four database stores also accept `init(storageDirectory:logging:)`. This selects a containing directory; CodexKit still appends its own `CodexKit/SQLite/` or `CodexKit/Realm/` subdirectory and fixed runtime/memory filenames. Passing an existing file or a non-file URL is rejected. Choose a distinct directory for each authenticated account/source, and keep the stores' schema ownership separate from your application's databases. The default initializers retain the bundle-based locations above.
 

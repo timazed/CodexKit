@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.33] - 2026-09-25
+
+This prerelease fixes ChatGPT account metadata for new and existing sessions. Existing unknown metadata is repaired locally during restoration without logout or reinstall. Update exhaustive plan switches for the nine new distinct cases; see the [migration notes](docs/migration.md#chatgpt-account-metadata-alpha33).
+
 ### Added
 
 - Show resolved ChatGPT plan, name, email, and account ID in both demos, with explicit unknown/missing labels and no account data in authentication lifecycle logs.

@@ -71,15 +71,9 @@ That path preserves Codex’s PKCE and token exchange model, but it is not the d
 
 ## Account Name
 
-Both sign-in methods populate `session.account.name` from the ID token's `name` claim during sign-in and refresh. The name is optional: an absent or null claim produces `nil`, and existing saved sessions without a name continue to load. Name availability depends on the token returned by the authentication service.
+Both sign-in methods populate `session.account.name` from the ID token's namespaced profile or legacy top-level `name` field. The name is optional; sign-in without a usable name produces `nil`, while refresh preserves a saved name when the new token omits it or supplies a blank value. Existing sessions without a name continue to load. See [account metadata compatibility](account-metadata-compatibility.md) for plan resolution, precedence, and offline restoration in alpha.33.
 
 Use `session.account.displayName` for UI labels. It trims surrounding whitespace from the name and falls back to the account email when the name is absent or blank. `name` retains the original value.
-
-```swift
-if let session = await runtime.currentSession() {
-    print("Signed in as \(session.account.displayName)")
-}
-```
 
 Apps supplying their own sessions can pass `name:` to `ChatGPTAccount(id:email:plan:name:)`. The original `ChatGPTAccount(id:email:plan:)` initializer remains available, including as a function reference, and sets the name to `nil`.
 

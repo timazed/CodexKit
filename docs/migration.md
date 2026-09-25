@@ -4,6 +4,12 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## ChatGPT account metadata (alpha.33)
+
+Upgrade to exact package version `2.0.0-alpha.33` and resolve dependencies. Await the existing session restoration before reading account metadata; the SDK repairs and persists unknown or placeholder values locally. No logout, reinstall, or custom resolver is needed. OAuth/device-code sign-in and refresh use the same resolution rules.
+
+`ChatGPTPlanType` gains nine distinct plan cases. Update exhaustive switches and keep application eligibility decisions in the host app. Missing, malformed, and unsupported plans remain `.unknown`. Older SDKs cannot decode the new persisted enum values, so downgrading after saving one requires a host-owned migration. See [account metadata compatibility](account-metadata-compatibility.md) for cases, precedence, identity checks, and Pocket POTUS integration.
+
 ## Turn-based streaming output and tool policy (alpha.32)
 
 The new `output:` APIs are opt-in and leave the existing `response:` structured-reply and ordinary text-streaming APIs available. Format events are provisional; commit application state only after `.outputCommitted` or a successful `send(_:in:output:)`. JSON Lines and XML are instructed formats with local validation; native JSON Schema remains the constrained-generation format. Keep a compatible format/schema definition to restore a saved typed result. See [streaming structured output](streaming-output.md).
@@ -195,5 +201,3 @@ backends and wrappers must advertise enforcement and preserve `Request.webSearch
 Otherwise constrained turns fail explicitly. Backend `enableWebSearch: false`
 remains an absolute upper bound. See [policy composition](personas-and-skills.md#execution-policy-composition-and-budgets)
 and [search constraints](upstream-runtime-features.md#turn-effective-hosted-web-search).
-
-ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.

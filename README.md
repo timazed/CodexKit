@@ -1,13 +1,13 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.32-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.32)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.33-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.33)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.32](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.32). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.33](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.33). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease adds turn-based streaming output for text, native JSON Schema, JSON Lines, and XML/XSD, plus policy-aware tool rounds and hosted-search restrictions. See the [alpha.32 changelog](CHANGELOG.md#200-alpha32---2026-09-23) and [verification guide](docs/verification.md).
+This prerelease fixes ChatGPT account metadata during sign-in, refresh, and offline restoration, preserves distinct plan types, and shows account details in both demos. See the [alpha.33 changelog](CHANGELOG.md#200-alpha33---2026-09-25) and [verification guide](docs/verification.md).
 
 ## Capabilities
 
@@ -21,11 +21,13 @@ This prerelease adds turn-based streaming output for text, native JSON Schema, J
 
 Your app owns the tools and user interface. The built-in backend uses ChatGPT account access; model availability depends on the account. See the [feature matrix](docs/index.md#feature-matrix) for the full supported surface.
 
+ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.
+
 ## Installation
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.33`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |
@@ -133,6 +135,8 @@ The checked-in iOS app consumes the local package and demonstrates chat, structu
 open DemoApp/CodexKitDemo.xcodeproj
 ```
 
+The iOS and macOS demos display the resolved ChatGPT plan, name, email, and account ID for inspecting sign-in and restoration results.
+
 Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-features).
 
 ## Project
@@ -141,7 +145,3 @@ Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-featur
 - [Changelog](CHANGELOG.md) and [release conventions](docs/migration.md#versioning-and-releases)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
-
-ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.
-
-The iOS and macOS demos display the resolved ChatGPT plan, name, email, and account ID for inspecting sign-in and restoration results.

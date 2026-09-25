@@ -35,6 +35,12 @@ Missing, malformed, and unfamiliar plans remain `.unknown`. Go is not Free; Pro 
 
 ## Pocket POTUS integration
 
-Pin the fixed commit supplied with this change until an authorized release includes it; alpha.31 and alpha.32 do not include this fix. Await the existing session-manager/runtime restoration call before reading `account.plan`. No new resolver, migration call, logout, reinstall, or authentication request is needed. Continue using the SDK-owned refreshed/restored session. Update exhaustive plan switches for the cases above. Keep the Free-account product restriction and treatment of `.unknown` in Pocket POTUS; CodexKit imposes neither policy.
+Use **`v2.0.0-alpha.33`**, the first release containing this fix; alpha.31 and alpha.32 do not include it. In Xcode, select the exact package version **`2.0.0-alpha.33`**, or pin it in `Package.swift`:
+
+```swift
+.package(url: "https://github.com/timazed/CodexKit", exact: "2.0.0-alpha.33")
+```
+
+Resolve package dependencies and commit the updated `Package.resolved` in the host app. Await the existing session-manager/runtime restoration call before reading `account.plan`. No new resolver, migration call, logout, reinstall, or authentication request is needed. Continue using the SDK-owned refreshed/restored session. Update exhaustive plan switches for the cases above. Keep the Free-account product restriction and treatment of `.unknown` in Pocket POTUS; CodexKit imposes neither policy.
 
 Offline regression tests use synthetic namespaced JWTs, concrete auth providers with URLProtocol transport fixtures, the real session manager, and unique Keychain entries. They inspect stored values after repair/refresh/reopening and verify logout deletes credentials. No live authentication or model request is required.
