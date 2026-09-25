@@ -16,6 +16,11 @@ struct AgentRuntimeActivePersistenceTask: Sendable {
     let task: RuntimeStoreTask<Void>
 }
 
+struct AgentRuntimePersistenceWaiter: Sendable {
+    let generation: UInt64
+    var task: RuntimeStoreTask<Void>?
+}
+
 struct AgentRuntimePersistenceBatch: Sendable {
     let orderedThreadIDs: [String]
     let operationsByThread: [String: [AgentStoreWriteOperation]]
@@ -28,7 +33,23 @@ extension AgentRuntime {
             return
         }
 
+        let waiterID = UUID()
+        persistenceWaiters[waiterID] = AgentRuntimePersistenceWaiter(
+            generation: requestedGeneration,
+            task: activePersistenceTask.flatMap {
+                $0.lastGeneration == requestedGeneration ? $0.task : nil
+            }
+        )
+        defer { persistenceWaiters.removeValue(forKey: waiterID) }
+
         while true {
+            // Keep the caller's own batch result even if background draining
+            // finishes it before the caller resumes from an earlier batch.
+            if let task = persistenceWaiters[waiterID]?.task {
+                if waitDespiteCancellation { try await task.uninterruptibleValue }
+                else { try await task.value }
+                return
+            }
             if let active = activePersistenceTask {
                 if active.firstGeneration > requestedGeneration { return }
                 do {
@@ -37,13 +58,15 @@ extension AgentRuntime {
                 } catch {
                     if Task.isCancelled, !waitDespiteCancellation { throw CancellationError() }
                     clearActivePersistenceTask(id: active.id)
-                    if hasUnfinishedPersistence(through: requestedGeneration) {
+                    if persistenceWaiters[waiterID]?.task != nil
+                        || hasUnfinishedPersistence(through: requestedGeneration) {
                         continue
                     }
                     throw error
                 }
                 clearActivePersistenceTask(id: active.id)
-                if hasUnfinishedPersistence(through: requestedGeneration) {
+                if persistenceWaiters[waiterID]?.task != nil
+                    || hasUnfinishedPersistence(through: requestedGeneration) {
                     continue
                 }
                 return
@@ -92,6 +115,11 @@ extension AgentRuntime {
                 lastGeneration: queued.last?.generation ?? requestedGeneration,
                 task: task
             )
+            for (id, waiter) in persistenceWaiters where waiter.task == nil
+                && waiter.generation >= (queued.first?.generation ?? requestedGeneration)
+                && waiter.generation <= (queued.last?.generation ?? requestedGeneration) {
+                persistenceWaiters[id]?.task = task
+            }
         }
     }
 

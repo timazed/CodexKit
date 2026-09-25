@@ -48,6 +48,7 @@ public actor AgentRuntime {
     var nextStoreOperationGeneration: UInt64 = 0
     var nextPersistenceTaskID: UInt64 = 0
     var activePersistenceTask: AgentRuntimeActivePersistenceTask?
+    var persistenceWaiters: [UUID: AgentRuntimePersistenceWaiter] = [:]
     var committedObservationSnapshotsByThread: [String: AgentRuntimeThreadObservationSnapshot] = [:]
     var lazyThreadActivationEnabled = false
     var resumingThreadIDs: Set<String> = []

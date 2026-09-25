@@ -722,29 +722,32 @@ extension AgentRuntimeTests {
         _ = try await runtime.useSession(demoSession())
         let thread = try await runtime.createThread(title: "Initial")
 
-        await store.blockAndFailNextApply()
-        let firstUpdate = Task {
-            try await runtime.setTitle("First must fail", for: thread.id)
-        }
-        await store.waitForBlockedApply()
-        let secondUpdate = Task {
-            try await runtime.setTitle("Second must win", for: thread.id)
-        }
-        try await waitUntil {
-            await runtime.activeThreads().first(where: { $0.id == thread.id })?.title
-                == "Second must win"
-        }
-        await store.releaseBlockedApply()
+        // Exercise both waiter-resumption orders across successive failed batches.
+        for _ in 0..<20 {
+            await store.blockAndFailNextApply()
+            let firstUpdate = Task {
+                try await runtime.setTitle("First must fail", for: thread.id)
+            }
+            await store.waitForBlockedApply()
+            let secondUpdate = Task {
+                try await runtime.setTitle("Second must win", for: thread.id)
+            }
+            try await waitUntil {
+                await runtime.activeThreads().first(where: { $0.id == thread.id })?.title
+                    == "Second must win"
+            }
+            await store.releaseBlockedApply()
 
-        await XCTAssertThrowsErrorAsync(try await firstUpdate.value)
-        try await secondUpdate.value
-        let activeTitle = await runtime.activeThreads()
-            .first(where: { $0.id == thread.id })?.title
-        let persistedState = try await store.loadState()
-        let persistedTitle = persistedState.threads
-            .first(where: { $0.id == thread.id })?.title
-        XCTAssertEqual(activeTitle, "Second must win")
-        XCTAssertEqual(persistedTitle, "Second must win")
+            await XCTAssertThrowsErrorAsync(try await firstUpdate.value)
+            try await secondUpdate.value
+            let activeTitle = await runtime.activeThreads()
+                .first(where: { $0.id == thread.id })?.title
+            let persistedState = try await store.loadState()
+            let persistedTitle = persistedState.threads
+                .first(where: { $0.id == thread.id })?.title
+            XCTAssertEqual(activeTitle, "Second must win")
+            XCTAssertEqual(persistedTitle, "Second must win")
+        }
     }
 
     func testMiddleThreadFailureDoesNotDropLaterThreadGroups() async throws {

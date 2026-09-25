@@ -16,6 +16,7 @@ This prerelease fixes ChatGPT account metadata for new and existing sessions. Ex
 
 ### Fixed
 
+- Preserve each persistence caller’s own write result when a newer batch finishes before the caller resumes from an older failed batch. A successful newer write no longer reports the older failure.
 - Resolve namespaced ChatGPT account/plan/profile claims consistently across OAuth, device-code, refresh, and local-session discovery. Repair and persist missing app-owned account metadata during offline restoration, preserving valid metadata and rejecting conflicting identities.
 - Preserve distinct upstream Go, Pro Lite, business, enterprise, and education plan variants; retain unknown for unsupported claims. See [compatibility and Pocket POTUS integration](docs/account-metadata-compatibility.md).
 

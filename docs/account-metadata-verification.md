@@ -29,3 +29,7 @@ The development Mac has only the current Xcode and no iOS 17 runtime. Minimum Sw
 ## Implementation review follow-up
 
 `ChatGPTAccountResolver` is an instance holding a decoded ID/access-token pair. Token parsing uses typed `Decodable` session metadata (`JWTSession`) and initializer-based construction; missing, malformed, and present fields have explicit `JWTSessionField` enum states. Session construction/repair lives in focused extensions. This removes the static utility namespace, untyped payload dictionary, runtime casts, optional parsing chains, and duplicate refresh decoding. Additional parser regressions cover malformed neighboring fields, namespace fallback, invalid token structure, and Boolean timestamps.
+
+## Release preparation follow-up
+
+The alpha.33 local full-suite run exposed an intermittent failure in `testFailedWriteCannotRecoverOverANewerSameThreadMutation`: a newer successful batch could finish before its caller resumed from an earlier failed batch, causing the old error to escape. Persistence waiters now retain their own batch task until they consume its result. The existing real-runtime regression repeats the blocked-failure/newer-write ordering twenty times and asserts both caller outcomes plus active and persisted titles. The release requires a fresh full local suite and exact-commit CI after this correction.
