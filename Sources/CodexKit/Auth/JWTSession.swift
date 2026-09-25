@@ -3,7 +3,7 @@ import Foundation
 /// Account details and token lifetime used to construct a ChatGPT session.
 /// JWT decoding extracts metadata; it does not verify signatures. Credentials
 /// must come from the authentication transport or the selected credential store.
-struct ChatGPTSessionMetadata: Decodable, Sendable {
+struct JWTSession: Decodable, Sendable {
     let email: String?
     let name: String?
     let chatGPTAccountID: String?
@@ -11,7 +11,7 @@ struct ChatGPTSessionMetadata: Decodable, Sendable {
     let fedramp: Bool
     let issuedAt: Date?
     let expiresAt: Date?
-    private let plan: MetadataField<String>
+    private let plan: JWTSessionField<String>
 
     var planType: String? { plan.text }
     var hasPlan: Bool { plan.isPresent }
@@ -28,8 +28,8 @@ struct ChatGPTSessionMetadata: Decodable, Sendable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let auth = MetadataField<AuthenticationMetadata>(container: container, key: .auth)
-        let profile = MetadataField<ProfileMetadata>(container: container, key: .profile)
+        let auth = JWTSessionField<JWTSessionAuthentication>(container: container, key: .auth)
+        let profile = JWTSessionField<JWTSessionProfile>(container: container, key: .profile)
 
         chatGPTAccountID = auth.selecting(\.accountID, fallback: .init(container: container, key: .accountID)).text
         plan = auth.selecting(\.plan, fallback: .init(container: container, key: .plan))
@@ -37,8 +37,8 @@ struct ChatGPTSessionMetadata: Decodable, Sendable {
         name = profile.selecting(\.name, fallback: .init(container: container, key: .name)).text
         userID = auth.value?.userID
         fedramp = auth.value?.fedramp.value == true
-        issuedAt = MetadataField<Double>(container: container, key: .issuedAt).date
-        expiresAt = MetadataField<Double>(container: container, key: .expiresAt).date
+        issuedAt = JWTSessionField<Double>(container: container, key: .issuedAt).date
+        expiresAt = JWTSessionField<Double>(container: container, key: .expiresAt).date
     }
 
     init(token: String) throws {
@@ -64,12 +64,12 @@ struct ChatGPTSessionMetadata: Decodable, Sendable {
     }
 }
 
-private struct AuthenticationMetadata: Decodable, Sendable {
-    let accountID: MetadataField<String>
-    let plan: MetadataField<String>
-    let chatGPTUserID: MetadataField<String>
-    let legacyUserID: MetadataField<String>
-    let fedramp: MetadataField<Bool>
+private struct JWTSessionAuthentication: Decodable, Sendable {
+    let accountID: JWTSessionField<String>
+    let plan: JWTSessionField<String>
+    let chatGPTUserID: JWTSessionField<String>
+    let legacyUserID: JWTSessionField<String>
+    let fedramp: JWTSessionField<Bool>
 
     var userID: String? {
         if let userID = chatGPTUserID.text { return userID }
@@ -94,9 +94,9 @@ private struct AuthenticationMetadata: Decodable, Sendable {
     }
 }
 
-private struct ProfileMetadata: Decodable, Sendable {
-    let email: MetadataField<String>
-    let name: MetadataField<String>
+private struct JWTSessionProfile: Decodable, Sendable {
+    let email: JWTSessionField<String>
+    let name: JWTSessionField<String>
 
     private enum CodingKeys: String, CodingKey { case email, name }
 
@@ -108,7 +108,7 @@ private struct ProfileMetadata: Decodable, Sendable {
 }
 
 /// A malformed authoritative field must not fall back to a legacy value.
-private enum MetadataField<Value: Decodable & Sendable>: Sendable {
+private enum JWTSessionField<Value: Decodable & Sendable>: Sendable {
     case missing
     case malformed
     case present(Value)
@@ -136,9 +136,9 @@ private enum MetadataField<Value: Decodable & Sendable>: Sendable {
     }
 
     func selecting<Field: Decodable & Sendable>(
-        _ keyPath: KeyPath<Value, MetadataField<Field>>,
-        fallback: MetadataField<Field>
-    ) -> MetadataField<Field> {
+        _ keyPath: KeyPath<Value, JWTSessionField<Field>>,
+        fallback: JWTSessionField<Field>
+    ) -> JWTSessionField<Field> {
         switch self {
         case .missing:
             return fallback
@@ -151,7 +151,7 @@ private enum MetadataField<Value: Decodable & Sendable>: Sendable {
     }
 }
 
-private extension MetadataField where Value == String {
+private extension JWTSessionField where Value == String {
     var text: String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -159,7 +159,7 @@ private extension MetadataField where Value == String {
     }
 }
 
-private extension MetadataField where Value == Double {
+private extension JWTSessionField where Value == Double {
     var date: Date? {
         guard let seconds = value, seconds.isFinite, seconds > 0 else { return nil }
         return Date(timeIntervalSince1970: seconds)

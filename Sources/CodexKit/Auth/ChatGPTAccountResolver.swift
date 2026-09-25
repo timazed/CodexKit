@@ -5,21 +5,21 @@ private let unknownEmail = "unknown@chatgpt.local"
 
 /// Resolves metadata and checks identity for one decoded ID/access-token pair.
 struct ChatGPTAccountResolver {
-    let id: ChatGPTSessionMetadata?
-    let access: ChatGPTSessionMetadata?
+    let id: JWTSession?
+    let access: JWTSession?
 
-    init(id: ChatGPTSessionMetadata?, access: ChatGPTSessionMetadata?) {
+    init(id: JWTSession?, access: JWTSession?) {
         self.id = id
         self.access = access
     }
 
     init(idToken: String?, accessToken: String) {
         if let idToken {
-            id = try? ChatGPTSessionMetadata(token: idToken)
+            id = try? JWTSession(token: idToken)
         } else {
             id = nil
         }
-        access = try? ChatGPTSessionMetadata(token: accessToken)
+        access = try? JWTSession(token: accessToken)
     }
 
     var hasPlan: Bool { id?.hasPlan == true || access?.hasPlan == true }

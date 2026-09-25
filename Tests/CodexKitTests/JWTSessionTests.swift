@@ -1,7 +1,7 @@
 @testable import CodexKit
 import XCTest
 
-final class ChatGPTSessionMetadataTests: XCTestCase {
+final class JWTSessionTests: XCTestCase {
     func testMalformedOptionalFieldsDoNotDiscardValidNeighbors() throws {
         let token = try makeUnsignedJWT(claims: [
             "https://api.openai.com/auth": [
@@ -14,7 +14,7 @@ final class ChatGPTSessionMetadataTests: XCTestCase {
             "iat": true,
             "exp": 4_000_000_000,
         ])
-        let metadata = try ChatGPTSessionMetadata(token: token)
+        let metadata = try JWTSession(token: token)
         XCTAssertEqual(metadata.chatGPTAccountID, "workspace")
         XCTAssertEqual(metadata.planType, "plus")
         XCTAssertEqual(metadata.userID, "legacy-user")
@@ -30,7 +30,7 @@ final class ChatGPTSessionMetadataTests: XCTestCase {
                 "https://api.openai.com/auth": namespace,
                 "chatgpt_plan_type": "free",
             ])
-            let metadata = try ChatGPTSessionMetadata(token: token)
+            let metadata = try JWTSession(token: token)
             XCTAssertTrue(metadata.hasPlan)
             XCTAssertNil(metadata.planType)
         }
@@ -38,9 +38,9 @@ final class ChatGPTSessionMetadataTests: XCTestCase {
             "https://api.openai.com/auth": [String: String](),
             "chatgpt_plan_type": "free",
         ])
-        XCTAssertEqual(try ChatGPTSessionMetadata(token: emptyNamespace).planType, "free")
+        XCTAssertEqual(try JWTSession(token: emptyNamespace).planType, "free")
         let absent = try makeUnsignedJWT(claims: [:])
-        XCTAssertFalse(try ChatGPTSessionMetadata(token: absent).hasPlan)
+        XCTAssertFalse(try JWTSession(token: absent).hasPlan)
     }
 
     func testMalformedProfileCannotExposeLegacyValues() throws {
@@ -49,7 +49,7 @@ final class ChatGPTSessionMetadataTests: XCTestCase {
                 "https://api.openai.com/profile": profile,
                 "email": "legacy@example.test", "name": "Legacy Name",
             ])
-            let metadata = try ChatGPTSessionMetadata(token: token)
+            let metadata = try JWTSession(token: token)
             XCTAssertNil(metadata.email)
             XCTAssertNil(metadata.name)
         }
@@ -57,7 +57,7 @@ final class ChatGPTSessionMetadataTests: XCTestCase {
 
     func testInvalidTokenStructureReturnsOnlyTheDomainError() throws {
         for token in ["invalid", ".payload.", "header.%%%.", "header.W10."] {
-            XCTAssertThrowsError(try ChatGPTSessionMetadata(token: token)) { error in
+            XCTAssertThrowsError(try JWTSession(token: token)) { error in
                 XCTAssertEqual(error as? ChatGPTSessionError, .malformedCredentials)
             }
         }
