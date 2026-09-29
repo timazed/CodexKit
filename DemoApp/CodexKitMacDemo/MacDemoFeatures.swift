@@ -18,7 +18,7 @@ enum MacDemoAction: String, CaseIterable {
 final class MacDemoFeatures {
     private var isExecuting = false
     let progressiveOutput = ProgressiveOutputDemoModel()
-    let images: MacDemoImageModel
+    let images: ImageGenerationDemoModel
     var isBusy: Bool { isExecuting || progressiveOutput.isBusy || images.isBusy }
     var error: String?
     var result = ""
@@ -49,7 +49,7 @@ final class MacDemoFeatures {
         self.sessions = sessions
         self.binding = binding
         self.diagnostics = diagnostics
-        images = MacDemoImageModel(session: {
+        images = ImageGenerationDemoModel(session: {
             let session = try await sessions.requireSession()
             guard session.binding == binding else { throw ChatGPTSessionError.accountChanged }
             return session

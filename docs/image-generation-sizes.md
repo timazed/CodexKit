@@ -1,5 +1,10 @@
 # Codex image size investigation — 29 September 2026
 
+> Historical alpha.34 evidence for the Responses route. The alpha.35 default
+> client uses the dedicated Images API; see [the current contract](messaging.md#standalone-image-generation).
+> These live results do not validate the new endpoint.
+
+
 ## Finding
 
 The Codex backend did not honor the image tool's `size` field in five controlled

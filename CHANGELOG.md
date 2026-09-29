@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.35] - 2026-09-29
+
+This prerelease follows the image-generation implementation in `codex-src`, using the authenticated Codex Images endpoints. The default client now returns PNG with automatic quality and dimensions; explicit Responses configurations retain their existing behavior. Live macOS generation and transparent JPEG editing passed in one attempt each. See the [verification results](docs/verification.md#live-macos-confirmation-29-september-2026).
+
+### Added
+
+- Built-in Codex Images backend for standalone generation and editing, with transparent backgrounds and up to five reference images. Uses the bundled Codex tool's fixed image model, automatic quality/dimensions, and PNG contract.
+- Typed image request/generation IDs on successful results and image diagnostics on errors, including image allowance reset times when supplied by the service.
+- Matching standalone Images screens in both demos, with transparency, reference import, cancellation, previews, PNG saving, actual dimensions, and diagnostic details.
+- Offline request-contract, complete-response, invalid-image, byte-limit, quota, and cancellation coverage, plus shared demo state verification on both platforms.
+
+### Changed
+
+- The default `AgentImageGenerationClient()` uses `/images/generations` and `/images/edits`. Non-auto quality and non-PNG options fail locally on that path. Existing explicit configurations retain Responses behavior; see the [migration notes](docs/migration.md#dedicated-image-generation-alpha35).
+- The dedicated transport makes one request, shares authentication with Responses, waits for the entire JSON body and validates image bytes. No automatic retries, fallback requests, or generation deadline are added.
+
+### Fixed
+
+- The explicitly requested macOS live image verifier now starts even when macOS restores the app without a window. Separate generate/edit checks validate decoded PNG output and background transparency; both passed against the authenticated Codex backend.
+
 ## [2.0.0-alpha.34] - 2026-09-29
 
 This prerelease fixes standalone image generation over the authenticated Codex streaming endpoint. **Breaking change:** remove `size:` arguments and `options.size` assignments from image requests; configure quality and read actual output dimensions instead. See the [migration notes](docs/migration.md#image-generation-alpha34).
@@ -550,7 +570,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.34...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.35...HEAD
+[2.0.0-alpha.35]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.34...v2.0.0-alpha.35
 [2.0.0-alpha.34]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.33...v2.0.0-alpha.34
 [2.0.0-alpha.33]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.32...v2.0.0-alpha.33
 [2.0.0-alpha.32]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.31...v2.0.0-alpha.32

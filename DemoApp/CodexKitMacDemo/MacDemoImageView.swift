@@ -4,7 +4,7 @@ import SwiftUI
 
 struct MacDemoImageView: View {
     @Bindable var model: MacDemoModel
-    @Bindable var images: MacDemoImageModel
+    @Bindable var images: ImageGenerationDemoModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -37,6 +37,9 @@ struct MacDemoImageView: View {
                                 if let type = http.providerType { Text("Provider type: \(type)") }
                                 if let id = http.requestID { Text("Request ID: \(id)") }
                             }
+                            if let details = failure.imageGeneration {
+                                ImageGenerationDiagnosticsView(details: details)
+                            }
                             if let id = failure.interruption?.clientRequestID { Text("Client request ID: \(id)") }
                             if let id = failure.interruption?.responseID { Text("Response ID: \(id)") }
                         }.font(.caption.monospaced()).textSelection(.enabled)
@@ -61,6 +64,9 @@ struct MacDemoImageView: View {
                             Spacer()
                             Button("Save Image…") { images.save(result) }
                         }
+                        if let details = result.diagnostics {
+                            DisclosureGroup("Image details") { ImageGenerationDiagnosticsView(details: details) }
+                        }
                     }.padding(8)
                 }
             }
@@ -69,37 +75,13 @@ struct MacDemoImageView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                if model.models.isEmpty {
-                    TextField("Model", text: $model.modelID).textFieldStyle(.roundedBorder)
-                } else {
-                    Picker("Model", selection: $model.modelID) {
-                        if !model.models.contains(where: { $0.id == model.modelID }) {
-                            Text(model.modelID).tag(model.modelID)
-                        }
-                        ForEach(model.models, id: \.id) { Text($0.id).tag($0.id) }
-                    }
-                }
-                Button("Refresh Models") { Task { await model.refreshModels() } }
+            Picker("Action", selection: $images.action) {
+                Text("Generate").tag(AgentImageGenerationAction.generate)
+                Text("Edit").tag(AgentImageGenerationAction.edit)
             }
-            HStack {
-                Picker("Action", selection: $images.action) {
-                    Text("Generate").tag(AgentImageGenerationAction.generate)
-                    Text("Edit").tag(AgentImageGenerationAction.edit)
-                    Text("Auto").tag(AgentImageGenerationAction.auto)
-                }
-                Picker("Quality", selection: $images.quality) {
-                    ForEach([AgentImageGenerationQuality.low, .medium, .high, .auto], id: \.self) {
-                        Text($0.rawValue.capitalized).tag($0)
-                    }
-                }
-                Picker("Format", selection: $images.outputFormat) {
-                    ForEach([AgentImageOutputFormat.jpeg, .png, .webp], id: \.self) {
-                        Text($0.rawValue.uppercased()).tag($0)
-                    }
-                }
-            }
-            Text("Image dimensions are chosen by the service.").font(.caption).foregroundStyle(.secondary)
+            Toggle("Transparent background", isOn: $images.transparentBackground)
+            Text("PNG output. Quality and dimensions are chosen by the service.")
+                .font(.caption).foregroundStyle(.secondary)
             TextField("Describe the image or edit", text: $images.prompt, axis: .vertical)
                 .lineLimit(3...8).textFieldStyle(.roundedBorder)
             if images.action != .generate {
@@ -118,10 +100,6 @@ struct MacDemoImageView: View {
                         }
                     }
                 }
-            }
-            DisclosureGroup("Advanced") {
-                TextField("Image model (empty uses service default)", text: $images.imageModel)
-                    .textFieldStyle(.roundedBorder)
             }
         }
     }

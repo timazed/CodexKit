@@ -13,7 +13,7 @@ final class AgentImageGenerationClientTests: XCTestCase {
     }
 
     func testEditSendsInputImagesAndDecodesGeneratedImage() async throws {
-        let client = AgentImageGenerationClient(urlSession: makeTestURLSession())
+        let client = AgentImageGenerationClient(configuration: .init(), urlSession: makeTestURLSession())
         let session = ChatGPTSession(
             accessToken: "access-token",
             refreshToken: "refresh-token",
@@ -82,7 +82,7 @@ final class AgentImageGenerationClientTests: XCTestCase {
     }
 
     func testEditRejectsUnsupportedSourceImageMimeType() async throws {
-        let client = AgentImageGenerationClient(urlSession: makeTestURLSession())
+        let client = AgentImageGenerationClient(configuration: .init(), urlSession: makeTestURLSession())
         let session = ChatGPTSession(
             accessToken: "access-token",
             account: ChatGPTAccount(id: "workspace-123", email: "taylor@example.com", plan: .plus)

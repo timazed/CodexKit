@@ -131,3 +131,81 @@ The verifier creates temporary, uniquely identified test threads in each managed
 Results are written to `Documents/CodexKitVerification.json` in the demo's app container. Retrieve that report using Xcode's container download or the simulator/device tools. It includes timestamps, a run ID, individual `sqlite` / `realm` outcomes, and aggregate `localAdapters` / `liveProvider` outcomes; errors contain codes rather than credentials or provider response content. `skipped: no_current_session` or a Keychain failure requires signing in or correcting the host's Keychain/signing setup before retrying live checks.
 
 On 7 September 2026, before the final cancellation cleanup fix, a signed build installed and launched on the connected iPhone. Its verification report passed the local SQLite, Realm, structured-completion, and cancellation checks. The locally signed iOS 18.6 simulator build passed the same checks and resolved the earlier `keychain_read_failed` result from the unsigned build. The signed simulator build was repeated successfully after the cleanup and definition/tool-output fixes. Both runtime reports returned `skipped: no_current_session` for live-provider checks; the documented Mac SDK and demo Keychain entries also had no current session. Live-provider compatibility still requires sign-in and a completed live check. No physical-device energy measurement has been claimed.
+
+## Dedicated image endpoint (alpha.35)
+
+```sh
+swift test --force-resolved-versions -Xswiftc -warnings-as-errors \
+  --filter 'CodexImages|AgentImageGeneration|HTTPFailure|RuntimeError|RateLimit|ImageReferences'
+```
+
+`CodexImagesClientTests` assert the production URL, headers, exact JSON body,
+opaque/transparent backgrounds, reference encoding, complete PNG decoding,
+actual dimensions, correlation IDs, quota body/header reset handling, unsupported
+options, malformed/partial/failed output, and bounded response ingestion.
+`CodexImagesCancellationTests` cover cancellation before headers, during JSON/error
+ingestion, and after complete JSON arrives while the connection remains open.
+A result cannot succeed before the HTTP body completes. Existing Responses image
+tests explicitly select the compatibility configuration and retain terminal SSE,
+caller-model, nil image-model, low-quality, and format coverage.
+
+Both demo verifiers run the shared image presentation checks. All fixtures use
+synthetic sessions and local transport stubs. The contract follows local
+`codex-src` revision `c248f6d48b97eb4a2aa56147a0b11b7d763278b9`:
+
+| Contract | Upstream source under `codex-rs/` |
+| --- | --- |
+| ChatGPT authentication selects `https://chatgpt.com/backend-api/codex` | `model-provider-info/src/lib.rs`, `to_api_provider` |
+| POST `images/generations` / `images/edits`, complete JSON response | `codex-api/src/endpoint/images.rs` |
+| `gpt-image-2`, automatic quality/size, transparent or opaque background, inline edit references | `ext/image-generation/src/tool.rs`, `request_for_call_args` |
+| Image turn/request correlation headers | `ext/image-generation/src/backend.rs`, `codex-api/src/endpoint/images.rs` |
+
+The default-client regression asserts the complete ChatGPT Codex URL, shared
+session authentication headers, and exact JSON body. This exercises Codex's
+authenticated backend contract; it does not use the public API's `/v1` host.
+The SDK deliberately retains caller-owned retry policy rather than copying
+upstream transport retries.
+
+Local verification on 29 September 2026 passed the signed macOS and iOS 27 smoke
+checks, including shared image controls and second-process recovery. The API audit
+against alpha.34 found no removed or changed declarations, and no CodexKitUI API
+changes; it reported the two added error-code enum cases. The source-size guard
+passed for 311 production files, and the verification harness passed 38 tests.
+Evidence is retained in `.build/codex-images-macos.log`,
+`.build/codex-images-ios-verification/`, `.build/codex-images-api-review/`, and
+`.build/codex-images-harness.log`. These are offline results, not live generation
+confirmation.
+
+The final full package run passed 753 SDK tests (seven expected opt-in skips) and
+17 recovery integration tests, with warnings treated as errors and zero failures.
+The focused image/Responses regression run passed 98 SDK tests and one integration
+test. Logs: `.build/codex-images-package-tests.log` and
+`.build/codex-images-final-focused-tests.log`.
+
+### Live macOS confirmation, 29 September 2026
+
+With the user's approval, the signed macOS demo restored its existing session and
+completed these two independent requests through the default SDK client:
+
+| Check | Result | Actual decoded output |
+| --- | --- | --- |
+| Edit a synthetic JPEG with a transparent background | Passed, one attempt | PNG, 1254 × 1254; transparent pixels present |
+| Generate from a prompt with an opaque background | Passed, one attempt | PNG, 1254 × 1254; no transparent pixels found |
+
+Both returned image request IDs and generation IDs. ImageIO decoded the PNGs, the
+verifier inspected alpha pixels, and both saved outputs were visually inspected.
+The dimensions are observations, not a requested size or a future guarantee.
+Reports and synthetic inputs/outputs are retained locally in
+`.build/codex-images-live/edit/` and `.build/codex-images-live/generate/`.
+
+The live-check launch was also fixed to start from the app delegate when macOS
+restores the app without a window. The signed macOS smoke and second-process
+checks passed again afterward (`.build/codex-images-macos-startup-fix.log`). All
+13 dedicated endpoint tests passed after strengthening the full-URL assertion
+(`.build/codex-images-source-parity-tests.log`).
+
+Quota exhaustion, cancellation, interrupted responses, and malformed output were
+verified with offline fixtures, not deliberately triggered against the live
+account. Multiple-reference editing and iOS live generation remain unverified;
+the signed iOS demo passed offline verification using the same SDK and shared
+presentation model.

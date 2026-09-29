@@ -341,37 +341,87 @@ Generated `image_generation_call` items with a base64 `result` are converted int
 
 ### Standalone image generation
 
-`AgentImageGenerationClient.generate` and `.edit` wait for successful terminal
-completion and preserve the selected main model, optional image model, quality,
-format, and action. They make one request; the caller owns cancellation and any
-retry decision. Configure quality; image dimensions are chosen by the service.
+The default `AgentImageGenerationClient` follows Codex's bundled image tool. It
+calls `/backend-api/codex/images/generations` or `/images/edits` directly, with
+`gpt-image-2`, automatic quality and dimensions, and PNG output. No plugin or chat
+model selection is required. These defaults follow the inspected upstream source;
+account availability still depends on the service.
 
 ```swift
+let client = AgentImageGenerationClient()
 let images = try await client.generate(
-    prompt: "Draw a watercolor landscape",
+    prompt: "Draw a watercolor tree with a transparent background",
     session: session,
-    options: .init(outputFormat: .jpeg, quality: .low)
+    options: .init(transparentBackground: true)
 )
-let dimensions = images.first?.pixelSize // Actual decoded pixels; no fixed-size guarantee.
+let dimensions = images.first?.pixelSize // Actual decoded pixels.
+let imageRequestID = images.first?.diagnostics?.imageRequestID
+let generationID = images.first?.diagnostics?.generationID
+
+let edited = try await client.edit(
+    images: referenceImages,
+    prompt: "Turn these references into a watercolor illustration",
+    session: session,
+    options: .init(transparentBackground: true)
+)
 ```
 
-There is no size request property or initializer argument, including deprecated
-overloads. The demo offers no size selector. This intentionally removes the old
-`size:` API because the Codex route does not reliably honor requested dimensions;
-existing source must remove that argument or property assignment. Older serialized
-options can still be decoded, but their obsolete `size` field is ignored and is
-never transmitted or encoded again.
+Editing accepts up to five PNG, JPEG, or WebP references, totaling at most 32 MiB.
+Transparency defaults to false (opaque). The SDK returns original PNG bytes after
+validating the complete HTTP response and image data; malformed, partial, empty,
+and failed results throw. A valid JSON prefix is not completion: the HTTP body
+must finish without a transport error. Response ingestion and decoded output are
+bounded. The client makes one request with no automatic retries or additional
+elapsed-time generation deadline. The application's URLSession transport timeouts
+still apply; cancel the Swift task to stop an in-flight request.
 
-`pixelSize` reports actual output dimensions without changing the image. It is
-read-only and returns nil for unreadable bytes. Output dimensions and provider
-metadata remain available; the SDK does not resize or crop the result.
-The same read-only `pixelSize` is available on `AgentImageAttachment`, including
-images returned through ordinary chat turns.
+`pixelSize` is output-only and reads actual dimensions without resizing or cropping.
+It is also available on ordinary chat attachments. There is no request-side size
+API; old serialized `size` fields are ignored. The internal Images request sends
+`size: "auto"`, matching Codex. Earlier [live size observations](image-generation-sizes.md)
+apply to the Responses route, not this dedicated endpoint.
 
-Live checks returned roughly 1.57 MP images despite explicit size requests,
-including landscape and portrait requests that returned square images. This is
-not a guarantee about every model or future server version. See the
-[size investigation](image-generation-sizes.md) for evidence and verification.
+Successful results expose `diagnostics` with client, HTTP, image-service, and
+optional generation IDs. Errors expose `AgentRuntimeError.imageGeneration` and
+retain HTTP status, provider code/type, and the provider's explanation. An
+image-specific allowance failure uses `imageGenerationUsageLimitExceeded` and
+supplies `usageLimit.resetsAt` when available; nil means unknown. The SDK does not
+log requests, credentials, photos, or raw provider bodies. Applications should
+avoid logging arbitrary provider explanation text or image payloads.
+
+```swift
+do {
+    _ = try await client.generate(prompt: prompt, session: session)
+} catch let error as AgentRuntimeError {
+    if let limit = error.imageGeneration?.usageLimit {
+        // Present limit.resetsAt when supplied; let the user decide when to retry.
+    }
+    // Correlate support reports using error.imageGeneration?.imageRequestID.
+}
+```
+
+#### Compatibility with the Responses image tool
+
+The existing explicit configuration initializer retains the Responses route and
+its selected chat model, optional image model (including nil), quality, format,
+and SSE completion semantics:
+
+```swift
+let compatibilityClient = AgentImageGenerationClient(configuration: .init(
+    model: selectedModel,
+    imageModel: nil
+))
+let images = try await compatibilityClient.generate(prompt: prompt, session: session,
+    options: .init(outputFormat: .jpeg, quality: .low))
+```
+
+This is an explicit compatibility path, not an automatic fallback. Use
+`.codexImages(baseURL:originator:extraHeaders:)` when customizing the dedicated
+backend. The default dedicated path rejects non-auto quality, non-PNG format, or
+an action inconsistent with the called method, before sending anything. It never
+silently changes the meaning of an explicit Responses configuration. Transparency
+is supported on the dedicated path; requesting it on the compatibility path fails
+locally. The demos expose only the built-in path's controls.
 
 When the backend includes generation details, they are available on `AgentImageAttachment.generationMetadata`:
 

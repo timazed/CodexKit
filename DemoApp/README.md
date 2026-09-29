@@ -14,7 +14,7 @@ The native SwiftUI demo includes:
 
 - Local Codex session reuse, browser OAuth (localhost callback on port 1455), and device-code sign-in.
 - An Assistant workspace with persisted conversations, model discovery, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
-- An Images workspace for generation and reference-image editing, with quality and output-format controls, cancellation, previews, and saving. The service chooses dimensions; results show the actual pixel size.
+- An Images workspace for generation and reference-image editing, with transparent backgrounds, up to five reference images, cancellation, previews, and PNG saving. Results show actual pixel dimensions, diagnostic IDs, and image allowance reset details.
 - Turn-based streaming text, JSON Lines records, XML with attributes, and native JSON Schema using the iOS demo's shared UI and schemas, alongside the existing shipping, imported-content, and text-with-payload examples.
 - MemoryWriter and raw-record authoring, retrieval, prompt previews, explicit capture, and optional automatic capture after turns.
 - Tool approval/denial, parallel lookups, travel skills, skill-policy comparison, personas and per-request reviewer overrides.
@@ -149,7 +149,7 @@ The signed-in header shows the account name when supplied by sign-in, with email
 
 For release verification, run the signed offline smoke checks above and `python3 Scripts/verify_ios_simulator.py --mode smoke` from the repository root. The [verification guide](../docs/verification.md) describes the extended checks and live-session limits.
 
-The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, quality, format, and status come from `AgentImageAttachment.generationMetadata`. Dimensions are read from the actual image bytes through `pixelSize`; neither demo requests a fixed image size. The iOS quick start uses hosted chat generation, while the macOS Images workspace also demonstrates standalone quality-controlled generate/edit calls.
+The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, quality, format, and status come from `AgentImageAttachment.generationMetadata`. Dimensions are read from the actual image bytes through `pixelSize`; neither demo requests a fixed image size. The iOS quick start still demonstrates hosted chat generation. For standalone calls, open **Images · Generate or edit** on the signed-in iOS home screen or **Images** in the macOS workspace. Both use Codex's built-in image contract: PNG, automatic quality/dimensions, and a transparency toggle. No model, quality, format, or size selectors are exposed. Expand **Image details** or **Error details** to inspect correlation IDs and quota reset times; use **Save Image…** to export the PNG.
 
 Generated image bytes are persisted the same way as other runtime image attachments: the image data is written to flat files, while the selected runtime store keeps the relative attachment pointer and metadata.
 
@@ -230,3 +230,25 @@ Implementation examples live in `AgentDemoViewModel+RuntimeFeatures.swift`, `Run
 ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](../docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.
 
 Both demos show resolved account details: plan, name, email, and account ID. Unknown plans remain labeled **Unknown**, and missing metadata is shown as **Not available**. The iOS details appear in the main header; macOS shows them in the sidebar. Values update from the current SDK session after sign-in, restoration, or refresh. Credentials are never displayed.
+
+### Standalone image verification
+
+Both signed offline verifiers exercise the same image state model, including
+transparency/reference options, overlapping-request prevention, cancellation,
+disconnect, missing output, provider details, and quota reset metadata. Package
+tests separately exercise the real request builder and JSON transport with stubbed
+HTTP responses. These checks do not establish live account availability.
+
+The macOS `--run-image-demo --verification-result /absolute/path/report.json`
+opt-in launch performs one transparent PNG edit through the dedicated Codex
+endpoint using a synthetic JPEG reference. Add `--image-demo-generate` to perform
+one prompt-only generation with an opaque background instead. Use a separate
+report directory for each check to preserve its report and output PNG.
+
+These checks require explicit live-generation approval and an existing demo
+session; they never start sign-in or retry. They start from the app delegate even
+if macOS restores the app without a window. Reports include completion status,
+actual dimensions, detected format, alpha inspection, and correlation IDs. Do
+not run them as part of offline verification. Both checks passed on 29 September
+2026; see the [live results and limits](../docs/verification.md#live-macos-confirmation-29-september-2026).
+Prior low-quality JPEG live results concern the Responses route.

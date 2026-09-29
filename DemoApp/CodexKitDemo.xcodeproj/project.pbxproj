@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AD2900000000000000000401 /* ImageGenerationDemoVerification.swift iOS */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000008; };
+		AD2900000000000000000301 /* ImageGenerationDemoView.swift iOS */ = {isa = PBXBuildFile; fileRef = AD2900000000000000000002; };
+		AD2900000000000000000202 /* ImageGenerationDiagnosticsView.swift macOS */ = {isa = PBXBuildFile; fileRef = AD2900000000000000000001; };
+		AD2900000000000000000201 /* ImageGenerationDiagnosticsView.swift iOS */ = {isa = PBXBuildFile; fileRef = AD2900000000000000000001; };
+		AD2900000000000000000102 /* ImageGenerationDemoModel.swift macOS */ = {isa = PBXBuildFile; fileRef = AD2900000000000000000000; };
+		AD2900000000000000000101 /* ImageGenerationDemoModel.swift iOS */ = {isa = PBXBuildFile; fileRef = AD2900000000000000000000; };
 		AC2900000000000000000007 /* Image offline verification */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000008; };
 		AC2900000000000000000005 /* MacDemoImageView.swift */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000006; };
 		AC2900000000000000000003 /* MacDemoImageModel.swift */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000004; };
@@ -124,7 +130,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		AC2900000000000000000008 /* MacDemoImageOfflineVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageOfflineVerification.swift; sourceTree = "<group>"; };
+		AD2900000000000000000002 /* ImageGenerationDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationDemoView.swift; sourceTree = "<group>"; };
+		AD2900000000000000000001 /* ImageGenerationDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationDiagnosticsView.swift; sourceTree = "<group>"; };
+		AD2900000000000000000000 /* ImageGenerationDemoModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationDemoModel.swift; sourceTree = "<group>"; };
+		AC2900000000000000000008 /* ImageGenerationDemoVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationDemoVerification.swift; sourceTree = "<group>"; };
 		AC2900000000000000000006 /* MacDemoImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageView.swift; sourceTree = "<group>"; };
 		AC2900000000000000000004 /* MacDemoImageModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageModel.swift; sourceTree = "<group>"; };
 		AC2900000000000000000002 /* MacDemoImageVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageVerification.swift; sourceTree = "<group>"; };
@@ -338,6 +347,10 @@
 				2A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift */,
 				2A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift */,
 				2A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift */,
+				AC2900000000000000000008 /* ImageGenerationDemoVerification.swift */,
+				AD2900000000000000000000 /* ImageGenerationDemoModel.swift */,
+				AD2900000000000000000001 /* ImageGenerationDiagnosticsView.swift */,
+				AD2900000000000000000002 /* ImageGenerationDemoView.swift */,
 				AB2300000000000000000007 /* ProgressiveOutputDemoModel.swift */,
 				AB2300000000000000000008 /* ProgressiveOutputDemoView.swift */,
 				AB2300000000000000000009 /* DemoStreamingVerification.swift */,
@@ -364,7 +377,6 @@
 			children = (
 				BBC000000000000000000001,
 				AC2900000000000000000002 /* MacDemoImageVerification.swift */,
-				AC2900000000000000000008 /* MacDemoImageOfflineVerification.swift */,
 				AC2900000000000000000006 /* MacDemoImageView.swift */,
 				AC2900000000000000000004 /* MacDemoImageModel.swift */,
 				BDA1D8C67912DA964817B674,
@@ -496,6 +508,10 @@
 				1A2B3C4D5E6F700000000009 /* AgentDemoViewModel+HealthCoachPlatform.swift in Sources */,
 				1A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift in Sources */,
 				1A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift in Sources */,
+				AD2900000000000000000101 /* ImageGenerationDemoModel.swift iOS */,
+				AD2900000000000000000201 /* ImageGenerationDiagnosticsView.swift iOS */,
+				AD2900000000000000000301 /* ImageGenerationDemoView.swift iOS */,
+				AD2900000000000000000401 /* ImageGenerationDemoVerification.swift iOS */,
 				AB2300000000000000000001 /* Streaming model iOS */,
 				AB2300000000000000000003 /* Streaming view iOS */,
 				AB2300000000000000000005 /* Streaming verification iOS */,
@@ -533,6 +549,8 @@
 				AC2900000000000000000005 /* MacDemoImageView.swift */,
 				AC2900000000000000000003 /* MacDemoImageModel.swift */,
 				AB2900000000000000000002 /* Recovery macOS */,
+				AD2900000000000000000102 /* ImageGenerationDemoModel.swift macOS */,
+				AD2900000000000000000202 /* ImageGenerationDiagnosticsView.swift macOS */,
 				AB2300000000000000000002 /* Streaming model macOS */,
 				AB2300000000000000000004 /* Streaming view macOS */,
 				AB2300000000000000000006 /* Streaming verification macOS */,

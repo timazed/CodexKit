@@ -84,8 +84,7 @@ struct CodexResponsesRequestFactory: Sendable {
         }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(session.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
+        CodexRequestAuthentication.apply(to: &request, session: session)
         request.setValue(requestID, forHTTPHeaderField: "session_id")
         request.setValue(requestID, forHTTPHeaderField: "x-client-request-id")
         request.setValue(configuration.originator, forHTTPHeaderField: "originator")
@@ -205,7 +204,7 @@ struct CodexResponsesEventStreamClient: Sendable {
                 ]
             )
             // Keep the provider's explanation, not the entire potentially private error payload.
-            let providerError = try? decoder.decode(HTTPProviderError.self, from: bodyData)
+            let providerError = try? decoder.decode(CodexHTTPProviderError.self, from: bodyData)
             throw AgentRuntimeError.httpFailure(response: httpResponse, body: bodyData, prefix: httpErrorPrefix,
                 message: providerError?.message
                     ?? "The ChatGPT responses request failed with status \(httpResponse.statusCode)."
@@ -296,20 +295,6 @@ struct CodexResponsesEventStreamClient: Sendable {
             }
         }
         return (events, AgentHTTPFailure(response: httpResponse))
-    }
-
-    private struct HTTPProviderError: Decodable {
-        let message: String?
-
-        private enum CodingKeys: String, CodingKey { case error, message, detail }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            message = (try? container.decode(StreamErrorPayload.self, forKey: .error))?.message
-                ?? (try? container.decode(String.self, forKey: .error))
-                ?? (try? container.decode(String.self, forKey: .message))
-                ?? (try? container.decode(String.self, forKey: .detail))
-        }
     }
 
     func shouldRetry(

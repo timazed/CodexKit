@@ -12,7 +12,7 @@ final class AgentImageGenerationSizeTests: XCTestCase {
         let item = imageItem(result: data.base64EncodedString(), format: "jpeg")
             .dropLast() + #","size":"1024x1024"}"#
         await TestURLProtocol.enqueue(.init(body: imageSSE(imageDone(String(item)), imageCompleted([]))))
-        let images = try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(
+        let images = try await AgentImageGenerationClient(configuration: .init(), urlSession: makeTestURLSession()).generate(
             prompt: "Draw", session: demoSession(), options: .init(outputFormat: .jpeg, quality: .low))
         XCTAssertEqual(images.first?.pixelSize, .init(width: 64, height: 32))
         XCTAssertEqual(images.first?.image.pixelSize, .init(width: 64, height: 32))
@@ -24,7 +24,7 @@ final class AgentImageGenerationSizeTests: XCTestCase {
         let options = try JSONDecoder().decode(AgentImageGenerationOptions.self, from: legacy)
         XCTAssertEqual(options, .init(action: .generate, outputFormat: .jpeg, quality: .low))
         let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(options)) as? [String: Any])
-        XCTAssertEqual(Set(encoded.keys), ["action", "outputFormat", "quality"])
+        XCTAssertEqual(Set(encoded.keys), ["action", "outputFormat", "quality", "transparentBackground"])
         let data = try imageTestData(width: 1254, height: 1254)
         await TestURLProtocol.enqueue(.init(body: imageSSE(imageCompleted([
             imageItem(result: data.base64EncodedString(), format: "jpeg")
@@ -34,7 +34,7 @@ final class AgentImageGenerationSizeTests: XCTestCase {
             XCTAssertNil(tool["size"])
             XCTAssertEqual(tool["quality"] as? String, "low")
         }))
-        let images = try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(
+        let images = try await AgentImageGenerationClient(configuration: .init(), urlSession: makeTestURLSession()).generate(
             prompt: "Draw", session: demoSession(), options: options)
         XCTAssertEqual(images.first?.pixelSize, .init(width: 1254, height: 1254))
         XCTAssertEqual(images.first?.image.data, data)

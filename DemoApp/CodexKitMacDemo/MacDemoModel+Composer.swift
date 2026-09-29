@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 extension MacDemoModel {
     func runImageGeneration() {
         guard isConnected, !isWorking, !isOfflineDemo else { return }
-        features?.images.start(model: modelID)
+        features?.images.start()
     }
 
     func attachImages() {

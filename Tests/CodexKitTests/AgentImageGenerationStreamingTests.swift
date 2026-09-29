@@ -59,7 +59,7 @@ final class AgentImageGenerationStreamingTests: XCTestCase {
                 XCTAssertNil(tool["size"])
                 XCTAssertEqual(tool["output_format"] as? String, "png")
             }))
-            let client = AgentImageGenerationClient(urlSession: makeTestURLSession())
+            let client = AgentImageGenerationClient(configuration: .init(), urlSession: makeTestURLSession())
             let options = AgentImageGenerationOptions(action: .auto, outputFormat: .png, quality: .low)
             let images = if action == "generate" {
                 try await client.generate(prompt: "Draw", session: demoSession(), options: options)
@@ -288,7 +288,7 @@ final class AgentImageGenerationStreamingTests: XCTestCase {
     }
 
     private func generate() async throws -> [AgentGeneratedImage] {
-        try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(prompt: "Draw", session: demoSession())
+        try await AgentImageGenerationClient(configuration: .init(), urlSession: makeTestURLSession()).generate(prompt: "Draw", session: demoSession())
     }
 
     private func failure() async throws -> AgentRuntimeError {

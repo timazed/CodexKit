@@ -42,6 +42,13 @@ enum DemoRuntimeVerification {
         } catch {
             report["streaming"] = "failed: \(error.localizedDescription)"
         }
+        do {
+            report["imageChecks"] = try await ImageGenerationDemoVerification.run().joined(separator: "; ")
+            report["images"] = "passed"
+        } catch {
+            localAdaptersPassed = false
+            report["images"] = failureCode(error)
+        }
         for adapter in Adapter.allCases {
             do {
                 try await verifyLocalAdapter(adapter)
