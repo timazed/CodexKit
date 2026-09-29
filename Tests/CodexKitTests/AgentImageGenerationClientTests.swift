@@ -24,24 +24,21 @@ final class AgentImageGenerationClientTests: XCTestCase {
 
         await TestURLProtocol.enqueue(
             .init(
-                headers: ["Content-Type": "application/json"],
+                headers: ["Content-Type": "text/event-stream"],
                 body: Data(
                     """
-                    {
-                      "id": "resp_image",
-                      "output": [
-                        {
-                          "id": "ig_123",
-                          "type": "image_generation_call",
-                          "status": "completed",
-                          "revised_prompt": "Make the background transparent.",
-                          "result": "\(generatedBytes.base64EncodedString())"
-                        }
-                      ]
-                    }
+                    event: response.output_item.done
+                    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"ig_123","type":"image_generation_call","status":"completed","revised_prompt":"Make the background transparent.","result":"\(generatedBytes.base64EncodedString())"}}
+
+                    event: response.completed
+                    data: {"type":"response.completed","response":{"id":"resp_image","status":"completed"}}
+
                     """.utf8
                 ),
                 inspect: { request in
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                    XCTAssertNotNil(request.value(forHTTPHeaderField: "x-client-request-id"))
                     XCTAssertEqual(request.httpMethod, "POST")
                     XCTAssertEqual(request.url?.absoluteString, "https://chatgpt.com/backend-api/codex/responses")
                     XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer access-token")
@@ -52,6 +49,8 @@ final class AgentImageGenerationClientTests: XCTestCase {
                     let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
                     XCTAssertEqual(json?["model"] as? String, "gpt-5")
                     XCTAssertEqual(json?["store"] as? Bool, false)
+                    XCTAssertEqual(json?["stream"] as? Bool, true)
+                    XCTAssertFalse((json?["instructions"] as? String ?? "").isEmpty)
 
                     let tools = try XCTUnwrap(json?["tools"] as? [[String: Any]])
                     XCTAssertEqual(tools.first?["type"] as? String, "image_generation")

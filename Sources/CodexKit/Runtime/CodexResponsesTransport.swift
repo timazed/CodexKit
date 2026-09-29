@@ -18,7 +18,7 @@ struct CodexResponsesRequestFactory: Sendable {
         webSearch: AgentWebSearchPolicy? = nil
     ) throws -> URLRequest {
         let search = try configuration.webSearchCapabilities.resolve(webSearch)
-        let requestBody = ResponsesRequestBody(
+        return try buildURLRequest(
             model: threadConfiguration.model,
             reasoning: .init(effort: threadConfiguration.reasoningEffort,
                 summary: configuration.enableReasoningSummaries ? .auto : nil),
@@ -28,9 +28,7 @@ struct CodexResponsesRequestFactory: Sendable {
                     responseFormat: responseContract?.textFormat
                 )
             ),
-            input: CodexResponsesImageDetail.normalize(items.map(\.jsonValue),
-                supportsOriginal: supportsImageDetailOriginal
-                    ?? CodexModel(rawValue: threadConfiguration.model).info?.supportsImageDetailOriginal ?? false),
+            input: items.map(\.jsonValue),
             tools: !recoveryMode && AgentStructuredRecoveryContext.current == nil ? responsesTools(
                 from: tools,
                 enableWebSearch: !isCompaction && search.mode != .disabled,
@@ -40,16 +38,44 @@ struct CodexResponsesRequestFactory: Sendable {
             ) : [],
             toolChoice: !recoveryMode && AgentStructuredRecoveryContext.current == nil ? .auto : .none,
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
-            store: false,
-            stream: true,
             include: [.encryptedReasoning],
-            promptCacheKey: threadID
+            promptCacheKey: threadID,
+            requestID: threadID,
+            session: session,
+            sortedKeys: recoveryMode || AgentStructuredRecoveryContext.current != nil,
+            isCompaction: isCompaction
+        )
+    }
+
+    /// The Codex endpoint uses the same streaming envelope for chat and image requests.
+    func buildURLRequest(
+        model: String,
+        reasoning: ResponsesReasoningConfiguration? = nil,
+        instructions: String,
+        text: ResponsesTextConfiguration = .init(format: .init(responseFormat: nil)),
+        input: [JSONValue],
+        tools: [JSONValue],
+        toolChoice: ResponsesRequestBody.ToolChoice = .auto,
+        parallelToolCalls: Bool = false,
+        include: [ResponsesRequestBody.IncludedField] = [],
+        promptCacheKey: String? = nil,
+        requestID: String,
+        session: ChatGPTSession,
+        sortedKeys: Bool = false,
+        isCompaction: Bool = false
+    ) throws -> URLRequest {
+        let requestBody = ResponsesRequestBody(
+            model: model, reasoning: reasoning, instructions: instructions, text: text,
+            input: CodexResponsesImageDetail.normalize(input, supportsOriginal: supportsImageDetailOriginal
+                ?? CodexModel(rawValue: model).info?.supportsImageDetailOriginal ?? false),
+            tools: tools, toolChoice: toolChoice, parallelToolCalls: parallelToolCalls,
+            store: false, stream: true, include: include, promptCacheKey: promptCacheKey
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
         request.httpMethod = HTTPMethod.post.rawValue
         request.timeoutInterval = configuration.streamIdleTimeout
-        if recoveryMode || AgentStructuredRecoveryContext.current != nil {
+        if sortedKeys {
             let stableEncoder = JSONEncoder()
             stableEncoder.outputFormatting = [.sortedKeys]
             request.httpBody = try stableEncoder.encode(requestBody)
@@ -60,8 +86,8 @@ struct CodexResponsesRequestFactory: Sendable {
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(session.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
-        request.setValue(threadID, forHTTPHeaderField: "session_id")
-        request.setValue(threadID, forHTTPHeaderField: "x-client-request-id")
+        request.setValue(requestID, forHTTPHeaderField: "session_id")
+        request.setValue(requestID, forHTTPHeaderField: "x-client-request-id")
         request.setValue(configuration.originator, forHTTPHeaderField: "originator")
 
         for (header, value) in configuration.extraHeaders {
@@ -111,10 +137,17 @@ struct CodexResponsesEventStreamClient: Sendable {
     var maximumBufferedEvents = 64
     var responseBudget: CodexResponseBudget?
     var rateLimitObserver: @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in }
+    var httpErrorPrefix = "responses"
 
     func streamEvents(
         request: URLRequest
     ) async throws -> AsyncThrowingStream<CodexResponsesStreamEvent, Error> {
+        try await openEventStream(request: request).events
+    }
+
+    func openEventStream(
+        request: URLRequest
+    ) async throws -> (events: AsyncThrowingStream<CodexResponsesStreamEvent, Error>, http: AgentHTTPFailure) {
         if let bodyData = request.httpBody, logger.isEnabled(.debug, for: .network) {
             logger.debug(
                 .network,
@@ -140,6 +173,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         try Task.checkCancellation()
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
+            bytes.task.cancel()
             throw AgentRuntimeError(
                 code: .responsesInvalidResponse,
                 message: "The ChatGPT responses endpoint returned an invalid response."
@@ -150,22 +184,31 @@ struct CodexResponsesEventStreamClient: Sendable {
         if !rateLimits.isEmpty { await rateLimitObserver(rateLimits) }
 
         if !(200 ..< 300).contains(httpResponse.statusCode) {
-            let bodyData = try await readAll(
-                bytes,
-                limit: AgentStoreLimits.maximumResponseErrorBodyByteCount
-            )
-            let body = sanitizedResponsesJSONString(from: bodyData)
+            defer { bytes.task.cancel() }
+            let bodyData: Data
+            do {
+                bodyData = try await readAll(bytes, limit: AgentStoreLimits.maximumResponseErrorBodyByteCount)
+            } catch let error as AgentRuntimeError {
+                throw AgentRuntimeError(code: error.code, message: error.message, http: .init(response: httpResponse))
+            }
+            try Task.checkCancellation()
+            let failure = AgentHTTPFailure(response: httpResponse, body: bodyData)
             logger.error(
                 .network,
                 "Responses event stream failed with HTTP status.",
                 metadata: [
                     "status": "\(httpResponse.statusCode)",
                     "body_length": "\(bodyData.count)",
-                    "body": body
+                    "provider_code": failure.providerCode ?? "",
+                    "provider_type": failure.providerType ?? "",
+                    "request_id": failure.requestID ?? ""
                 ]
             )
-            throw AgentRuntimeError.httpFailure(response: httpResponse, body: bodyData, prefix: "responses",
-                message: "The ChatGPT responses request failed with status \(httpResponse.statusCode): \(body)"
+            // Keep the provider's explanation, not the entire potentially private error payload.
+            let providerError = try? decoder.decode(HTTPProviderError.self, from: bodyData)
+            throw AgentRuntimeError.httpFailure(response: httpResponse, body: bodyData, prefix: httpErrorPrefix,
+                message: providerError?.message
+                    ?? "The ChatGPT responses request failed with status \(httpResponse.statusCode)."
             )
         }
 
@@ -182,6 +225,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         let (events, continuation) = AgentEventChannel<CodexResponsesStreamEvent>.makeStream(capacity: maximumBufferedEvents)
         do {
             let producerTask = Task {
+                defer { bytes.task.cancel() }
                 var parser = SSEEventParser()
 
                 do {
@@ -246,9 +290,26 @@ struct CodexResponsesEventStreamClient: Sendable {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onCancellation { producerTask.cancel() }
+            continuation.onCancellation {
+                producerTask.cancel()
+                bytes.task.cancel()
+            }
         }
-        return events
+        return (events, AgentHTTPFailure(response: httpResponse))
+    }
+
+    private struct HTTPProviderError: Decodable {
+        let message: String?
+
+        private enum CodingKeys: String, CodingKey { case error, message, detail }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            message = (try? container.decode(StreamErrorPayload.self, forKey: .error))?.message
+                ?? (try? container.decode(String.self, forKey: .error))
+                ?? (try? container.decode(String.self, forKey: .message))
+                ?? (try? container.decode(String.self, forKey: .detail))
+        }
     }
 
     func shouldRetry(

@@ -13,6 +13,7 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [ChatGPT account metadata](account-metadata-compatibility.md) | Plan vocabulary, token precedence, offline restoration, identity safety, alpha.33 integration |
 | [Local Codex login on macOS](auth-on-macos.md) | Read-only discovery, external ownership, renewal, and disconnect |
 | [Runtime progress, tools, and turn control](upstream-runtime-features.md) | Parallel tools, progress, model discovery, usage limits, steering, interruption |
+| [Image generation size behavior](image-generation-sizes.md) | Codex endpoint evidence, quality controls, output-only dimensions |
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
 | [Structured request recovery](structured-request-recovery.md) | Frozen requests, lifecycle suspension, bounded retries, completed receipts, schema upgrades, retention |

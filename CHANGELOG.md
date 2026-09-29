@@ -6,6 +6,27 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.34] - 2026-09-29
+
+This prerelease fixes standalone image generation over the authenticated Codex streaming endpoint. **Breaking change:** remove `size:` arguments and `options.size` assignments from image requests; configure quality and read actual output dimensions instead. See the [migration notes](docs/migration.md#image-generation-alpha34).
+
+### Added
+
+- Read-only `pixelSize` on generated images and image attachments, decoded from image bytes independently of provider metadata.
+- A macOS Images workspace for generate/edit requests with account model selection, quality, output format, reference images, cancellation, previews, and saving.
+- Offline coverage of production image request construction, streamed completion, missing/failed/incomplete output, cancellation, and provider error correlation.
+
+### Changed
+
+- Removed the image generation size property and initializer argument entirely. The Codex backend chooses output dimensions; older serialized options ignore their obsolete size field and never transmit it. Both demos display actual decoded dimensions.
+
+### Fixed
+
+- Share the established Codex request builder and SSE transport for standalone image generation, including instructions, streaming headers, and explicit image-tool selection.
+- Retain finalized streamed images when the terminal response has an empty output array, while requiring terminal success and rejecting partial, failed, incomplete, or disconnected results.
+- Preserve caller model selection, nil image-model behavior, quality, action, output format, structured provider errors, and request/response IDs. Each image call makes one attempt; the application owns cancellation and retries, with no added generation deadline.
+- Preserve quality and output-format options when resolving the automatic image action.
+
 ## [2.0.0-alpha.33] - 2026-09-25
 
 This prerelease fixes ChatGPT account metadata for new and existing sessions. Existing unknown metadata is repaired locally during restoration without logout or reinstall. Update exhaustive plan switches for the nine new distinct cases; see the [migration notes](docs/migration.md#chatgpt-account-metadata-alpha33).
@@ -529,7 +550,12 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.29...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.34...HEAD
+[2.0.0-alpha.34]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.33...v2.0.0-alpha.34
+[2.0.0-alpha.33]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.32...v2.0.0-alpha.33
+[2.0.0-alpha.32]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.31...v2.0.0-alpha.32
+[2.0.0-alpha.31]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.30...v2.0.0-alpha.31
+[2.0.0-alpha.30]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.29...v2.0.0-alpha.30
 [2.0.0-alpha.29]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.28...v2.0.0-alpha.29
 [2.0.0-alpha.28]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.27...v2.0.0-alpha.28
 [2.0.0-alpha.27]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.26...v2.0.0-alpha.27

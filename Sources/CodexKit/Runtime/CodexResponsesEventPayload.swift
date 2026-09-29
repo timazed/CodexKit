@@ -19,7 +19,23 @@ struct CodexResponsesEventPayload: Decodable {
         logsResponsePayload = discriminator?.logsResponsePayload == true
         let sequenceNumber = discriminator == .rateLimits
             ? nil : try container.decodeIfPresent(Int.self, forKey: .sequenceNumber)
-        event = .init(kind: try Self.decodeKind(discriminator, from: decoder), sequenceNumber: sequenceNumber)
+        if discriminator == .completed {
+            let response = try ResponsePayload(from: decoder).response
+            if response == nil {
+                event = .init(kind: Self.failure(nil), sequenceNumber: sequenceNumber)
+            } else if let status = response?.status, status != "completed" {
+                event = .init(kind: Self.failure(response, incomplete: status == "incomplete"), sequenceNumber: sequenceNumber)
+            } else if response?.error != nil {
+                event = .init(kind: Self.failure(response), sequenceNumber: sequenceNumber)
+            } else if response?.incompleteDetails != nil {
+                event = .init(kind: Self.failure(response, incomplete: true), sequenceNumber: sequenceNumber)
+            } else {
+                event = .init(kind: .completed(response?.usage?.assistantUsage ?? AgentUsage(), responseID: response?.id),
+                    sequenceNumber: sequenceNumber, completedOutput: try CompletionPayload(from: decoder).response?.output)
+            }
+        } else {
+            event = .init(kind: try Self.decodeKind(discriminator, from: decoder), sequenceNumber: sequenceNumber)
+        }
     }
 
     private static func decodeKind(_ type: ResponsesEventType?, from decoder: Decoder) throws -> CodexResponsesStreamEvent.Kind {
@@ -51,22 +67,34 @@ struct CodexResponsesEventPayload: Decodable {
         case .created:
             return .responseCreated(responseID: try ResponsePayload(from: decoder).response?.id)
         case .completed:
-            let response = try ResponsePayload(from: decoder).response
-            return .completed(response?.usage?.assistantUsage ?? AgentUsage(), responseID: response?.id)
+            return .other // Handled above to retain the terminal output snapshot.
         case .failed:
-            let response = try ResponsePayload(from: decoder).response
-            return .failed(.init(code: .responsesStreamFailed,
-                message: response?.error?.message ?? "The ChatGPT responses stream failed.",
-                http: .init(statusCode: 200, providerCode: response?.error?.code, providerType: response?.error?.type)),
-                responseID: response?.id)
+            return Self.failure(try ResponsePayload(from: decoder).response)
         case .incomplete:
-            let response = try ResponsePayload(from: decoder).response
-            let reason = response?.incompleteDetails?.reason ?? "unknown"
-            return .failed(.init(code: .responsesStreamIncomplete,
-                message: "The ChatGPT responses stream completed early: \(reason)."), responseID: response?.id)
+            return Self.failure(try ResponsePayload(from: decoder).response, incomplete: true)
+        case .error:
+            let payload = try ErrorPayload(from: decoder)
+            let error = try payload.error ?? StreamErrorPayload(from: decoder)
+            return .failed(.init(code: .responsesStreamFailed,
+                message: error.message ?? "The ChatGPT responses stream failed.",
+                http: .init(statusCode: 200, providerCode: error.code, providerType: error.type)), responseID: nil)
         case nil:
             return .other
         }
+    }
+
+    private static func failure(_ response: StreamResponsePayload?, incomplete: Bool = false) -> CodexResponsesStreamEvent.Kind {
+        let message = incomplete
+            ? "The ChatGPT responses stream completed early: \(response?.incompleteDetails?.reason ?? "unknown")."
+            : "The ChatGPT responses stream failed."
+        return .failed(.init(code: incomplete ? .responsesStreamIncomplete : .responsesStreamFailed,
+            message: response?.error?.message ?? message,
+            http: .init(statusCode: 200, providerCode: response?.error?.code, providerType: response?.error?.type)),
+            responseID: response?.id)
+    }
+
+    private struct ErrorPayload: Decodable {
+        let error: StreamErrorPayload?
     }
 
     private struct ItemPayload: Decodable {
@@ -111,5 +139,10 @@ struct CodexResponsesEventPayload: Decodable {
 
     private struct ResponsePayload: Decodable {
         let response: StreamResponsePayload?
+    }
+
+    private struct CompletionPayload: Decodable {
+        struct Output: Decodable { let output: [StreamItem]? }
+        let response: Output?
     }
 }

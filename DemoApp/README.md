@@ -1,6 +1,6 @@
 # CodexKit Demo App
 
-This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime. In alpha.33, both apps show the resolved ChatGPT account type (plan), name, email, and account ID after sign-in, restoration, or refresh.
+This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime. Both apps show the resolved ChatGPT account type (plan), name, email, and account ID after sign-in, restoration, or refresh.
 
 ## macOS demo
 
@@ -14,6 +14,7 @@ The native SwiftUI demo includes:
 
 - Local Codex session reuse, browser OAuth (localhost callback on port 1455), and device-code sign-in.
 - An Assistant workspace with persisted conversations, model discovery, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
+- An Images workspace for generation and reference-image editing, with quality and output-format controls, cancellation, previews, and saving. The service chooses dimensions; results show the actual pixel size.
 - Turn-based streaming text, JSON Lines records, XML with attributes, and native JSON Schema using the iOS demo's shared UI and schemas, alongside the existing shipping, imported-content, and text-with-payload examples.
 - MemoryWriter and raw-record authoring, retrieval, prompt previews, explicit capture, and optional automatic capture after turns.
 - Tool approval/denial, parallel lookups, travel skills, skill-policy comparison, personas and per-request reviewer overrides.
@@ -31,7 +32,7 @@ Application-owned credentials use the `CodexKitMacDemo.ApplicationSession` Keych
 
 Choose storage, web search, image generation, and automatic memory capture under **Session options** before connecting. Disconnect to change those options; each persistence adapter keeps its own data, so select **File** to reopen conversations from the original macOS demo. File conversations use a separate SQLite memory store. Both database adapters expose `init(storageDirectory:...)` for an account-specific directory while retaining fixed, separate CodexKit database filenames.
 
-After connecting, switch between **Assistant**, **Structured**, **Memory**, and **Runtime**. The persona picker applies when creating a conversation; **Apply Planner Persona** changes the active one. **Use Memory** controls memory context for the conversation. Tool examples use clearly labeled sample data and never send drafts or make bookings. The browser OAuth flow can be cancelled while waiting for sign-in; it never borrows or modifies Codex's external refresh token.
+After connecting, switch between **Assistant**, **Images**, **Structured**, **Memory**, and **Runtime**. The persona picker applies when creating a conversation; **Apply Planner Persona** changes the active one. **Use Memory** controls memory context for the conversation. Tool examples use clearly labeled sample data and never send drafts or make bookings. The browser OAuth flow can be cancelled while waiting for sign-in; it never borrows or modifies Codex's external refresh token.
 
 Authentication and workspace restoration are separate steps. If opening conversations fails after sign-in, the demo keeps the saved authentication choice, displays the workspace error, and offers **Retry Opening Workspace**. **Open Saved ChatGPT Session** also recovers a session saved by an earlier build that failed before recording its authentication choice. Runtime setup reuses the authenticated manager without rereading Keychain. An ad-hoc rebuild can cause macOS to request Keychain access again; approve that system prompt yourself to use the saved session.
 
@@ -148,7 +149,7 @@ The signed-in header shows the account name when supplied by sign-in, with email
 
 For release verification, run the signed offline smoke checks above and `python3 Scripts/verify_ios_simulator.py --mode smoke` from the repository root. The [verification guide](../docs/verification.md) describes the extended checks and live-session limits.
 
-The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, size, quality, format, and status come from `AgentImageAttachment.generationMetadata`.
+The demo supports text, photo input, and hosted image generation flows. Generated images render inline in the transcript from `AgentMessage.images`; the revised prompt, quality, format, and status come from `AgentImageAttachment.generationMetadata`. Dimensions are read from the actual image bytes through `pixelSize`; neither demo requests a fixed image size. The iOS quick start uses hosted chat generation, while the macOS Images workspace also demonstrates standalone quality-controlled generate/edit calls.
 
 Generated image bytes are persisted the same way as other runtime image attachments: the image data is written to flat files, while the selected runtime store keeps the relative attachment pointer and metadata.
 

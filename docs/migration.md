@@ -4,6 +4,31 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Image generation (alpha.34)
+
+Update to exact package version `2.0.0-alpha.34`. Standalone generate/edit calls now
+use the established streaming Codex request and response transport, explicitly
+select the image tool, and wait for terminal completion. Keep the caller's selected
+main model; `imageModel: nil` still omits the image model. Quality, format, and action
+remain explicit options. No automatic retries or generation deadline are added.
+
+The request-side `size` property and initializer argument are removed, including
+deprecated overloads. Remove `size:` arguments and `options.size` assignments:
+
+```swift
+let options = AgentImageGenerationOptions(outputFormat: .jpeg, quality: .low)
+let images = try await client.generate(prompt: prompt, session: session, options: options)
+let actualDimensions = images.first?.pixelSize
+```
+
+Dimensions are output-only. `AgentGeneratedImage.pixelSize` and
+`AgentImageAttachment.pixelSize` read the actual bytes, returning nil if unreadable.
+Older serialized options still decode, but their obsolete size field is ignored
+and is never transmitted or encoded again. There is no fixed-size guarantee,
+resizing, or model substitution. No persistence schema migration is required.
+See [image generation](messaging.md#standalone-image-generation) and the
+[size investigation](image-generation-sizes.md) for the endpoint evidence.
+
 ## ChatGPT account metadata (alpha.33)
 
 Upgrade to exact package version `2.0.0-alpha.33` and resolve dependencies. Await the existing session restoration before reading account metadata; the SDK repairs and persists unknown or placeholder values locally. No logout, reinstall, or custom resolver is needed. OAuth/device-code sign-in and refresh use the same resolution rules.

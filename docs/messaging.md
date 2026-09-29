@@ -339,6 +339,40 @@ let backend = CodexResponsesBackend(
 
 Generated `image_generation_call` items with a base64 `result` are converted into assistant `AgentImageAttachment` values so existing transcript rendering and persistence paths work without app-defined tool plumbing. The result can arrive while the item status is still `"generating"`, so apps should use the presence of `images` rather than status text to decide whether there is something renderable.
 
+### Standalone image generation
+
+`AgentImageGenerationClient.generate` and `.edit` wait for successful terminal
+completion and preserve the selected main model, optional image model, quality,
+format, and action. They make one request; the caller owns cancellation and any
+retry decision. Configure quality; image dimensions are chosen by the service.
+
+```swift
+let images = try await client.generate(
+    prompt: "Draw a watercolor landscape",
+    session: session,
+    options: .init(outputFormat: .jpeg, quality: .low)
+)
+let dimensions = images.first?.pixelSize // Actual decoded pixels; no fixed-size guarantee.
+```
+
+There is no size request property or initializer argument, including deprecated
+overloads. The demo offers no size selector. This intentionally removes the old
+`size:` API because the Codex route does not reliably honor requested dimensions;
+existing source must remove that argument or property assignment. Older serialized
+options can still be decoded, but their obsolete `size` field is ignored and is
+never transmitted or encoded again.
+
+`pixelSize` reports actual output dimensions without changing the image. It is
+read-only and returns nil for unreadable bytes. Output dimensions and provider
+metadata remain available; the SDK does not resize or crop the result.
+The same read-only `pixelSize` is available on `AgentImageAttachment`, including
+images returned through ordinary chat turns.
+
+Live checks returned roughly 1.57 MP images despite explicit size requests,
+including landscape and portrait requests that returned square images. This is
+not a guarantee about every model or future server version. See the
+[size investigation](image-generation-sizes.md) for evidence and verification.
+
 When the backend includes generation details, they are available on `AgentImageAttachment.generationMetadata`:
 
 ```swift

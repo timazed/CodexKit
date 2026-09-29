@@ -3,6 +3,11 @@ import CodexKit
 import UniformTypeIdentifiers
 
 extension MacDemoModel {
+    func runImageGeneration() {
+        guard isConnected, !isWorking, !isOfflineDemo else { return }
+        features?.images.start(model: modelID)
+    }
+
     func attachImages() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg]

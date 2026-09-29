@@ -13,6 +13,7 @@ enum ResponsesEventType: String {
     case completed = "response.completed"
     case failed = "response.failed"
     case incomplete = "response.incomplete"
+    case error
 
     var logsResponsePayload: Bool {
         switch self {

@@ -170,7 +170,7 @@ private struct ThreadGeneratedImageView: View {
     private func generatedImageDetailText(
         for metadata: AgentImageGenerationMetadata
     ) -> String {
-        [metadata.outputFormat, metadata.size, metadata.quality, metadata.status]
+        [metadata.outputFormat, image.pixelSize?.description, metadata.quality, metadata.status]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
             .joined(separator: " · ")

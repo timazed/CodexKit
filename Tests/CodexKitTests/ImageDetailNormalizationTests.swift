@@ -115,7 +115,7 @@ final class ImageDetailNormalizationTests: XCTestCase {
     func testImageEditingNormalizesOriginalForReceivingModel() async throws {
         let image = AgentImageAttachment.png(Data([1, 2, 3]), detail: .original)
         for (model, expected) in [("gpt-5.5", "original"), ("unknown", "high")] {
-            await TestURLProtocol.enqueue(.init(body: Data(#"{"output":[{"type":"image_generation_call","id":"image","result":"AQID"}]}"#.utf8), inspect: { request in
+            await TestURLProtocol.enqueue(.init(body: Data("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[{\"type\":\"image_generation_call\",\"id\":\"image\",\"status\":\"completed\",\"result\":\"AQID\"}]}}\n\n".utf8), inspect: { request in
                 let body = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
                 XCTAssertEqual(body.objectValue?["input"]?.arrayValue?.first?.objectValue?["content"]?.arrayValue?.last?.objectValue?["detail"], .string(expected))
             }))

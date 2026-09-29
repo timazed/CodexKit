@@ -9,21 +9,22 @@ struct MacDemoFeatureView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 switch model.selectedSection {
+                case .images: MacDemoImageView(model: model, images: features.images)
                 case .structured: structured
                 case .memory: memory
                 case .runtime: runtime
                 case .assistant: EmptyView()
                 }
-                if features.isBusy {
+                if features.isBusy && model.selectedSection != .images {
                     HStack {
                         ProgressView("Running example…")
                         Button("Stop") { Task { await model.stop() } }
                     }
                 }
-                if let error = features.error {
+                if let error = features.error, model.selectedSection != .images {
                     Label(error, systemImage: "exclamationmark.circle").foregroundStyle(.orange).textSelection(.enabled)
                 }
-                if !features.result.isEmpty {
+                if !features.result.isEmpty && model.selectedSection != .images {
                     GroupBox("Result") {
                         Text(features.result).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10)
                     }

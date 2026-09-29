@@ -27,8 +27,17 @@ private extension JSONValue {
 }
 
 struct ResponsesRequestBody: Encodable {
-    enum ToolChoice: String, Encodable {
-        case auto, none
+    enum ToolChoice: Encodable {
+        case auto, none, imageGeneration
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .auto: try container.encode("auto")
+            case .none: try container.encode("none")
+            case .imageGeneration: try container.encode(["type": ResponsesToolType.imageGeneration.rawValue])
+            }
+        }
     }
 
     enum IncludedField: String, Encodable {
@@ -36,7 +45,7 @@ struct ResponsesRequestBody: Encodable {
     }
 
     let model: String
-    let reasoning: ResponsesReasoningConfiguration
+    let reasoning: ResponsesReasoningConfiguration?
     let instructions: String
     let text: ResponsesTextConfiguration
     let input: [JSONValue]
@@ -350,6 +359,7 @@ struct CodexResponsesStreamEvent: Sendable {
 
     let kind: Kind
     let sequenceNumber: Int?
+    var completedOutput: [StreamItem]? = nil
 }
 
 extension ToolDefinition {

@@ -4,7 +4,7 @@ import Foundation
 import Observation
 
 enum MacDemoSection: String, CaseIterable, Identifiable {
-    case assistant = "Assistant", structured = "Structured", memory = "Memory", runtime = "Runtime"
+    case assistant = "Assistant", images = "Images", structured = "Structured", memory = "Memory", runtime = "Runtime"
     var id: String { rawValue }
 }
 
@@ -18,7 +18,8 @@ enum MacDemoAction: String, CaseIterable {
 final class MacDemoFeatures {
     private var isExecuting = false
     let progressiveOutput = ProgressiveOutputDemoModel()
-    var isBusy: Bool { isExecuting || progressiveOutput.isBusy }
+    let images: MacDemoImageModel
+    var isBusy: Bool { isExecuting || progressiveOutput.isBusy || images.isBusy }
     var error: String?
     var result = ""
     var structuredText = ""
@@ -48,12 +49,18 @@ final class MacDemoFeatures {
         self.sessions = sessions
         self.binding = binding
         self.diagnostics = diagnostics
+        images = MacDemoImageModel(session: {
+            let session = try await sessions.requireSession()
+            guard session.binding == binding else { throw ChatGPTSessionError.accountChanged }
+            return session
+        })
     }
 
     func cancel() {
         isActive = false
         task?.cancel()
         progressiveOutput.cancel()
+        images.invalidate()
         error = nil
         result = ""
         structuredText = ""
@@ -65,6 +72,8 @@ final class MacDemoFeatures {
     func stop() async {
         task?.cancel()
         progressiveOutput.cancel()
+        images.cancel()
+        await images.waitUntilFinished()
         await progressiveOutput.waitUntilFinished()
         await chat.interrupt()
     }

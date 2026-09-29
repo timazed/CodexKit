@@ -23,6 +23,11 @@ struct CodexKitMacDemoApp: App {
                     }
                     #endif
                     await model.restore()
+                    #if DEBUG
+                    if CommandLine.arguments.contains("--run-image-demo") {
+                        await MacDemoImageVerification.run(model: model)
+                    }
+                    #endif
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await model.checkSession() } }

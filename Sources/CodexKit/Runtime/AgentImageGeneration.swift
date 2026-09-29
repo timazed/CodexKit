@@ -34,18 +34,16 @@ public struct AgentImageGenerationOptions: Codable, Hashable, Sendable {
     public var action: AgentImageGenerationAction
     public var outputFormat: AgentImageOutputFormat
     public var quality: AgentImageGenerationQuality?
-    public var size: String?
 
+    /// Configure image quality and format. The service chooses output dimensions.
     public init(
         action: AgentImageGenerationAction = .auto,
         outputFormat: AgentImageOutputFormat = .png,
-        quality: AgentImageGenerationQuality? = nil,
-        size: String? = nil
+        quality: AgentImageGenerationQuality? = nil
     ) {
         self.action = action
         self.outputFormat = outputFormat
         self.quality = quality
-        self.size = size
     }
 
     public static var generate: AgentImageGenerationOptions {
@@ -123,7 +121,7 @@ public actor AgentImageGenerationClient {
             prompt: prompt,
             images: [],
             session: session,
-            options: options.action == .auto ? .generate : options
+            options: resolved(options, action: .generate)
         )
     }
 
@@ -141,7 +139,7 @@ public actor AgentImageGenerationClient {
             prompt: prompt,
             images: images,
             session: session,
-            options: options.action == .auto ? .edit : options
+            options: resolved(options, action: .edit)
         )
     }
 
@@ -151,6 +149,7 @@ public actor AgentImageGenerationClient {
         session: ChatGPTSession,
         options: AgentImageGenerationOptions
     ) async throws -> [AgentGeneratedImage] {
+        try Task.checkCancellation()
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentRuntimeError.invalidMessageContent()
         }
@@ -161,58 +160,42 @@ public actor AgentImageGenerationClient {
             session: session,
             options: options
         )
-        let (bytes, response) = try await urlSession.bytes(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AgentRuntimeError(
-                code: .imageGenerationInvalidResponse,
-                message: "The image generation endpoint returned an invalid response."
-            )
-        }
-        let isSuccess = (200 ..< 300).contains(httpResponse.statusCode)
-        let responseLimit = isSuccess
-            ? ((AgentStoreLimits.maximumImageBytesPerWrite + 2) / 3) * 4 + AgentStoreLimits.maximumEmbeddedPayloadByteCount
-            : AgentStoreLimits.maximumResponseErrorBodyByteCount
-        var data = Data()
-        for try await byte in bytes {
-            guard data.count < responseLimit else {
-                throw AgentRuntimeError(code: .imageGenerationResponseTooLarge,
-                    message: "The image generation response exceeded its supported size limit.",
-                    http: .init(response: httpResponse))
+        // A single transport attempt: the host owns cancellation and its retry budget.
+        let streamClient = CodexResponsesEventStreamClient(
+            urlSession: urlSession, decoder: decoder, logger: AgentLogger(), maximumBufferedEvents: 1,
+            responseBudget: CodexResponseBudget(maximumBytes: AgentImageGenerationResponse.maximumStreamBytes),
+            httpErrorPrefix: "image_generation"
+        )
+        var observation = ResponsesAttemptObservation()
+        var http: AgentHTTPFailure?
+        do {
+            let stream = try await streamClient.openEventStream(request: request)
+            http = stream.http
+            var result = AgentImageGenerationResponse(outputFormat: options.outputFormat)
+            for try await event in stream.events {
+                try Task.checkCancellation()
+                observation.observe(event)
+                if let images = try result.consume(event) {
+                    try Task.checkCancellation()
+                    return images
+                }
             }
-            data.append(byte)
-        }
-        try Task.checkCancellation()
-        guard isSuccess else {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw AgentRuntimeError.httpFailure(response: httpResponse, body: data, prefix: "image_generation",
-                message: "The image generation request failed with status \(httpResponse.statusCode): \(body)")
-        }
-
-        let responseBody = try decoder.decode(ImageGenerationResponseBody.self, from: data)
-        let generated = responseBody.output.compactMap { item -> AgentGeneratedImage? in
-            guard ResponsesItemType(rawValue: item.type) == .imageGenerationCall,
-                  let result = item.result,
-                  let image = AgentImageAttachment(
-                    base64String: result,
-                    mimeType: options.outputFormat.mimeType,
-                    id: item.id ?? UUID().uuidString
-                  ) else {
-                return nil
+            try Task.checkCancellation()
+            throw AgentRuntimeError(code: .responsesStreamDisconnected,
+                message: "The image generation stream ended before terminal completion.")
+        } catch {
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
             }
-            return AgentGeneratedImage(
-                id: item.id ?? image.id,
-                image: image,
-                revisedPrompt: item.revisedPrompt
-            )
+            // Decoding contexts can contain provider data; expose only a fixed explanation.
+            let underlying: Error = error is DecodingError
+                ? AgentRuntimeError(code: .imageGenerationInvalidResponse,
+                    message: "The image generation endpoint returned an invalid stream event.") : error
+            let failure = observation.failure(underlying,
+                clientRequestID: request.value(forHTTPHeaderField: "x-client-request-id"),
+                requestID: (error as? AgentRuntimeError)?.http?.requestID ?? http?.requestID)
+            throw AgentImageGenerationResponse.failure(failure, http: http)
         }
-
-        guard !generated.isEmpty else {
-            throw AgentRuntimeError(
-                code: .imageGenerationMissingOutput,
-                message: "The image generation request completed without returning an image."
-            )
-        }
-        return generated
     }
 
     private func buildURLRequest(
@@ -240,37 +223,31 @@ public actor AgentImageGenerationClient {
         if let quality = options.quality {
             tool["quality"] = .string(quality.rawValue)
         }
-        if let size = options.size {
-            tool["size"] = .string(size)
-        }
-
-        let body = ImageGenerationRequestBody(
+        let factory = CodexResponsesRequestFactory(configuration: .init(
+            baseURL: configuration.baseURL, model: configuration.model,
+            originator: configuration.originator,
+            streamIdleTimeout: urlSession.configuration.timeoutIntervalForRequest,
+            extraHeaders: configuration.extraHeaders
+        ), encoder: encoder)
+        return try factory.buildURLRequest(
             model: configuration.model,
-            input: CodexResponsesImageDetail.normalize([
-                .object([
-                    "type": ResponsesItemType.message.jsonValue,
-                    "role": .string("user"),
-                    "content": .array(content),
-                ]),
-            ], supportsOriginal: CodexModel(rawValue: configuration.model).info?.supportsImageDetailOriginal ?? false),
+            instructions: "Use the image generation tool to fulfill the user's image request.",
+            input: [.object([
+                "type": ResponsesItemType.message.jsonValue,
+                "role": .string("user"),
+                "content": .array(content),
+            ])],
             tools: [.object(tool)],
-            store: false
+            toolChoice: .imageGeneration,
+            requestID: UUID().uuidString,
+            session: session
         )
+    }
 
-        var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))
-        request.httpMethod = HTTPMethod.post.rawValue
-        request.httpBody = try encoder.encode(body)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(session.account.id, forHTTPHeaderField: "ChatGPT-Account-ID")
-        request.setValue(configuration.originator, forHTTPHeaderField: "originator")
-
-        for (header, value) in configuration.extraHeaders {
-            request.setValue(value, forHTTPHeaderField: header)
-        }
-
-        return request
+    private func resolved(_ options: AgentImageGenerationOptions, action: AgentImageGenerationAction) -> AgentImageGenerationOptions {
+        var options = options
+        if options.action == .auto { options.action = action }
+        return options
     }
 
     private func validateEditableImages(_ images: [AgentImageAttachment]) throws {
@@ -286,30 +263,5 @@ public actor AgentImageGenerationClient {
         default:
             false
         }
-    }
-}
-
-private struct ImageGenerationRequestBody: Encodable {
-    let model: String
-    let input: [JSONValue]
-    let tools: [JSONValue]
-    let store: Bool
-}
-
-private struct ImageGenerationResponseBody: Decodable {
-    let output: [ImageGenerationOutputItem]
-}
-
-private struct ImageGenerationOutputItem: Decodable {
-    let id: String?
-    let type: String
-    let result: String?
-    let revisedPrompt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case type
-        case result
-        case revisedPrompt = "revised_prompt"
     }
 }

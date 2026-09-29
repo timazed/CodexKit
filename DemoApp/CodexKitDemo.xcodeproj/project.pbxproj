@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AC2900000000000000000007 /* Image offline verification */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000008; };
+		AC2900000000000000000005 /* MacDemoImageView.swift */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000006; };
+		AC2900000000000000000003 /* MacDemoImageModel.swift */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000004; };
+		AC2900000000000000000001 /* Image verification macOS */ = {isa = PBXBuildFile; fileRef = AC2900000000000000000002; };
         AC1500000000000000000001 /* Account details iOS */ = {isa = PBXBuildFile; fileRef = AC1500000000000000000003 /* DemoAccountDetailsView.swift */; };
         AC1500000000000000000002 /* Account details macOS */ = {isa = PBXBuildFile; fileRef = AC1500000000000000000003 /* DemoAccountDetailsView.swift */; };
 		AB2300000000000000000001 /* Streaming model iOS */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000007; };
@@ -120,6 +124,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AC2900000000000000000008 /* MacDemoImageOfflineVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageOfflineVerification.swift; sourceTree = "<group>"; };
+		AC2900000000000000000006 /* MacDemoImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageView.swift; sourceTree = "<group>"; };
+		AC2900000000000000000004 /* MacDemoImageModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageModel.swift; sourceTree = "<group>"; };
+		AC2900000000000000000002 /* MacDemoImageVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDemoImageVerification.swift; sourceTree = "<group>"; };
         AC1500000000000000000003 /* DemoAccountDetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoAccountDetailsView.swift; sourceTree = "<group>"; };
 		AB2300000000000000000007 /* ProgressiveOutputDemoModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveOutputDemoModel.swift; sourceTree = "<group>"; };
 		AB2300000000000000000008 /* ProgressiveOutputDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveOutputDemoView.swift; sourceTree = "<group>"; };
@@ -355,6 +363,10 @@
 			isa = PBXGroup;
 			children = (
 				BBC000000000000000000001,
+				AC2900000000000000000002 /* MacDemoImageVerification.swift */,
+				AC2900000000000000000008 /* MacDemoImageOfflineVerification.swift */,
+				AC2900000000000000000006 /* MacDemoImageView.swift */,
+				AC2900000000000000000004 /* MacDemoImageModel.swift */,
 				BDA1D8C67912DA964817B674,
 				B52186A0B678C02CAF3538D8,
 				137700356F40C034FB3D6EF1,
@@ -516,6 +528,10 @@
 			files = (
                 AC1500000000000000000002 /* Account details in Sources */,
 				BBC000000000000000000002,
+				AC2900000000000000000001 /* Image verification macOS */,
+				AC2900000000000000000007 /* Image offline verification */,
+				AC2900000000000000000005 /* MacDemoImageView.swift */,
+				AC2900000000000000000003 /* MacDemoImageModel.swift */,
 				AB2900000000000000000002 /* Recovery macOS */,
 				AB2300000000000000000002 /* Streaming model macOS */,
 				AB2300000000000000000004 /* Streaming view macOS */,

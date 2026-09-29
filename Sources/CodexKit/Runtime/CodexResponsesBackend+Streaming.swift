@@ -209,16 +209,20 @@ struct StreamImageGenerationCallItem: Decodable, Sendable {
         return AgentImageAttachment(
             base64String: result,
             id: id,
-            generationMetadata: AgentImageGenerationMetadata(
-                id: id,
-                status: status,
-                action: action,
-                revisedPrompt: revisedPrompt,
-                background: background,
-                outputFormat: outputFormat,
-                quality: quality,
-                size: size
-            )
+            generationMetadata: generationMetadata
+        )
+    }
+
+    var generationMetadata: AgentImageGenerationMetadata {
+        AgentImageGenerationMetadata(
+            id: id,
+            status: status,
+            action: action,
+            revisedPrompt: revisedPrompt,
+            background: background,
+            outputFormat: outputFormat,
+            quality: quality,
+            size: size
         )
     }
 
@@ -229,12 +233,14 @@ struct StreamImageGenerationCallItem: Decodable, Sendable {
 
 struct StreamResponsePayload: Decodable {
     let id: String?
+    let status: String?
     let usage: StreamUsage?
     let error: StreamErrorPayload?
     let incompleteDetails: StreamIncompleteDetails?
 
     enum CodingKeys: String, CodingKey {
         case id
+        case status
         case usage
         case error
         case incompleteDetails = "incomplete_details"
