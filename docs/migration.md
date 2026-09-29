@@ -4,6 +4,39 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Dedicated image generation (alpha.35)
+
+Update to exact package version `2.0.0-alpha.35`.
+
+`AgentImageGenerationClient()` now uses Codex's dedicated Images API, with PNG
+output, automatic quality/dimensions, and the bundled tool's `gpt-image-2` model.
+Use `options: .init(transparentBackground: true)` for transparent output. Both
+demos expose this path, actual dimensions, image request/generation IDs, and quota
+reset details. No plugin installation is needed.
+
+**Behavior change:** callers that previously used the default client with low
+quality or JPEG/WebP must either remove those options to adopt the built-in
+contract, or explicitly keep the previous Responses configuration:
+
+```swift
+let client = AgentImageGenerationClient(configuration: .init(
+    model: selectedModel, imageModel: nil
+))
+```
+
+Existing explicit `AgentImageGenerationConfiguration(...)` values stay on
+Responses with unchanged model/nil semantics. `.codexImages(...)` selects the new
+path explicitly, and is the client's default. Unsupported option combinations
+throw `imageGenerationUnsupportedOptions` before transmission; there is no silent
+option removal, model substitution, automatic fallback, or nested retry.
+
+The original initializer signatures remain available. Add handling for the new
+`imageGenerationUnsupportedOptions` and `imageGenerationUsageLimitExceeded` cases
+if you switch exhaustively on `AgentRuntimeErrorCode`. New optional result/error
+diagnostics decode compatibly with older persisted values. Older serialized options default to an opaque background. Image allowance
+errors carry optional reset timestamps; applications should handle unknown reset
+times. See the [image API guide](messaging.md#standalone-image-generation).
+
 ## Image generation (alpha.34)
 
 Update to exact package version `2.0.0-alpha.34`. Standalone generate/edit calls now

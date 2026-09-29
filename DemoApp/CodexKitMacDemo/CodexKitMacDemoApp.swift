@@ -1,9 +1,10 @@
 import SwiftUI
+import Combine
 
 @main
 struct CodexKitMacDemoApp: App {
     @NSApplicationDelegateAdaptor(MacDemoAppDelegate.self) private var delegate
-    @State private var model = MacDemoModel()
+    private var model: MacDemoModel { delegate.model }
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -13,21 +14,17 @@ struct CodexKitMacDemoApp: App {
                 .task {
                     #if DEBUG
                     if CommandLine.arguments.contains("--verify-local-only") || CommandLine.arguments.contains("--verify-live-local")
-                        || CommandLine.arguments.contains("--verify-application-session") {
+                        || CommandLine.arguments.contains("--verify-application-session")
+                        || CommandLine.arguments.contains("--run-image-demo") {
                         return
                     }
                     if CommandLine.arguments.contains("--offline-demo") {
-                        do { model = try await MacDemoVerification.makePreview() }
+                        do { delegate.model = try await MacDemoVerification.makePreview() }
                         catch { model.errorMessage = "Could not start the offline demo." }
                         return
                     }
                     #endif
                     await model.restore()
-                    #if DEBUG
-                    if CommandLine.arguments.contains("--run-image-demo") {
-                        await MacDemoImageVerification.run(model: model)
-                    }
-                    #endif
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await model.checkSession() } }
@@ -45,7 +42,9 @@ struct CodexKitMacDemoApp: App {
 }
 
 @MainActor
-final class MacDemoAppDelegate: NSObject, NSApplicationDelegate {
+final class MacDemoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    @Published var model = MacDemoModel()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         if CommandLine.arguments.contains("--verify-local-only") {
@@ -55,6 +54,10 @@ final class MacDemoAppDelegate: NSObject, NSApplicationDelegate {
             Task { await MacDemoLiveVerification.run() }
         } else if CommandLine.arguments.contains("--verify-application-session") {
             Task { await MacDemoLiveVerification.restoreApplicationSession() }
+        } else if CommandLine.arguments.contains("--run-image-demo") {
+            // Launch Services can restore an app with no window. Start the explicitly
+            // requested check independently of SwiftUI's window-bound .task lifecycle.
+            Task { await MacDemoImageVerification.run(model: model) }
         }
         #endif
     }

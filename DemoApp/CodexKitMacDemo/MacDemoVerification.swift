@@ -76,7 +76,7 @@ enum MacDemoVerification {
             checks.append("offline preview supports all four streaming formats")
         }
         checks += try await verifyProgressiveLifecycle(fixture)
-        checks += try await MacDemoImageOfflineVerification.run()
+        checks += try await ImageGenerationDemoVerification.run()
 
         if smoke {
             let request = Task { await restored.sendMessage("slow response") }

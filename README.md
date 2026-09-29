@@ -1,13 +1,21 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.34-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.34)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.35-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.35)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.34](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.34). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.35](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.35). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease fixes standalone image generation through the Codex streaming endpoint, adds the macOS Images demo, and reports actual output dimensions in both demos. Image quality remains configurable; the unsupported size request API is removed. See the [alpha.34 changelog](CHANGELOG.md#200-alpha34---2026-09-29), [migration notes](docs/migration.md#image-generation-alpha34), and [verification guide](docs/verification.md).
+This prerelease adds Codex's dedicated image backend, transparent backgrounds,
+image diagnostics and quota reset details, with matching standalone screens in both
+demos. The default path uses PNG and automatic quality/dimensions; explicit
+Responses configurations remain compatible. Live macOS generation and editing
+passed. See the [alpha.35 changelog](CHANGELOG.md#200-alpha35---2026-09-29),
+[image generation](docs/messaging.md#standalone-image-generation),
+[migration notes](docs/migration.md#dedicated-image-generation-alpha35), and
+[verification results](docs/verification.md#live-macos-confirmation-29-september-2026).
+
 
 ## Capabilities
 
@@ -27,7 +35,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.34`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.35`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |

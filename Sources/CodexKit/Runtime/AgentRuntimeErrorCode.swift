@@ -16,6 +16,8 @@ public enum AgentRuntimeErrorCode: String, Codable, CaseIterable, Sendable {
     case imageGenerationInvalidResponse = "image_generation_invalid_response"
     case imageGenerationMissingOutput = "image_generation_missing_output"
     case imageGenerationResponseTooLarge = "image_generation_response_too_large"
+    case imageGenerationUnsupportedOptions = "image_generation_unsupported_options"
+    case imageGenerationUsageLimitExceeded = "image_generation_usage_limit_exceeded"
     case invalidBackendTurnEvent = "invalid_backend_turn_event"
     case invalidClientRequestId = "invalid_client_request_id"
     case invalidHistoryCursor = "invalid_history_cursor"

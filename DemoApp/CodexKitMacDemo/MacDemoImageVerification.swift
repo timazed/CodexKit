@@ -4,7 +4,7 @@ import CodexKit
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Explicit opt-in live edit using the demo's own saved browser sign-in.
+/// Explicit opt-in live generate/edit using the demo's own saved browser sign-in.
 /// One attempt, no generation deadline, no credential or payload logging.
 @MainActor
 enum MacDemoImageVerification {
@@ -21,43 +21,37 @@ enum MacDemoImageVerification {
         }
         let destination = URL(fileURLWithPath: args[index + 1])
         let directory = destination.deletingLastPathComponent()
+        let generate = args.contains("--image-demo-generate")
         var report: [String: String] = [
             "runID": UUID().uuidString,
             "startedAt": ISO8601DateFormatter().string(from: Date()),
             "status": "preparing",
-            "model": "gpt-6-astra", "imageModel": "omitted",
-            "action": "edit", "quality": "low", "size": "omitted", "outputFormat": "jpeg",
-            "source": "synthetic_jpeg_portrait", "imageAttempts": "0",
+            "imageModel": "gpt-image-2", "backend": "codex_images",
+            "action": generate ? "generate" : "edit", "quality": "auto", "size": "auto", "outputFormat": "png",
+            "background": generate ? "opaque" : "transparent",
+            "source": generate ? "prompt_only" : "synthetic_jpeg_portrait", "imageAttempts": "0",
         ]
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try save(report, to: destination)
-            guard model.isConnected, let sessions = model.sessions, let features = model.features else {
+            await model.restore()
+            guard model.isConnected, let features = model.features else {
                 throw CheckFailure(code: "sign_in_required")
             }
-            let session = try await sessions.requireSession()
-            let backend = CodexResponsesBackend(configuration: .init(requestRetryPolicy: .disabled, logging: .disabled))
-            let catalog = try await backend.listModels(session: session, policy: .refresh)
-            report["catalogSource"] = catalog.source.rawValue
-            guard catalog.source == .remote, catalog.models.contains(where: { $0.id == "gpt-6-astra" }) else {
-                throw CheckFailure(code: "requested_model_not_in_account_catalog")
-            }
-            let source = try syntheticJPEG()
-            try source.write(to: directory.appendingPathComponent("input.jpg"), options: .atomic)
+            let source = generate ? Data() : try syntheticJPEG()
+            if !generate { try source.write(to: directory.appendingPathComponent("input.jpg"), options: .atomic) }
             try Task.checkCancellation()
             report["status"] = "running"
             report["imageAttempts"] = "1"
             report["inputByteCount"] = String(source.count)
             try save(report, to: destination)
-            model.models = catalog.visibleModels
-            model.modelID = "gpt-6-astra"
             let demo = features.images
-            demo.action = .edit
-            demo.imageModel = ""
-            demo.quality = .low
-            demo.outputFormat = .jpeg
-            demo.references = [.jpeg(source)]
-            demo.prompt = "Edit this synthetic portrait into a polished watercolor portrait with a blue background. Keep the head and shoulders centered. Return the edited image."
+            demo.action = generate ? .generate : .edit
+            demo.transparentBackground = !generate
+            demo.references = generate ? [] : [.jpeg(source)]
+            demo.prompt = generate
+                ? "A small orange fox painted in watercolor on a pale blue opaque background. Return the image."
+                : "Edit this synthetic portrait into a polished watercolor portrait with a transparent background. Keep the head and shoulders centered. Return the edited image."
             model.runImageGeneration()
             await demo.waitUntilFinished()
             if demo.status == .cancelled { throw CancellationError() }
@@ -88,8 +82,12 @@ enum MacDemoImageVerification {
             let suffix = detectedType?.preferredFilenameExtension ?? "bin"
             try generated.image.data.write(to: directory.appendingPathComponent("output.\(suffix)"), options: .atomic)
             report["generationCompleted"] = "true"
-            guard detectedType == .jpeg, image.width > 0, image.height > 0,
-                  metadata?.quality == nil || metadata?.quality == "low" else {
+            report["imageRequestID"] = generated.diagnostics?.imageRequestID
+            report["generationID"] = generated.diagnostics?.generationID
+            let hasTransparency = try containsTransparentPixels(image)
+            report["hasTransparentPixels"] = String(hasTransparency)
+            guard detectedType == .png, image.width > 0, image.height > 0,
+                  hasTransparency == !generate else {
                 throw CheckFailure(code: "provider_output_options_mismatch")
             }
             report["status"] = "passed"
@@ -105,7 +103,9 @@ enum MacDemoImageVerification {
                 report["providerCode"] = error.http?.providerCode
                 report["providerType"] = error.http?.providerType
                 report["requestID"] = error.http?.requestID
-                report["clientRequestID"] = error.interruption?.clientRequestID
+                report["imageRequestID"] = error.imageGeneration?.imageRequestID
+                report["quotaReset"] = error.imageGeneration?.usageLimit?.resetsAt.map { ISO8601DateFormatter().string(from: $0) }
+                report["clientRequestID"] = error.imageGeneration?.clientRequestID ?? error.interruption?.clientRequestID
                 report["responseID"] = error.interruption?.responseID
                 report["lastSequenceNumber"] = error.interruption?.lastSequenceNumber.map(String.init)
             } else if let error = error as? CheckFailure {
@@ -135,6 +135,18 @@ enum MacDemoImageVerification {
         guard let value else { return nil }
         return value == "auto" || value.range(of: #"^[0-9]{1,5}x[0-9]{1,5}$"#, options: .regularExpression) != nil
             ? value : "unrecognized"
+    }
+
+    private static func containsTransparentPixels(_ image: CGImage) throws -> Bool {
+        let size = 128
+        guard let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                | CGBitmapInfo.byteOrder32Big.rawValue), let storage = context.data else {
+            throw CheckFailure(code: "alpha_inspection_failed")
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: size, height: size))
+        let bytes = storage.assumingMemoryBound(to: UInt8.self)
+        return stride(from: 3, to: size * size * 4, by: 4).contains { bytes[$0] < 255 }
     }
 
     static func syntheticJPEG() throws -> Data {

@@ -34,16 +34,36 @@ public struct AgentImageGenerationOptions: Codable, Hashable, Sendable {
     public var action: AgentImageGenerationAction
     public var outputFormat: AgentImageOutputFormat
     public var quality: AgentImageGenerationQuality?
+    /// Request an alpha channel using Codex's built-in transparent-background option.
+    public var transparentBackground: Bool
 
-    /// Configure image quality and format. The service chooses output dimensions.
+    public init(action: AgentImageGenerationAction = .auto, outputFormat: AgentImageOutputFormat = .png,
+                quality: AgentImageGenerationQuality? = nil) {
+        self.init(action: action, outputFormat: outputFormat, quality: quality, transparentBackground: false)
+    }
+
+    /// The default Codex Images path supports transparency, PNG, and automatic quality.
+    /// Explicit Responses configurations also support the legacy quality/format options.
     public init(
         action: AgentImageGenerationAction = .auto,
         outputFormat: AgentImageOutputFormat = .png,
-        quality: AgentImageGenerationQuality? = nil
+        quality: AgentImageGenerationQuality? = nil,
+        transparentBackground: Bool
     ) {
         self.action = action
         self.outputFormat = outputFormat
         self.quality = quality
+        self.transparentBackground = transparentBackground
+    }
+
+    private enum CodingKeys: String, CodingKey { case action, outputFormat, quality, transparentBackground }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        action = try values.decode(AgentImageGenerationAction.self, forKey: .action)
+        outputFormat = try values.decode(AgentImageOutputFormat.self, forKey: .outputFormat)
+        quality = try values.decodeIfPresent(AgentImageGenerationQuality.self, forKey: .quality)
+        transparentBackground = try values.decodeIfPresent(Bool.self, forKey: .transparentBackground) ?? false
     }
 
     public static var generate: AgentImageGenerationOptions {
@@ -60,17 +80,24 @@ public struct AgentGeneratedImage: Identifiable, Codable, Hashable, Sendable {
     public let image: AgentImageAttachment
     public let revisedPrompt: String?
     public let createdAt: Date
+    public let diagnostics: AgentImageGenerationDiagnostics?
+
+    public init(id: String, image: AgentImageAttachment, revisedPrompt: String? = nil, createdAt: Date = Date()) {
+        self.init(id: id, image: image, revisedPrompt: revisedPrompt, createdAt: createdAt, diagnostics: nil)
+    }
 
     public init(
         id: String,
         image: AgentImageAttachment,
         revisedPrompt: String? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        diagnostics: AgentImageGenerationDiagnostics?
     ) {
         self.id = id
         self.image = image
         self.revisedPrompt = revisedPrompt
         self.createdAt = createdAt
+        self.diagnostics = diagnostics
     }
 }
 
@@ -80,7 +107,10 @@ public struct AgentImageGenerationConfiguration: Sendable {
     public let imageModel: String?
     public let originator: String
     public let extraHeaders: [String: String]
+    public private(set) var usesCodexImages = false
 
+    /// Compatibility configuration for the Responses image tool. Model selection and
+    /// `imageModel: nil` retain their original meaning on that endpoint.
     public init(
         baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
         model: String = "gpt-5",
@@ -94,6 +124,19 @@ public struct AgentImageGenerationConfiguration: Sendable {
         self.originator = originator
         self.extraHeaders = extraHeaders
     }
+
+    /// Match Codex's bundled image tool: gpt-image-2, automatic quality/dimensions, PNG.
+    /// No chat model or plugin is required. Unsupported legacy options fail before transmission.
+    public static func codexImages(
+        baseURL: URL = URL(string: "https://chatgpt.com/backend-api/codex")!,
+        originator: String = "codex_cli_rs",
+        extraHeaders: [String: String] = [:]
+    ) -> Self {
+        var configuration = Self(baseURL: baseURL, model: "gpt-image-2", imageModel: "gpt-image-2",
+            originator: originator, extraHeaders: extraHeaders)
+        configuration.usesCodexImages = true
+        return configuration
+    }
 }
 
 public actor AgentImageGenerationClient {
@@ -103,7 +146,7 @@ public actor AgentImageGenerationClient {
     private let decoder: JSONDecoder
 
     public init(
-        configuration: AgentImageGenerationConfiguration = AgentImageGenerationConfiguration(),
+        configuration: AgentImageGenerationConfiguration = .codexImages(),
         urlSession: URLSession = .shared
     ) {
         self.configuration = configuration
@@ -152,6 +195,15 @@ public actor AgentImageGenerationClient {
         try Task.checkCancellation()
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentRuntimeError.invalidMessageContent()
+        }
+
+        if configuration.usesCodexImages {
+            return try await CodexImagesClient(configuration: configuration, urlSession: urlSession)
+                .run(prompt: prompt, images: images, session: session, options: options)
+        }
+        guard !options.transparentBackground else {
+            throw AgentRuntimeError(code: .imageGenerationUnsupportedOptions,
+                message: "Transparent backgrounds require the built-in Codex Images configuration.")
         }
 
         let request = try buildURLRequest(

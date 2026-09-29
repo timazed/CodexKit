@@ -6,23 +6,42 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
     public let http: AgentHTTPFailure?
     public let retry: AgentRetryInformation?
     public let interruption: AgentResponseInterruption?
+    public let imageGeneration: AgentImageGenerationDiagnostics?
 
     public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil) {
-        self.init(code: code, message: message, http: http, retry: retry, interruption: nil)
+        self.init(code: code, message: message, http: http, retry: retry, imageGeneration: nil)
+    }
+
+    public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil,
+                imageGeneration: AgentImageGenerationDiagnostics?) {
+        self.init(code: code, message: message, http: http, retry: retry, interruption: nil, imageGeneration: imageGeneration)
     }
 
     public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil,
                 interruption: AgentResponseInterruption?) {
+        self.init(code: code, message: message, http: http, retry: retry, interruption: interruption, imageGeneration: nil)
+    }
+
+    public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil,
+                interruption: AgentResponseInterruption?, imageGeneration: AgentImageGenerationDiagnostics?) {
         self.code = code
         self.message = message
         self.http = http
         self.retry = retry
         self.interruption = interruption
+        self.imageGeneration = imageGeneration
     }
 
     public init(code: AgentRuntimeErrorCode, message: String, http: AgentHTTPFailure? = nil,
                 retry: AgentRetryInformation? = nil, interruption: AgentResponseInterruption? = nil) {
-        self.init(code: code.rawValue, message: message, http: http, retry: retry, interruption: interruption)
+        self.init(code: code, message: message, http: http, retry: retry, interruption: interruption, imageGeneration: nil)
+    }
+
+    public init(code: AgentRuntimeErrorCode, message: String, http: AgentHTTPFailure? = nil,
+                retry: AgentRetryInformation? = nil, interruption: AgentResponseInterruption? = nil,
+                imageGeneration: AgentImageGenerationDiagnostics?) {
+        self.init(code: code.rawValue, message: message, http: http, retry: retry, interruption: interruption,
+            imageGeneration: imageGeneration)
     }
 
     public var knownCode: AgentRuntimeErrorCode? { AgentRuntimeErrorCode(rawValue: code) }

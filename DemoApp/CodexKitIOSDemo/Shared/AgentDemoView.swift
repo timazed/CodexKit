@@ -19,6 +19,20 @@ struct AgentDemoView: View {
                 if viewModel.session != nil {
                     modelCard
                     quickStartCard
+                    NavigationLink {
+                        ImageGenerationDemoView {
+                            guard let session = await viewModel.runtime.currentSession() else {
+                                throw AgentRuntimeError.signedOut()
+                            }
+                            guard !session.requiresRefresh() else {
+                                throw AgentRuntimeError.unauthorized("Reconnect to refresh your session before generating images.")
+                            }
+                            return session
+                        }
+                    } label: {
+                        Label("Images · Generate or edit", systemImage: "photo.badge.plus")
+                            .frame(maxWidth: .infinity, alignment: .leading).padding()
+                    }.buttonStyle(.bordered)
                     personaExamples
                     instructionsDebugPanel
                 }

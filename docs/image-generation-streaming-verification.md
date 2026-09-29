@@ -1,5 +1,10 @@
 # Image generation streaming compatibility
 
+> Historical alpha.34 evidence for the Responses route. The alpha.35 default
+> client uses the dedicated Images API; see [the current contract](messaging.md#standalone-image-generation).
+> These live results do not validate the new endpoint.
+
+
 ## Evidence and scope
 
 The reported integration used CodexKit 2.0.0-alpha.33 at
