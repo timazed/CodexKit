@@ -150,15 +150,13 @@ tests explicitly select the compatibility configuration and retain terminal SSE,
 caller-model, nil image-model, low-quality, and format coverage.
 
 Both demo verifiers run the shared image presentation checks. All fixtures use
-synthetic sessions and local transport stubs. The contract follows local
-`codex-src` revision `c248f6d48b97eb4a2aa56147a0b11b7d763278b9`:
+synthetic sessions and local transport stubs. Verification covers the
+authenticated Codex Images endpoint contract:
 
-| Contract | Upstream source under `codex-rs/` |
-| --- | --- |
-| ChatGPT authentication selects `https://chatgpt.com/backend-api/codex` | `model-provider-info/src/lib.rs`, `to_api_provider` |
-| POST `images/generations` / `images/edits`, complete JSON response | `codex-api/src/endpoint/images.rs` |
-| `gpt-image-2`, automatic quality/size, transparent or opaque background, inline edit references | `ext/image-generation/src/tool.rs`, `request_for_call_args` |
-| Image turn/request correlation headers | `ext/image-generation/src/backend.rs`, `codex-api/src/endpoint/images.rs` |
+- ChatGPT authentication selects `https://chatgpt.com/backend-api/codex`.
+- POST requests to `images/generations` and `images/edits` return complete JSON responses.
+- Requests use `gpt-image-2`, automatic quality/size, transparent or opaque backgrounds, and inline edit references.
+- Responses preserve image turn/request correlation headers.
 
 The default-client regression asserts the complete ChatGPT Codex URL, shared
 session authentication headers, and exact JSON body. This exercises Codex's

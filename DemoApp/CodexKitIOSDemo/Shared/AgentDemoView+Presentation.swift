@@ -113,9 +113,9 @@ private extension CodexModel {
     var demoSystemImage: String {
         switch self {
         case .gpt6Astra: "star.fill"
-        case .gpt56Sol: "sun.max"
+        case .gpt61Sol, .gpt6Sol, .gpt56Sol: "sun.max"
         case .gpt56Terra: "globe.americas"
-        case .gpt56Luna: "moon.stars"
+        case .gpt6Luna, .gpt56Luna: "moon.stars"
         case .gpt55: "sparkles"
         case .gpt54: "brain.head.profile"
         case .gpt54Mini: "hare"

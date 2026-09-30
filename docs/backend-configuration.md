@@ -109,17 +109,22 @@ let configuration = CodexResponsesBackendConfiguration(model: model)
 | Typed model | Wire identifier | Default effort | Supported efforts | Context |
 | --- | --- | --- | --- | ---: |
 | `.gpt6Astra` | `gpt-6-astra` | `low` | `low` through `ultra` | 272,000 |
-| `.gpt56Sol` | `gpt-5.6-sol` | `low` | `low` through `ultra` | 372,000 |
-| `.gpt56Terra` | `gpt-5.6-terra` | `medium` | `low` through `ultra` | 372,000 |
-| `.gpt56Luna` | `gpt-5.6-luna` | `medium` | `low` through `max` | 372,000 |
+| `.gpt61Sol` | `gpt-6.1-sol` | `low` | `low` through `ultra` | 272,000 |
+| `.gpt6Sol` | `gpt-6-sol` | `medium` | `low` through `ultra` | 272,000 |
+| `.gpt6Luna` | `gpt-6-luna` | `medium` | `low` through `max` | 272,000 |
+| `.gpt56Sol` | `gpt-5.6-sol` | `low` | `low` through `ultra` | 272,000 |
+| `.gpt56Terra` | `gpt-5.6-terra` | `medium` | `low` through `ultra` | 272,000 |
+| `.gpt56Luna` | `gpt-5.6-luna` | `medium` | `low` through `max` | 272,000 |
 | `.gpt55` | `gpt-5.5` | `medium` | `low` through `xhigh` | 272,000 |
 | `.gpt54` | `gpt-5.4` | `medium` | `low` through `xhigh` | 272,000 |
 | `.gpt54Mini` | `gpt-5.4-mini` | `medium` | `low` through `xhigh` | 272,000 |
 | `.gpt53CodexSpark` | `gpt-5.3-codex-spark` | `high` | `low` through `xhigh` | 128,000 |
 | `.gpt52` | `gpt-5.2` | `medium` | `low` through `xhigh` | 272,000 |
-| `.codexAutoReview` | `codex-auto-review` | `medium` | `low` through `xhigh` | 272,000 |
+| `.daybreakBlueLatest` | `gpt-daybreak-blue-latest` | `low` | `low` through `ultra` | 272,000 |
+| `.daybreakRedLatest` | `gpt-daybreak-red-latest` | `medium` | `low` through `ultra` | 372,000 |
+| `.codexAutoReview` | `codex-auto-review` | `medium` | `low` through `max` | 272,000 |
 
-The table describes bundled defaults. `CodexModel.userFacingModels` supplies the fallback picker, including GPT-6 Astra. Signed-in apps can discover available models and refresh their metadata:
+The table describes bundled defaults as of 30 September 2026. `CodexModel.userFacingModels` supplies the fallback picker: GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, the GPT-5.6 models, and GPT-5.5. Older typed identifiers remain supported in the complete catalog. Daybreak Blue/Red and Auto Review remain hidden from the fallback picker. All five new entries support text, images, and original image detail. Signed-in apps can discover available models and refresh their metadata:
 
 ```swift
 let catalog = try await runtime.listModels(policy: .preferCached)

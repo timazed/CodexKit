@@ -7,9 +7,14 @@ final class CodexModelTests: XCTestCase {
             CodexModel.knownModels,
             [
                 .gpt6Astra,
+                .gpt61Sol,
+                .gpt6Sol,
+                .gpt6Luna,
                 .gpt56Sol,
                 .gpt56Terra,
                 .gpt56Luna,
+                .daybreakBlueLatest,
+                .daybreakRedLatest,
                 .gpt55,
                 .gpt54,
                 .gpt54Mini,
@@ -30,16 +35,19 @@ final class CodexModelTests: XCTestCase {
             CodexModel.userFacingModels,
             [
                 .gpt6Astra,
+                .gpt61Sol,
+                .gpt6Sol,
+                .gpt6Luna,
                 .gpt56Sol,
                 .gpt56Terra,
                 .gpt56Luna,
                 .gpt55,
-                .gpt54,
-                .gpt54Mini,
-                .gpt53CodexSpark,
             ]
         )
-        XCTAssertFalse(CodexModel.userFacingModels.contains(.gpt52))
+        for model in [CodexModel.gpt54, .gpt54Mini, .gpt53CodexSpark, .gpt52,
+                      .daybreakBlueLatest, .daybreakRedLatest] {
+            XCTAssertFalse(CodexModel.userFacingModels.contains(model))
+        }
         XCTAssertFalse(CodexModel.userFacingModels.contains(.codexAutoReview))
         XCTAssertEqual(CodexModel.codexAutoReview.info?.availability, .internalUse)
     }
@@ -51,7 +59,7 @@ final class CodexModelTests: XCTestCase {
             sol.supportedReasoningEfforts,
             [.low, .medium, .high, .extraHigh, .max, .ultra]
         )
-        XCTAssertEqual(sol.contextWindowTokenCount, 372_000)
+        XCTAssertEqual(sol.contextWindowTokenCount, 272_000)
         XCTAssertEqual(sol.inputModalities, [.text, .image])
 
         let terra = try XCTUnwrap(CodexModel.gpt56Terra.info)
@@ -78,7 +86,7 @@ final class CodexModelTests: XCTestCase {
             [.low, .medium, .high, .extraHigh]
         )
 
-        for model in [CodexModel.gpt55, .gpt54, .gpt54Mini, .gpt52, .codexAutoReview] {
+        for model in [CodexModel.gpt55, .gpt54, .gpt54Mini, .gpt52] {
             let info = try XCTUnwrap(model.info)
             XCTAssertEqual(info.defaultReasoningEffort, .medium)
             XCTAssertEqual(

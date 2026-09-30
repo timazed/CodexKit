@@ -10,7 +10,16 @@ final class MacDemoModel {
     var settingsConfirmed = false
     var composer = ""
     var modelID = CodexModel.gpt56Sol.rawValue
-    var models: [CodexAvailableModel] = []
+    var models: [CodexAvailableModel] = CodexModel.catalog
+        .filter { CodexModel.userFacingModels.contains($0.model) }
+        .map {
+            .init(model: $0.model, displayName: $0.displayName, summary: $0.summary,
+                  defaultReasoningEffort: $0.defaultReasoningEffort,
+                  supportedReasoningEfforts: $0.supportedReasoningEfforts,
+                  inputModalities: $0.inputModalities,
+                  contextWindowTokenCount: $0.contextWindowTokenCount,
+                  supportsImageDetailOriginal: $0.supportsImageDetailOriginal)
+        }
     var errorMessage: String?
     var isBusy = false
     var isSending = false

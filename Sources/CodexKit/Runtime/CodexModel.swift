@@ -119,6 +119,11 @@ public struct CodexModelInfo: Codable, Hashable, Sendable, Identifiable {
 
 public extension CodexModel {
     static let gpt6Astra = CodexModel(rawValue: "gpt-6-astra")
+    static let gpt61Sol = CodexModel(rawValue: "gpt-6.1-sol")
+    static let gpt6Sol = CodexModel(rawValue: "gpt-6-sol")
+    static let gpt6Luna = CodexModel(rawValue: "gpt-6-luna")
+    static let daybreakBlueLatest = CodexModel(rawValue: "gpt-daybreak-blue-latest")
+    static let daybreakRedLatest = CodexModel(rawValue: "gpt-daybreak-red-latest")
     static let gpt56Sol = CodexModel(rawValue: "gpt-5.6-sol")
     static let gpt56Terra = CodexModel(rawValue: "gpt-5.6-terra")
     static let gpt56Luna = CodexModel(rawValue: "gpt-5.6-luna")
@@ -134,7 +139,7 @@ public extension CodexModel {
         CodexModelInfo(
             model: .gpt6Astra,
             displayName: "GPT-6-Astra",
-            summary: "Our most capable model for complex, demanding work.",
+            summary: "Frontier intelligence for the most demanding work.",
             defaultReasoningEffort: .low,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
             contextWindowTokenCount: 272_000,
@@ -142,31 +147,81 @@ public extension CodexModel {
             supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
-            model: .gpt56Sol,
-            displayName: "GPT-5.6-Sol",
-            summary: "Latest frontier agentic coding model.",
+            model: .gpt61Sol,
+            displayName: "GPT-6.1-Sol",
+            summary: "Latest workhorse model for coding and everyday work.",
             defaultReasoningEffort: .low,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
-            contextWindowTokenCount: 372_000,
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
+        CodexModelInfo(
+            model: .gpt6Sol,
+            displayName: "GPT-6-Sol",
+            summary: "Previous generation workhorse model.",
+            defaultReasoningEffort: .medium,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
+        CodexModelInfo(
+            model: .gpt6Luna,
+            displayName: "GPT-6-Luna",
+            summary: "Fast and affordable model for easier tasks.",
+            defaultReasoningEffort: .medium,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max],
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
+        CodexModelInfo(
+            model: .gpt56Sol,
+            displayName: "GPT-5.6-Sol",
+            summary: "Older generation workhorse model.",
+            defaultReasoningEffort: .low,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
+            contextWindowTokenCount: 272_000,
             inputModalities: [.text, .image],
             supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt56Terra,
             displayName: "GPT-5.6-Terra",
-            summary: "Balanced agentic coding model for everyday work.",
+            summary: "Older balanced model for straightforward work.",
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
-            contextWindowTokenCount: 372_000,
+            contextWindowTokenCount: 272_000,
             inputModalities: [.text, .image],
             supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
             model: .gpt56Luna,
             displayName: "GPT-5.6-Luna",
-            summary: "Fast and affordable agentic coding model.",
+            summary: "Older fast and efficient model.",
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max],
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
+        CodexModelInfo(
+            model: .daybreakBlueLatest,
+            displayName: "Daybreak Blue",
+            summary: "Latest frontier agentic coding model for broad defensive cybersecurity work.",
+            defaultReasoningEffort: .low,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
+        CodexModelInfo(
+            model: .daybreakRedLatest,
+            displayName: "Daybreak Red",
+            summary: "Cyber-permissive variant of our latest frontier agentic coding model for advanced, authorized cybersecurity research.",
+            defaultReasoningEffort: .medium,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
             contextWindowTokenCount: 372_000,
             inputModalities: [.text, .image],
             supportsImageDetailOriginal: true
@@ -174,7 +229,7 @@ public extension CodexModel {
         CodexModelInfo(
             model: .gpt55,
             displayName: "GPT-5.5",
-            summary: "Frontier model for complex coding, research, and real-world work.",
+            summary: "Legacy coding model.",
             defaultReasoningEffort: .medium,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
             contextWindowTokenCount: 272_000,
@@ -224,7 +279,7 @@ public extension CodexModel {
             displayName: "Codex Auto Review",
             summary: "Automatic approval review model for Codex.",
             defaultReasoningEffort: .medium,
-            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max],
             contextWindowTokenCount: 272_000,
             inputModalities: [.text, .image],
             availability: .internalUse,
@@ -236,17 +291,18 @@ public extension CodexModel {
         catalog.map(\.model)
     }
 
-    /// Catalog models intended for user selection.
+    /// Bundled models listed in the current upstream picker.
+    /// Legacy and hidden identifiers remain available in `catalog`.
     static var userFacingModels: [CodexModel] {
         [
             .gpt6Astra,
+            .gpt61Sol,
+            .gpt6Sol,
+            .gpt6Luna,
             .gpt56Sol,
             .gpt56Terra,
             .gpt56Luna,
             .gpt55,
-            .gpt54,
-            .gpt54Mini,
-            .gpt53CodexSpark,
         ]
     }
 }

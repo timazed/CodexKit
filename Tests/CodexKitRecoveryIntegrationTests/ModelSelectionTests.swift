@@ -10,14 +10,14 @@ final class ModelSelectionTests: XCTestCase {
     override func tearDown() async throws { try? FileManager.default.removeItem(at: directory) }
 
     func testBuiltInPolicySelectsSupportedPairFromAccountCatalog() async throws {
-        let catalog: [String: Any] = ["models": [["slug": "gpt-5.6-sol", "visibility": "list",
+        let catalog: [String: Any] = ["models": [["slug": "gpt-6.1-sol", "visibility": "list",
             "display_name": "Available", "supported_reasoning_levels": [["effort": "medium"]],
             "default_reasoning_level": "medium", "input_modalities": ["text"], "context_window": 10000]]]
         FixtureTransport.configure(["catalog": [.catalog(try JSONSerialization.data(withJSONObject: catalog))], "news": [.complete("selected")]])
         let selector = PreferredAvailableCodexModelSelector(candidates: [
             .init(model: "missing", reasoningEffort: .high),
-            .init(model: "gpt-5.6-sol", reasoningEffort: .high),
-            .init(model: "gpt-5.6-sol", reasoningEffort: .medium)
+            .init(model: "gpt-6.1-sol", reasoningEffort: .high),
+            .init(model: "gpt-6.1-sol", reasoningEffort: .medium)
         ], refreshPolicy: .refresh)
         let runtime = try fixtureRuntime(selector: selector)
         let thread = try await runtime.createThread()
@@ -30,7 +30,7 @@ final class ModelSelectionTests: XCTestCase {
         _ = try await runtime.sendRecovering(handle, response: FixtureOutput.self, store: store) { _ in true }
         XCTAssertEqual(FixtureTransport.captures.filter { $0.method == "GET" }.count, 1)
         let generation = try XCTUnwrap(FixtureTransport.captures.first { $0.method == "POST" })
-        XCTAssertEqual(generation.model, "gpt-5.6-sol")
+        XCTAssertEqual(generation.model, "gpt-6.1-sol")
         XCTAssertEqual(generation.effort, "medium")
         XCTAssertFalse(String(decoding: generation.body, as: UTF8.self).contains("host-only-purpose"))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: generation.body) as? [String: Any])
