@@ -47,6 +47,37 @@ class SimulatorVerificationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verifier.select_simulator([self.runtime("18.6")], "17.0")
 
+    def test_stalled_boot_restarts_only_the_owned_device_once(self):
+        commands = []
+        def simulated_run(command, **kwargs):
+            commands.append(command)
+            if command[2] == "bootstatus" and len(commands) == 2:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        log = io.StringIO()
+        with patch.object(verifier, "run", side_effect=simulated_run):
+            verifier.boot_simulator("owned-simulator", log=log)
+        self.assertEqual([command[2] for command in commands],
+                         ["boot", "bootstatus", "shutdown", "boot", "bootstatus"])
+        self.assertTrue(all(command[3] == "owned-simulator" for command in commands))
+        self.assertIn("timed out", log.getvalue())
+
+    def test_repeated_boot_timeout_fails_after_two_attempts(self):
+        def simulated_run(command, **kwargs):
+            if command[2] == "bootstatus":
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        with patch.object(verifier, "run", side_effect=simulated_run) as run, \
+             self.assertRaises(subprocess.TimeoutExpired):
+            verifier.boot_simulator("owned-simulator", log=io.StringIO())
+        self.assertEqual(run.call_count, 5)
+        self.assertEqual([call.kwargs["timeout"] for call in run.call_args_list
+                          if call.args[0][2] == "bootstatus"], [180, 180])
+
+    def test_boot_command_failure_is_not_retried(self):
+        with patch.object(verifier, "run", side_effect=RuntimeError("boot failed")) as run, \
+             self.assertRaisesRegex(RuntimeError, "boot failed"):
+            verifier.boot_simulator("owned-simulator", log=io.StringIO())
+        self.assertEqual(run.call_count, 1)
+
     def test_cold_runtime_discovery_retries_only_the_timed_out_read(self):
         clock = [0]
         command = ["xcrun", "simctl", "list", "runtimes", "--json"]

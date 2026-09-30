@@ -65,6 +65,22 @@ def discover_runtimes(*, log, timeout=120):
     raise RuntimeError(f"Simulator runtime discovery timed out after {timeout}s ({attempts} attempts)")
 
 
+def boot_simulator(simulator, *, log, timeout=180):
+    """Recover one stalled first-boot migration before installing or running tests."""
+    for attempt in (1, 2):
+        print(f"Boot attempt {attempt} for {simulator}", file=log, flush=True)
+        run(["xcrun", "simctl", "boot", simulator], log=log)
+        try:
+            run(["xcrun", "simctl", "bootstatus", simulator, "-b"], log=log, timeout=timeout)
+            return
+        except subprocess.TimeoutExpired as error:
+            print(str(error), file=log, flush=True)
+            if attempt == 2:
+                raise
+            print("Simulator boot stalled; restarting this run's device once.", flush=True)
+            run(["xcrun", "simctl", "shutdown", simulator], log=log)
+
+
 def validate_report(report, run_id, mode=VerificationMode.SMOKE):
     if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
@@ -170,9 +186,8 @@ def main():
         (output / "run.json").write_text(json.dumps({"runID": run_id, "runtime": runtime["name"],
             "device": device["name"], "simulatorID": simulator, "bundleID": bundle_id}, indent=2) + "\n")
         print("Booting the temporary simulator.", flush=True)
-        run(["xcrun", "simctl", "boot", simulator])
         with (output / "boot.log").open("w") as log:
-            run(["xcrun", "simctl", "bootstatus", simulator, "-b"], log=log, timeout=300)
+            boot_simulator(simulator, log=log)
         run(["xcrun", "simctl", "install", simulator, str(app)], timeout=180)
         print("Locating the installed app's data container before launch.", flush=True)
         with (output / "container.log").open("w") as log:

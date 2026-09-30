@@ -2,7 +2,7 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
-For the current prerelease, see the [alpha.33 changelog](../CHANGELOG.md#200-alpha33---2026-09-25) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
+For the current prerelease, see the [alpha.36 changelog](../CHANGELOG.md#200-alpha36---2026-09-30) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
 
 See [account metadata verification](account-metadata-verification.md) for the alpha.33 offline regression assertions and local evidence.
 
@@ -79,6 +79,8 @@ Fresh verification runs these lanes in parallel:
 | Demo (iOS) | Signed current-runtime build, SQLite/Realm completion/reopen/cancellation, saved structured result, and retrieval in a second app process. |
 | Demo (macOS) | Signed app startup, controlled chat, conversation restoration, cancellation, saved structured result, and retrieval in a second app process. |
 | Build iOS 17 verifier → Demo (iOS 17) | Xcode 16.4 produces a signed universal simulator app once; macOS 14 executes it on iOS 17.0.1 without rebuilding. |
+
+The iOS verifier waits up to three minutes for a temporary device to boot. If first-boot migration stalls, it shuts down and boots only that device once more, retaining both attempts in `boot.log`. A second timeout or any command failure fails the lane. App installation and verification begin only after a successful boot; app checks are never retried by this recovery.
 
 `Verification gate v1` requires all mandatory lanes to pass. Both Debug suites always run a small image request/compaction smoke test using the same fixture and assertions as the larger image benchmark. Relevant storage/concurrency changes select 40 optimized concurrency rounds instead of six. The same optimized job then runs larger image/storage benchmarks with `--skip-build`, using the test bundle it just successfully compiled; no cache-only or foreign test binary is executed without a build first. Relevant demo/authentication/recovery changes select full demo mode. `Scripts/ci_plan.py` defines the path rules. A daily 18:00 UTC run and manual dispatch with `extended: true` force fresh, comprehensive checks even if the commit already passed. No live accounts or model calls are enabled by CI.
 

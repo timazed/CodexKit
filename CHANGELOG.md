@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.36] - 2026-09-30
+
+This prerelease updates typed model support and both demo model pickers for the current Codex catalog.
+
 ### Added
 
 - Typed GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and hidden Daybreak Blue/Red model identifiers with upstream reasoning, context-window, and original-image capabilities.
@@ -14,6 +18,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - Update bundled model metadata and fallback picker choices for the current model catalog. GPT-5.6 bundled context windows are 272,000 tokens; Auto Review supports `max`. Older typed identifiers remain supported, while models omitted or hidden upstream stay out of the fallback picker.
 - Both demos expose the new visible models and their reasoning efforts. The macOS demo now starts with bundled picker choices before account discovery succeeds.
+
+### Fixed
+
+- Recover a stalled iOS simulator first-boot migration with one bounded restart of the temporary device before app installation. Preserve both boot attempts in CI diagnostics and fail verification if the second boot stalls.
 
 ## [2.0.0-alpha.35] - 2026-09-29
 

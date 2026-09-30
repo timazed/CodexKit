@@ -1,20 +1,18 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.35-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.35)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.36-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.36)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.35](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.35). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.36](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.36). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease adds Codex's dedicated image backend, transparent backgrounds,
-image diagnostics and quota reset details, with matching standalone screens in both
-demos. The default path uses PNG and automatic quality/dimensions; explicit
-Responses configurations remain compatible. Live macOS generation and editing
-passed. See the [alpha.35 changelog](CHANGELOG.md#200-alpha35---2026-09-29),
-[image generation](docs/messaging.md#standalone-image-generation),
-[migration notes](docs/migration.md#dedicated-image-generation-alpha35), and
-[verification results](docs/verification.md#live-macos-confirmation-29-september-2026).
+This prerelease adds typed GPT-6.1 Sol, GPT-6 Sol, and GPT-6 Luna models,
+updates bundled model capabilities, and exposes the current visible catalog in both
+demos. The macOS demo offers bundled model choices before account discovery
+succeeds. CI also recovers one stalled simulator boot before running app checks.
+See the [alpha.36 changelog](CHANGELOG.md#200-alpha36---2026-09-30) and
+[verification guide](docs/verification.md).
 
 
 ## Capabilities
@@ -23,7 +21,7 @@ passed. See the [alpha.35 changelog](CHANGELOG.md#200-alpha35---2026-09-29),
 - Resumable threads with SQLite or Realm persistence and context compaction.
 - App-defined tools with approval gates, skill-policy limits, and bounded opt-in parallel execution.
 - Personas, skills, and local memory for app-specific behavior.
-- GPT-6 Astra identifiers, account model discovery, and reported usage limits.
+- GPT-6.1 Sol, GPT-6 Sol/Luna/Astra identifiers, account model discovery, and reported usage limits.
 - Provider progress, message phases, input added to active turns, and interruption.
 - Browser OAuth, device-code sign-in, and read-only reuse of local Codex sessions on macOS.
 
@@ -35,7 +33,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.35`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.36`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |
