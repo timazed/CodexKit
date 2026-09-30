@@ -13,6 +13,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 ### Changed
 
 - Synchronize bundled model metadata and fallback picker choices with `codex-src` at `ab84d71f5` (30 September 2026). GPT-5.6 bundled context windows are 272,000 tokens; Auto Review supports `max`. Older typed identifiers remain supported, while models omitted or hidden upstream stay out of the fallback picker.
+- Both demos expose the new visible models and their reasoning efforts. The macOS demo now starts with bundled picker choices before account discovery succeeds.
 
 ## [2.0.0-alpha.35] - 2026-09-29
 

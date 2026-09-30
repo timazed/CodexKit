@@ -41,6 +41,15 @@ enum MacDemoVerification {
         defer { fixture.cleanup() }
         var checks: [String] = []
         let model = fixture.makeModel()
+        try require(model.models.map(\.model) == CodexModel.userFacingModels,
+                    "Fresh model picker must include the bundled visible models")
+        for choice in [CodexModel.gpt61Sol, .gpt6Sol, .gpt6Luna] {
+            model.modelID = choice.rawValue
+            try require(model.supportedReasoningEfforts == choice.info?.supportedReasoningEfforts,
+                        "Bundled reasoning choices do not match \(choice)")
+        }
+        model.modelID = CodexModel.gpt56Sol.rawValue
+        checks.append("bundled model picker and GPT-6 reasoning choices")
         await model.restore()
         try require(!model.isConnected, "Fresh launch should wait for explicit connection")
         checks.append("fresh launch does not discover credentials")

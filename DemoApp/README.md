@@ -13,7 +13,7 @@ For macOS, select the **CodexKitMacDemo** scheme and **My Mac**, then run. It re
 The native SwiftUI demo includes:
 
 - Local Codex session reuse, browser OAuth (localhost callback on port 1455), and device-code sign-in.
-- An Assistant workspace with persisted conversations, model discovery, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
+- An Assistant workspace with persisted conversations, model discovery, bundled fallback picker choices including GPT-6.1 Sol and GPT-6 Sol/Luna, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
 - An Images workspace for generation and reference-image editing, with transparent backgrounds, up to five reference images, cancellation, previews, and PNG saving. Results show actual pixel dimensions, diagnostic IDs, and image allowance reset details.
 - Turn-based streaming text, JSON Lines records, XML with attributes, and native JSON Schema using the iOS demo's shared UI and schemas, alongside the existing shipping, imported-content, and text-with-payload examples.
 - MemoryWriter and raw-record authoring, retrieval, prompt previews, explicit capture, and optional automatic capture after turns.
