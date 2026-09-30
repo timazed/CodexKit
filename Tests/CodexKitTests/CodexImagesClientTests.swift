@@ -5,8 +5,7 @@ final class CodexImagesClientTests: XCTestCase {
     override func setUp() async throws { await TestURLProtocol.reset() }
     override func tearDown() async throws { await TestURLProtocol.reset() }
 
-    // codex-src c248f6d4: model-provider-info selects the ChatGPT Codex host;
-    // ext/image-generation supplies this JSON body; codex-api/endpoint/images decodes JSON.
+    // Verify the authenticated ChatGPT Codex host, image request body, and JSON response.
     func testDefaultClientMatchesCodexGenerateContractAndReturnsDiagnostics() async throws {
         let png = try imageTestData(width: 64, height: 32, png: true)
         await TestURLProtocol.enqueue(.init(headers: imageHeaders,

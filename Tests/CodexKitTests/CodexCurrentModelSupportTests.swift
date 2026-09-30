@@ -2,7 +2,7 @@
 import XCTest
 
 final class CodexCurrentModelSupportTests: XCTestCase {
-    // Capability projection of codex-src models-manager/models.json at ab84d71f5 (2026-09-30).
+    // Model catalog capability snapshot as of 30 September 2026.
     // Keep upstream data independent of the Swift catalog to detect metadata drift.
     private let upstreamCatalog = #"""
     {"models":[

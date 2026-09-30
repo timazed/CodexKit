@@ -1,6 +1,6 @@
 import Foundation
 
-/// The HTTP contract used by codex-src's bundled image-generation extension.
+/// The HTTP contract for the authenticated Codex Images endpoints.
 /// One request, bounded ingestion, no SDK retry or elapsed-time generation deadline.
 struct CodexImagesClient: Sendable {
     static let maximumImageBytes = 32 * 1_024 * 1_024
