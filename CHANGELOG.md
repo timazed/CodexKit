@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Typed GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and hidden Daybreak Blue/Red model identifiers with upstream reasoning, context-window, and original-image capabilities.
+
+### Changed
+
+- Synchronize bundled model metadata and fallback picker choices with `codex-src` at `ab84d71f5` (30 September 2026). GPT-5.6 bundled context windows are 272,000 tokens; Auto Review supports `max`. Older typed identifiers remain supported, while models omitted or hidden upstream stay out of the fallback picker.
+
 ## [2.0.0-alpha.35] - 2026-09-29
 
 This prerelease follows the image-generation implementation in `codex-src`, using the authenticated Codex Images endpoints. The default client now returns PNG with automatic quality and dimensions; explicit Responses configurations retain their existing behavior. Live macOS generation and transparent JPEG editing passed in one attempt each. See the [verification results](docs/verification.md#live-macos-confirmation-29-september-2026).

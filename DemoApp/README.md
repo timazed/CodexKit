@@ -119,7 +119,7 @@ Both signed-app verification scripts exercise this same presentation model with 
 - lets you attach a photo from the library and send it with or without text
 - renders attached user images in the transcript
 - streams assistant output into the UI
-- discovers account models, with bundled fallback choices including GPT-6 Astra, and uses model-specific reasoning levels
+- discovers account models, with bundled fallback choices including GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, and GPT-6 Luna, and uses model-specific reasoning levels
 - displays model catalog source/fetch time and a `Refresh Models` action
 - shows account usage allowances, reset times, and credit information when reported
 - displays live reasoning summaries, web-search activity, message phases, and concurrent tool activity

@@ -293,8 +293,8 @@ final class CodexResponsesBackendTests: XCTestCase {
         let defaultWindow = await backend.modelContextWindowTokenCount
         let defaultUsableWindow = await backend.usableContextWindowTokenCount
 
-        XCTAssertEqual(defaultWindow, 372_000)
-        XCTAssertEqual(defaultUsableWindow, 353_400)
+        XCTAssertEqual(defaultWindow, 272_000)
+        XCTAssertEqual(defaultUsableWindow, 258_400)
 
         for info in CodexModel.catalog {
             let modelWindow = await backend.modelContextWindowTokenCount(for: info.model.rawValue)

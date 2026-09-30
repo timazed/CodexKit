@@ -122,7 +122,7 @@ Turns use bounded event queues and configurable execution limits. The default ru
 
 The [documentation index](docs/index.md) contains the full guide list, core concepts, and architecture overview. Common next steps:
 
-- [Configure models and reasoning](docs/backend-configuration.md)
+- [Configure models and reasoning](docs/backend-configuration.md), including typed GPT-6.1 Sol, GPT-6 Sol/Luna, and Daybreak identifiers
 - [Use host-managed sessions, execution handles, and async observation](docs/sdk-integration.md)
 - [Recover saved structured results and authorize bounded replacements](docs/structured-request-recovery.md)
 - [Stream and validate typed output (text, JSON, JSON Lines, and XML)](docs/streaming-output.md)

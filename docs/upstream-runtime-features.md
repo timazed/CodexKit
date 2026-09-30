@@ -5,7 +5,7 @@
 CodexKit supports these Codex runtime concepts natively in Swift. First-class
 question/form presentation remains host-owned.
 
-## GPT-6 Astra
+## Current bundled models
 
 ```swift
 let backend = CodexResponsesBackend(configuration: .init(model: .gpt6Astra))
@@ -18,6 +18,14 @@ and `.ultra`. As with the existing models, `.ultra` is sent as `max` to inferenc
 it does not add agent delegation to CodexKit. The bundled context-window value
 is 272,000 tokens, matching upstream's default window, rather than its optional
 larger maximum. Model selection does not grant account access.
+
+The catalog also includes `.gpt61Sol` (default `.low`), `.gpt6Sol` (default
+`.medium`), and `.gpt6Luna` (default `.medium`). Sol supports efforts through
+`.ultra`; Luna supports efforts through `.max`. Their bundled windows are
+272,000 tokens, and all support original image detail. Hidden Daybreak identifiers
+are available as `.daybreakBlueLatest` and `.daybreakRedLatest`. See the
+[model table](backend-configuration.md) for the complete metadata and fallback
+picker behavior. Remote discovery remains authoritative for account capabilities.
 
 ## Stream completion
 
