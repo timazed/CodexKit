@@ -115,11 +115,6 @@ let configuration = CodexResponsesBackendConfiguration(model: model)
 | `.gpt56Sol` | `gpt-5.6-sol` | `low` | `low` through `ultra` | 272,000 |
 | `.gpt56Terra` | `gpt-5.6-terra` | `medium` | `low` through `ultra` | 272,000 |
 | `.gpt56Luna` | `gpt-5.6-luna` | `medium` | `low` through `max` | 272,000 |
-| `.gpt55` | `gpt-5.5` | `medium` | `low` through `xhigh` | 272,000 |
-| `.gpt54` | `gpt-5.4` | `medium` | `low` through `xhigh` | 272,000 |
-| `.gpt54Mini` | `gpt-5.4-mini` | `medium` | `low` through `xhigh` | 272,000 |
-| `.gpt53CodexSpark` | `gpt-5.3-codex-spark` | `high` | `low` through `xhigh` | 128,000 |
-| `.gpt52` | `gpt-5.2` | `medium` | `low` through `xhigh` | 272,000 |
 | `.daybreakBlueLatest` | `gpt-daybreak-blue-latest` | `low` | `low` through `ultra` | 272,000 |
 | `.daybreakRedLatest` | `gpt-daybreak-red-latest` | `medium` | `low` through `ultra` | 372,000 |
 | `.codexAutoReview` | `codex-auto-review` | `medium` | `low` through `max` | 272,000 |
@@ -133,7 +128,7 @@ let choices = catalog.visibleModels
 // Use .refresh for an explicit network refresh, or .cachedOnly for no network I/O.
 ```
 
-Snapshots report their source, fetch time, and whether the metadata is stale. GPT-5.2 remains represented in the complete bundled catalog, while Codex Auto Review is marked for internal use. GPT-5.3-Codex-Spark is marked as a text-only research preview. Actual model access is account- and server-dependent; the catalog is metadata, not an authorization list. See [runtime progress, tools, and turn control](../docs/upstream-runtime-features.md) for discovery, caching, usage limits, and migration details. String-based configuration remains supported, and apps can use `CodexModel(rawValue:)` for a server-enabled or future identifier that this release does not yet know.
+Snapshots report their source, fetch time, and whether the metadata is stale. The bundled catalog excludes retired or deprecated GPT-5.2, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex Spark entries, and removes GPT-5.5 ahead of its October 14, 2026 retirement. GPT-5.6 models remain available during the GPT-6 rollout. Daybreak Blue/Red remain hidden from the fallback picker, and Codex Auto Review is marked for internal use. See [official model availability and retirement dates](https://learn.chatgpt.com/docs/models#deprecated-codex-models). Actual model access is account- and server-dependent; the catalog is metadata, not an authorization list. See [runtime progress, tools, and turn control](upstream-runtime-features.md) for discovery, caching, usage limits, and migration details. String-based configuration remains supported, and apps can use `CodexModel(rawValue:)` for a server-enabled or future identifier that this release does not yet know.
 
 `ReasoningEffort.ultra` matches the Codex client setting but maps to the backend-compatible `max` inference value. Ultra's proactive task delegation is a Codex host feature; CodexKit does not add delegation behavior by selecting that effort alone. Unknown non-empty effort strings decode as `.custom(...)` so persisted threads remain compatible with future model-defined values.
 

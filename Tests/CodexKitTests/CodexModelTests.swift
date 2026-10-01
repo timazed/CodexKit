@@ -2,7 +2,7 @@ import CodexKit
 import XCTest
 
 final class CodexModelTests: XCTestCase {
-    func testCatalogContainsEveryBundledAndLiveCodexModel() {
+    func testCatalogContainsSupportedBundledModels() {
         XCTAssertEqual(
             CodexModel.knownModels,
             [
@@ -15,11 +15,6 @@ final class CodexModelTests: XCTestCase {
                 .gpt56Luna,
                 .daybreakBlueLatest,
                 .daybreakRedLatest,
-                .gpt55,
-                .gpt54,
-                .gpt54Mini,
-                .gpt53CodexSpark,
-                .gpt52,
                 .codexAutoReview,
             ]
         )
@@ -41,11 +36,9 @@ final class CodexModelTests: XCTestCase {
                 .gpt56Sol,
                 .gpt56Terra,
                 .gpt56Luna,
-                .gpt55,
             ]
         )
-        for model in [CodexModel.gpt54, .gpt54Mini, .gpt53CodexSpark, .gpt52,
-                      .daybreakBlueLatest, .daybreakRedLatest] {
+        for model in [CodexModel.daybreakBlueLatest, .daybreakRedLatest] {
             XCTAssertFalse(CodexModel.userFacingModels.contains(model))
         }
         XCTAssertFalse(CodexModel.userFacingModels.contains(.codexAutoReview))
@@ -74,27 +67,13 @@ final class CodexModelTests: XCTestCase {
         )
     }
 
-    func testSparkMetadataAndEarlierModels() throws {
-        let spark = try XCTUnwrap(CodexModel.gpt53CodexSpark.info)
-        XCTAssertEqual(spark.model.rawValue, "gpt-5.3-codex-spark")
-        XCTAssertEqual(spark.defaultReasoningEffort, .high)
-        XCTAssertEqual(spark.contextWindowTokenCount, 128_000)
-        XCTAssertEqual(spark.inputModalities, [.text])
-        XCTAssertEqual(spark.availability, .researchPreview)
-        XCTAssertEqual(
-            spark.supportedReasoningEfforts,
-            [.low, .medium, .high, .extraHigh]
-        )
-
-        for model in [CodexModel.gpt55, .gpt54, .gpt54Mini, .gpt52] {
-            let info = try XCTUnwrap(model.info)
-            XCTAssertEqual(info.defaultReasoningEffort, .medium)
-            XCTAssertEqual(
-                info.supportedReasoningEfforts,
-                [.low, .medium, .high, .extraHigh]
-            )
-            XCTAssertEqual(info.contextWindowTokenCount, 272_000)
-            XCTAssertEqual(info.inputModalities, [.text, .image])
+    func testLegacyModelsAreAbsentFromBundledMetadataButStillDecode() throws {
+        for identifier in ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2"] {
+            let model = CodexModel(rawValue: identifier)
+            XCTAssertNil(model.info)
+            XCTAssertFalse(CodexModel.knownModels.contains(model))
+            XCTAssertFalse(CodexModel.userFacingModels.contains(model))
+            XCTAssertEqual(try JSONDecoder().decode(CodexModel.self, from: JSONEncoder().encode(model)), model)
         }
     }
 
@@ -114,14 +93,14 @@ final class CodexModelTests: XCTestCase {
         XCTAssertEqual(backendConfiguration.reasoningEffort, .medium)
 
         var threadConfiguration = AgentThreadConfiguration(
-            model: .gpt53CodexSpark
+            model: .gpt6Astra
         )
-        XCTAssertEqual(threadConfiguration.model, CodexModel.gpt53CodexSpark.rawValue)
-        XCTAssertEqual(threadConfiguration.codexModel, .gpt53CodexSpark)
-        XCTAssertEqual(threadConfiguration.reasoningEffort, .high)
+        XCTAssertEqual(threadConfiguration.model, CodexModel.gpt6Astra.rawValue)
+        XCTAssertEqual(threadConfiguration.codexModel, .gpt6Astra)
+        XCTAssertEqual(threadConfiguration.reasoningEffort, .low)
 
-        threadConfiguration.codexModel = .gpt52
-        XCTAssertEqual(threadConfiguration.model, CodexModel.gpt52.rawValue)
+        threadConfiguration.codexModel = .gpt56Luna
+        XCTAssertEqual(threadConfiguration.model, CodexModel.gpt56Luna.rawValue)
 
         let stringConfiguration = CodexResponsesBackendConfiguration(model: "gpt-5.5")
         XCTAssertEqual(stringConfiguration.reasoningEffort, .medium)

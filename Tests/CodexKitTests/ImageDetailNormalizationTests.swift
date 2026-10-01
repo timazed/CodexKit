@@ -40,13 +40,13 @@ final class ImageDetailNormalizationTests: XCTestCase {
 
     func testModelSwitchUsesRemoteCapabilitiesAndPreservesProviderHistory() async throws {
         let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
-        await TestURLProtocol.enqueue(.init(body: Data(#"{"models":[{"slug":"capable","supports_image_detail_original":true},{"slug":"limited","supports_image_detail_original":false},{"slug":"gpt-5.5","supports_image_detail_original":false}]}"#.utf8)))
+        await TestURLProtocol.enqueue(.init(body: Data(#"{"models":[{"slug":"capable","supports_image_detail_original":true},{"slug":"limited","supports_image_detail_original":false},{"slug":"gpt-5.6-sol","supports_image_detail_original":false}]}"#.utf8)))
         let catalog = try await backend.listModels(session: demoSession(), policy: .refresh)
         XCTAssertEqual(catalog.models.map(\.supportsImageDetailOriginal), [true, false, false])
         let image = AgentImageAttachment.png(Data([137, 80, 78, 71]), detail: .original)
         let message = AgentMessage(threadID: "thread", role: .user, text: "Image", images: [image])
         var context: AgentProviderContext?
-        for (model, detail) in [("capable", "original"), ("limited", "high"), ("gpt-5.5", "high"), ("unknown", "high"), ("capable", "original")] {
+        for (model, detail) in [("capable", "original"), ("limited", "high"), ("gpt-5.6-sol", "high"), ("unknown", "high"), ("capable", "original")] {
             await TestURLProtocol.enqueue(.init(body: completed, inspect: { request in
                 let body = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
                 let first = body.objectValue?["input"]?.arrayValue?.first
@@ -104,17 +104,19 @@ final class ImageDetailNormalizationTests: XCTestCase {
     }
 
     func testLegacyModelMetadataDecodesWithConservativeCapabilities() throws {
-        let info = try XCTUnwrap(CodexModel.gpt52.info)
+        let info = try XCTUnwrap(CodexModel.gpt56Sol.info)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(info)) as? [String: Any])
         object.removeValue(forKey: "supportsImageDetailOriginal")
         let decoded = try JSONDecoder().decode(CodexModelInfo.self, from: JSONSerialization.data(withJSONObject: object))
         XCTAssertFalse(decoded.supportsImageDetailOriginal)
-        XCTAssertEqual(decoded, info)
+        XCTAssertEqual(decoded.model, info.model)
+        XCTAssertEqual(decoded.supportedReasoningEfforts, info.supportedReasoningEfforts)
+        XCTAssertEqual(decoded.contextWindowTokenCount, info.contextWindowTokenCount)
     }
 
     func testImageEditingNormalizesOriginalForReceivingModel() async throws {
         let image = AgentImageAttachment.png(Data([1, 2, 3]), detail: .original)
-        for (model, expected) in [("gpt-5.5", "original"), ("unknown", "high")] {
+        for (model, expected) in [("gpt-5.6-sol", "original"), ("unknown", "high")] {
             await TestURLProtocol.enqueue(.init(body: Data("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[{\"type\":\"image_generation_call\",\"id\":\"image\",\"status\":\"completed\",\"result\":\"AQID\"}]}}\n\n".utf8), inspect: { request in
                 let body = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
                 XCTAssertEqual(body.objectValue?["input"]?.arrayValue?.first?.objectValue?["content"]?.arrayValue?.last?.objectValue?["detail"], .string(expected))

@@ -127,11 +127,6 @@ public extension CodexModel {
     static let gpt56Sol = CodexModel(rawValue: "gpt-5.6-sol")
     static let gpt56Terra = CodexModel(rawValue: "gpt-5.6-terra")
     static let gpt56Luna = CodexModel(rawValue: "gpt-5.6-luna")
-    static let gpt55 = CodexModel(rawValue: "gpt-5.5")
-    static let gpt54 = CodexModel(rawValue: "gpt-5.4")
-    static let gpt54Mini = CodexModel(rawValue: "gpt-5.4-mini")
-    static let gpt53CodexSpark = CodexModel(rawValue: "gpt-5.3-codex-spark")
-    static let gpt52 = CodexModel(rawValue: "gpt-5.2")
     static let codexAutoReview = CodexModel(rawValue: "codex-auto-review")
 
     /// Models described by this CodexKit release, including internal entries.
@@ -227,54 +222,6 @@ public extension CodexModel {
             supportsImageDetailOriginal: true
         ),
         CodexModelInfo(
-            model: .gpt55,
-            displayName: "GPT-5.5",
-            summary: "Legacy coding model.",
-            defaultReasoningEffort: .medium,
-            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
-            contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image],
-            supportsImageDetailOriginal: true
-        ),
-        CodexModelInfo(
-            model: .gpt54,
-            displayName: "GPT-5.4",
-            summary: "Strong model for everyday coding.",
-            defaultReasoningEffort: .medium,
-            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
-            contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image],
-            supportsImageDetailOriginal: true
-        ),
-        CodexModelInfo(
-            model: .gpt54Mini,
-            displayName: "GPT-5.4-Mini",
-            summary: "Small, fast, and cost-efficient model for simpler coding tasks.",
-            defaultReasoningEffort: .medium,
-            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
-            contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image]
-        ),
-        CodexModelInfo(
-            model: .gpt53CodexSpark,
-            displayName: "GPT-5.3-Codex-Spark",
-            summary: "Ultra-fast coding model.",
-            defaultReasoningEffort: .high,
-            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
-            contextWindowTokenCount: 128_000,
-            inputModalities: [.text],
-            availability: .researchPreview
-        ),
-        CodexModelInfo(
-            model: .gpt52,
-            displayName: "GPT-5.2",
-            summary: "Optimized for professional work and long-running agents.",
-            defaultReasoningEffort: .medium,
-            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh],
-            contextWindowTokenCount: 272_000,
-            inputModalities: [.text, .image]
-        ),
-        CodexModelInfo(
             model: .codexAutoReview,
             displayName: "Codex Auto Review",
             summary: "Automatic approval review model for Codex.",
@@ -292,7 +239,7 @@ public extension CodexModel {
     }
 
     /// Bundled models listed in the current upstream picker.
-    /// Legacy and hidden identifiers remain available in `catalog`.
+    /// Hidden identifiers remain available in `catalog`; obsolete models are omitted.
     static var userFacingModels: [CodexModel] {
         [
             .gpt6Astra,
@@ -302,7 +249,6 @@ public extension CodexModel {
             .gpt56Sol,
             .gpt56Terra,
             .gpt56Luna,
-            .gpt55,
         ]
     }
 }

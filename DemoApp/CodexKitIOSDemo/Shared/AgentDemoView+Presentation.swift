@@ -116,11 +116,6 @@ private extension CodexModel {
         case .gpt61Sol, .gpt6Sol, .gpt56Sol: "sun.max"
         case .gpt56Terra: "globe.americas"
         case .gpt6Luna, .gpt56Luna: "moon.stars"
-        case .gpt55: "sparkles"
-        case .gpt54: "brain.head.profile"
-        case .gpt54Mini: "hare"
-        case .gpt53CodexSpark: "bolt.fill"
-        case .gpt52: "briefcase"
         default: "cpu"
         }
     }

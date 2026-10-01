@@ -4,6 +4,24 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Legacy model cleanup (unreleased)
+
+The bundled catalog and fallback pickers no longer include GPT-5.5, GPT-5.4,
+GPT-5.4 Mini, GPT-5.3 Codex Spark, or GPT-5.2. Their static `CodexModel` members
+(`gpt55`, `gpt54`, `gpt54Mini`, `gpt53CodexSpark`, and `gpt52`) have been removed.
+Update call sites to an available model from `runtime.listModels()` or a remaining
+bundled identifier. GPT-5.6 models remain available during the GPT-6 rollout;
+existing defaults remain GPT-5.6 Sol.
+
+GPT-5.5 retires from ChatGPT-authenticated Codex on October 14, 2026; the other
+removed entries are already retired or deprecated. See [official model status](https://learn.chatgpt.com/docs/models#deprecated-codex-models).
+
+Persisted and explicit string identifiers still decode without substitution.
+They no longer receive bundled capability metadata. Account discovery remains
+authoritative and can return models that are absent from the bundled catalog.
+Existing saved thread configurations require the host to select a replacement
+if the account no longer permits their model; no storage migration is performed.
+
 ## Dedicated image generation (alpha.35)
 
 Update to exact package version `2.0.0-alpha.35`.
