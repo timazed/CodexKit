@@ -119,7 +119,7 @@ let configuration = CodexResponsesBackendConfiguration(model: model)
 | `.daybreakRedLatest` | `gpt-daybreak-red-latest` | `medium` | `low` through `ultra` | 372,000 |
 | `.codexAutoReview` | `codex-auto-review` | `medium` | `low` through `max` | 272,000 |
 
-The table describes bundled defaults as of 30 September 2026. `CodexModel.userFacingModels` supplies the fallback picker: GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, the GPT-5.6 models, and GPT-5.5. Older typed identifiers remain supported in the complete catalog. Daybreak Blue/Red and Auto Review remain hidden from the fallback picker. All five new entries support text, images, and original image detail. Signed-in apps can discover available models and refresh their metadata:
+The table describes bundled defaults as of 1 October 2026. `CodexModel.userFacingModels` supplies the fallback picker: GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and the GPT-5.6 models. Retired and retiring typed identifiers have been removed from the complete catalog. Daybreak Blue/Red and Auto Review remain hidden from the fallback picker. All five new entries support text, images, and original image detail. Signed-in apps can discover available models and refresh their metadata:
 
 ```swift
 let catalog = try await runtime.listModels(policy: .preferCached)

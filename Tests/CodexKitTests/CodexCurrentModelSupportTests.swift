@@ -20,11 +20,17 @@ final class CodexCurrentModelSupportTests: XCTestCase {
     ]}
     """#
 
-    func testBundledCapabilitiesAndPickerMatchCurrentUpstreamCatalog() throws {
+    func testBundledCapabilitiesAndPickerMatchSupportedUpstreamModels() throws {
         let upstream = try CodexResponsesBackend.decodeModels(Data(upstreamCatalog.utf8))
         let bundled = CodexModelCatalogSnapshot.bundled
-        XCTAssertEqual(bundled.visibleModels.map(\.model), upstream.filter { !$0.hidden }.map(\.model))
-        for remote in upstream {
+        // Preserve the historical server fixture: discovery remains authoritative,
+        // while the retiring model is deliberately absent from bundled fallbacks.
+        let retiring = CodexModel(rawValue: "gpt-5.5")
+        XCTAssertTrue(upstream.contains { $0.model == retiring && !$0.hidden })
+        XCTAssertFalse(bundled.models.contains { $0.model == retiring })
+        let supported = upstream.filter { $0.model != retiring }
+        XCTAssertEqual(bundled.visibleModels.map(\.model), supported.filter { !$0.hidden }.map(\.model))
+        for remote in supported {
             let info = try XCTUnwrap(remote.model.info, remote.id)
             XCTAssertEqual(info.displayName, remote.displayName, remote.id)
             XCTAssertEqual(info.summary, remote.summary, remote.id)

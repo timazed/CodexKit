@@ -4,7 +4,9 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
-## Legacy model cleanup (unreleased)
+## Legacy model cleanup (alpha.37)
+
+Update to exact package version `2.0.0-alpha.37`.
 
 The bundled catalog and fallback pickers no longer include GPT-5.5, GPT-5.4,
 GPT-5.4 Mini, GPT-5.3 Codex Spark, or GPT-5.2. Their static `CodexModel` members

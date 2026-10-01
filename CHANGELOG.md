@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.37] - 2026-10-01
+
+This prerelease removes obsolete bundled model choices while preserving current GPT-6 and available GPT-5.6 models. GPT-5.5 is removed ahead of its October 14, 2026 retirement from ChatGPT-authenticated Codex; GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex Spark, and GPT-5.2 are already retired or deprecated. See the [migration notes](docs/migration.md#legacy-model-cleanup-alpha37).
+
+### Changed
+
+- Remove GPT-5.5, GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex Spark, and GPT-5.2 from bundled model metadata and fallback picker choices in both demos.
+- **Breaking change:** remove the static `CodexModel.gpt55`, `.gpt54`, `.gpt54Mini`, `.gpt53CodexSpark`, and `.gpt52` identifiers. Callers must select an available replacement; explicit and persisted string identifiers still decode without substitution.
+- Preserve account-discovered model choices, current model capabilities, existing defaults, and saved thread configurations. No storage migration is required.
+
+### Fixed
+
+- Prevent bundled offline fallbacks from advertising retired or retiring models. Regression coverage verifies catalog exclusion, identifier decoding, current model capabilities, and image-detail normalization.
+
 ## [2.0.0-alpha.36] - 2026-09-30
 
 This prerelease updates typed model support and both demo model pickers for the current Codex catalog.
@@ -587,7 +601,9 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.35...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.37...HEAD
+[2.0.0-alpha.37]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.36...v2.0.0-alpha.37
+[2.0.0-alpha.36]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.35...v2.0.0-alpha.36
 [2.0.0-alpha.35]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.34...v2.0.0-alpha.35
 [2.0.0-alpha.34]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.33...v2.0.0-alpha.34
 [2.0.0-alpha.33]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.32...v2.0.0-alpha.33
