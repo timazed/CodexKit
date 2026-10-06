@@ -21,24 +21,26 @@ function json(response, status, value) {
   response.end(JSON.stringify({ version: VERSION, ...value }));
 }
 
-function decodeEnvelope(value) {
+function decodeEnvelope(value, image = false) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new APIError(400, ERROR.invalid);
   if (value.version !== VERSION) throw new APIError(400, ERROR.version);
   const prepared = value.preparedRequest;
   if (!prepared || typeof prepared !== 'object' || Array.isArray(prepared) ||
       Object.keys(value).some(key => !['version', 'preparedRequest', 'authentication'].includes(key)) ||
-      Object.keys(prepared).some(key => !['bodyBase64', 'sha256', 'sessionId', 'clientRequestId', 'originator'].includes(key)) ||
+      Object.keys(prepared).some(key => !['bodyBase64', 'sha256', 'clientRequestId', 'originator',
+        ...(image ? ['action', 'imageTurnId'] : ['sessionId'])].includes(key)) ||
       typeof prepared.bodyBase64 !== 'string' || !prepared.bodyBase64.length) {
     throw new APIError(400, ERROR.invalid);
   }
   const body = Buffer.from(prepared.bodyBase64, 'base64');
   if (body.toString('base64') !== prepared.bodyBase64) throw new APIError(400, ERROR.invalid);
-  return { preparedRequest: { body, sha256: prepared.sha256, sessionId: prepared.sessionId,
+  return { preparedRequest: { body, sha256: prepared.sha256,
+    ...(image ? { action: prepared.action, imageTurnId: prepared.imageTurnId } : { sessionId: prepared.sessionId }),
     clientRequestId: prepared.clientRequestId, originator: prepared.originator },
     authentication: value.authentication };
 }
 
-async function readEnvelope(request, maximumBytes) {
+async function readEnvelope(request, maximumBytes, image) {
   if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
     throw new APIError(415, ERROR.media);
   }
@@ -51,7 +53,7 @@ async function readEnvelope(request, maximumBytes) {
     if (length > maximumBytes) throw new APIError(413, ERROR.large);
     chunks.push(chunk);
   }
-  try { return decodeEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+  try { return decodeEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')), image); }
   catch (error) {
     if (error instanceof APIError) throw error;
     throw new APIError(400, ERROR.invalid);
@@ -60,9 +62,9 @@ async function readEnvelope(request, maximumBytes) {
 
 /** Local development host only. Credentials/results are never persisted or logged. */
 function createLocalAPIServer({ mode = MODE.fixture, fetch: fetcher, maximumBytes = 6 * 1024 * 1024,
-  maximumConcurrent = 4, executionTimeoutMs = 90_000 } = {}) {
+  maximumImageBytes = 64 * 1024 * 1024, maximumConcurrent = 4, executionTimeoutMs = 90_000 } = {}) {
   if (!Object.values(MODE).includes(mode)) throw new Error('Expected fixture or live mode.');
-  for (const value of [maximumBytes, maximumConcurrent, executionTimeoutMs]) {
+  for (const value of [maximumBytes, maximumImageBytes, maximumConcurrent, executionTimeoutMs]) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Expected positive API limits.');
   }
   const client = new CodexKitBridgeClient({
@@ -83,16 +85,18 @@ function createLocalAPIServer({ mode = MODE.fixture, fetch: fetcher, maximumByte
         json(response, 200, { status: 'ok', mode });
         return;
       }
-      if (request.method !== 'POST' || request.url !== '/v1/execute') throw new APIError(404, ERROR.missing);
+      const image = request.url === '/v1/images/execute';
+      if (request.method !== 'POST' || (!image && request.url !== '/v1/execute')) throw new APIError(404, ERROR.missing);
       if (active >= maximumConcurrent) throw new APIError(429, ERROR.busy);
       active++;
       started = true;
       controller = new AbortController();
       request.once('aborted', disconnect);
       response.once('close', disconnect);
-      const input = await readEnvelope(request, maximumBytes);
+      const input = await readEnvelope(request, image ? maximumImageBytes : maximumBytes, image);
       timer = setTimeout(() => { timedOut = true; controller.abort(); }, executionTimeoutMs);
-      const result = await client.execute({ ...input, signal: controller.signal });
+      const result = await (image ? client.executeImage({ ...input, signal: controller.signal }) :
+        client.execute({ ...input, signal: controller.signal }));
       json(response, 200, { mode, result });
     } catch (error) {
       if (timedOut) {

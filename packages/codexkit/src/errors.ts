@@ -5,7 +5,7 @@ export type ErrorCode =
   | "stream_interrupted" | "invalid_response" | "provider_failed"
   | "response_incomplete" | "response_refused" | "unsupported_output"
   | "invalid_output" | "schema_mismatch" | "limit_exceeded"
-  | "cancelled" | "progress_callback_failed";
+  | "cancelled" | "progress_callback_failed" | "image_usage_limit_exceeded";
 
 /** Unknown is deliberately distinct from a confirmed provider failure. Never implies permission to retry. */
 export type ProviderOutcome = "not_started" | "unknown" | "failed" | "incomplete" | "completed";
@@ -18,6 +18,8 @@ export interface ErrorDetails {
   readonly providerCode?: string;
   readonly incompleteReason?: string;
   readonly retryAfter?: string;
+  readonly imageRequestId?: string;
+  readonly imageUsageLimit?: { readonly limitId: "image_gen"; readonly resetsAt?: number };
 }
 
 const messages: Record<ErrorCode, string> = {
@@ -41,6 +43,7 @@ const messages: Record<ErrorCode, string> = {
   limit_exceeded: "An execution payload or validation limit was exceeded.",
   cancelled: "Execution was cancelled by its caller.",
   progress_callback_failed: "The progress callback failed.",
+  image_usage_limit_exceeded: "The image generation allowance has been reached.",
 };
 
 /** Messages and serialized errors never contain request text, raw provider errors, or transport causes. */

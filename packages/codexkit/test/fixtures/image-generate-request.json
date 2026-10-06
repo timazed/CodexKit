@@ -1,0 +1,7 @@
+{
+  "prompt": "Draw a synthetic fixture tree",
+  "background": "transparent",
+  "model": "gpt-image-2",
+  "quality": "auto",
+  "size": "auto"
+}

@@ -63,7 +63,9 @@ The loopback address works from macOS and the iOS simulator. Physical-device acc
 
 Success is HTTP 200 with `{ "version": 1, "mode": "fixture", "result": <ExecutionResult> }` (or mode `live`). Failure is `{ "version": 1, "error": { "code": "...", "outcome": "..." } }`; bridge failures also include its sanitized message and diagnostics. Invalid packets and bridge preflight failures return 400, oversized envelopes 413, incorrect content type 415, excess concurrent work 429, provider failures 502, and execution timeout 504. A provider authentication failure remains 502 with `authentication_failed` so the app can distinguish it from API access control.
 
-The host limits envelopes to 6 MiB, concurrent executions to four, and provider execution to 90 seconds. Library limits also apply. It rejects browser Origin headers and non-local Host headers and provides no CORS access. It is an HTTP development sample bound to loopback, not a deployed authentication or credential-custody service.
+`POST /v1/images/execute` accepts the same envelope with `action: "generate"` or `"edit"` and `imageTurnId` in `preparedRequest`, replacing `sessionId`. Its exact body bytes follow the [image request contract](images.md). Success returns an `ImageExecutionResult` in the same `result` field. Fixture mode returns a synthetic 2×1 PNG for either action; live mode calls the dedicated Images endpoint once. The current Swift Local Cloud card still tests structured text; image routing from the app is separate integration work.
+
+The host limits text envelopes to 6 MiB and image envelopes to 64 MiB (including the outer base64 encoding), concurrent executions to four, and provider execution to 90 seconds. Library limits also apply. Configure `maximumImageBytes` or `executionTimeoutMs` in `createLocalAPIServer` for a local test that needs different host limits. It rejects browser Origin headers and non-local Host headers and provides no CORS access. It is an HTTP development sample bound to loopback, not a deployed authentication or credential-custody service.
 
 ## Verification
 

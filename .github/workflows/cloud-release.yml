@@ -82,5 +82,5 @@ jobs:
           npm install --prefix "$consumer_dir" --ignore-scripts --no-audit --no-fund \
             --registry=https://npm.pkg.github.com "$package_spec"
           cd "$consumer_dir"
-          node -e 'const { CodexKitBridgeClient } = require("@timazed/codexkit"); if (typeof new CodexKitBridgeClient().execute !== "function") throw new Error("CommonJS import failed"); console.log("Published CommonJS import passed");'
-          node --input-type=module -e 'import { CodexKitBridgeClient } from "@timazed/codexkit"; if (typeof new CodexKitBridgeClient().execute !== "function") throw new Error("ESM import failed"); console.log("Published ESM import passed");'
+          node -e 'const { CodexKitBridgeClient } = require("@timazed/codexkit"); const c = new CodexKitBridgeClient(); if (typeof c.execute !== "function" || typeof c.executeImage !== "function") throw new Error("CommonJS import failed"); console.log("Published CommonJS text/image imports passed");'
+          node --input-type=module -e 'import { CodexKitBridgeClient } from "@timazed/codexkit"; const c = new CodexKitBridgeClient(); if (typeof c.execute !== "function" || typeof c.executeImage !== "function") throw new Error("ESM import failed"); console.log("Published ESM text/image imports passed");'

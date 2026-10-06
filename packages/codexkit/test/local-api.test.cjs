@@ -5,6 +5,7 @@ const { once } = require('node:events');
 const { createLocalAPIServer } = require('../examples/local-api/server.cjs');
 const { FIXTURE_MESSAGE } = require('../examples/local-api/fixture.cjs');
 const { prepared, requestBody, authentication, complete, response: providerResponse } = require('./helpers.cjs');
+const { imagePrepared, imageBody, imageResponse, FIXTURE_PNG } = require('./image-helpers.cjs');
 const test = (name, run) => nodeTest(name, { timeout: 5000 }, run);
 
 function envelope(request = prepared()) {
@@ -42,6 +43,45 @@ test('local API serves health and executes the bridge with a synthetic provider'
   assert.equal(reply.status, 200);
   assert.equal(reply.value.result.outputText, FIXTURE_MESSAGE);
   assert.equal(reply.value.mode, 'fixture');
+});
+
+test('local image API generates and edits with a complete PNG result', async t => {
+  const base = await server(t);
+  for (const request of [imagePrepared(), imagePrepared(imageBody({
+    images: [{ image_url: `data:image/png;base64,${FIXTURE_PNG}` }],
+  }), 'edit')]) {
+    const reply = await send(base, envelope(request), { path: '/v1/images/execute' });
+    assert.equal(reply.status, 200);
+    assert.equal(reply.value.result.action, request.action);
+    assert.equal(reply.value.result.images[0].base64, FIXTURE_PNG);
+    assert.deepEqual(reply.value.result.images[0].pixelSize, { width: 2, height: 1 });
+  }
+});
+
+test('local image API preserves bytes and rejects incompatible envelopes before provider access', async t => {
+  const calls = [];
+  const base = await server(t, { fetch: async (url, init) => { calls.push({ url, ...init }); return imageResponse(); } });
+  const request = imagePrepared();
+  const options = { path: '/v1/images/execute' };
+  assert.equal((await send(base, envelope(request), options)).status, 200);
+  assert.deepEqual(Buffer.from(calls[0].body), request.body);
+  assert.equal(calls[0].headers.Authorization, `Bearer ${authentication.accessToken}`);
+  for (const bad of [envelope(), envelope({ ...request, sha256: '0'.repeat(64) }),
+    envelope(imagePrepared(imageBody({ tools: [] }))), envelope({ ...request, endpoint: 'https://other.example' })]) {
+    assert.equal((await send(base, bad, options)).status, 400);
+  }
+  assert.equal(calls.length, 1);
+});
+
+test('local image API enforces its separate envelope limit and execution cancellation', async t => {
+  const limited = await server(t, { maximumImageBytes: 100 });
+  assert.equal((await send(limited, envelope(imagePrepared()), { path: '/v1/images/execute' })).status, 413);
+  let signal;
+  const slow = await server(t, { executionTimeoutMs: 20, fetch: (_url, init) => {
+    signal = init.signal; return new Promise(() => {});
+  } });
+  assert.equal((await send(slow, envelope(imagePrepared()), { path: '/v1/images/execute' })).status, 504);
+  assert.equal(signal.aborted, true);
 });
 
 test('local API forwards authoritative bytes and per-request authentication exactly once', async t => {

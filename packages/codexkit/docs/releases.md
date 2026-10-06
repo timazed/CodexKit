@@ -29,13 +29,13 @@ GitHub initially creates packages with **private visibility**, including package
 
 The renamed package starts at `0.1.1`, continuing the existing release sequence. For future versions, update the package and lockfile together from this directory with `npm version <version> --no-git-tag-version`. Run `npm ci` and `npm run verify`, then merge the changes into `main`.
 
-When ready to publish version `0.1.1`, tag its merged commit from the repository root:
+When ready to publish version `0.2.0`, tag its merged commit from the repository root:
 
 ```sh
 git switch main
 git pull --ff-only
-git tag -a cloud-v0.1.1 -m "@timazed/codexkit 0.1.1"
-git push origin cloud-v0.1.1
+git tag -a cloud-v0.2.0 -m "@timazed/codexkit 0.2.0"
+git push origin cloud-v0.2.0
 ```
 
 Use the corresponding version for later releases. Do not use Swift's `v*` prefix or npm's automatic Git tagging. Monitor **Cloud Release** in GitHub Actions; a failed run can be rerun after resolving configuration problems, provided that version has not already been published. Do not move a release tag to repair a failed or completed release.

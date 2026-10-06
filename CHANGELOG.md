@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [cloud-0.2.0] - 2026-10-07
+
+### Added
+
+- `CodexKitBridgeClient.executeImage` and image preflight for dedicated Codex image generation/editing, preserving Swift-prepared bytes, digest and routing headers. Supports automatic quality/dimensions, transparent or opaque backgrounds, and up to five inline references. General tool calling remains disabled.
+- Complete PNG results with actual pixel dimensions, bounded image/JSON ingestion, integrity and scanline validation, cancellation, and typed image quota/reset diagnostics. Each call makes one POST with no automatic retry or credential refresh.
+- A local `/v1/images/execute` endpoint, synthetic PNG fixture, image route example, and packed CommonJS/ESM/TypeScript verification. Public Swift image request export, app-to-cloud routing, persistence integration and durable job retrieval remain separate work. Swift remains at `v2.0.0-alpha.38`.
+
 ## [cloud-0.1.1] - 2026-10-06
 
 ### Changed

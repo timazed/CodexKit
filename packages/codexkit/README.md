@@ -1,6 +1,6 @@
 # CodexKit for TypeScript
 
-The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is `0.1.1`. Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
+The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is `0.2.0`. Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
 
 A small TypeScript library that executes a CodexKit-prepared request against the Codex backend and returns its completed result. CodexKit is the authority for request construction, model/reasoning selection, response format, and retry policy.
 
@@ -49,6 +49,15 @@ async function runCodex(
 
 CommonJS: `const { CodexKitBridgeClient } = require("@timazed/codexkit")`.
 
+For dedicated image generation or editing, use the same client:
+
+```ts
+const result = await client.executeImage({ preparedRequest: preparedImageRequest, authentication });
+const png = Buffer.from(result.images[0]!.base64, "base64");
+```
+
+`preparedImageRequest` is a `PreparedImageRequest` containing CodexKit's exact image request bytes, digest, action and routing headers. Results include validated PNG data and actual pixel dimensions. Editing accepts up to five inline PNG/JPEG/WebP references. See the [image contract and limits](docs/images.md) and [image API route example](examples/image-api-route.ts). General tool calling remains unsupported.
+
 Create a client once with your backend's configuration and reuse it across requests. Supply authentication to each `client.execute(...)` call; concurrent calls keep credentials and execution state isolated. `CodexKitBridgeClientOptions` describes constructor options, and `client.validatePreparedRequest(request)` provides preflight using the same configured limits.
 
 [examples/api-route.ts](examples/api-route.ts) shows a framework-independent response adapter. The backend authenticates the caller and resolves the matching credentials before calling the library. The returned result is JSON-serializable and can be sent directly through the host API.
@@ -91,13 +100,13 @@ The existing Swift `prepareStructuredRecovery` API returns a local handle, not e
 
 The response format is taken directly from the frozen body's `text.format`. There is no second independently mutable schema, model, or reasoning configuration in the library argument. Host job IDs, input revisions, contract versions, and attempt accounting stay with the CodexKit/host envelope.
 
-### Supported request subset
+### Supported text request subset
 
 - Self-contained one-shot text or native JSON-schema output.
 - `stream: true`, `store: false`, `tools: []`, and `tool_choice: "none"`.
 - `input` contains CodexKit `message` items with `system`, `developer`, or `user` roles and `input_text` content.
 - `text.format.type` is `text` or `json_schema`; JSON schema includes a name and schema.
-- No images, tool calls, assistant history migration, previous response IDs, conversation references, or provider background mode.
+- No image input in `execute`, tool calls, assistant history migration, previous response IDs, conversation references, or provider background mode. Dedicated generation/editing uses `executeImage` instead.
 
 Models and reasoning effort strings are preserved exactly, including values unknown to this package. This library performs no model discovery, selection, downgrade, request repair, or fallback narration. `client.validatePreparedRequest(request)` runs the same preflight without a provider call.
 
@@ -167,6 +176,7 @@ All execution failures reject with `CodexKitCloudError`. `error.toJSON()` return
 | `invalid_request`, `integrity_mismatch`, `unsupported_request`, `unsupported_schema` | Preflight rejection. |
 | `invalid_authentication` | Missing or malformed credential inputs. |
 | `authentication_failed`, `http_error` | Unsuccessful provider HTTP response; includes status and safe provider code / Retry-After when available. |
+| `image_usage_limit_exceeded` | Image allowance exhausted; optional reset time in `details.imageUsageLimit`. |
 | `transport_error`, `stream_interrupted` | Failed connection or EOF before terminal completion. |
 | `provider_failed`, `response_incomplete`, `response_refused` | Explicit unsuccessful provider outcome. |
 | `invalid_response`, `unsupported_output` | Malformed event stream or unsupported output/tool activity. |
@@ -204,9 +214,9 @@ npm ci
 npm run verify
 ```
 
-Tests inject synthetic fetch responses and disable accidental live fetch calls. They verify request fidelity, framing, output validation, typed failures, cancellation, redaction, and one-attempt behavior. The packaging check installs a local tarball into a temporary consumer and verifies CommonJS, ESM, TypeScript declarations, and the included route example, including successful execution and error responses. It performs no provider calls and requires no credentials. Real provider/account compatibility has not been tested by these offline fixtures.
+Tests inject synthetic fetch responses and disable accidental live fetch calls. They verify text/image request fidelity, framing, output validation, typed failures, cancellation, redaction, and one-attempt behavior. The packaging check installs a local tarball into a temporary consumer and verifies CommonJS, ESM, TypeScript declarations, and both included route examples, including successful execution and error responses. It performs no provider calls and requires no credentials. Real provider/account compatibility has not been tested by these offline fixtures.
 
-To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.1.1.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
+To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.2.0.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
 
 The repository's root `Cloud CI` workflow runs `npm ci` and `npm run verify` independently on Node 22 and 24 with this package's lockfile. Build output, dependencies, and local tarballs are ignored. There is no root npm workspace or Swift build step that invokes npm.
 

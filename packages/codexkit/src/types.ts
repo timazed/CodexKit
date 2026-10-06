@@ -68,11 +68,12 @@ export interface ExecutionLimits {
 }
 
 export interface CodexKitBridgeClientOptions {
-  /** Trusted application configuration only. Full HTTPS responses endpoint, never an incoming URL. */
+  /** Trusted HTTPS responses endpoint. Images use sibling images/generations and images/edits routes. */
   readonly endpoint?: string;
   /** Trusted application configuration. Cannot override authentication or transport headers. */
   readonly headers?: Readonly<Record<string, string>>;
   readonly limits?: Partial<ExecutionLimits>;
+  readonly imageLimits?: Partial<import("./image-types.js").ImageExecutionLimits>;
   /** Injection boundary for offline testing or host transport. Must not add retries or redirects. */
   readonly fetch?: typeof globalThis.fetch;
 }

@@ -16,6 +16,7 @@ try {
   assert.ok(packed.files.some(file => file.path === 'dist/index.d.ts'));
   assert.ok(packed.files.some(file => file.path === 'docs/compatibility.md'));
   assert.ok(packed.files.some(file => file.path === 'examples/api-route.ts'));
+  assert.ok(packed.files.some(file => file.path === 'examples/image-api-route.ts'));
   const manifest = JSON.parse(readFileSync(join(root, 'package.json')));
   assert.equal(packed.name, manifest.name);
   assert.equal(packed.version, manifest.version);
@@ -60,9 +61,11 @@ client.execute({ preparedRequest,
 
   mkdirSync(join(directory, 'examples'));
   cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/api-route.ts'), join(directory, 'examples/api-route.ts'));
+  cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/image-api-route.ts'), join(directory, 'examples/image-api-route.ts'));
   writeFileSync(join(directory, 'consumer.ts'), `
 import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit';
 import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from '@timazed/codexkit';
+import type { PreparedImageRequest, ExecuteImageInput, ImageExecutionResult, ImageAction, GeneratedImage } from '@timazed/codexkit';
 const preparedRequest: PreparedRequest = { body: new Uint8Array(), sha256: '', sessionId: '', clientRequestId: '', originator: '' };
 const input: ExecuteInput = { preparedRequest, authentication: { accessToken: '', accountId: '' },
   onProgress: async event => { if (event.type === 'response.output_text.delta') event.delta.toUpperCase(); } };
@@ -72,6 +75,14 @@ client.validatePreparedRequest(preparedRequest);
 const result: Promise<ExecutionResult> = client.execute(input);
 const error = new CodexKitCloudError('invalid_request');
 void [result, error];
+const action: ImageAction = 'generate';
+const imageRequest: PreparedImageRequest = { body: new Uint8Array(), sha256: '', clientRequestId: '', imageTurnId: '', originator: '', action };
+const imageInput: ExecuteImageInput = { preparedRequest: imageRequest, authentication: input.authentication };
+const images: Promise<ImageExecutionResult> = new CodexKitBridgeClient({ imageLimits: { maxPixels: 4_000_000 } }).executeImage(imageInput);
+client.validatePreparedImageRequest(imageRequest);
+images.then(result => { const image: GeneratedImage = result.images[0]!; void image.pixelSize.width; });
+const quotaError = new CodexKitCloudError('image_usage_limit_exceeded');
+void quotaError.details.imageUsageLimit?.resetsAt;
 `);
   cpSync(join(directory, 'consumer.ts'), join(directory, 'consumer.mts'));
   for (const module of ['CommonJS', 'NodeNext']) {
@@ -126,7 +137,8 @@ const response = { status(code) { this.code = code; return this; }, json(body) {
 })().catch(error => { console.error(error); process.exitCode = 1; });
 `);
   run(['route-consumer.cjs']);
-  console.log(`Package consumer checks passed: CommonJS, ESM, TypeScript declarations, route example (${packed.size} bytes packed).`);
+  require('./test-image-package.cjs')({ root, directory, run });
+  console.log(`Package consumer checks passed: CommonJS, ESM, TypeScript declarations, text/image route examples (${packed.size} bytes packed).`);
 } finally {
   rmSync(directory, { recursive: true, force: true });
 }

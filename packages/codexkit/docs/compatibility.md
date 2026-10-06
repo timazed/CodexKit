@@ -13,8 +13,12 @@ Sources used:
 - `Sources/CodexKit/Runtime/JSONSchemaVocabulary.swift` and `AgentJSONSchemaValidator.swift`: supported assertions, local references, Unicode scalar lengths, and bounded validation.
 - `Sources/CodexKit/Runtime/AgentStrictJSON.swift`: duplicate-key and UTF-8 rejection.
 - `Tests/RecoveryIntegrationSupport/FixtureTransport.swift`: indexed output-item completion followed by `response.completed` without an output snapshot/status.
+- `Sources/CodexKit/Runtime/CodexImagesClient.swift` and `CodexImageResponse.swift`: dedicated generation/edit routes, fixed image request shape, complete JSON ingestion, PNG output, reference/output limits, and image quota diagnostics. These files are unchanged between the compatibility pin above and the image bridge implementation base (`f848deac85f62c9d523abd59809d845e308ac58b`).
+- `Tests/CodexKitTests/CodexImagesClientTests.swift` and `CodexImagesCancellationTests.swift`: image request, completion, quota, and cancellation expectations.
 
 `test/fixtures/text-request.json` in the source checkout exercises the supported Swift body shape. Stream and schema fixtures are composed in the test files so each failure boundary is explicit. Tests hash the original fixture bytes and assert byte-for-byte transmission, including whitespace.
+
+`test/fixtures/image-generate-request.json` exercises the dedicated Swift image body shape; edit fixtures add inline references without rewriting bytes in the bridge. The local API's PNG fixture is a synthetic 2×1 RGBA image encoded independently with Python's standard-library zlib/CRC32. `png-cases.json` uses the same independent encoder for Adam7 RGBA, filtered indexed color, 16-bit grayscale, and intentionally invalid filters, scanlines and palette indices. Image tests inspect actual bytes and dimensions and never call a live provider.
 
 These tests characterize this TypeScript consumer. They are not newly published canonical CodexKit offload fixtures, a test of a Swift export API, or evidence of live provider authentication support. Future CodexKit-owned handoff fixtures should be imported unchanged and this compatibility pin updated alongside them.
 
