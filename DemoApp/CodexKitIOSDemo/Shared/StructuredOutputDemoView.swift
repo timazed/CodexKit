@@ -16,6 +16,9 @@ struct StructuredOutputDemoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 overviewCard
+                #if DEBUG
+                LocalCloudDemoView(session: viewModel.session, model: viewModel.model)
+                #endif
                 ProgressiveOutputDemoView(
                     model: viewModel.progressiveOutput,
                     isConnected: viewModel.session != nil,

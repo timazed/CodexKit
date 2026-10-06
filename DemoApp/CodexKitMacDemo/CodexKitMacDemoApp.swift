@@ -14,6 +14,7 @@ struct CodexKitMacDemoApp: App {
                 .task {
                     #if DEBUG
                     if CommandLine.arguments.contains("--verify-local-only") || CommandLine.arguments.contains("--verify-live-local")
+                        || CommandLine.arguments.contains("--verify-local-cloud")
                         || CommandLine.arguments.contains("--verify-application-session")
                         || CommandLine.arguments.contains("--run-image-demo") {
                         return
@@ -47,7 +48,9 @@ final class MacDemoAppDelegate: NSObject, NSApplicationDelegate, ObservableObjec
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-        if CommandLine.arguments.contains("--verify-local-only") {
+        if CommandLine.arguments.contains("--verify-local-cloud") {
+            Task { await LocalCloudDemoProbe.verifyFromArguments() }
+        } else if CommandLine.arguments.contains("--verify-local-only") {
             // Verification must run even when macOS restores this instance with no visible window.
             Task { await MacDemoVerification.run() }
         } else if CommandLine.arguments.contains("--verify-live-local") {

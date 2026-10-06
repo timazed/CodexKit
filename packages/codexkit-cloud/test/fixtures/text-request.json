@@ -1,0 +1,14 @@
+{
+  "include": ["reasoning.encrypted_content"],
+  "input": [{"content": [{"text": "Say hello.", "type": "input_text"}], "role": "user", "type": "message"}],
+  "instructions": "Return the requested text.",
+  "model": "codexkit-fixture-model",
+  "parallel_tool_calls": false,
+  "prompt_cache_key": "fixture-thread",
+  "reasoning": {"effort": "high", "summary": "auto"},
+  "store": false,
+  "stream": true,
+  "text": {"format": {"type": "text"}},
+  "tool_choice": "none",
+  "tools": []
+}

@@ -79,7 +79,7 @@ extension AgentRuntime {
         record.rootOperationID = previous.rootOperationID ?? handle.id; record.retryActionID = retryActionID
         record.baselineConfiguration = previous.baselineConfiguration
         try store.save(record)
-        logger.recovery("operation.manual_retry_created", record: record)
+        logger.recovery(.operation(.manualRetryCreated), record: record)
         return successor
     }
 }

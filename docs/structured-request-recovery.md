@@ -89,6 +89,8 @@ The saved `AgentRecoveryRetryPolicy` controls replacement-eligible failures and 
 
 A callback denial is not permanent cancellation and does not spend a generation attempt. Keep the handle and resume when authorization is possible. The pending attempt ID remains stable. Do not wrap a recovery operation in an application loop that discards its handle or resets its budget on each failure.
 
+If the authorization callback throws, `sendRecovering` returns that error without automatically repeating the callback or renewing provider credentials, including when the callback throws an HTTP 401 error. The pending attempt remains unspent with the same ID for an explicit resume. A thrown `CancellationError` suspends the operation. Automatic replacement requires a consumed attempt and is bounded by the saved generation budget.
+
 ### Failure-specific behavior
 
 | Failure | Automatic behavior within the saved budget | Host action |
@@ -156,6 +158,8 @@ Use its independent dimensions rather than reducing recovery to a boolean:
 Account-mismatched or signed-out status is redacted. Inventory can expose unreadable record IDs for host reconciliation without deleting their contents. A stale running record after process death is presented as interrupted when no owner holds its operation lease.
 
 Structured `recovery.*` events use the existing `AgentLogSink`, the `recovery` category, and an event-version field. They include operational identifiers, counts, selected configuration, and safe typed error codes. They do not include prompt/result text, tokens, authorization headers, account identifiers, host scope/job strings, or arbitrary provider error messages. Hosts can adapt this sink to their telemetry system; CodexKit has no dependency on any telemetry vendor.
+
+Internally, operation, attempt, and receipt events are typed enum cases. Their existing string names are produced only when writing log metadata, so host telemetry integrations keep the same contract.
 
 Telemetry is best-effort diagnostics, not the authoritative attempt ledger or host commit log. Sink implementations should be fast, nonblocking, and must not reenter the same operation synchronously. Detailed error objects returned through the API may contain provider messages; apply your own privacy policy before forwarding them.
 

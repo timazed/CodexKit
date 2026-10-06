@@ -1,9 +1,46 @@
 import Foundation
 
+enum AgentRecoveryEvent: Sendable {
+    case operation(Operation)
+    case attempt(Attempt)
+    case receipt(Receipt)
+
+    enum Operation: Sendable {
+        case prepared, waiting, authenticationRequired, cancelled, suspended, abandoned, manualRetryCreated
+    }
+
+    enum Attempt: Sendable {
+        case reserved, transmissionAuthorized, failed
+    }
+
+    enum Receipt: Sendable {
+        case saved, retrieved, acknowledged
+    }
+
+    // Keep the external telemetry contract at the serialization boundary.
+    fileprivate var serializedName: String {
+        switch self {
+        case .operation(.prepared): "recovery.operation.prepared"
+        case .operation(.waiting): "recovery.operation.waiting"
+        case .operation(.authenticationRequired): "recovery.operation.authentication_required"
+        case .operation(.cancelled): "recovery.operation.cancelled"
+        case .operation(.suspended): "recovery.operation.suspended"
+        case .operation(.abandoned): "recovery.operation.abandoned"
+        case .operation(.manualRetryCreated): "recovery.operation.manual_retry_created"
+        case .attempt(.reserved): "recovery.attempt.reserved"
+        case .attempt(.transmissionAuthorized): "recovery.attempt.transmission_authorized"
+        case .attempt(.failed): "recovery.attempt.failed"
+        case .receipt(.saved): "recovery.receipt.saved"
+        case .receipt(.retrieved): "recovery.receipt.retrieved"
+        case .receipt(.acknowledged): "recovery.receipt.acknowledged"
+        }
+    }
+}
+
 extension AgentLogger {
-    func recovery(_ event: String, record: AgentStructuredRecoveryRecord) {
+    func recovery(_ event: AgentRecoveryEvent, record: AgentStructuredRecoveryRecord) {
         var metadata = [
-            "event": "recovery." + event, "event_version": "1",
+            "event": event.serializedName, "event_version": "1",
             "operation_id": record.handle.id.uuidString,
             "root_operation_id": (record.rootOperationID ?? record.handle.id).uuidString,
             "attempts_used": String(record.attemptsUsed), "maximum_attempts": String(record.maximumAttempts),

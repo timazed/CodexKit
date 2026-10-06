@@ -1,18 +1,22 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.37-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.37)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.38-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.38)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.37](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.37). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+This repository also contains [`@timazed/codexkit-cloud`](packages/codexkit-cloud/README.md), a separately built and versioned TypeScript backend library (`0.1.0`) distributed through GitHub Packages. It executes one CodexKit-prepared request with supplied authentication. Swift consumers do not need Node or npm. Swift request export and remote routing remain separate integration work; the cloud library currently supports tool-free one-shot requests only.
 
-This prerelease removes retired and retiring models from the bundled catalog
-and demo fallback pickers while retaining GPT-6 and available GPT-5.6 models.
-**Breaking change:** replace removed typed model identifiers with an available
-model. Saved string identifiers still decode, and account discovery remains
-authoritative. See the [alpha.37 changelog](CHANGELOG.md#200-alpha37---2026-10-01)
-and [migration notes](docs/migration.md#legacy-model-cleanup-alpha37).
+Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit-cloud/docs/releases.md).
+
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.38](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.38). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+
+This prerelease bounds structured recovery, preserves pending attempts when host
+authorization fails, and adds the separate TypeScript cloud bridge with a local
+API and signed demo checks. The cloud bridge supports one prepared, tool-free
+request; public Swift request export, conversation/history routing, and durable
+remote jobs remain separate work. See the
+[alpha.38 changelog](CHANGELOG.md#200-alpha38---2026-10-06).
 
 
 ## Capabilities
@@ -33,7 +37,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.37`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.38`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |
@@ -115,6 +119,8 @@ For typed replies and attachments, see [Messaging and images](docs/messaging.md)
 Signed-in accounts expose an optional `account.name` and `account.displayName`, which falls back to email. See [account names](docs/auth-on-ios.md#account-name).
 
 Turns use bounded event queues and configurable execution limits. The default runtime duration is five minutes, including approval waits; see [event buffering and execution limits](docs/messaging.md#event-buffering-and-execution-limits) for longer workflows.
+
+[Structured recovery](docs/structured-request-recovery.md) preserves a pending attempt when host authorization throws, returning the error without automatic retries or provider credential renewal. Reopen the same handle when the host is ready to authorize it.
 
 ## Documentation
 

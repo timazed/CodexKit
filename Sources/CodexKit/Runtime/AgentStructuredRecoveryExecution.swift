@@ -29,7 +29,10 @@ actor AgentStructuredRecoveryExecution {
         let context = AgentStructuredRecoveryContext(authorizeAttempt: { try await self.reserveAttempt() },
             observe: { try await self.observe($0) }, failed: { try await self.recordFailure($0) },
             beforeTransmission: { try await self.beforeTransmission() }, frozenBody: record.preparedRequest?.body)
-        while true {
+        let remainingAttempts = max(0, record.maximumAttempts - record.attemptsUsed)
+        // Include a pass for saved receipts even when the generation budget is exhausted.
+        for _ in 0...remainingAttempts {
+            let attemptsBefore = record.attemptsUsed
             do {
                 try lifecycle.check()
                 try await validateSession()
@@ -37,7 +40,7 @@ actor AgentStructuredRecoveryExecution {
                     let value = try await decode(data, response: response, decoder: decoder)
                     try await validateSession()
                     try lifecycle.check()
-                    emit("receipt.retrieved")
+                    emit(.receipt(.retrieved))
                     return value
                 }
                 if record.state == .failed { throw AgentRecoveryError.permanentlyFailed }
@@ -56,11 +59,13 @@ actor AgentStructuredRecoveryExecution {
                 if let last = completed.attempts?.indices.last { completed.attempts?[last].state = .completed }
                 try lifecycle.performWhileActive { try store.save(completed) }
                 record = completed
-                emit("receipt.saved")
+                emit(.receipt(.saved))
                 try await validateSession()
                 try lifecycle.check()
                 return value
             } catch {
+                let authorizationFailure = error as? RecoveryAuthorizationFailure
+                let error = authorizationFailure?.underlyingError ?? error
                 if error is CancellationError || Task.isCancelled ||
                     (error as? AgentRuntimeError)?.interruption?.outcome == .cancelled {
                     lifecycle.suspend()
@@ -70,29 +75,35 @@ actor AgentStructuredRecoveryExecution {
                         record.completedPayload = nil
                     } else if record.completedPayload == nil { record.state = .suspended }
                     try store.save(record)
-                    emit(cancelled ? "operation.cancelled" : "operation.suspended")
+                    emit(cancelled ? .operation(.cancelled) : .operation(.suspended))
                     throw CancellationError()
                 }
                 // A failed persistence operation must never overwrite a possibly saved receipt or start another POST.
                 let nsError = error as NSError
-                if nsError.domain == NSCocoaErrorDomain || nsError.domain == NSPOSIXErrorDomain ||
+                if authorizationFailure == nil,
+                    nsError.domain == NSCocoaErrorDomain || nsError.domain == NSPOSIXErrorDomain ||
                     (error as? AgentRecoveryError) == .storageLimitExceeded { throw error }
                 if record.completedPayload != nil { throw error }
-                if let failure = error as? AgentRuntimeError { record.lastFailure = failure }
-                let auth = error is ChatGPTSessionError || (error as? AgentRuntimeError)?.http?.statusCode == 401
-                let replaceable = policy.canReplace(error)
+                if authorizationFailure == nil, let failure = error as? AgentRuntimeError { record.lastFailure = failure }
+                let auth = authorizationFailure == nil &&
+                    (error is ChatGPTSessionError || (error as? AgentRuntimeError)?.http?.statusCode == 401)
+                let replaceable = authorizationFailure == nil && policy.canReplace(error)
+                let shouldRetry = replaceable && record.attemptsUsed > attemptsBefore &&
+                    record.attemptsUsed < record.maximumAttempts
                 if auth { record.blocker = .authenticationRequired }
-                record.state = replaceable || error is AgentRecoveryError || auth ? .interrupted : .failed
-                if replaceable, record.attemptsUsed < record.maximumAttempts {
+                record.state = replaceable || authorizationFailure != nil || error is AgentRecoveryError || auth
+                    ? .interrupted : .failed
+                if shouldRetry {
                     let delay = max(policy.backoff.delayBeforeRetry(attempt: record.attemptsUsed),
                                     record.lastFailure?.http?.retryAfter ?? 0)
                     record.nextAttemptAt = Date().addingTimeInterval(delay)
                 }
                 try store.save(record)
-                emit(auth ? "operation.authentication_required" : "attempt.failed")
-                guard replaceable, record.attemptsUsed < record.maximumAttempts else { throw error }
+                emit(auth ? .operation(.authenticationRequired) : .attempt(.failed))
+                guard shouldRetry else { throw error }
             }
         }
+        throw AgentRecoveryError.attemptsExhausted
     }
 
     private func reserveAttempt() async throws -> String {
@@ -101,7 +112,7 @@ actor AgentStructuredRecoveryExecution {
         if let expiry = record.expiresAt, expiry <= Date() { throw AgentRecoveryError.stateExpired }
         guard record.attemptsUsed < record.maximumAttempts else { throw AgentRecoveryError.attemptsExhausted }
         if let next = record.nextAttemptAt, next > Date() {
-            emit("operation.waiting")
+            emit(.operation(.waiting))
             try await Task.sleep(for: .seconds(next.timeIntervalSinceNow))
         }
         try lifecycle.check()
@@ -110,12 +121,17 @@ actor AgentStructuredRecoveryExecution {
         let id = record.pendingAttemptID ?? UUID().uuidString
         record.pendingAttemptID = id
         try lifecycle.performWhileActive { try store.save(record) }
-        guard try await authorizeAttempt(.init(operationID: record.handle.id, id: id,
-            number: record.attemptsUsed + 1, maximumAttempts: record.maximumAttempts,
-            reason: reason, previousFailure: record.lastFailure,
-            previousResponseID: record.responseID, previousSequenceNumber: record.lastSequenceNumber)) else {
-            throw AgentRecoveryError.attemptNotAuthorized
+        let authorized: Bool
+        do {
+            authorized = try await authorizeAttempt(.init(operationID: record.handle.id, id: id,
+                number: record.attemptsUsed + 1, maximumAttempts: record.maximumAttempts,
+                reason: reason, previousFailure: record.lastFailure,
+                previousResponseID: record.responseID, previousSequenceNumber: record.lastSequenceNumber))
+        } catch {
+            // Host errors must bypass provider authentication renewal and replacement retries.
+            throw RecoveryAuthorizationFailure(underlyingError: error)
         }
+        guard authorized else { throw AgentRecoveryError.attemptNotAuthorized }
         try lifecycle.check()
         try await validateSession()
         if let expiry = record.expiresAt, expiry <= Date() { throw AgentRecoveryError.stateExpired }
@@ -131,7 +147,7 @@ actor AgentStructuredRecoveryExecution {
         attempts.append(.init(id: id, number: record.attemptsUsed, reservedAt: Date(), state: .reserved))
         record.attempts = attempts
         try lifecycle.performWhileActive { try store.save(record) }
-        emit("attempt.reserved")
+        emit(.attempt(.reserved))
         return id
     }
 
@@ -141,7 +157,7 @@ actor AgentStructuredRecoveryExecution {
             if let index = record.attempts?.indices.last { record.attempts?[index].state = .transmissionAuthorized }
             try store.save(record)
         }
-        emit("attempt.transmission_authorized")
+        emit(.attempt(.transmissionAuthorized))
     }
 
     private func observe(_ observation: ResponsesAttemptObservation) throws {
@@ -200,5 +216,9 @@ actor AgentStructuredRecoveryExecution {
         throw AgentRuntimeError.turnSummaryMissing()
     }
 
-    private func emit(_ name: String) { logger.recovery(name, record: record) }
+    private func emit(_ event: AgentRecoveryEvent) { logger.recovery(event, record: record) }
+}
+
+private struct RecoveryAuthorizationFailure: Error {
+    let underlyingError: any Error
 }

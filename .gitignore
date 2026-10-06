@@ -116,3 +116,10 @@ DemoApp/CodexKitDemo.xcodeproj/project.xcworkspace/*
 Pods/
 
 # End of https://www.gitignore.io/api/xcode,swift
+
+# Independently built npm packages
+node_modules/
+/packages/*/dist/
+/packages/*/coverage/
+/packages/*/*.tgz
+/packages/*/*.tar.gz

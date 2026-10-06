@@ -231,7 +231,7 @@ class ReleaseNotesAndTagTests(unittest.TestCase):
 
     def test_invalid_tag_never_reaches_git(self):
         with patch.object(release_gate.subprocess, "check_output") as git:
-            for tag in ("main", "--help", "v1.2.3; touch bad", "v1.2.3\n"):
+            for tag in ("main", "--help", "v1.2.3; touch bad", "v1.2.3\n", "cloud-v0.1.0"):
                 with self.subTest(tag=tag), self.assertRaises(evidence.EvidenceError):
                     release_gate.release_commit(tag)
             git.assert_not_called()

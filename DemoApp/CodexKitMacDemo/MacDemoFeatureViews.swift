@@ -37,6 +37,9 @@ struct MacDemoFeatureView: View {
     private var structured: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Structured output").font(.title2.bold())
+            #if DEBUG
+            LocalCloudDemoView(session: model.chat?.session, model: model.modelID)
+            #endif
             Text("Use the same typed Swift schemas and requests as the iOS demo. Results are saved in real conversations.")
                 .foregroundStyle(.secondary)
             ProgressiveOutputDemoView(

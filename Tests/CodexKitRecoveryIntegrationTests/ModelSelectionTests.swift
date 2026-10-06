@@ -92,11 +92,23 @@ final class ModelSelectionTests: XCTestCase {
             in: thread.id, response: FixtureOutput.self, store: store,
             retryPolicy: .init(backoff: .init(initialBackoff: 0, maxBackoff: 0)))
         _ = try await runtime.sendRecovering(handle, response: FixtureOutput.self, store: store) { _ in true }
+        _ = try await runtime.structuredRecoveryReceipt(handle, store: store)
+        _ = try await runtime.sendRecovering(handle, response: FixtureOutput.self, store: store) { _ in
+            XCTFail("A saved receipt must not authorize another attempt")
+            return false
+        }
         try await runtime.acknowledgeStructuredRecovery(handle, store: store)
         let entries = sink.entries.filter { $0.category == .recovery }
+        XCTAssertTrue(entries.contains { $0.metadata["event"] == "recovery.operation.prepared" })
+        XCTAssertTrue(entries.contains { $0.metadata["event"] == "recovery.attempt.reserved" })
+        XCTAssertTrue(entries.contains { $0.metadata["event"] == "recovery.attempt.transmission_authorized" })
+        XCTAssertTrue(entries.contains { $0.metadata["event"] == "recovery.attempt.failed" })
         XCTAssertTrue(entries.contains { $0.metadata["event"] == "recovery.receipt.saved" })
+        XCTAssertEqual(entries.filter { $0.metadata["event"] == "recovery.receipt.retrieved" }.count, 2)
         XCTAssertTrue(entries.contains { $0.metadata["event"] == "recovery.receipt.acknowledged" })
+        XCTAssertTrue(entries.allSatisfy { $0.metadata["event_version"] == "1" })
         XCTAssertTrue(entries.allSatisfy { $0.metadata["operation_id"] == handle.id.uuidString })
+        XCTAssertEqual(FixtureTransport.generationCount, 2)
         let text = entries.map { $0.message + String(describing: $0.metadata) }.joined()
         for secret in ["private-output", "fixture-token", "fixture-account", "fixture@example.test"] {
             XCTAssertFalse(text.contains(secret))

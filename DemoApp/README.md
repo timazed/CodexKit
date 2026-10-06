@@ -2,6 +2,20 @@
 
 This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime. Both apps show the resolved ChatGPT account type (plan), name, email, and account ID after sign-in, restoration, or refresh.
 
+## Local cloud API test
+
+The Debug demos include **Structured → Local Cloud**, which sends a CodexKit-prepared structured request through the local TypeScript API and decodes the result back in Swift. The macOS connection screen also offers this test without signing in. Start the fixture API from the repository root:
+
+```sh
+cd packages/codexkit-cloud
+npm ci
+npm run dev:api
+```
+
+Keep **Fixture** selected in the app, use `http://127.0.0.1:8787`, and press **Run Local Cloud Test**. Expect `Local cloud bridge OK`. It works from macOS or the iOS simulator without provider credentials. To test real execution, start with `npm run dev:api -- --live`, sign in through the app, and select **Live ChatGPT session**.
+
+Run `python3 Scripts/verify_local_cloud.py` from the repository root to build and verify the signed macOS app against a temporary fixture API; add `--platform ios` for a disposable simulator. The host is local-only and the test uses an isolated ephemeral request, without changing the active conversation. See [the API guide](../packages/codexkit-cloud/docs/local-api.md) for the HTTP packet, limits, and remaining production integration work.
+
 ## macOS demo
 
 Both demos live in `DemoApp/CodexKitDemo.xcodeproj` with separate application targets and shared local SDK dependencies. Select **CodexKitIOSDemo** for iOS or **CodexKitMacDemo** for macOS.
@@ -43,6 +57,8 @@ python3 Scripts/verify_macos_demo.py
 ```
 
 The script treats demo-target Swift warnings as errors, verifies signing, and defaults to a short `--mode smoke` run: startup, chat, conversation restoration, cancellation, and receipt recovery in a second app process. Use `--mode full` for the retained authentication, workspace recovery, tools, memory, compaction, persistence-adapter, and dropped-connection scenarios. Third-party package warnings are not promoted to errors. All checks use isolated fixtures and synthetic credentials; no real credentials or model calls are used. Reports and separate build/execution timings are saved under `.build/macos-demo`. `--skip-build` reuses the already-built signed app but always reruns verification.
+
+When adapting the recovery examples, handle authorization callback errors in the host and reopen the same recovery handle when ready. The SDK preserves the pending attempt and surfaces the error without automatic retries or credential renewal. See [structured recovery](../docs/structured-request-recovery.md#durable-budgets-backoff-and-authorization).
 
 After building, open the normal app or the Debug-only offline preview:
 

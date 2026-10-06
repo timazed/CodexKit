@@ -47,12 +47,13 @@ extension AgentRuntime {
         record.contractVersion = contractVersion; record.previousOperationID = previousOperationID
         record.rootOperationID = previousOperationID ?? handle.id; record.baselineConfiguration = originalThread.configuration
         try store.save(record)
-        logger.recovery("operation.prepared", record: record)
+        logger.recovery(.operation(.prepared), record: record)
         return handle
     }
 
     /// Reopens an existing operation. Task/background cancellation suspends; explicit cancellation is terminal.
     /// A saved completion makes zero generation POSTs and invokes neither selector nor attempt authorization.
+    /// Authorization callback errors escape without retry or credential renewal, retaining the pending attempt.
     public func sendRecovering<Output: AgentStructuredOutput>(
         _ handle: AgentStructuredRecoveryHandle, response: Output.Type,
         store: AgentStructuredRecoveryStore, decoder: JSONDecoder = JSONDecoder(),

@@ -1,0 +1,73 @@
+name: Cloud Release
+
+on:
+  push:
+    tags: ["cloud-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'timazed/CodexKit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      npm_tag: ${{ steps.release.outputs.npm_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Validate tag, package, and main ancestry
+        id: release
+        working-directory: packages/codexkit-cloud
+        env:
+          CLOUD_TAG: ${{ github.ref_name }}
+        run: node scripts/validate-release.cjs
+
+  verify:
+    needs: validate
+    uses: ./.github/workflows/cloud-ci.yml
+
+  publish:
+    needs: [validate, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: github-packages
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: packages/codexkit-cloud
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          registry-url: https://npm.pkg.github.com
+          scope: '@timazed'
+      - name: Recheck the verified commit and tag
+        env:
+          CLOUD_TAG: ${{ github.ref_name }}
+        run: node scripts/validate-release.cjs
+      - run: npm ci
+      - run: npm run build
+      - name: Publish to GitHub Packages
+        env:
+          NPM_DIST_TAG: ${{ needs.validate.outputs.npm_tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish --ignore-scripts --tag "$NPM_DIST_TAG"

@@ -6,6 +6,25 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.38] - 2026-10-06
+
+This prerelease bounds structured recovery and preserves pending attempts when host authorization fails. It also introduces the independently packaged cloud bridge at `@timazed/codexkit-cloud@0.1.0`, released separately with `cloud-v0.1.0`. The local API and signed demos passed with synthetic provider responses; live provider execution, public Swift request export, normal conversation/history integration, and durable remote jobs remain separate work.
+
+### Added
+
+- Imported the independently versioned CodexKitCloud npm library (`0.1.0`) under `packages/codexkit-cloud`, preserving `CodexKitBridgeClient`, prepared-request authority, and tool-free single-request execution. Its package name is `@timazed/codexkit-cloud` to support GitHub Packages. Added separate Node 22/24 CI and the `cloud-v0.1.0` release-tag convention. Swift request export and durable API-service integration remain separate work.
+- Added a separate cloud release workflow with tag/package/lockfile validation, main ancestry checks, Node 22/24 verification, and GitHub Packages publishing using the built-in `GITHUB_TOKEN`. Stable releases publish to `latest`; prereleases publish to `next`.
+- Added a loopback development API with fixture/live modes and Debug demo cards that exercise Swift-prepared requests through the TypeScript bridge. Added HTTP failure/cancellation/limit checks and an opt-in signed-app integration harness; ordinary Swift builds remain independent of Node.
+
+### Fixed
+
+- Updated the imported cloud API route example to use `CodexKitBridgeClient` and verified the included example from the packed library.
+- Bound structured-recovery execution and stop immediately when host attempt authorization throws. Preserve the original error, pending attempt ID, and remaining budget for an explicit resume; host callback errors no longer trigger provider credential renewal.
+
+### Changed
+
+- Use typed recovery operation, attempt, and receipt events internally, preserving existing telemetry names and metadata.
+
 ## [2.0.0-alpha.37] - 2026-10-01
 
 This prerelease removes obsolete bundled model choices while preserving current GPT-6 and available GPT-5.6 models. GPT-5.5 is removed ahead of its October 14, 2026 retirement from ChatGPT-authenticated Codex; GPT-5.4, GPT-5.4 Mini, GPT-5.3 Codex Spark, and GPT-5.2 are already retired or deprecated. See the [migration notes](docs/migration.md#legacy-model-cleanup-alpha37).

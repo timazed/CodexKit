@@ -2,7 +2,7 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
-For the current prerelease, see the [alpha.36 changelog](../CHANGELOG.md#200-alpha36---2026-09-30) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
+For the current prerelease, see the [alpha.38 changelog](../CHANGELOG.md#200-alpha38---2026-10-06) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
 
 See [account metadata verification](account-metadata-verification.md) for the alpha.33 offline regression assertions and local evidence.
 
@@ -65,7 +65,11 @@ A complete run uses up to 14 small provider requests, including four remote comp
 
 ## CI and release promotion
 
-CI has one canonical push verification for `main`, `feature/**`, `bugfix/**`, `chore/**`, `improvement/**`, and legacy `codex/**` branches. Same-repository `codex/**` PRs wait for passing branch evidence instead of duplicating the builds; a pending, failed, or missing branch result cannot make the PR gate green. Other PRs verify GitHub's merge revision. A merge producing a different SHA must pass its own main verification before release. Superseded development runs are cancelled; main and scheduled runs are not interrupted by newer revisions.
+Swift CI has one canonical push verification for `main`, `feature/**`, `bugfix/**`, `chore/**`, `improvement/**`, and legacy `codex/**` branches. Same-repository `codex/**` PRs wait for passing branch evidence instead of duplicating the builds; a pending, failed, or missing branch result cannot make the PR gate green. Other PRs verify GitHub's merge revision. A merge producing a different SHA must pass its own main verification before release. Superseded development runs are cancelled; main and scheduled runs are not interrupted by newer revisions.
+
+The separate root [Cloud CI workflow](../.github/workflows/cloud-ci.yml) runs `npm ci` and `npm run verify` in `packages/codexkit-cloud` on Node 22 and 24. Its npm cache uses that directory's lockfile. It verifies branch/PR changes and is reusable by [Cloud Release](../.github/workflows/cloud-release.yml). Cloud tag pushes enter that release workflow, which validates package/lockfile versions and main ancestry, waits for both Node jobs, then publishes `@timazed/codexkit-cloud` from the verified commit to GitHub Packages. Stable releases use `latest`; prereleases use `next`. The publication job uses the `github-packages` environment and the built-in `GITHUB_TOKEN` with `packages: write`, and checks out the verified SHA again to detect moved tags. Swift's `v*` release workflow and verification evidence remain separate. See [cloud release setup](../packages/codexkit-cloud/docs/releases.md) and [packed-package verification](../packages/codexkit-cloud/README.md#development-and-verification).
+
+Cloud verification also exercises the example local HTTP API with injected providers, including exact-byte forwarding, rejected tool requests, payload limits, cancellation, timeout, and concurrency limits. For the signed Swift-to-TypeScript fixture check, run `python3 Scripts/verify_local_cloud.py` (macOS) or add `--platform ios` (disposable simulator). These optional checks require Node and save reports under `.build/local-cloud`; ordinary Swift checks remain independent. See [local API setup](../packages/codexkit-cloud/docs/local-api.md).
 
 The plan job runs the cheap source-size guard and Python harness/gate tests. If a trusted CI run already passed every required job for the exact SHA, compilation and app execution are skipped and the original evidence URL is retained. Reuse-only runs cannot certify themselves. Fork/PR runs, different commits/workflows, missing or skipped mandatory jobs, and a later completed failure cannot serve as release evidence. An API error causes fresh CI verification; the same error blocks release publication.
 

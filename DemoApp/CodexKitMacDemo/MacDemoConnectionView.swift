@@ -107,6 +107,9 @@ struct MacDemoConnectionView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(10).disabled(model.isBusy)
                 }
+                #if DEBUG
+                LocalCloudDemoView(session: nil, model: model.modelID)
+                #endif
                 if model.isBusy {
                     HStack {
                         ProgressView().controlSize(.small)

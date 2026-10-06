@@ -15,7 +15,7 @@ struct CodexKitIOSDemoApp: App {
 
     private static var verifiesRuntime: Bool {
         #if DEBUG
-        CommandLine.arguments.contains("--verify-runtime")
+        CommandLine.arguments.contains("--verify-runtime") || CommandLine.arguments.contains("--verify-local-cloud")
         #else
         false
         #endif
@@ -46,7 +46,11 @@ struct CodexKitIOSDemoApp: App {
             if Self.verifiesRuntime {
                 ProgressView("Verifying runtime…")
                     #if DEBUG
-                    .task { await DemoRuntimeVerification.runIfRequested() }
+                    .task {
+                        if CommandLine.arguments.contains("--verify-local-cloud") {
+                            await LocalCloudDemoProbe.verifyFromArguments()
+                        } else { await DemoRuntimeVerification.runIfRequested() }
+                    }
                     #endif
             } else if let viewModel {
                 TabView(selection: $selectedTab) {

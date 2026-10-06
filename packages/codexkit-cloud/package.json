@@ -1,0 +1,38 @@
+{
+  "name": "@timazed/codexkit-cloud",
+  "version": "0.1.0",
+  "description": "Execute CodexKit-prepared requests from a TypeScript backend.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timazed/CodexKit.git",
+    "directory": "packages/codexkit-cloud"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "examples", "docs"],
+  "engines": { "node": "^22.0.0 || ^24.0.0" },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev:api": "npm run build && node examples/local-api/main.cjs",
+    "test": "npm run build && node --test test/*.test.cjs",
+    "test:package": "node scripts/test-package.cjs",
+    "verify": "npm run test && npm run test:package",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~5.9.3"
+  }
+}

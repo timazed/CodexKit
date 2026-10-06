@@ -34,7 +34,7 @@ extension AgentRuntime {
         try await validateActiveAuthentication(session)
         try Task.checkCancellation()
         if try store.lifecycle(handle)?.state == .cancelled { throw AgentRecoveryError.cancelled }
-        logger.recovery("receipt.retrieved", record: record)
+        logger.recovery(.receipt(.retrieved), record: record)
         return receipt
     }
 
@@ -45,7 +45,7 @@ extension AgentRuntime {
         _ = try await recoverySession(for: record)
         guard record.state != .cancelled else { throw AgentRecoveryError.cancelled }
         try store.stopLifecycle(handle, state: .suspended)
-        logger.recovery("operation.suspended", record: record)
+        logger.recovery(.operation(.suspended), record: record)
     }
 
     /// Terminal for this handle, including active executions. Cancellation cannot undo a host commit already made.
@@ -62,7 +62,7 @@ extension AgentRuntime {
             cancelled.completedPayload = nil
             try store.save(cancelled)
         }
-        logger.recovery("operation.cancelled", record: record)
+        logger.recovery(.operation(.cancelled), record: record)
     }
 
     /// Idempotent after the host has durably committed. Deletes content, retaining a small disposition marker.
@@ -83,7 +83,7 @@ extension AgentRuntime {
             throw AgentRecoveryError.completionUnavailable
         }
         try store.dispose(record, state: .acknowledged)
-        logger.recovery("receipt.acknowledged", record: record)
+        logger.recovery(.receipt(.acknowledged), record: record)
     }
 
     /// The host decided this result is no longer applicable. Cancel and await any active send first.
@@ -101,7 +101,7 @@ extension AgentRuntime {
         _ = try await recoverySession(for: record)
         try store.stopLifecycle(handle, state: .cancelled)
         try store.dispose(record, state: .abandoned)
-        logger.recovery("operation.abandoned", record: record)
+        logger.recovery(.operation(.abandoned), record: record)
     }
 
     /// Enumerates independent jobs for the current account. Corrupt/unknown records are reported separately.

@@ -12,12 +12,13 @@ def main():
     paths = subprocess.check_output([
         "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
         "Sources", "DemoApp/CodexKitIOSDemo", "DemoApp/CodexKitMacDemo", "Scripts",
+        "packages/codexkit-cloud/src", "packages/codexkit-cloud/examples", "packages/codexkit-cloud/scripts",
     ], cwd=ROOT).decode().split("\0")
     count = 0
     failures = []
     for name in sorted(set(paths)):
         path = ROOT / name
-        if path.suffix not in {".swift", ".py", ".sh", ".m", ".h"} or not path.is_file():
+        if path.suffix not in {".swift", ".py", ".sh", ".m", ".h", ".ts", ".cts", ".mts", ".js", ".cjs", ".mjs"} or not path.is_file():
             continue
         count += 1
         lines = len(path.read_bytes().splitlines())

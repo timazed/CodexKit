@@ -1,0 +1,43 @@
+name: Cloud CI
+
+on:
+  push:
+    branches: [main, "codex/**", "feature/**", "bugfix/**", "chore/**", "improvement/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref_type != 'tag' }}
+
+jobs:
+  verify:
+    name: Cloud (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: packages/codexkit-cloud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: packages/codexkit-cloud/package-lock.json
+      - name: Check cloud tag matches package version
+        if: github.ref_type == 'tag'
+        env:
+          CLOUD_TAG: ${{ github.ref_name }}
+        run: node -e 'require("node:assert/strict").equal(process.env.CLOUD_TAG, "cloud-v" + require("./package.json").version)'
+      - run: npm ci
+      - run: npm run verify
