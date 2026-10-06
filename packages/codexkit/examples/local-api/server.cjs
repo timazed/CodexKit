@@ -1,5 +1,5 @@
 const { createServer } = require('node:http');
-const { CodexKitBridgeClient, CodexKitCloudError } = require('@timazed/codexkit-cloud');
+const { CodexKitBridgeClient, CodexKitCloudError } = require('@timazed/codexkit');
 const { fixtureFetch } = require('./fixture.cjs');
 
 const VERSION = 1;

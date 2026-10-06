@@ -26,14 +26,14 @@ jobs:
         node: [22, 24]
     defaults:
       run:
-        working-directory: packages/codexkit-cloud
+        working-directory: packages/codexkit
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: packages/codexkit-cloud/package-lock.json
+          cache-dependency-path: packages/codexkit/package-lock.json
       - name: Check cloud tag matches package version
         if: github.ref_type == 'tag'
         env:

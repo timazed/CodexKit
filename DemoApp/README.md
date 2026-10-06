@@ -7,14 +7,14 @@ This folder contains checked-in iOS and macOS example apps for exercising the `C
 The Debug demos include **Structured → Local Cloud**, which sends a CodexKit-prepared structured request through the local TypeScript API and decodes the result back in Swift. The macOS connection screen also offers this test without signing in. Start the fixture API from the repository root:
 
 ```sh
-cd packages/codexkit-cloud
+cd packages/codexkit
 npm ci
 npm run dev:api
 ```
 
 Keep **Fixture** selected in the app, use `http://127.0.0.1:8787`, and press **Run Local Cloud Test**. Expect `Local cloud bridge OK`. It works from macOS or the iOS simulator without provider credentials. To test real execution, start with `npm run dev:api -- --live`, sign in through the app, and select **Live ChatGPT session**.
 
-Run `python3 Scripts/verify_local_cloud.py` from the repository root to build and verify the signed macOS app against a temporary fixture API; add `--platform ios` for a disposable simulator. The host is local-only and the test uses an isolated ephemeral request, without changing the active conversation. See [the API guide](../packages/codexkit-cloud/docs/local-api.md) for the HTTP packet, limits, and remaining production integration work.
+Run `python3 Scripts/verify_local_cloud.py` from the repository root to build and verify the signed macOS app against a temporary fixture API; add `--platform ios` for a disposable simulator. The host is local-only and the test uses an isolated ephemeral request, without changing the active conversation. See [the API guide](../packages/codexkit/docs/local-api.md) for the HTTP packet, limits, and remaining production integration work.
 
 ## macOS demo
 

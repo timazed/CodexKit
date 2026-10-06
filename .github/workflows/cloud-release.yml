@@ -29,7 +29,7 @@ jobs:
           node-version: '24.14.0'
       - name: Validate tag, package, and main ancestry
         id: release
-        working-directory: packages/codexkit-cloud
+        working-directory: packages/codexkit
         env:
           CLOUD_TAG: ${{ github.ref_name }}
         run: node scripts/validate-release.cjs
@@ -48,7 +48,7 @@ jobs:
       packages: write
     defaults:
       run:
-        working-directory: packages/codexkit-cloud
+        working-directory: packages/codexkit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,3 +71,16 @@ jobs:
           NPM_DIST_TAG: ${{ needs.validate.outputs.npm_tag }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm publish --ignore-scripts --tag "$NPM_DIST_TAG"
+      - name: Verify published npm imports
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          package_spec="$(node -p 'const p = require("./package.json"); p.name + "@" + p.version')"
+          consumer_dir="$(mktemp -d)"
+          trap 'rm -rf "$consumer_dir"' EXIT
+          npm install --prefix "$consumer_dir" --ignore-scripts --no-audit --no-fund \
+            --registry=https://npm.pkg.github.com "$package_spec"
+          cd "$consumer_dir"
+          node -e 'const { CodexKitBridgeClient } = require("@timazed/codexkit"); if (typeof new CodexKitBridgeClient().execute !== "function") throw new Error("CommonJS import failed"); console.log("Published CommonJS import passed");'
+          node --input-type=module -e 'import { CodexKitBridgeClient } from "@timazed/codexkit"; if (typeof new CodexKitBridgeClient().execute !== "function") throw new Error("ESM import failed"); console.log("Published ESM import passed");'

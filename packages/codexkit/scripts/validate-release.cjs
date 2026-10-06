@@ -15,7 +15,7 @@ function releaseVersion(tag) {
 
 function validatePackage(tag, manifest, lockfile) {
   const release = releaseVersion(tag);
-  assert.equal(manifest.name, '@timazed/codexkit-cloud', 'Only @timazed/codexkit-cloud may be published');
+  assert.equal(manifest.name, '@timazed/codexkit', 'Only @timazed/codexkit may be published');
   assert.equal(manifest.version, release.version, 'Tag and package version must match');
   assert.notEqual(manifest.private, true, 'The cloud package must be publishable');
   for (const value of [lockfile, lockfile.packages?.['']]) {
@@ -23,7 +23,7 @@ function validatePackage(tag, manifest, lockfile) {
     assert.equal(value?.version, manifest.version, 'Lockfile package version must match');
   }
   assert.equal(manifest.repository?.url, 'git+https://github.com/timazed/CodexKit.git', 'Package must link to the publishing repository');
-  assert.equal(manifest.repository?.directory, 'packages/codexkit-cloud');
+  assert.equal(manifest.repository?.directory, 'packages/codexkit');
   assert.equal(manifest.publishConfig?.registry, 'https://npm.pkg.github.com', 'Cloud releases must target GitHub Packages');
   return release;
 }
@@ -47,7 +47,7 @@ if (require.main === module) {
     if (process.env.GITHUB_OUTPUT) {
       appendFileSync(process.env.GITHUB_OUTPUT, `sha=${sha}\nnpm_tag=${release.npmTag}\n`);
     }
-    console.log(`Validated @timazed/codexkit-cloud@${release.version} at ${sha}; GitHub Packages dist-tag: ${release.npmTag}.`);
+    console.log(`Validated @timazed/codexkit@${release.version} at ${sha}; GitHub Packages dist-tag: ${release.npmTag}.`);
   } catch (error) {
     console.error(`Cloud release validation failed: ${error.message}`);
     process.exitCode = 1;

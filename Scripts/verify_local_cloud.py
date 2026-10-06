@@ -14,7 +14,7 @@ import uuid
 import verify_ios_simulator as ios
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE = ROOT / "packages/codexkit-cloud"
+PACKAGE = ROOT / "packages/codexkit"
 REPORTS = ROOT / ".build/local-cloud"
 
 
@@ -73,7 +73,7 @@ def main():
                     raise RuntimeError("Local API did not start within 10 seconds.")
                 line = api.stdout.readline()
             api_log.write(line)
-            match = re.fullmatch(r"CodexKitCloud local API: (http://127\.0\.0\.1:\d+) \(fixture\)\n", line)
+            match = re.fullmatch(r"CodexKit local API: (http://127\.0\.0\.1:\d+) \(fixture\)\n", line)
             if not match:
                 raise RuntimeError(f"Local fixture API failed to start; see {reports / 'api.log'}.")
             if args.platform == "ios":

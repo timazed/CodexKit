@@ -1,5 +1,5 @@
-import { CodexKitBridgeClient, CodexKitCloudError } from "@timazed/codexkit-cloud";
-import type { Authentication, PreparedRequest } from "@timazed/codexkit-cloud";
+import { CodexKitBridgeClient, CodexKitCloudError } from "@timazed/codexkit";
+import type { Authentication, PreparedRequest } from "@timazed/codexkit";
 
 const client = new CodexKitBridgeClient();
 

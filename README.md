@@ -5,9 +5,9 @@
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-This repository also contains [`@timazed/codexkit-cloud`](packages/codexkit-cloud/README.md), a separately built and versioned TypeScript backend library (`0.1.0`) distributed through GitHub Packages. It executes one CodexKit-prepared request with supplied authentication. Swift consumers do not need Node or npm. Swift request export and remote routing remain separate integration work; the cloud library currently supports tool-free one-shot requests only.
+This repository also contains [`@timazed/codexkit`](packages/codexkit/README.md), a separately built and versioned TypeScript backend library (`0.1.1`) distributed through GitHub Packages. Install it with `npm install @timazed/codexkit` after configuring GitHub Packages authentication, then `import { CodexKitBridgeClient } from "@timazed/codexkit"`. It executes one CodexKit-prepared request with supplied authentication. Swift consumers do not need Node or npm. Swift request export and remote routing remain separate integration work; the TypeScript library currently supports tool-free one-shot requests only.
 
-Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit-cloud/docs/releases.md).
+Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit/docs/releases.md).
 
 `main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.38](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.38). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 

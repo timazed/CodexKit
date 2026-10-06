@@ -1,16 +1,17 @@
 # Publishing to GitHub Packages
 
-The root `.github/workflows/cloud-release.yml` publishes `@timazed/codexkit-cloud` to GitHub's npm registry at `https://npm.pkg.github.com`. It runs when a `cloud-v*` tag is pushed; Swift's `v*` tags and release workflow remain independent. Creating a tag is a release action, not part of ordinary development.
+The root `.github/workflows/cloud-release.yml` publishes `@timazed/codexkit` to GitHub's npm registry at `https://npm.pkg.github.com`. It runs when a `cloud-v*` tag is pushed; Swift's `v*` tags and release workflow remain independent. Creating a tag is a release action, not part of ordinary development.
 
-GitHub Packages uses your existing GitHub account. If needed, [create a GitHub account](https://github.com/signup). No npmjs.com account or npm access token is required. GitHub requires scoped npm names, so the imported `codexkit-cloud` package is named `@timazed/codexkit-cloud` here. Its version remains `0.1.0`, and the `CodexKitBridgeClient` API is unchanged.
+GitHub Packages uses your existing GitHub account. No npmjs.com account or npm access token is required. Version `0.1.1` publishes under `@timazed/codexkit`, replacing the original `@timazed/codexkit-cloud@0.1.0` name while preserving the bridge API. Existing installs of the original package remain available. Consumers should [migrate their dependency and imports](../README.md#migrating-from-the-original-package-name).
 
 ## What the workflow does
 
-1. Require a valid cloud version tag, matching package and lockfile versions, the `@timazed/codexkit-cloud` name, and the configured GitHub registry and repository.
+1. Require a valid cloud version tag, matching package and lockfile versions, the `@timazed/codexkit` name, and the configured GitHub registry and repository.
 2. Require the tagged commit to be reachable from `origin/main`.
 3. Call the existing Cloud CI matrix to run `npm ci` and `npm run verify` on Node 22 and 24, including packed-package consumer checks.
 4. Check out that exact verified commit in a separate publishing job and recheck the tag and main ancestry. The publishing job does not restore dependency caches.
-5. Install locked dependencies, build, and publish from `packages/codexkit-cloud` using Node 24.14.0. Only the publish step receives GitHub Actions' automatically generated `GITHUB_TOKEN` as `NODE_AUTH_TOKEN`. Publishing uses `--ignore-scripts` because the build is already complete.
+5. Install locked dependencies, build, and publish from `packages/codexkit` using Node 24.14.0. Publishing uses `--ignore-scripts` because the build is already complete.
+6. Install the exact published version from GitHub Packages in a temporary consumer and verify CommonJS and ESM imports of `CodexKitBridgeClient`. Only publishing and registry verification receive GitHub Actions' automatically generated `GITHUB_TOKEN` as `NODE_AUTH_TOKEN`.
 
 Stable versions publish to the `latest` dist-tag. Prereleases such as `cloud-v0.2.0-beta.1` publish to `next`. Build-metadata tags are rejected. A moved tag, mismatched lockfile, failed verification, or unmerged commit prevents publishing. An existing package version cannot be overwritten; rerunning a completed publication fails instead of changing its contents.
 
@@ -26,15 +27,15 @@ GitHub initially creates packages with **private visibility**, including package
 
 ## Preparing a release
 
-The initial version is already `0.1.0`. For future versions, update the package and lockfile together from this directory with `npm version <version> --no-git-tag-version`. Run `npm ci` and `npm run verify`, then merge the changes into `main`.
+The renamed package starts at `0.1.1`, continuing the existing release sequence. For future versions, update the package and lockfile together from this directory with `npm version <version> --no-git-tag-version`. Run `npm ci` and `npm run verify`, then merge the changes into `main`.
 
-When ready to publish the initial version, tag its merged commit from the repository root:
+When ready to publish version `0.1.1`, tag its merged commit from the repository root:
 
 ```sh
 git switch main
 git pull --ff-only
-git tag -a cloud-v0.1.0 -m "codexkit-cloud 0.1.0"
-git push origin cloud-v0.1.0
+git tag -a cloud-v0.1.1 -m "@timazed/codexkit 0.1.1"
+git push origin cloud-v0.1.1
 ```
 
 Use the corresponding version for later releases. Do not use Swift's `v*` prefix or npm's automatic Git tagging. Monitor **Cloud Release** in GitHub Actions; a failed run can be rerun after resolving configuration problems, provided that version has not already been published. Do not move a release tag to repair a failed or completed release.
@@ -42,10 +43,10 @@ Use the corresponding version for later releases. Do not use Swift's `v*` prefix
 For a local packaging preview without publishing:
 
 ```sh
-cd packages/codexkit-cloud
+cd packages/codexkit
 npm ci
 npm run verify
 npm publish --dry-run
 ```
 
-The dry run cannot verify GitHub account permissions or the workflow's token. After publication, follow the [installation instructions](../README.md#install-and-use) to authenticate and install `@timazed/codexkit-cloud`; use `@timazed/codexkit-cloud@next` for prereleases.
+The dry run cannot verify GitHub account permissions or the workflow's token. After publication, follow the [installation instructions](../README.md#install-and-use) to authenticate and install `@timazed/codexkit`; use `@timazed/codexkit@next` for prereleases.

@@ -1,11 +1,11 @@
 {
-  "name": "@timazed/codexkit-cloud",
-  "version": "0.1.0",
+  "name": "@timazed/codexkit",
+  "version": "0.1.1",
   "description": "Execute CodexKit-prepared requests from a TypeScript backend.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/timazed/CodexKit.git",
-    "directory": "packages/codexkit-cloud"
+    "directory": "packages/codexkit"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
@@ -19,8 +19,15 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "examples", "docs"],
-  "engines": { "node": "^22.0.0 || ^24.0.0" },
+  "files": [
+    "dist",
+    "README.md",
+    "examples",
+    "docs"
+  ],
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.json",

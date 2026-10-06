@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [cloud-0.1.1] - 2026-10-06
+
+### Changed
+
+- Publish the TypeScript library as `@timazed/codexkit` and move its source to `packages/codexkit`. Update npm imports, examples, package verification, CI paths, and documentation for the new name. The bridge API and compatibility provenance remain unchanged.
+- Existing `@timazed/codexkit-cloud@0.1.0` installs remain available. Consumers migrate by installing `@timazed/codexkit` and updating the module specifier; future releases use the new name and the established `cloud-v*` tag convention. Swift remains at `v2.0.0-alpha.38`.
+- Verify CommonJS and ESM imports from the actual GitHub registry package after publishing, in addition to packed consumer checks on Node 22 and 24.
+
 ## [2.0.0-alpha.38] - 2026-10-06
 
 This prerelease bounds structured recovery and preserves pending attempts when host authorization fails. It also introduces the independently packaged cloud bridge at `@timazed/codexkit-cloud@0.1.0`, released separately with `cloud-v0.1.0`. The local API and signed demos passed with synthetic provider responses; live provider execution, public Swift request export, normal conversation/history integration, and durable remote jobs remain separate work.

@@ -11,7 +11,7 @@ for (let index = 0; index < args.length; index++) {
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port.');
 const server = createLocalAPIServer({ mode });
 server.listen(port, '127.0.0.1', () => {
-  console.log(`CodexKitCloud local API: http://127.0.0.1:${server.address().port} (${mode})`);
+  console.log(`CodexKit local API: http://127.0.0.1:${server.address().port} (${mode})`);
   console.log(mode === MODE.fixture
     ? 'Synthetic provider responses; no credentials or provider access required.'
     : 'Live provider requests enabled. Supply authentication separately for each request.');

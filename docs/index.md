@@ -16,8 +16,8 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [Image generation size behavior](image-generation-sizes.md) | Codex endpoint evidence, quality controls, output-only dimensions |
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
-| [CodexKitCloud backend library](../packages/codexkit-cloud/README.md) | Independent npm installation, one-request execution, backend example, compatibility pin, and remaining Swift export work |
-| [Local cloud API test](../packages/codexkit-cloud/docs/local-api.md) | Loopback fixture/live API, Swift demo integration, HTTP packet, and end-to-end verification |
+| [CodexKit TypeScript library](../packages/codexkit/README.md) | Independent npm installation, one-request execution, backend example, compatibility pin, and remaining Swift export work |
+| [Local cloud API test](../packages/codexkit/docs/local-api.md) | Loopback fixture/live API, Swift demo integration, HTTP packet, and end-to-end verification |
 | [Structured request recovery](structured-request-recovery.md) | Frozen requests, lifecycle suspension, bounded retries, completed receipts, schema upgrades, retention |
 | [Streaming structured output](streaming-output.md) | Turn-based typed streaming for text, native JSON, JSON Lines records, and XML/XSD |
 | [Record codec benchmark](streaming-output-benchmarks.md) | Local measurements and the decision to keep JSON Lines as the supported codec |

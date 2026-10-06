@@ -12,7 +12,7 @@ def main():
     paths = subprocess.check_output([
         "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
         "Sources", "DemoApp/CodexKitIOSDemo", "DemoApp/CodexKitMacDemo", "Scripts",
-        "packages/codexkit-cloud/src", "packages/codexkit-cloud/examples", "packages/codexkit-cloud/scripts",
+        "packages/codexkit/src", "packages/codexkit/examples", "packages/codexkit/scripts",
     ], cwd=ROOT).decode().split("\0")
     count = 0
     failures = []

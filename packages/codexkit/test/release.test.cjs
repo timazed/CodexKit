@@ -43,15 +43,16 @@ test('release requires GitHub Packages and the publishing repository', () => {
   }
 });
 
-test('release rejects an unscoped package even when its lockfile matches', () => {
-  const name = 'codexkit-cloud';
-  const unscopedLockfile = { ...lockfile, name, packages: { ...lockfile.packages,
-    '': { ...lockfile.packages[''], name } } };
-  assert.throws(() => validatePackage(`cloud-v${manifest.version}`, { ...manifest, name }, unscopedLockfile));
+test('release rejects legacy and unscoped names even when their lockfiles match', () => {
+  for (const name of ['@timazed/codexkit-cloud', 'codexkit']) {
+    const renamedLockfile = { ...lockfile, name, packages: { ...lockfile.packages,
+      '': { ...lockfile.packages[''], name } } };
+    assert.throws(() => validatePackage(`cloud-v${manifest.version}`, { ...manifest, name }, renamedLockfile));
+  }
 });
 
 test('release requires an existing tag at HEAD and a commit reachable from main', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'codexkit-cloud-release-'));
+  const directory = mkdtempSync(join(tmpdir(), 'codexkit-release-'));
   const git = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   try {
     git('init', '--quiet', '--initial-branch=main');

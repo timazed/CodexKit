@@ -16,10 +16,10 @@ class SourceSizeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(["git", "init", "--quiet", str(root)], check=True)
-            production = ["Sources/CodexKit/Example.swift", "packages/codexkit-cloud/src/client.ts",
-                          "packages/codexkit-cloud/examples/api-route.ts", "packages/codexkit-cloud/scripts/test-package.cjs"]
-            excluded = ["packages/codexkit-cloud/dist/client.js", "packages/codexkit-cloud/dist/client.d.ts",
-                        "packages/codexkit-cloud/node_modules/vendor/index.js", "packages/codexkit-cloud/test/example.test.cjs"]
+            production = ["Sources/CodexKit/Example.swift", "packages/codexkit/src/client.ts",
+                          "packages/codexkit/examples/api-route.ts", "packages/codexkit/scripts/test-package.cjs"]
+            excluded = ["packages/codexkit/dist/client.js", "packages/codexkit/dist/client.d.ts",
+                        "packages/codexkit/node_modules/vendor/index.js", "packages/codexkit/test/example.test.cjs"]
             for name in production + excluded:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)

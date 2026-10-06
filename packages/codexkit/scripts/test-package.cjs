@@ -5,7 +5,7 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 
 const root = resolve(__dirname, '..');
-const directory = mkdtempSync(join(tmpdir(), 'codexkitcloud-package-'));
+const directory = mkdtempSync(join(tmpdir(), 'codexkit-package-'));
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error('Run this check with npm run test:package after building.');
 const run = (args, cwd = directory) => execFileSync(process.execPath, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -20,7 +20,7 @@ try {
   assert.equal(packed.name, manifest.name);
   assert.equal(packed.version, manifest.version);
   assert.ok(!packed.files.some(file => file.path.startsWith('node_modules/') || file.path.startsWith('test/')));
-  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'codexkitcloud-consumer', version: '1.0.0', private: true }));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'codexkit-consumer', version: '1.0.0', private: true }));
   run([npm, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', join(directory, 'cache'), join(directory, packed.filename)]);
   const body = readFileSync(join(root, 'test/fixtures/text-request.json'));
   writeFileSync(join(directory, 'request.json'), body);
@@ -28,7 +28,7 @@ try {
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
-const api = require('@timazed/codexkit-cloud');
+const api = require('@timazed/codexkit');
 const { CodexKitBridgeClient } = api;
 assert.equal(api.execute, undefined);
 assert.equal(api.createExecutor, undefined);
@@ -53,16 +53,16 @@ client.execute({ preparedRequest,
 `;
   writeFileSync(join(directory, 'consumer.cjs'), common);
   run(['consumer.cjs']);
-  writeFileSync(join(directory, 'consumer.mjs'), `import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit-cloud';\nconst client = new CodexKitBridgeClient();\nif (typeof client.execute !== 'function' || typeof client.validatePreparedRequest !== 'function' || !CodexKitCloudError) throw new Error('ESM imports failed');\nimport './consumer.cjs';\n`);
+  writeFileSync(join(directory, 'consumer.mjs'), `import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit';\nconst client = new CodexKitBridgeClient();\nif (typeof client.execute !== 'function' || typeof client.validatePreparedRequest !== 'function' || !CodexKitCloudError) throw new Error('ESM imports failed');\nimport './consumer.cjs';\n`);
   run(['consumer.mjs']);
   // The runnable API example must also resolve the scoped package after packing.
-  run(['-e', "const { createLocalAPIServer } = require('./node_modules/@timazed/codexkit-cloud/examples/local-api/server.cjs'); createLocalAPIServer().close();"]);
+  run(['-e', "const { createLocalAPIServer } = require('./node_modules/@timazed/codexkit/examples/local-api/server.cjs'); createLocalAPIServer().close();"]);
 
   mkdirSync(join(directory, 'examples'));
-  cpSync(join(directory, 'node_modules/@timazed/codexkit-cloud/examples/api-route.ts'), join(directory, 'examples/api-route.ts'));
+  cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/api-route.ts'), join(directory, 'examples/api-route.ts'));
   writeFileSync(join(directory, 'consumer.ts'), `
-import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit-cloud';
-import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from '@timazed/codexkit-cloud';
+import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit';
+import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from '@timazed/codexkit';
 const preparedRequest: PreparedRequest = { body: new Uint8Array(), sha256: '', sessionId: '', clientRequestId: '', originator: '' };
 const input: ExecuteInput = { preparedRequest, authentication: { accessToken: '', accountId: '' },
   onProgress: async event => { if (event.type === 'response.output_text.delta') event.delta.toUpperCase(); } };

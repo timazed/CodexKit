@@ -7,7 +7,7 @@ This development API hosts the real `CodexKitBridgeClient` on `127.0.0.1`. It ac
 From the repository root:
 
 ```sh
-cd packages/codexkit-cloud
+cd packages/codexkit
 npm ci
 npm run dev:api
 ```

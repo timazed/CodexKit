@@ -1,6 +1,6 @@
-# CodexKitCloud
+# CodexKit for TypeScript
 
-The independently versioned `@timazed/codexkit-cloud` npm package lives in [`packages/codexkit-cloud`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit-cloud) in the CodexKit repository and is distributed through GitHub Packages. Its current version is `0.1.0`. Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
+The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is `0.1.1`. Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
 
 A small TypeScript library that executes a CodexKit-prepared request against the Codex backend and returns its completed result. CodexKit is the authority for request construction, model/reasoning selection, response format, and retry policy.
 
@@ -10,7 +10,7 @@ The package exports `CodexKitBridgeClient` for the backend team to use from its 
 
 Supported runtimes: Node.js 22 and 24. CommonJS with type declarations; also importable from Node ESM. TypeScript consumers should use TypeScript 5.9 or later and Node type declarations.
 
-After publication, add this scope mapping to the consuming backend's `.npmrc`:
+Add this scope mapping to the consuming backend's `.npmrc`:
 
 ```ini
 @timazed:registry=https://npm.pkg.github.com
@@ -20,26 +20,14 @@ For local installation, [create a GitHub personal access token (classic)](https:
 
 ```sh
 npm login --scope=@timazed --auth-type=legacy --registry=https://npm.pkg.github.com
-npm install @timazed/codexkit-cloud
+npm install @timazed/codexkit
 ```
 
 GitHub requires authentication even for public npm packages. In a consuming GitHub Actions workflow, use its `GITHUB_TOKEN` with `packages: read` and grant that repository access to this package; configure `actions/setup-node` with the same registry and scope. See [GitHub registry authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages). Keep token values out of committed files.
 
-Before the first release, or to use a local checkout without registry authentication, build and install a tarball:
-
-```sh
-# From the CodexKit repository root:
-cd packages/codexkit-cloud
-npm ci
-npm run verify
-npm pack
-# In the consuming backend:
-npm install /path/to/CodexKit/packages/codexkit-cloud/timazed-codexkit-cloud-0.1.0.tgz
-```
-
 ```ts
-import { CodexKitBridgeClient, CodexKitCloudError } from "@timazed/codexkit-cloud";
-import type { PreparedRequest, Authentication } from "@timazed/codexkit-cloud";
+import { CodexKitBridgeClient, CodexKitCloudError } from "@timazed/codexkit";
+import type { PreparedRequest, Authentication } from "@timazed/codexkit";
 
 const client = new CodexKitBridgeClient();
 
@@ -59,13 +47,24 @@ async function runCodex(
 }
 ```
 
-CommonJS: `const { CodexKitBridgeClient } = require("@timazed/codexkit-cloud")`.
+CommonJS: `const { CodexKitBridgeClient } = require("@timazed/codexkit")`.
 
 Create a client once with your backend's configuration and reuse it across requests. Supply authentication to each `client.execute(...)` call; concurrent calls keep credentials and execution state isolated. `CodexKitBridgeClientOptions` describes constructor options, and `client.validatePreparedRequest(request)` provides preflight using the same configured limits.
 
 [examples/api-route.ts](examples/api-route.ts) shows a framework-independent response adapter. The backend authenticates the caller and resolves the matching credentials before calling the library. The returned result is JSON-serializable and can be sent directly through the host API.
 
 For a runnable local host, use `npm run dev:api` and open **Structured → Local Cloud** in either Debug demo app. The API defaults to synthetic provider responses on `http://127.0.0.1:8787`; `npm run dev:api -- --live` explicitly enables real requests. See [local API setup and request contract](docs/local-api.md) for authentication, supported scope, and the Swift-to-TypeScript verification harness. The library itself does not start a server.
+
+### Migrating from the original package name
+
+Version `0.1.1` uses `@timazed/codexkit` in place of `@timazed/codexkit-cloud`. In an existing backend:
+
+```sh
+npm uninstall @timazed/codexkit-cloud
+npm install @timazed/codexkit
+```
+
+Change imports and `require(...)` calls to `@timazed/codexkit`. `CodexKitBridgeClient`, `CodexKitCloudError`, and the exported types retain their existing APIs. The old `@timazed/codexkit-cloud@0.1.0` publication remains available for existing consumers; new releases use the new name.
 
 ## Prepared request and authority
 
@@ -109,7 +108,7 @@ The default endpoint matches CodexKit: `https://chatgpt.com/backend-api/codex/re
 Configure the client in trusted application code when needed:
 
 ```ts
-import { CodexKitBridgeClient } from "@timazed/codexkit-cloud";
+import { CodexKitBridgeClient } from "@timazed/codexkit";
 
 const client = new CodexKitBridgeClient({
   // Optional trusted profile values, never copied from an incoming payload:
@@ -200,18 +199,20 @@ HTTP error-body inspection is capped at 64 KiB or the configured event limit, wh
 
 ```sh
 # From the CodexKit repository root:
-cd packages/codexkit-cloud
+cd packages/codexkit
 npm ci
 npm run verify
 ```
 
 Tests inject synthetic fetch responses and disable accidental live fetch calls. They verify request fidelity, framing, output validation, typed failures, cancellation, redaction, and one-attempt behavior. The packaging check installs a local tarball into a temporary consumer and verifies CommonJS, ESM, TypeScript declarations, and the included route example, including successful execution and error responses. It performs no provider calls and requires no credentials. Real provider/account compatibility has not been tested by these offline fixtures.
 
+To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.1.1.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
+
 The repository's root `Cloud CI` workflow runs `npm ci` and `npm run verify` independently on Node 22 and 24 with this package's lockfile. Build output, dependencies, and local tarballs are ignored. There is no root npm workspace or Swift build step that invokes npm.
 
 ## Versioning and releases
 
-Cloud releases use `cloud-v<package version>`, starting with `cloud-v0.1.0`. The version is owned by this directory's `package.json` and `package-lock.json`; it does not track the Swift SDK version. Future version changes should update both files without generating npm's default `v*` Git tag (for example, use `npm version <version> --no-git-tag-version`).
+The established `cloud-v<package version>` release tags continue independently of the npm name: `cloud-v0.1.0` published the original name, and `cloud-v0.1.1` publishes `@timazed/codexkit@0.1.1`. The version is owned by this directory's `package.json` and `package-lock.json`; it does not track the Swift SDK version. Future version changes should update both files without generating npm's default `v*` Git tag (for example, use `npm version <version> --no-git-tag-version`).
 
 Pushing a `cloud-v*` tag runs `Cloud Release`: it validates the version and main ancestry, calls the Node 22/24 Cloud CI matrix, and publishes this package to GitHub Packages. Stable releases use the `latest` dist-tag; prereleases use `next`. Swift continues to use `v*` tags and its existing release workflow.
 

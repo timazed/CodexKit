@@ -2,7 +2,7 @@
 
 These are synthetic fixtures derived from the local CodexKit source at commit `f16d7b873c298e729d8f26cba18b6ffd70ec98e2`. They contain no real requests, credentials, accounts, or model output. `codexkit-fixture-model` is deliberately a non-live model identifier.
 
-The library was imported from the standalone `CodexKitCloud` directory into `packages/codexkit-cloud` in the CodexKit repository. The standalone directory is retired; develop and release the library from this package directory. This move preserves the source and fixtures and does not update the compatibility pin or establish compatibility with every later Swift revision. Paths below are relative to the CodexKit repository root; the fixture path is relative to this npm package.
+The library was imported from the standalone `CodexKitCloud` directory into this repository as `@timazed/codexkit-cloud@0.1.0`. Version `0.1.1` renames the npm package to `@timazed/codexkit` and moves it to `packages/codexkit`. Develop and release the library from this package directory. These packaging changes preserve the source and fixtures and do not update the compatibility pin or establish compatibility with every later Swift revision. Paths below are relative to the CodexKit repository root; the fixture path is relative to this npm package.
 
 Sources used:
 
