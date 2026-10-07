@@ -119,7 +119,9 @@ export class ResponseConsumer {
 
   private finish(response: JsonObject, data: string): ExecutionResult {
     let output = response.output;
-    if (output === undefined) {
+    // Codex may send complete output-item records and an empty terminal snapshot.
+    // Only those complete indexed items can supply output; deltas never can.
+    if (output === undefined || (Array.isArray(output) && output.length === 0 && this.completedItems.size > 0)) {
       const entries = [...this.completedItems.entries()].sort((a, b) => a[0] - b[0]);
       if (entries.some(([index], position) => index !== position)) fail("invalid_response");
       output = entries.map(([, item]) => item);

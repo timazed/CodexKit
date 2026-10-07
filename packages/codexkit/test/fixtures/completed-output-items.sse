@@ -1,0 +1,9 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"captured-response","status":"in_progress"},"sequence_number":0}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"id":"captured-message","type":"message","status":"completed","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"{\"day\":2,\"event\":\"The infrastructure committee hearing was delayed after lawmakers requested more time to review the proposal.\"}"}],"phase":"final_answer","role":"assistant"},"output_index":0,"sequence_number":30}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"captured-response","status":"completed","output":[]},"sequence_number":31}
+

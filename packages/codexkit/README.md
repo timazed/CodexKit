@@ -1,6 +1,6 @@
 # CodexKit for TypeScript
 
-The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is [`0.2.1`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.1). Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
+The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is [`0.2.2`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.2). Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
 
 A small TypeScript library that executes a CodexKit-prepared request against the Codex backend and returns its completed result. CodexKit is the authority for request construction, model/reasoning selection, response format, and retry policy.
 
@@ -161,7 +161,7 @@ An `ExecutionResult` contains:
 | `completedEvent` | Original terminal JSON data, without SSE framing. |
 | `usage` | Provider-supplied usage object, when present. |
 
-The terminal output snapshot is authoritative. For CodexKit-compatible streams that omit `response.output`, the client uses indexed `response.output_item.done` records only after receiving a valid `response.completed`. Text deltas alone never establish completion. Absent terminal status is accepted for that existing CodexKit stream shape; an explicit noncompleted status, error, or incomplete details prevents success. The connection is released at terminal completion without waiting for EOF.
+A nonempty terminal output snapshot is authoritative. For CodexKit-compatible streams that omit `response.output` or provide an empty array after completed message-item records, the client uses indexed `response.output_item.done` records only after receiving a valid `response.completed`. Text deltas alone never establish completion. Absent terminal status is accepted for that existing CodexKit stream shape; an explicit noncompleted status, error, or incomplete details prevents success. The connection is released at terminal completion without waiting for EOF. Missing `Content-Type` is accepted only when the body decodes as valid SSE and reaches that completion; an explicitly incompatible MIME type remains a failure.
 
 JSON output is parsed strictly and validated against the supplied schema before return. Validation follows CodexKit's bounded schema subset: primitive/union types, properties/required/additionalProperties, arrays, enum/const, composition, local references, numeric bounds, and size constraints. Unknown assertions (including `pattern` and `format`) and remote references are rejected before transmission. Defaults and coercion are never applied. Recursive validation and JSON parsing have work/depth limits.
 
@@ -216,7 +216,7 @@ npm run verify
 
 Tests inject synthetic fetch responses and disable accidental live fetch calls. They verify text/image request fidelity, framing, output validation, typed failures, cancellation, redaction, and one-attempt behavior. The packaging check installs a local tarball into a temporary consumer and verifies CommonJS, ESM, TypeScript declarations, and both included route examples, including successful execution and error responses. It performs no provider calls and requires no credentials. Real provider/account compatibility has not been tested by these offline fixtures.
 
-To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.2.1.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
+To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.2.2.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
 
 The repository's root `Cloud CI` workflow runs `npm ci` and `npm run verify` independently on Node 22 and 24 with this package's lockfile. Build output, dependencies, and local tarballs are ignored. There is no root npm workspace or Swift build step that invokes npm.
 

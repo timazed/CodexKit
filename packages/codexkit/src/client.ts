@@ -66,7 +66,9 @@ export class CodexKitBridgeClient {
       }), controller.signal);
       providerRequestId = requestId(response);
       if (!response.ok) throw await httpFailure(response, limits, controller.signal);
-      if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "text/event-stream" || !response.body) fail("invalid_response");
+      // Codex can omit MIME metadata; the SSE parser still requires valid events and terminal completion.
+      const contentType = response.headers.get("content-type");
+      if ((contentType != null && contentType.split(";")[0]?.trim().toLowerCase() !== "text/event-stream") || !response.body) fail("invalid_response");
       for await (const event of readEvents(response.body, limits, controller.signal)) {
         checkAbort(controller.signal);
         const next = consumer.consume(event);

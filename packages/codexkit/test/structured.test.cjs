@@ -1,4 +1,6 @@
 const { test } = require('node:test');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 const assert = require('node:assert/strict');
 const { structured, complete, message, harness, errorCode } = require('./helpers.cjs');
 
@@ -78,4 +80,21 @@ test('JSON schema applies to final answer, never commentary', async () => {
     message('{"answer":"done"}', { phase: 'final_answer' }),
   ] })]);
   assert.equal((await run({ preparedRequest: structured(objectSchema) })).outputText, '{"answer":"done"}');
+});
+
+// October 8 capture: HTTP 200 without Content-Type, completed message records,
+// and an empty final output array. IDs are redacted; writing is unchanged.
+test('decodes completed structured Codex writing without MIME metadata or a populated terminal snapshot', async () => {
+  const bytes = readFileSync(join(__dirname, 'fixtures/completed-output-items.sse'));
+  const schema = { type: 'object', properties: { day: { type: 'integer' }, event: { type: 'string' } }, required: ['day', 'event'], additionalProperties: false };
+  const { run, calls } = harness(undefined, { fetch: async () => new Response(bytes) });
+  const value = await run({ preparedRequest: structured(schema) });
+  assert.equal(value.status, 'completed');
+  assert.equal(value.format, 'json_schema');
+  assert.equal(value.outputText, "{\"day\":2,\"event\":\"The infrastructure committee hearing was delayed after lawmakers requested more time to review the proposal.\"}");
+  assert.equal(value.messages[0].text, value.outputText);
+  assert.equal(JSON.parse(value.outputText).day, 2);
+  assert.equal(calls.length, 1);
+  await assert.rejects(harness(undefined, { fetch: async () => new Response(bytes, { headers: { 'content-type': 'text/html' } }) })
+    .run({ preparedRequest: structured(schema) }), errorCode('invalid_response', 'unknown'));
 });
