@@ -30,7 +30,8 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 const api = require('@timazed/codexkit');
-const { CodexKitBridgeClient } = api;
+const { CodexKitBridgeClient, nodeHttpsTransport } = api;
+assert.equal(typeof nodeHttpsTransport, 'function');
 assert.equal(api.execute, undefined);
 assert.equal(api.createExecutor, undefined);
 assert.equal(api.validatePreparedRequest, undefined);
@@ -54,7 +55,7 @@ client.execute({ preparedRequest,
 `;
   writeFileSync(join(directory, 'consumer.cjs'), common);
   run(['consumer.cjs']);
-  writeFileSync(join(directory, 'consumer.mjs'), `import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit';\nconst client = new CodexKitBridgeClient();\nif (typeof client.execute !== 'function' || typeof client.validatePreparedRequest !== 'function' || !CodexKitCloudError) throw new Error('ESM imports failed');\nimport './consumer.cjs';\n`);
+  writeFileSync(join(directory, 'consumer.mjs'), `import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport } from '@timazed/codexkit';\nconst client = new CodexKitBridgeClient();\nif (typeof client.execute !== 'function' || typeof client.validatePreparedRequest !== 'function' || !CodexKitCloudError) throw new Error('ESM imports failed');\nimport './consumer.cjs';\n`);
   run(['consumer.mjs']);
   // The runnable API example must also resolve the scoped package after packing.
   run(['-e', "const { createLocalAPIServer } = require('./node_modules/@timazed/codexkit/examples/local-api/server.cjs'); createLocalAPIServer().close();"]);
@@ -63,13 +64,13 @@ client.execute({ preparedRequest,
   cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/api-route.ts'), join(directory, 'examples/api-route.ts'));
   cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/image-api-route.ts'), join(directory, 'examples/image-api-route.ts'));
   writeFileSync(join(directory, 'consumer.ts'), `
-import { CodexKitBridgeClient, CodexKitCloudError } from '@timazed/codexkit';
+import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport } from '@timazed/codexkit';
 import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from '@timazed/codexkit';
 import type { PreparedImageRequest, ExecuteImageInput, ImageExecutionResult, ImageAction, GeneratedImage } from '@timazed/codexkit';
 const preparedRequest: PreparedRequest = { body: new Uint8Array(), sha256: '', sessionId: '', clientRequestId: '', originator: '' };
 const input: ExecuteInput = { preparedRequest, authentication: { accessToken: '', accountId: '' },
   onProgress: async event => { if (event.type === 'response.output_text.delta') event.delta.toUpperCase(); } };
-const options: CodexKitBridgeClientOptions = { limits: { maxOutputBytes: 1024 } };
+const options: CodexKitBridgeClientOptions = { limits: { maxOutputBytes: 1024 }, fetch: nodeHttpsTransport };
 const client = new CodexKitBridgeClient(options);
 client.validatePreparedRequest(preparedRequest);
 const result: Promise<ExecutionResult> = client.execute(input);

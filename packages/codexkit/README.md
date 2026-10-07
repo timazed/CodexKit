@@ -227,3 +227,20 @@ The established `cloud-v<package version>` release tags continue independently o
 Pushing a `cloud-v*` tag runs `Cloud Release`: it validates the version and main ancestry, calls the Node 22/24 Cloud CI matrix, and publishes this package to GitHub Packages. Stable releases use the `latest` dist-tag; prereleases use `next`. Swift continues to use `v*` tags and its existing release workflow.
 
 See [GitHub Packages release setup](docs/releases.md) for repository settings, package visibility, and release commands. The workflow uses the built-in `GITHUB_TOKEN` with `packages: write`, including for the first release. GitHub requires the `@timazed/` package scope; the `CodexKitBridgeClient` API and compatibility pin are unchanged.
+
+## Long-running Node requests
+
+For workers whose image requests may wait several minutes before response headers arrive, use the optional `nodeHttpsTransport`. The caller's `AbortSignal` bounds the complete request; this transport has no shorter headers timeout. It sends the exact prepared bytes once, does not follow redirects or retry, and asks for an uncompressed response. The default transport remains `fetch`.
+
+```ts
+import { CodexKitBridgeClient, nodeHttpsTransport } from '@timazed/codexkit';
+
+const codex = new CodexKitBridgeClient({ fetch: nodeHttpsTransport });
+const result = await codex.executeImage({
+  preparedRequest,
+  authentication,
+  signal: AbortSignal.timeout(13 * 60 * 1000),
+});
+```
+
+This transport implements the SDK's HTTPS byte-backed POST contract with manual redirect handling and an abort signal. It is not a general replacement for the browser Fetch API. Queueing, durable storage, recovery, image hosting and notification delivery belong to the application.
