@@ -49,6 +49,8 @@ An image-specific allowance error uses `code: "image_usage_limit_exceeded"`, wit
 
 There is one provider POST per call, no retries, credential refresh, progress stream, fallback request, or implicit generation timeout. An explicit `AbortSignal` cancels waiting for headers or body data and releases the connection. Cancellation cannot confirm the remote provider stopped generating. The host owns deadlines, attempt accounting and any later retry decision.
 
+Since `0.2.1`, workers can opt into [`nodeHttpsTransport`](../README.md#long-running-node-requests) when generation may wait several minutes for headers. Configure it through `new CodexKitBridgeClient({ fetch: nodeHttpsTransport })` and pass the host's deadline signal to `executeImage`. The default client still uses `fetch`; the transport does not add scheduling or durable execution.
+
 ## Resource limits
 
 Configure `imageLimits` on the client; defaults are exported as `DEFAULT_IMAGE_LIMITS`:

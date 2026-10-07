@@ -29,16 +29,19 @@ GitHub initially creates packages with **private visibility**, including package
 
 The renamed package starts at `0.1.1`, continuing the existing release sequence. For future versions, update the package and lockfile together from this directory with `npm version <version> --no-git-tag-version`. Run `npm ci` and `npm run verify`, then merge the changes into `main`.
 
-When ready to publish version `0.2.0`, tag its merged commit from the repository root:
+After preparing a new, unpublished package version, tag its merged commit from the repository root. Read the version from the manifest so the tag cannot drift from it:
 
 ```sh
 git switch main
 git pull --ff-only
-git tag -a cloud-v0.2.0 -m "@timazed/codexkit 0.2.0"
-git push origin cloud-v0.2.0
+cloud_version="$(node -p 'require("./packages/codexkit/package.json").version')"
+git tag -a "cloud-v${cloud_version}" -m "@timazed/codexkit ${cloud_version}"
+git push origin "cloud-v${cloud_version}"
 ```
 
-Use the corresponding version for later releases. Do not use Swift's `v*` prefix or npm's automatic Git tagging. Monitor **Cloud Release** in GitHub Actions; a failed run can be rerun after resolving configuration problems, provided that version has not already been published. Do not move a release tag to repair a failed or completed release.
+Do not use Swift's `v*` prefix or npm's automatic Git tagging. Monitor **Cloud Release** in GitHub Actions; a failed run can be rerun after resolving configuration problems, provided that version has not already been published. Do not move a release tag to repair a failed or completed release.
+
+Package publication does not create a GitHub release page. After publishing and registry import verification succeed, create a release for the existing tag with curated notes covering the API changes, validation and remaining integration work. Keep cloud releases from replacing the latest Swift release by using `gh release create ... --verify-tag --latest=false`. Repository documentation corrections and release-note updates can follow publication without changing the immutable package version or moving its tag.
 
 For a local packaging preview without publishing:
 

@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [cloud-0.2.1] - 2026-10-07
+
+### Added
+
+- Export `nodeHttpsTransport`, an optional native Node HTTPS transport for long-running prepared requests. It uses the caller's cancellation signal without adding a shorter response-header timeout, sends exact bytes once, requests identity encoding, and does not follow redirects or retry. The default transport remains `fetch`.
+- Verify transport forwarding, delayed headers, cancellation, interrupted bodies, bodyless responses, and unsupported inputs. Packed CommonJS, ESM and TypeScript consumers verify the new export.
+
+### Integration
+
+- `mp-api` now imports `CodexKitBridgeClient.executeImage`, image preflight and `nodeHttpsTransport` instead of maintaining its own image client, provider-response parser and PNG validator. The service retains its job queue, execution deadline, persistence, image delivery and notifications, including compatibility with existing stored generation requests. Swift remains at `v2.0.0-alpha.38`.
+- Publication and registry import verification passed through the separate `cloud-v0.2.1` release workflow on Node 22 and 24. Image execution remains verified with synthetic providers; no live generation is claimed.
+
 ## [cloud-0.2.0] - 2026-10-07
 
 ### Added
