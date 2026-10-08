@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [cloud-0.2.3] - 2026-10-08
+
+### Added
+
+- Extend the packaged local API example with in-memory text/JSON and image jobs, default/silent/regular completion preferences, exact-envelope retry checks, changed-preference conflicts, result retrieval and simulated device completion batching.
+- Add a 16-job remote execution walkthrough to both signed Swift demos and their CI lanes, plus Node coverage for job lifecycle, idempotency, metadata, failures and mixed preferences. The bridge provider API is unchanged; SNS/APNs delivery remains the production middleware's responsibility.
+
+## [2.0.0-alpha.39] - 2026-10-08
+
+This prerelease adds public Swift remote execution with per-request completion push preferences and a complete local demonstration. Existing callers retain silent behavior. Local verification uses synthetic provider responses and simulated completion events; production SNS/APNs delivery is not exercised.
+
+### Added
+
+- Public Swift `CodexRemoteExecution` and `CodexRemoteExecutionClient` for already-prepared text/JSON and image middleware submissions. Per-request `completionPush` defaults to `.silent` and supports `.regular`, outside the provider body and digest. Submission retries reuse the full encoded envelope; HTTP 409 conflicts stop immediately.
+- Codable remote execution values retain the preference for host-managed retries. Submission/status job metadata exposes `completionPush`, with silent fallback for legacy records. Offline tests cover preferences, exact bytes/digests, retries, metadata, conflicts and cancellation; public docs and a Swift example describe device batching and middleware-owned SNS delivery.
+- A Remote Execution panel in both Debug demos displays text/JSON/image generation/editing jobs, completion preferences, lost-reply retries and decoded results. Its 16-job end-to-end verification uses the public Swift client, real loopback HTTP and the TypeScript bridge, checks conflicts and regular-wins batching, and runs in both signed-demo CI lanes. Local completion events are explicitly simulated; SNS/APNs delivery stays with production middleware.
+
 ## [cloud-0.2.1] - 2026-10-07
 
 ### Added

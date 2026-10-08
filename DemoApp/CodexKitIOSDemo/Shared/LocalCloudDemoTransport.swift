@@ -33,7 +33,7 @@ enum LocalCloudDemoError: LocalizedError {
 }
 
 /// Demo-only adapter: captures the SDK's final URLRequest without rebuilding its provider JSON.
-/// The production SDK request-export and remote-execution APIs remain separate work.
+/// Runtime request export remains demo-owned; remote job submission has its own public SDK client.
 final class LocalCloudDemoTransport: URLProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private var operationTask: Task<Void, Never>?
@@ -143,7 +143,7 @@ final class LocalCloudDemoTransport: URLProtocol, @unchecked Sendable {
 
 /// Separate session prevents recursively intercepting the packet request. Redirects are refused.
 final class LocalCloudHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    static func data(for request: URLRequest) async throws -> Data {
+    static func data(for request: URLRequest, maximumBytes: Int = 8 * 1024 * 1024) async throws -> Data {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = []
         configuration.httpCookieStorage = nil
@@ -156,7 +156,7 @@ final class LocalCloudHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendabl
         guard let http = response as? HTTPURLResponse else { throw LocalCloudDemoError.response }
         var data = Data()
         for try await byte in bytes {
-            guard data.count < 8 * 1024 * 1024 else { throw LocalCloudDemoError.tooLarge }
+            guard data.count < maximumBytes else { throw LocalCloudDemoError.tooLarge }
             data.append(byte)
         }
         guard http.statusCode == 200 else {

@@ -57,8 +57,10 @@ enum LocalCloudDemoProbe {
             let url = try LocalCloudDemoError.address(argument("--local-cloud-url") ?? "http://127.0.0.1:8787")
             let result = try await run(baseURL: url, mode: .fixture, session: nil)
             guard result.message == "Local cloud bridge OK" else { throw LocalCloudDemoError.response }
+            let remote = try await RemoteExecutionDemoProbe.verify(baseURL: url)
             report = ["passed": true, "checks": ["Swift-prepared request crossed local HTTP and the TypeScript bridge",
-                "Swift decoded the typed result and reopened its saved receipt"]]
+                "Swift decoded the typed result and reopened its saved receipt"] + remote.checks,
+                "remoteJobCount": remote.results.count, "simulatedPushDelivery": true]
         } catch { report = ["passed": false, "error": error.localizedDescription] }
         do { try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             .write(to: URL(fileURLWithPath: path), options: .atomic) }

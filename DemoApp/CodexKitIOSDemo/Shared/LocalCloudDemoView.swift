@@ -12,32 +12,35 @@ struct LocalCloudDemoView: View {
     @State private var task: Task<Void, Never>?
 
     var body: some View {
-        GroupBox("Local Cloud") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Test one structured request through the local TypeScript API and decode its reply in Swift.")
-                TextField("Local API address", text: $address).textFieldStyle(.roundedBorder)
-                Picker("Provider", selection: $mode) {
-                    Text("Fixture (no account needed)").tag(LocalCloudDemoMode.fixture)
-                    Text("Live ChatGPT session").tag(LocalCloudDemoMode.live)
-                }
-                .disabled(task != nil)
-                Text(mode == .fixture
-                    ? "Start the API with npm run dev:api. The response is synthetic; request preparation and validation are real."
-                    : "Start the API with npm run dev:api -- --live. This sends your current session credentials to the loopback API for one provider request.")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button("Run Local Cloud Test", action: run)
-                        .disabled(task != nil || (mode == .live && session == nil))
-                    if task != nil {
-                        ProgressView().controlSize(.small)
-                        Button("Cancel") { task?.cancel() }
+        VStack(alignment: .leading, spacing: 16) {
+            GroupBox("Local Cloud") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Test one structured request through the local TypeScript API and decode its reply in Swift.")
+                    TextField("Local API address", text: $address).textFieldStyle(.roundedBorder)
+                    Picker("Provider", selection: $mode) {
+                        Text("Fixture (no account needed)").tag(LocalCloudDemoMode.fixture)
+                        Text("Live ChatGPT session").tag(LocalCloudDemoMode.live)
                     }
-                }
-                if !result.isEmpty { Label(result, systemImage: "checkmark.circle").textSelection(.enabled) }
-                if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
-                Text("This uses an isolated ephemeral request and verifies its saved receipt. It does not change the active conversation.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(task != nil)
+                    Text(mode == .fixture
+                        ? "Start the API with npm run dev:api. The response is synthetic; request preparation and validation are real."
+                        : "Start the API with npm run dev:api -- --live. This sends your current session credentials to the loopback API for one provider request.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Run Local Cloud Test", action: run)
+                            .disabled(task != nil || (mode == .live && session == nil))
+                        if task != nil {
+                            ProgressView().controlSize(.small)
+                            Button("Cancel") { task?.cancel() }
+                        }
+                    }
+                    if !result.isEmpty { Label(result, systemImage: "checkmark.circle").textSelection(.enabled) }
+                    if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+                    Text("This uses an isolated ephemeral request and verifies its saved receipt. It does not change the active conversation.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            RemoteExecutionDemoView(address: address, mode: mode, session: session, model: model)
         }
         .onDisappear { task?.cancel() }
     }

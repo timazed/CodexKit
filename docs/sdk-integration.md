@@ -4,6 +4,8 @@
 
 The existing ChatGPT/Keychain configuration, `send`, `stream`, and Combine observation APIs remain available. The interfaces below support applications that manage their own sessions or need direct ownership of execution and observation.
 
+For prepared requests submitted through middleware, see [remote execution and completion pushes](remote-execution.md). Select `completionPush` when creating each `CodexRemoteExecution`; omission defaults to `.silent`.
+
 ## Host-managed sessions
 
 `AgentSessionProviding` supplies current credentials, restore, required-session resolution, and unauthorized recovery. A provider can implement only `currentSession()` and use defaults for the other methods when the host supplies a current session and manages renewal elsewhere:

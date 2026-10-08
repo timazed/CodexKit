@@ -178,6 +178,22 @@ jobs:
           else
             python3 Scripts/verify_macos_demo.py --mode "$mode"
           fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/codexkit/package-lock.json
+      - name: Verify remote demo features end to end
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          npm ci --prefix packages/codexkit
+          npm run build --prefix packages/codexkit
+          if [[ "$PLATFORM" == iOS ]]; then
+            python3 Scripts/verify_local_cloud.py --skip-build --platform ios
+          else
+            python3 Scripts/verify_local_cloud.py --skip-build --platform macos
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -187,6 +203,7 @@ jobs:
             .build/macos-demo/build.log
             .build/macos-demo/*result.json
             .build/macos-demo/timings.json
+            .build/local-cloud
           retention-days: 14
 
   build-minimum-simulator:

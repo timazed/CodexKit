@@ -16,6 +16,12 @@ Keep **Fixture** selected in the app, use `http://127.0.0.1:8787`, and press **R
 
 Run `python3 Scripts/verify_local_cloud.py` from the repository root to build and verify the signed macOS app against a temporary fixture API; add `--platform ios` for a disposable simulator. The host is local-only and the test uses an isolated ephemeral request, without changing the active conversation. See [the API guide](../packages/codexkit/docs/local-api.md) for the HTTP packet, limits, and remaining production integration work.
 
+The **Remote Execution** panel below the Local Cloud controls exercises the public Swift middleware client end to end. Choose **Text**, **JSON**, **Image**, or **Image edit**, then **Default (silent)**, **Silent**, or **Regular**, and press **Run Remote Request**. It shows accepted job IDs, status progress, decoded text/JSON or the returned PNG, submission counts, and the simulated completion event. Image edits use a bundled 2×1 PNG reference. Live mode calls the real provider through the local API using the signed-in account; completion delivery is still simulated locally.
+
+In fixture mode, enable **Simulate a lost submission reply** to return HTTP 503 after job acceptance. The SDK retries the identical envelope and the middleware executes the provider once. **Run Mixed Batch** queues text, JSON and image jobs together and demonstrates that one regular completion event follows the whole batch. **Verify All Remote Features** runs 16 jobs covering every request kind and preference, restored execution values, lost-reply retries, changed-preference HTTP 409 conflicts, mixed batching, and legacy job metadata. The same probe runs inside the signed macOS/iOS verification harness and both CI demo lanes.
+
+Start the API with `npm run dev:api`, then use **Fixture** to run the complete demo without signing in. Reports are saved under `.build/local-cloud/macos` and `.build/local-cloud/ios` by `Scripts/verify_local_cloud.py`. The local middleware keeps jobs/results in memory and records simulated delivery events; it does not send SNS/APNs notifications or survive an API restart. Device push delivery needs a configured production middleware and device. See [the middleware guide](../docs/remote-execution.md) and [Swift example](../Examples/RemoteExecution.swift).
+
 ## macOS demo
 
 Both demos live in `DemoApp/CodexKitDemo.xcodeproj` with separate application targets and shared local SDK dependencies. Select **CodexKitIOSDemo** for iOS or **CodexKitMacDemo** for macOS.

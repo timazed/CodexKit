@@ -16,6 +16,7 @@ Start with the [quickstart](../README.md#quickstart), then choose a guide for th
 | [Image generation size behavior](image-generation-sizes.md) | Codex endpoint evidence, quality controls, output-only dimensions |
 | [Messaging and images](messaging.md) | Event buffering, execution limits, typed context, structured replies, images |
 | [SDK integration](sdk-integration.md) | Host-managed sessions, execution handles, async observation, typed HTTP errors |
+| [Remote execution and completion pushes](remote-execution.md) | Prepared text/JSON/image submissions, per-request silent/regular preference, retries and job metadata |
 | [CodexKit TypeScript library](../packages/codexkit/README.md) | Independent npm installation, one-request execution, backend example, compatibility pin, and remaining Swift export work |
 | [Local cloud API test](../packages/codexkit/docs/local-api.md) | Loopback fixture/live API, Swift demo integration, HTTP packet, and end-to-end verification |
 | [Structured request recovery](structured-request-recovery.md) | Frozen requests, lifecycle suspension, bounded retries, completed receipts, schema upgrades, retention |

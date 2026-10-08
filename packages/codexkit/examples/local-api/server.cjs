@@ -1,6 +1,7 @@
 const { createServer } = require('node:http');
 const { CodexKitBridgeClient, CodexKitCloudError } = require('@timazed/codexkit');
 const { fixtureFetch } = require('./fixture.cjs');
+const { createDemoJobRoutes } = require('./jobs.cjs');
 
 const VERSION = 1;
 const MODE = Object.freeze({ fixture: 'fixture', live: 'live' });
@@ -21,12 +22,12 @@ function json(response, status, value) {
   response.end(JSON.stringify({ version: VERSION, ...value }));
 }
 
-function decodeEnvelope(value, image = false) {
+function decodeEnvelope(value, image = false, middleware = false) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new APIError(400, ERROR.invalid);
-  if (value.version !== VERSION) throw new APIError(400, ERROR.version);
+  if (!middleware && value.version !== VERSION) throw new APIError(400, ERROR.version);
   const prepared = value.preparedRequest;
   if (!prepared || typeof prepared !== 'object' || Array.isArray(prepared) ||
-      Object.keys(value).some(key => !['version', 'preparedRequest', 'authentication'].includes(key)) ||
+      Object.keys(value).some(key => ![...(middleware ? ['completionPush'] : ['version']), 'preparedRequest', 'authentication'].includes(key)) ||
       Object.keys(prepared).some(key => !['bodyBase64', 'sha256', 'clientRequestId', 'originator',
         ...(image ? ['action', 'imageTurnId'] : ['sessionId'])].includes(key)) ||
       typeof prepared.bodyBase64 !== 'string' || !prepared.bodyBase64.length) {
@@ -34,13 +35,17 @@ function decodeEnvelope(value, image = false) {
   }
   const body = Buffer.from(prepared.bodyBase64, 'base64');
   if (body.toString('base64') !== prepared.bodyBase64) throw new APIError(400, ERROR.invalid);
-  return { preparedRequest: { body, sha256: prepared.sha256,
+  if (middleware && value.completionPush !== undefined && !['silent', 'regular'].includes(value.completionPush)) {
+    throw new APIError(400, ERROR.invalid);
+  }
+  return { ...(middleware ? { completionPush: value.completionPush ?? 'silent' } : {}),
+    preparedRequest: { body, sha256: prepared.sha256,
     ...(image ? { action: prepared.action, imageTurnId: prepared.imageTurnId } : { sessionId: prepared.sessionId }),
     clientRequestId: prepared.clientRequestId, originator: prepared.originator },
     authentication: value.authentication };
 }
 
-async function readEnvelope(request, maximumBytes, image) {
+async function readEnvelope(request, maximumBytes, image, middleware = false) {
   if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
     throw new APIError(415, ERROR.media);
   }
@@ -53,7 +58,11 @@ async function readEnvelope(request, maximumBytes, image) {
     if (length > maximumBytes) throw new APIError(413, ERROR.large);
     chunks.push(chunk);
   }
-  try { return decodeEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')), image); }
+  try {
+    const bytes = Buffer.concat(chunks);
+    const input = decodeEnvelope(JSON.parse(bytes.toString('utf8')), image, middleware);
+    return middleware ? { ...input, envelopeBytes: bytes } : input;
+  }
   catch (error) {
     if (error instanceof APIError) throw error;
     throw new APIError(400, ERROR.invalid);
@@ -70,6 +79,8 @@ function createLocalAPIServer({ mode = MODE.fixture, fetch: fetcher, maximumByte
   const client = new CodexKitBridgeClient({
     ...(fetcher ? { fetch: fetcher } : mode === MODE.fixture ? { fetch: fixtureFetch } : {}),
   });
+  const jobs = createDemoJobRoutes({ client, mode, readEnvelope, json, APIError, executionTimeoutMs,
+    maximumBytes, maximumImageBytes, maximumConcurrent });
   let active = 0;
   const server = createServer(async (request, response) => {
     let controller;
@@ -85,6 +96,7 @@ function createLocalAPIServer({ mode = MODE.fixture, fetch: fetcher, maximumByte
         json(response, 200, { status: 'ok', mode });
         return;
       }
+      if (await jobs.handle(request, response)) return;
       const image = request.url === '/v1/images/execute';
       if (request.method !== 'POST' || (!image && request.url !== '/v1/execute')) throw new APIError(404, ERROR.missing);
       if (active >= maximumConcurrent) throw new APIError(429, ERROR.busy);
@@ -118,6 +130,7 @@ function createLocalAPIServer({ mode = MODE.fixture, fetch: fetcher, maximumByte
   server.requestTimeout = 15_000;
   server.headersTimeout = 10_000;
   server.keepAliveTimeout = 5_000;
+  server.on('close', jobs.close);
   return server;
 }
 

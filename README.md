@@ -1,22 +1,25 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.38-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.38)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.39-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.39)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-This repository also contains [`@timazed/codexkit`](packages/codexkit/README.md), a separately built and versioned TypeScript backend library ([`0.2.2`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.2)) distributed through GitHub Packages. Install it with `npm install @timazed/codexkit` after configuring GitHub Packages authentication, then `import { CodexKitBridgeClient } from "@timazed/codexkit"`. It executes one CodexKit-prepared text, JSON, or image generation/edit request with supplied authentication. Swift consumers do not need Node or npm. Swift request export and remote routing remain separate integration work; general tool calling remains unsupported. See the [TypeScript image API](packages/codexkit/docs/images.md).
+This repository also contains [`@timazed/codexkit`](packages/codexkit/README.md), a separately built and versioned TypeScript backend library ([`0.2.3`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.3)) distributed through GitHub Packages. Install it with `npm install @timazed/codexkit` after configuring GitHub Packages authentication, then `import { CodexKitBridgeClient } from "@timazed/codexkit"`. It executes one CodexKit-prepared text, JSON, or image generation/edit request with supplied authentication. Swift consumers do not need Node or npm. General bridge tool calling remains unsupported. See the [TypeScript image API](packages/codexkit/docs/images.md).
+
+Swift apps can submit prepared packets to mp-api-compatible middleware using `CodexRemoteExecutionClient`. Choose `completionPush: .regular` when creating a request's `CodexRemoteExecution`, or omit it for `.silent`. The option is preserved across submission retries and exposed in job metadata. See [remote execution and completion pushes](docs/remote-execution.md). Runtime request export and automatic conversation/result integration remain separate work.
+
+Both Debug demos show these features under **Structured → Local Cloud → Remote Execution**. Start the fixture API with `npm run dev:api` in `packages/codexkit`, then choose **Verify All Remote Features** for the 16-job end-to-end matrix. See [the demo guide](DemoApp/README.md#local-cloud-api-test).
 
 Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit/docs/releases.md).
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.38](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.38). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.39](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.39). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease bounds structured recovery, preserves pending attempts when host
-authorization fails, and adds the separate TypeScript cloud bridge with a local
-API and signed demo checks. The cloud bridge supports one prepared, tool-free
-request; public Swift request export, conversation/history routing, and durable
-remote jobs remain separate work. See the
-[alpha.38 changelog](CHANGELOG.md#200-alpha38---2026-10-06).
+This prerelease adds public Swift remote execution with per-request silent or regular
+completion push preferences, preserved submission retries, job metadata, and a
+16-job demo suite on iOS and macOS. Completion events are simulated in the local
+demo; production middleware owns SNS/APNs delivery. See the
+[alpha.39 changelog](CHANGELOG.md#200-alpha39---2026-10-08).
 
 
 ## Capabilities
@@ -37,7 +40,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.38`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.39`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |
@@ -128,6 +131,7 @@ The [documentation index](docs/index.md) contains the full guide list, core conc
 
 - [Configure models and reasoning](docs/backend-configuration.md), including typed GPT-6.1 Sol, GPT-6 Sol/Luna, and Daybreak identifiers
 - [Use host-managed sessions, execution handles, and async observation](docs/sdk-integration.md)
+- [Submit remote requests and choose completion pushes](docs/remote-execution.md)
 - [Recover saved structured results and authorize bounded replacements](docs/structured-request-recovery.md)
 - [Stream and validate typed output (text, JSON, JSON Lines, and XML)](docs/streaming-output.md)
 - [Record codec benchmark and compact-format decision](docs/streaming-output-benchmarks.md)

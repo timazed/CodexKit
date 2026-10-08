@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in Swift/Node integration check. Ordinary Swift builds do not require Node."""
+"""Signed Swift/Node end-to-end demo check, also run by both CI demo lanes."""
 import argparse
 import json
 from pathlib import Path
@@ -16,6 +16,12 @@ import verify_ios_simulator as ios
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "packages/codexkit"
 REPORTS = ROOT / ".build/local-cloud"
+
+
+def validate_report(report):
+    if (report.get("passed") is not True or report.get("remoteJobCount") != 16
+            or report.get("simulatedPushDelivery") is not True or len(report.get("checks", [])) < 16):
+        raise RuntimeError(f"Local cloud verification failed or used an outdated demo: {report.get('error', 'incomplete feature report')}")
 
 
 def run_ios(app, base_url, reports):
@@ -51,7 +57,7 @@ def main():
     node = shutil.which("node")
     npm = shutil.which("npm")
     if not node or not npm:
-        raise RuntimeError("Install Node 22 or 24 for this optional integration check.")
+        raise RuntimeError("Install Node 22 or 24 for the demo integration check.")
     reports = REPORTS / args.platform
     reports.mkdir(parents=True, exist_ok=True)
     if not args.skip_build:
@@ -88,8 +94,9 @@ def main():
                         stdout=app_log, stderr=subprocess.STDOUT, timeout=120)
                 returncode = result.returncode
                 report = json.loads(report_path.read_text()) if report_path.exists() else {}
-            if returncode or report.get("passed") is not True:
+            if returncode:
                 raise RuntimeError(f"Local cloud verification failed: {report.get('error', 'missing report')}")
+            validate_report(report)
             for check in report["checks"]:
                 print(f"PASS: {check}")
             print(f"Report: {report_path}")

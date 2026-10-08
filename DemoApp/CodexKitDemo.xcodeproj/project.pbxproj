@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AD0800000000000000000103 /* RemoteExecutionDemoView.swift iOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000003; };
+        AD0800000000000000000203 /* RemoteExecutionDemoView.swift macOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000003; };
+        AD0800000000000000000102 /* RemoteExecutionDemoProbe.swift iOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000002; };
+        AD0800000000000000000202 /* RemoteExecutionDemoProbe.swift macOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000002; };
+        AD0800000000000000000101 /* RemoteExecutionDemoModels.swift iOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000001; };
+        AD0800000000000000000201 /* RemoteExecutionDemoModels.swift macOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000001; };
         AC0600000000000000000001 /* Local cloud transport iOS */ = {isa = PBXBuildFile; fileRef = AC0600000000000000000007; };
         AC0600000000000000000002 /* Local cloud transport macOS */ = {isa = PBXBuildFile; fileRef = AC0600000000000000000007; };
         AC0600000000000000000003 /* Local cloud probe iOS */ = {isa = PBXBuildFile; fileRef = AC0600000000000000000008; };
@@ -136,6 +142,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        AD0800000000000000000003 /* RemoteExecutionDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteExecutionDemoView.swift; sourceTree = "<group>"; };
+        AD0800000000000000000002 /* RemoteExecutionDemoProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteExecutionDemoProbe.swift; sourceTree = "<group>"; };
+        AD0800000000000000000001 /* RemoteExecutionDemoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteExecutionDemoModels.swift; sourceTree = "<group>"; };
         AC0600000000000000000007 /* LocalCloudDemoTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCloudDemoTransport.swift; sourceTree = "<group>"; };
         AC0600000000000000000008 /* LocalCloudDemoProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCloudDemoProbe.swift; sourceTree = "<group>"; };
         AC0600000000000000000009 /* LocalCloudDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCloudDemoView.swift; sourceTree = "<group>"; };
@@ -373,6 +382,9 @@
 				AB2900000000000000000003 /* DemoRecoveryVerification.swift */,
                 AC0600000000000000000007 /* LocalCloudDemoTransport.swift */,
                 AC0600000000000000000008 /* LocalCloudDemoProbe.swift */,
+                AD0800000000000000000001 /* RemoteExecutionDemoModels.swift */,
+                AD0800000000000000000002 /* RemoteExecutionDemoProbe.swift */,
+                AD0800000000000000000003 /* RemoteExecutionDemoView.swift */,
                 AC0600000000000000000009 /* LocalCloudDemoView.swift */,
 				2A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift */,
 				2A2B3C4D5E6F700000000016 /* ThreadTurnActivityView.swift */,
@@ -537,6 +549,9 @@
 				AB2900000000000000000001 /* Recovery iOS */,
                 AC0600000000000000000001 /* Local cloud transport iOS */,
                 AC0600000000000000000003 /* Local cloud probe iOS */,
+                AD0800000000000000000101 /* RemoteExecutionDemoModels.swift iOS */,
+                AD0800000000000000000102 /* RemoteExecutionDemoProbe.swift iOS */,
+                AD0800000000000000000103 /* RemoteExecutionDemoView.swift iOS */,
                 AC0600000000000000000005 /* Local cloud view iOS */,
 				1A2B3C4D5E6F70000000001A /* RuntimeFeatureViews.swift in Sources */,
 				1A2B3C4D5E6F700000000010 /* DemoMemoryExamples.swift in Sources */,
@@ -566,6 +581,9 @@
 				AB2900000000000000000002 /* Recovery macOS */,
                 AC0600000000000000000002 /* Local cloud transport macOS */,
                 AC0600000000000000000004 /* Local cloud probe macOS */,
+                AD0800000000000000000201 /* RemoteExecutionDemoModels.swift macOS */,
+                AD0800000000000000000202 /* RemoteExecutionDemoProbe.swift macOS */,
+                AD0800000000000000000203 /* RemoteExecutionDemoView.swift macOS */,
                 AC0600000000000000000006 /* Local cloud view macOS */,
 				AD2900000000000000000102 /* ImageGenerationDemoModel.swift macOS */,
 				AD2900000000000000000202 /* ImageGenerationDiagnosticsView.swift macOS */,
