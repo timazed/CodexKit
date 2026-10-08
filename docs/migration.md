@@ -4,6 +4,25 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Usage telemetry (alpha.40)
+
+Update to exact Swift package version `2.0.0-alpha.40`. The original `AgentUsage`
+initializer and numeric properties remain available. Use `availability(of:)` to
+separate reported zeroes from missing metrics and partial aggregates. Legacy
+records retain their values with unknown reporting presence.
+
+The new optional cache-write, reasoning, provider-total, and fractional budget
+fields are available in turn summaries and recovery status/receipts. Record
+response observations by stable `usage_id`; do not also add turn or operation
+aggregate logs. Saved receipt observations retain the original identity with
+`isReused=true`. Missing metrics never authorize another generation.
+
+Enable backend `.info` logging for `usage.response.observed`; no debug payload
+logging is required. Update host telemetry allowlists using the
+[usage integration guide](usage-telemetry.md). Frozen request bytes, account
+binding, structured return types, model settings, and retry policies are unchanged.
+No storage migration or TypeScript package update is required.
+
 ## Legacy model cleanup (alpha.37)
 
 Update to exact package version `2.0.0-alpha.37`.

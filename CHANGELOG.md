@@ -6,11 +6,20 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.40] - 2026-10-08
+
+This prerelease expands application-independent usage telemetry without changing generation requests, output, or retry policy. Existing usage initializers and numeric properties remain source compatible. Missing metrics are distinct from reported zeroes, and recovery receipt reads retain usage identities without new model spend.
+
 ### Added
 
 - Preserve Codex Responses cache-write, reasoning, provider-total and fractional budget usage, with per-field availability and partial coverage. Existing numeric properties and initializer calls remain supported; historical reporting presence remains unknown.
 - Add safe per-response usage observations, retry/pass identities, deduplicated turn totals, and persistent operation usage in recovery status/receipts. Saved observations retain their original identity and are marked as reuse on read. Optional metrics never reject valid content or trigger generation.
 - Document [usage telemetry](docs/usage-telemetry.md), missing-value semantics, aggregation, safe logging and host integration. Add offline transport, persistence, cold-process recovery and TypeScript lossless-usage fixtures.
+
+### Compatibility and verification
+
+- Optional persisted fields preserve older File/SQLite/Realm records and recovery receipts. Historical presence is unknown; consumers should check per-field availability and deduplicate response observations by `usage_id` rather than adding aggregate logs.
+- Local offline verification passed the full Swift suite, focused and optimized regressions, signed macOS/iOS simulator checks, public API comparison against alpha.39, source-size checks, and the verification harness. TypeScript's 202-test/package verification passed; its existing raw usage contract and package version remain unchanged.
 
 ## [cloud-0.2.3] - 2026-10-08
 

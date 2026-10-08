@@ -1,7 +1,7 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.39-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.39)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.40-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.40)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
@@ -13,13 +13,14 @@ Both Debug demos show these features under **Structured → Local Cloud → Remo
 
 Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit/docs/releases.md).
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.39](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.39). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.40](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.40). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease adds public Swift remote execution with per-request silent or regular
-completion push preferences, preserved submission retries, job metadata, and a
-16-job demo suite on iOS and macOS. Completion events are simulated in the local
-demo; production middleware owns SNS/APNs delivery. See the
-[alpha.39 changelog](CHANGELOG.md#200-alpha39---2026-10-08).
+This prerelease adds detailed Codex usage telemetry: cache reads and writes,
+reasoning tokens, provider totals, and fractional budget units with explicit
+availability and partial coverage. Response identities prevent duplicate accounting
+across retries and saved receipt reuse. See the
+[usage integration guide](docs/usage-telemetry.md) and
+[alpha.40 changelog](CHANGELOG.md#200-alpha40---2026-10-08).
 
 
 ## Capabilities
@@ -40,7 +41,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.39`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.40`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |

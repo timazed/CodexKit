@@ -201,6 +201,6 @@ raw export API or application-specific prompt framework is added.
 
 Local logs are in `.build/usage-*.log`; API diagnostics are in
 `.build/usage-api-review/`, and iOS reports in `.build/usage-ios-verification/`.
-All provider checks used offline fixtures. CI must verify the final merged commit
-on its supported compiler/platform matrix before release promotion. No Swift or
-npm version bump or release tag is part of this change.
+All provider checks used offline fixtures. Swift release `2.0.0-alpha.40` requires
+CI verification of the final merged commit on the supported compiler/platform
+matrix before release promotion. The TypeScript package remains `0.2.3`.
