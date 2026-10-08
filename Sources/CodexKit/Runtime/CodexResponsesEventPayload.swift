@@ -21,18 +21,24 @@ struct CodexResponsesEventPayload: Decodable {
             ? nil : try container.decodeIfPresent(Int.self, forKey: .sequenceNumber)
         if discriminator == .completed {
             let response = try ResponsePayload(from: decoder).response
+            let usage = response?.usage?.assistantUsage ?? .unavailable()
             if response == nil {
-                event = .init(kind: Self.failure(nil), sequenceNumber: sequenceNumber)
+                event = .init(kind: Self.failure(nil), sequenceNumber: sequenceNumber, terminalUsage: usage)
             } else if let status = response?.status, status != "completed" {
-                event = .init(kind: Self.failure(response, incomplete: status == "incomplete"), sequenceNumber: sequenceNumber)
+                event = .init(kind: Self.failure(response, incomplete: status == "incomplete"),
+                    sequenceNumber: sequenceNumber, terminalUsage: usage)
             } else if response?.error != nil {
-                event = .init(kind: Self.failure(response), sequenceNumber: sequenceNumber)
+                event = .init(kind: Self.failure(response), sequenceNumber: sequenceNumber, terminalUsage: usage)
             } else if response?.incompleteDetails != nil {
-                event = .init(kind: Self.failure(response, incomplete: true), sequenceNumber: sequenceNumber)
+                event = .init(kind: Self.failure(response, incomplete: true), sequenceNumber: sequenceNumber, terminalUsage: usage)
             } else {
-                event = .init(kind: .completed(response?.usage?.assistantUsage ?? AgentUsage(), responseID: response?.id),
+                event = .init(kind: .completed(usage, responseID: response?.id),
                     sequenceNumber: sequenceNumber, completedOutput: try CompletionPayload(from: decoder).response?.output)
             }
+        } else if discriminator == .failed || discriminator == .incomplete {
+            let response = try ResponsePayload(from: decoder).response
+            event = .init(kind: Self.failure(response, incomplete: discriminator == .incomplete),
+                sequenceNumber: sequenceNumber, terminalUsage: response?.usage?.assistantUsage ?? .unavailable())
         } else {
             event = .init(kind: try Self.decodeKind(discriminator, from: decoder), sequenceNumber: sequenceNumber)
         }

@@ -129,3 +129,5 @@ flowchart LR
 - [Test, live-provider, and device verification](verification.md)
 - [ChatGPT authentication on iOS](auth-on-ios.md)
 - [Upstream extraction audit](extraction-audit.md)
+
+- [Usage telemetry](usage-telemetry.md): provider fields, partial coverage, response identities and recovery receipt reuse.

@@ -157,22 +157,9 @@ extension CodexResponsesTurnRunner {
             try await continuation.yield(.structuredOutputValidationFailed(validationFailure))
             return .assistantDelta
 
-        case let .completed(usage, _):
+        case .completed:
             try await resolvePendingFunctionCalls(state: &state)
-            state.aggregateUsage.inputTokens += usage.inputTokens
-            state.aggregateUsage.cachedInputTokens += usage.cachedInputTokens
-            state.aggregateUsage.outputTokens += usage.outputTokens
             commitCompletedPass(state: &state)
-            logger.debug(
-                .network,
-                "Backend stream completed pass.",
-                metadata: [
-                    "thread_id": threadID,
-                    "turn_id": turnID,
-                    "input_tokens": "\(usage.inputTokens)",
-                    "output_tokens": "\(usage.outputTokens)"
-                ]
-            )
             return .none
 
         case .other:

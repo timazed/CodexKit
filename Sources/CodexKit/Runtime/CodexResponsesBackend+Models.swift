@@ -360,6 +360,7 @@ struct CodexResponsesStreamEvent: Sendable {
     let kind: Kind
     let sequenceNumber: Int?
     var completedOutput: [StreamItem]? = nil
+    var terminalUsage: AgentUsage? = nil
 }
 
 extension ToolDefinition {

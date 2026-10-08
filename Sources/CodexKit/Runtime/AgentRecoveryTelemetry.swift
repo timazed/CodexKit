@@ -57,6 +57,15 @@ extension AgentLogger {
         metadata["provider_code"] = record.lastFailure?.http?.providerCode
         metadata["transport_domain"] = record.lastFailure?.interruption?.transportErrorDomain
         metadata["transport_code"] = record.lastFailure?.interruption?.transportErrorCode.map(String.init)
+        if case .receipt(let receipt) = event {
+            metadata.merge(AgentUsage.aggregateLogMetadata(record.usage ?? AgentUsage(), scope: "operation",
+                event: event.serializedName)) { _, new in new }
+            metadata["usage_id"] = record.handle.id.uuidString
+            switch receipt {
+            case .saved: metadata["usage_reused"] = "false"
+            case .retrieved, .acknowledged: metadata["usage_reused"] = "true"
+            }
+        }
         // Never emit error.message, request content, account identity, scope, or host metadata.
         info(.recovery, "Structured recovery event.", metadata: metadata)
     }

@@ -396,8 +396,9 @@ private struct CodexResponsesTurnSession {
                         metadata: [
                             "thread_id": thread.id,
                             "turn_id": turn.id,
-                            "output_tokens": "\(result.usage.outputTokens)"
-                        ]
+                            "usage_id": turn.id
+                        ].merging(AgentUsage.aggregateLogMetadata(result.usage, scope: "turn",
+                            event: "usage.turn.backend_completed")) { _, new in new }
                     )
 
                     try await continuation.yield(
@@ -412,7 +413,8 @@ private struct CodexResponsesTurnSession {
                             AgentTurnSummary(
                                 threadID: thread.id,
                                 turnID: turn.id,
-                                usage: result.usage
+                                usage: result.usage,
+                                usageObservations: result.usageObservations
                             )
                         )
                     )

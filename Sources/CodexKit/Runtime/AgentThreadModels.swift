@@ -50,18 +50,6 @@ public struct AgentThreadConfiguration: Codable, Hashable, Sendable {
     }
 }
 
-public struct AgentUsage: Codable, Hashable, Sendable {
-    public var inputTokens: Int
-    public var cachedInputTokens: Int
-    public var outputTokens: Int
-
-    public init(inputTokens: Int = 0, cachedInputTokens: Int = 0, outputTokens: Int = 0) {
-        self.inputTokens = inputTokens
-        self.cachedInputTokens = cachedInputTokens
-        self.outputTokens = outputTokens
-    }
-}
-
 public struct AgentThread: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String?
@@ -287,18 +275,25 @@ extension AgentMessage {
 public struct AgentTurnSummary: Codable, Hashable, Sendable {
     public var threadID: String
     public var turnID: String
+    public var usageObservations: [AgentUsageObservation]?
     public var usage: AgentUsage?
     public var completedAt: Date
+
+    public init(threadID: String, turnID: String, usage: AgentUsage? = nil, completedAt: Date = Date()) {
+        self.init(threadID: threadID, turnID: turnID, usage: usage, usageObservations: nil, completedAt: completedAt)
+    }
 
     public init(
         threadID: String,
         turnID: String,
         usage: AgentUsage? = nil,
+        usageObservations: [AgentUsageObservation]?,
         completedAt: Date = Date()
     ) {
         self.threadID = threadID
         self.turnID = turnID
         self.usage = usage
+        self.usageObservations = usageObservations
         self.completedAt = completedAt
     }
 }

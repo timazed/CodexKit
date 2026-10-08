@@ -274,3 +274,7 @@ actual dimensions, detected format, alpha inspection, and correlation IDs. Do
 not run them as part of offline verification. Both checks passed on 29 September
 2026; see the [live results and limits](../docs/verification.md#live-macos-confirmation-29-september-2026).
 Prior low-quality JPEG live results concern the Responses route.
+
+## Usage telemetry
+
+Hosts can record provider token/cache/reasoning usage through turn summaries or safe `.info` response logs. Recovery status and receipts retain the same usage identities after reopening. See the [usage integration guide](../docs/usage-telemetry.md); the demo generation settings are unchanged.

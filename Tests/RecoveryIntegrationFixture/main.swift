@@ -27,6 +27,13 @@ import RecoveryIntegrationSupport
         guard let job = await host.job("news") else { throw FixtureHostStore.HostError.inapplicable }
         let status = try await runtime.structuredRecoveryStatus(job.handle, store: store)
         if status.state != .acknowledged {
+            let receipt = try await runtime.structuredRecoveryReceipt(job.handle, store: store)
+            guard receipt.usage?.inputTokens == 100, receipt.usage?.codexRolloutBudgetUnits == 2.5,
+                  receipt.usage?.availability(of: .reasoningOutputTokens) == .complete,
+                  receipt.usageObservations.count == 1,
+                  receipt.usageObservations.first?.id == "response:saved-response",
+                  receipt.usageObservations.first?.isReused == true,
+                  status.usage == receipt.usage else { throw FixtureHostStore.HostError.inapplicable }
             let output = try await runtime.sendRecovering(job.handle, response: FixtureOutput.self, store: store) { _ in
                 throw FixtureHostStore.HostError.inapplicable // No generation is authorized after the first process.
             }

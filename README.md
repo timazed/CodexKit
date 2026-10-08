@@ -158,6 +158,7 @@ Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-featur
 ## Project
 
 - [Streaming validation and backend completion](docs/messaging.md#streaming-validation-and-backend-completion)
+- [Usage telemetry](docs/usage-telemetry.md): token details, partial coverage, retries and saved receipt reuse.
 - [Changelog](CHANGELOG.md) and [release conventions](docs/migration.md#versioning-and-releases)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

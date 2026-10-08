@@ -193,3 +193,15 @@ test('concurrent calls have independent credentials and response state', async (
   assert.deepEqual(results.map(result => result.responseId), ['resp-one', 'resp-two']);
   assert.equal(calls.length, 2);
 });
+
+test('preserves optional provider usage and future details through result serialization', async () => {
+  const usage = { input_tokens: 100, input_tokens_details: { cached_tokens: 25, cache_write_tokens: 60, future: true },
+    output_tokens: 10, output_tokens_details: { reasoning_tokens: 5 }, total_tokens: 110,
+    codex_rollout_budget_units: 2.5, future_usage: { units: 0.125 } };
+  const { run, calls } = harness([complete('result', { usage })]);
+  const result = JSON.parse(JSON.stringify(await run()));
+  assert.deepEqual(result.usage, usage);
+  assert.equal(calls.length, 1);
+  const missing = await harness([complete('result', { usage: undefined })]).run();
+  assert.equal(missing.usage, undefined);
+});

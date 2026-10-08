@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Preserve Codex Responses cache-write, reasoning, provider-total and fractional budget usage, with per-field availability and partial coverage. Existing numeric properties and initializer calls remain supported; historical reporting presence remains unknown.
+- Add safe per-response usage observations, retry/pass identities, deduplicated turn totals, and persistent operation usage in recovery status/receipts. Saved observations retain their original identity and are marked as reuse on read. Optional metrics never reject valid content or trigger generation.
+- Document [usage telemetry](docs/usage-telemetry.md), missing-value semantics, aggregation, safe logging and host integration. Add offline transport, persistence, cold-process recovery and TypeScript lossless-usage fixtures.
+
 ## [cloud-0.2.3] - 2026-10-08
 
 ### Added

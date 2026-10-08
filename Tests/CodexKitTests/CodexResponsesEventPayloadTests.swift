@@ -48,6 +48,17 @@ final class CodexResponsesEventPayloadTests: XCTestCase {
         XCTAssertTrue(payload.logsResponsePayload)
     }
 
+    func testCompletedEnvelopeFailuresRetainUsageAndRequiredValidation() throws {
+        for extra in [#","status":"failed""#, #","status":"incomplete""#,
+                      #","error":{"code":"fixture"}"#, #","incomplete_details":{"reason":"max_output_tokens"}"#] {
+            let payload = try decode("{\"type\":\"response.completed\",\"response\":{\"id\":\"response-1\",\"usage\":\(AgentUsageTests.full)\(extra)}}")
+            guard case .failed = payload.event.kind else { return XCTFail("Failed envelope must stay failed") }
+            XCTAssertEqual(payload.event.terminalUsage?.codexRolloutBudgetUnits, 2.5)
+        }
+        XCTAssertThrowsError(try decode(#"{"type":"response.completed","response":false}"#))
+        XCTAssertThrowsError(try decode(#"{"type":"response.completed","response":{"usage":false,"output":[{"type":"function_call","arguments":false}]}}"#))
+    }
+
     private func decode(_ value: String) throws -> CodexResponsesEventPayload {
         try JSONDecoder().decode(CodexResponsesEventPayload.self, from: Data(value.utf8))
     }

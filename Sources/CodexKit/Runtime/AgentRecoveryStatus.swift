@@ -34,10 +34,16 @@ public struct AgentStructuredRecoveryStatus: Codable, Sendable {
     public let inputRevision: String?
     public let scope: String?
 
+    /// Operation aggregate, including replacements; nil for records predating usage tracking.
+    public let usage: AgentUsage?
+    /// Read-only observations retain their original IDs and are marked as reuse.
+    public let usageObservations: [AgentUsageObservation]
+
     private enum CodingKeys: String, CodingKey {
         case state, attemptsUsed, maximumAttempts, responseID, lastSequenceNumber, lastFailure
         case operationID, attemptID, hasSavedCompletion, nextAttemptAt, expiresAt, blocker
         case previousOperationID, successorID, rootOperationID, attempts, hostJobID, inputRevision, scope
+        case usage, usageObservations
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -59,7 +65,9 @@ public struct AgentStructuredRecoveryStatus: Codable, Sendable {
             attempts: try c.decodeIfPresent([AgentRecoveryAttemptSummary].self, forKey: .attempts) ?? [],
             hostJobID: try c.decodeIfPresent(String.self, forKey: .hostJobID),
             inputRevision: try c.decodeIfPresent(String.self, forKey: .inputRevision),
-            scope: try c.decodeIfPresent(String.self, forKey: .scope))
+            scope: try c.decodeIfPresent(String.self, forKey: .scope),
+            usage: try c.decodeIfPresent(AgentUsage.self, forKey: .usage),
+            usageObservations: try c.decodeIfPresent([AgentUsageObservation].self, forKey: .usageObservations) ?? [])
     }
 
     public var attemptsRemaining: Int { max(0, maximumAttempts - attemptsUsed) }
@@ -98,7 +106,9 @@ public struct AgentStructuredRecoveryStatus: Codable, Sendable {
          nextAttemptAt: Date? = nil, expiresAt: Date? = nil, blocker: Blocker? = nil,
          previousOperationID: UUID? = nil, successorID: UUID? = nil, rootOperationID: UUID? = nil,
          attempts: [AgentRecoveryAttemptSummary] = [], hostJobID: String? = nil,
-         inputRevision: String? = nil, scope: String? = nil) {
+         inputRevision: String? = nil, scope: String? = nil, usage: AgentUsage? = nil,
+         usageObservations: [AgentUsageObservation] = []) {
+        self.usage = usage; self.usageObservations = usageObservations
         self.state = state; self.attemptsUsed = attemptsUsed; self.maximumAttempts = maximumAttempts
         self.responseID = responseID; self.lastSequenceNumber = lastSequenceNumber; self.lastFailure = lastFailure
         self.operationID = operationID; self.attemptID = attemptID; self.hasSavedCompletion = hasSavedCompletion
@@ -153,6 +163,8 @@ public struct AgentStructuredRecoveryReceipt: Sendable {
     public let inputRevision: String?
     public let previousOperationID: UUID?
     public let completedAt: Date?
+    public let usage: AgentUsage?
+    public let usageObservations: [AgentUsageObservation]
 
     public func decode<Output: Decodable>(_ type: Output.Type, decoder: JSONDecoder = JSONDecoder()) throws -> Output {
         try decoder.decode(type, from: payload)
@@ -161,6 +173,7 @@ public struct AgentStructuredRecoveryReceipt: Sendable {
         guard let payload = record.completedPayload else { throw AgentRecoveryError.completionUnavailable }
         try AgentJSONSchemaValidator.validateSchema(record.format.schema)
         try AgentJSONSchemaValidator.validate(JSONDecoder().decode(JSONValue.self, from: payload), schema: record.format.schema)
+        usage = record.usage; usageObservations = record.usageObservations.map(\.reused)
         self.handle = record.handle; accountBinding = record.binding; format = record.format
         contractVersion = record.contractVersion; self.payload = payload; hostJobID = record.hostJobID
         inputRevision = record.inputRevision; previousOperationID = record.previousOperationID; completedAt = record.completedAt

@@ -277,13 +277,11 @@ extension AgentRuntime {
                         metadata: [
                             "thread_id": threadID,
                             "turn_id": summary.turnID,
+                            "usage_id": summary.turnID,
                             "assistant_messages": "\(assistantMessages.count)",
-                            "input_tokens": "\(summary.usage?.inputTokens ?? 0)",
-                            "cached_input_tokens": "\(summary.usage?.cachedInputTokens ?? 0)",
-                            "output_tokens": "\(summary.usage?.outputTokens ?? 0)"
-                            ,
                             "duration_ms": "\(currentTurnStartedAt.map { Int(summary.completedAt.timeIntervalSince($0) * 1000) } ?? 0)"
-                        ]
+                        ].merging(AgentUsage.aggregateLogMetadata(summary.usage, scope: "turn",
+                            event: "usage.turn.completed")) { _, new in new }
                     )
                     await completionCapture?.record(
                         memoryApplication: memoryApplicationOutcome

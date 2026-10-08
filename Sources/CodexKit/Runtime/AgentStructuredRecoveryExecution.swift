@@ -28,7 +28,9 @@ actor AgentStructuredRecoveryExecution {
         let policy = record.retryPolicy ?? .init(backoff: .init(initialBackoff: 0, maxBackoff: 0))
         let context = AgentStructuredRecoveryContext(authorizeAttempt: { try await self.reserveAttempt() },
             observe: { try await self.observe($0) }, failed: { try await self.recordFailure($0) },
-            beforeTransmission: { try await self.beforeTransmission() }, frozenBody: record.preparedRequest?.body)
+            beforeTransmission: { try await self.beforeTransmission() }, frozenBody: record.preparedRequest?.body,
+            operationID: record.handle.id, rootOperationID: record.rootOperationID ?? record.handle.id,
+            recordUsage: { await self.recordUsage($0) })
         let remainingAttempts = max(0, record.maximumAttempts - record.attemptsUsed)
         // Include a pass for saved receipts even when the generation budget is exhausted.
         for _ in 0...remainingAttempts {
@@ -154,6 +156,7 @@ actor AgentStructuredRecoveryExecution {
     private func beforeTransmission() async throws {
         try await validateSession()
         try lifecycle.performWhileActive {
+            record.usageTrackingVersion = 1
             if let index = record.attempts?.indices.last { record.attempts?[index].state = .transmissionAuthorized }
             try store.save(record)
         }
@@ -169,6 +172,13 @@ actor AgentStructuredRecoveryExecution {
             record.attempts?[index].lastSequenceNumber = observation.lastSequenceNumber
         }
         try store.save(record)
+    }
+    private func recordUsage(_ observation: AgentUsageObservation) {
+        record.usageTrackingVersion = 1
+        if let index = record.attempts?.lastIndex(where: { $0.id == observation.attemptID }) {
+            record.attempts?[index].usageObservation = observation
+        }
+        // The existing observation/failure/completion boundary persists this, including cancellation.
     }
     private func recordFailure(_ failure: AgentRuntimeError) throws {
         record.lastFailure = failure

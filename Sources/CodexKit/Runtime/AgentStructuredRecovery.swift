@@ -59,6 +59,7 @@ public struct AgentRecoveryAttemptSummary: Codable, Sendable {
     public var responseID: String?
     public var lastSequenceNumber: Int?
     public var failure: AgentRuntimeError?
+    public var usageObservation: AgentUsageObservation?
 }
 
 struct AgentStructuredRecoveryRecord: Codable, Sendable {
@@ -105,6 +106,24 @@ struct AgentStructuredRecoveryRecord: Codable, Sendable {
     var baselineConfiguration: AgentThreadConfiguration?
     var attempts: [AgentRecoveryAttemptSummary]?
     var blocker: AgentStructuredRecoveryStatus.Blocker?
+    var usageTrackingVersion: Int?
+
+    var usageObservations: [AgentUsageObservation] {
+        var accumulator = AgentUsageAccumulator()
+        for observation in (attempts ?? []).compactMap(\.usageObservation) { accumulator.insert(observation) }
+        return accumulator.observations
+    }
+    var usage: AgentUsage? {
+        guard usageTrackingVersion != nil else { return nil }
+        var accumulator = AgentUsageAccumulator()
+        let observed = (attempts ?? []).compactMap(\.usageObservation)
+        for observation in observed { accumulator.insert(observation) }
+        var usage = accumulator.usage
+        // Reserved/crashed attempts and pre-telemetry attempts have unknown usage.
+        let unknown = max(0, attemptsUsed - observed.count)
+        if unknown > 0 { usage.add(.unavailable(responseCount: unknown)) }
+        return usage
+    }
 
     var status: AgentStructuredRecoveryStatus { snapshot() }
     func snapshot(lifecycle: RecoveryLifecycleRecord? = nil) -> AgentStructuredRecoveryStatus {
@@ -119,8 +138,13 @@ struct AgentStructuredRecoveryRecord: Codable, Sendable {
             operationID: handle.id, attemptID: attemptID, hasSavedCompletion: completedPayload != nil,
             nextAttemptAt: nextAttemptAt, expiresAt: expiresAt, blocker: blocker,
             previousOperationID: previousOperationID, successorID: successorID,
-            rootOperationID: rootOperationID ?? handle.id, attempts: attempts ?? [],
-            hostJobID: hostJobID, inputRevision: inputRevision, scope: scope)
+            rootOperationID: rootOperationID ?? handle.id, attempts: (attempts ?? []).map { attempt in
+                var copy = attempt
+                copy.usageObservation = attempt.usageObservation?.reused
+                return copy
+            },
+            hostJobID: hostJobID, inputRevision: inputRevision, scope: scope, usage: usage,
+            usageObservations: usageObservations.map(\.reused))
     }
 }
 
@@ -131,4 +155,7 @@ struct AgentStructuredRecoveryContext: Sendable {
     let failed: @Sendable (AgentRuntimeError) async throws -> Void
     var beforeTransmission: @Sendable () async throws -> Void = {}
     var frozenBody: Data? = nil
+    var operationID: UUID? = nil
+    var rootOperationID: UUID? = nil
+    var recordUsage: @Sendable (AgentUsageObservation) async -> Void = { _ in }
 }

@@ -2,6 +2,7 @@ import Foundation
 
 struct CodexResponsesTurnResult: Sendable {
     let usage: AgentUsage
+    let usageObservations: [AgentUsageObservation]
     let providerContext: AgentProviderContext
 }
 
@@ -110,10 +111,9 @@ struct CodexResponsesTurnRunner {
                 "thread_id": threadID,
                 "turn_id": turnID,
                 "duration_ms": "\(Int(Date().timeIntervalSince(runStartedAt) * 1000))",
-                "input_tokens": "\(state.aggregateUsage.inputTokens)",
-                "cached_input_tokens": "\(state.aggregateUsage.cachedInputTokens)",
-                "output_tokens": "\(state.aggregateUsage.outputTokens)"
-            ]
+                "usage_id": turnID
+            ].merging(AgentUsage.aggregateLogMetadata(state.aggregateUsage, scope: "turn",
+                event: "usage.turn.runner_completed")) { _, new in new }
         )
         return try turnResult(from: state)
     }
@@ -126,6 +126,7 @@ struct CodexResponsesTurnRunner {
         ))
         return CodexResponsesTurnResult(
             usage: state.aggregateUsage,
+            usageObservations: state.usageAccumulator.observations,
             providerContext: updatedProviderState.agentProviderContext
         )
     }
@@ -238,6 +239,8 @@ struct CodexResponsesTurnRunner {
                 guard remaining > 0 else { throw AgentRuntimeError.executionLimitExceeded(.modelPasses) }
                 passesRemaining = remaining - 1
             }
+            state.passNumber += 1
+            state.usageRequestID = UUID().uuidString
             nextPass = try await runTurnPassWithRetry(state: &state)
             let messages = await control.drain(closeIfEmpty: nextPass == .completed)
             if !messages.isEmpty {
@@ -377,8 +380,11 @@ struct CodexResponsesTurnRunner {
         var observation = ResponsesAttemptObservation()
         observation.hasToolActivity = state.hasToolActivity
         var request = request
+        var usageAttemptID = UUID().uuidString
+        var recordedUsage = false
         if let recovery = AgentStructuredRecoveryContext.current {
             let attemptID = try await recovery.authorizeAttempt()
+            usageAttemptID = attemptID
             request.setValue(attemptID, forHTTPHeaderField: "x-client-request-id")
         }
         if let current = try await authenticationContext?.resolve() {
@@ -394,6 +400,18 @@ struct CodexResponsesTurnRunner {
                     continue
                 }
                 observation.observe(event)
+                switch event.kind {
+                case let .completed(usage, _):
+                    recordedUsage = true
+                    await recordUsage(usage, outcome: .completed, responseID: observation.responseID,
+                        attemptID: usageAttemptID, state: &state)
+                case let .failed(error, _):
+                    recordedUsage = true
+                    await recordUsage(event.terminalUsage ?? .unavailable(),
+                        outcome: error.knownCode == .responsesStreamIncomplete ? .incomplete : .failed,
+                        responseID: observation.responseID, attemptID: usageAttemptID, state: &state)
+                default: break
+                }
                 try await AgentStructuredRecoveryContext.current?.observe(observation)
                 if AgentStructuredRecoveryContext.current != nil, observation.hasToolActivity {
                     throw AgentRecoveryError.toolsUnsupported
@@ -411,6 +429,10 @@ struct CodexResponsesTurnRunner {
                 message: "The Responses stream closed before response.completed."
             )
         } catch {
+            if !recordedUsage {
+                await recordUsage(.unavailable(), outcome: .unknown, responseID: observation.responseID,
+                    attemptID: usageAttemptID, state: &state)
+            }
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
             let failure = observation.failure(error, clientRequestID: self.request.clientRequestID,
                 requestID: request.value(forHTTPHeaderField: "x-client-request-id"))

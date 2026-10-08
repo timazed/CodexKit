@@ -247,34 +247,6 @@ struct StreamResponsePayload: Decodable {
     }
 }
 
-struct StreamUsage: Decodable {
-    let inputTokens: Int
-    let inputTokensDetails: StreamInputTokenDetails?
-    let outputTokens: Int
-
-    enum CodingKeys: String, CodingKey {
-        case inputTokens = "input_tokens"
-        case inputTokensDetails = "input_tokens_details"
-        case outputTokens = "output_tokens"
-    }
-
-    var assistantUsage: AgentUsage {
-        AgentUsage(
-            inputTokens: inputTokens,
-            cachedInputTokens: inputTokensDetails?.cachedTokens ?? 0,
-            outputTokens: outputTokens
-        )
-    }
-}
-
-struct StreamInputTokenDetails: Decodable {
-    let cachedTokens: Int
-
-    enum CodingKeys: String, CodingKey {
-        case cachedTokens = "cached_tokens"
-    }
-}
-
 struct StreamErrorPayload: Decodable {
     let message: String?
     let code: String?

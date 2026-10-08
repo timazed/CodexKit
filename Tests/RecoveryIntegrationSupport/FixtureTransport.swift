@@ -93,7 +93,10 @@ public final class FixtureTransport: URLProtocol, @unchecked Sendable {
         emit(["type": "response.output_item.done", "sequence_number": 1,
               "item": ["id": "message", "type": "message", "role": "assistant",
                        "content": [["type": "output_text", "text": text]]]])
-        emit(["type": "response.completed", "sequence_number": 2, "response": ["id": "saved-response"]])
+        emit(["type": "response.completed", "sequence_number": 2, "response": ["id": "saved-response", "usage": [
+            "input_tokens": 100, "input_tokens_details": ["cached_tokens": 25, "cache_write_tokens": 60],
+            "output_tokens": 10, "output_tokens_details": ["reasoning_tokens": 5],
+            "total_tokens": 110, "codex_rollout_budget_units": 2.5]]])
     }
     private func emit(_ value: [String: Any]) {
         let text = String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self)

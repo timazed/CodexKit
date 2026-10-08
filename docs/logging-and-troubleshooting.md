@@ -4,6 +4,8 @@
 
 Configure developer diagnostics and check common integration problems before shipping.
 
+See [usage telemetry](usage-telemetry.md) for safe scalar usage events at `.info`, response deduplication, and legacy aggregate completion logs.
+
 ## Developer Logging
 
 `CodexKit` includes opt-in developer logging for the SDK itself. Logging is disabled by default and can be enabled independently on the runtime, built-in backend, and bundled stores.

@@ -18,12 +18,12 @@ final class StructuredRecoveryTests: XCTestCase {
     }
 
     private func runtime(provider: any AgentSessionProviding = RecoveryTestSession(),
-        tools: [AgentRuntime.ToolRegistration] = []) throws -> AgentRuntime {
+        tools: [AgentRuntime.ToolRegistration] = [], logging: AgentLoggingConfiguration = .disabled) throws -> AgentRuntime {
         try .init(configuration: .init(sessionProvider: provider,
             backend: CodexResponsesBackend(configuration: .init(enableWebSearch: true, enableImageGeneration: true,
-                requestRetryPolicy: .init(maxAttempts: 9, initialBackoff: 0, maxBackoff: 0)),
+                requestRetryPolicy: .init(maxAttempts: 9, initialBackoff: 0, maxBackoff: 0), logging: logging),
                 urlSession: RecoveryProbeURLProtocol.session()),
-            approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(),
+            approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(), logging: logging,
             turnLimits: .init(maximumDuration: 0.001), tools: tools))
     }
 
@@ -442,4 +442,85 @@ private actor MutableRecoverySession: AgentSessionProviding {
     func currentSession() async -> ChatGPTSession? {
         .init(accessToken: token, account: .init(id: account, email: "test@example.com", plan: .unknown))
     }
+}
+
+extension StructuredRecoveryTests {
+    func testUsageSurvivesReplacementReceiptReplayAndColdReopen() async throws {
+        let failed = "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"failed-response\",\"error\":{\"code\":\"retry_usage_fixture\"},\"usage\":\(AgentUsageTests.full)}}\n\n"
+        let terminal = "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"usage-completed\",\"usage\":{\"input_tokens\":20,\"output_tokens\":3,\"total_tokens\":23}}}\n\n"
+        RecoveryProbeURLProtocol.configure([.init(body: failed), .init(body: message + terminal + terminal)])
+        let sink = RecoveryUsageLogSink()
+        let logging = AgentLoggingConfiguration(minimumLevel: .info, sink: sink)
+        let first = try runtime(logging: logging)
+        let thread = try await first.createThread()
+        let handle = try await first.prepareStructuredRecovery(Request(text: "Synthetic", executionMode: .ephemeral),
+            in: thread.id, response: RecoveryTestOutput.self, store: store,
+            retryPolicy: .init(backoff: .init(initialBackoff: 0, maxBackoff: 0), retryableProviderCodes: ["retry_usage_fixture"]))
+        _ = try await first.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in true }
+        let original = try store.load(handle)
+        let originalIDs = original.usageObservations.map(\.id)
+        XCTAssertEqual(original.usage?.inputTokens, 120)
+        XCTAssertEqual(original.usage?.totalTokens, 133)
+        XCTAssertEqual(original.usage?.codexRolloutBudgetUnits, 2.5)
+        XCTAssertEqual(original.usage?.availability(of: .inputTokens), .complete)
+        XCTAssertEqual(original.usage?.availability(of: .reasoningOutputTokens), .partial)
+        XCTAssertEqual(original.usageObservations.map(\.outcome), [.failed, .completed])
+        XCTAssertEqual(Set(original.usageObservations.map(\.attemptID)).count, 2)
+        XCTAssertTrue(original.usageObservations.allSatisfy { $0.operationID == handle.id && $0.rootOperationID == handle.id })
+        let reopened = try runtime(logging: logging)
+        for _ in 0..<2 {
+            let receipt = try await reopened.structuredRecoveryReceipt(handle, store: .init(directory: directory))
+            XCTAssertEqual(receipt.usage, original.usage)
+            XCTAssertEqual(receipt.usageObservations.map(\.id), originalIDs)
+            XCTAssertTrue(receipt.usageObservations.allSatisfy(\.isReused))
+            _ = try await reopened.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in
+                XCTFail("Receipt reads cannot authorize another generation"); return false
+            }
+        }
+        let status = try await reopened.structuredRecoveryStatus(handle, store: store)
+        XCTAssertEqual(status.usage, original.usage)
+        XCTAssertEqual(status.usageObservations.map(\.id), originalIDs)
+        XCTAssertTrue(status.usageObservations.allSatisfy(\.isReused))
+        let saved = try XCTUnwrap(sink.entries.first { $0.metadata["event"] == "recovery.receipt.saved" })
+        let retrieved = try XCTUnwrap(sink.entries.first { $0.metadata["event"] == "recovery.receipt.retrieved" })
+        XCTAssertEqual(saved.metadata["input_tokens"], "120")
+        XCTAssertEqual(saved.metadata["reasoning_output_tokens_availability"], "partial")
+        XCTAssertEqual(saved.metadata["usage_id"], retrieved.metadata["usage_id"])
+        XCTAssertEqual(saved.metadata["usage_reused"], "false")
+        XCTAssertEqual(retrieved.metadata["usage_reused"], "true")
+        XCTAssertEqual(retrieved.metadata["codex_rollout_budget_units"], "2.5")
+        XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 2)
+        XCTAssertEqual(RecoveryProbeURLProtocol.requests.first?.httpBody, RecoveryProbeURLProtocol.requests.last?.httpBody)
+    }
+
+    func testLegacySavedReceiptHasUnknownUsageAndNeverRegenerates() async throws {
+        RecoveryProbeURLProtocol.configure([.init(body: message + completed)])
+        let first = try runtime()
+        let handle = try await prepare(first)
+        _ = try await first.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in true }
+        let path = store.url(handle)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        json.removeValue(forKey: "usageTrackingVersion")
+        var attempts = try XCTUnwrap(json["attempts"] as? [[String: Any]])
+        for index in attempts.indices { attempts[index].removeValue(forKey: "usageObservation") }
+        json["attempts"] = attempts
+        try JSONSerialization.data(withJSONObject: json).write(to: path)
+        let reopened = try runtime()
+        let receipt = try await reopened.structuredRecoveryReceipt(handle, store: store)
+        XCTAssertNil(receipt.usage)
+        XCTAssertTrue(receipt.usageObservations.isEmpty)
+        let status = try await reopened.structuredRecoveryStatus(handle, store: store)
+        XCTAssertNil(status.usage)
+        _ = try await reopened.sendRecovering(handle, response: RecoveryTestOutput.self, store: store) { _ in
+            XCTFail("Legacy receipt must not regenerate to fill missing metrics"); return false
+        }
+        XCTAssertEqual(RecoveryProbeURLProtocol.requests.count, 1)
+    }
+}
+
+private final class RecoveryUsageLogSink: AgentLogSink, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [AgentLogEntry] = []
+    var entries: [AgentLogEntry] { lock.withLock { storage } }
+    func log(_ entry: AgentLogEntry) { lock.withLock { storage.append(entry) } }
 }
