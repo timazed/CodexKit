@@ -51,13 +51,13 @@ class SimulatorVerificationTests(unittest.TestCase):
         commands = []
         def simulated_run(command, **kwargs):
             commands.append(command)
-            if command[2] == "bootstatus" and len(commands) == 2:
+            if command[2] == "bootstatus" and len(commands) == 1:
                 raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         log = io.StringIO()
         with patch.object(verifier, "run", side_effect=simulated_run):
             verifier.boot_simulator("owned-simulator", log=log)
         self.assertEqual([command[2] for command in commands],
-                         ["boot", "bootstatus", "shutdown", "boot", "bootstatus"])
+                         ["bootstatus", "shutdown", "bootstatus"])
         self.assertTrue(all(command[3] == "owned-simulator" for command in commands))
         self.assertIn("timed out", log.getvalue())
 
@@ -68,9 +68,30 @@ class SimulatorVerificationTests(unittest.TestCase):
         with patch.object(verifier, "run", side_effect=simulated_run) as run, \
              self.assertRaises(subprocess.TimeoutExpired):
             verifier.boot_simulator("owned-simulator", log=io.StringIO())
-        self.assertEqual(run.call_count, 5)
+        self.assertEqual(run.call_count, 3)
         self.assertEqual([call.kwargs["timeout"] for call in run.call_args_list
                           if call.args[0][2] == "bootstatus"], [180, 180])
+
+    def test_shutdown_timeout_still_requires_a_completed_second_boot(self):
+        for final_error in (None, subprocess.TimeoutExpired("bootstatus", 180)):
+            commands = []
+            def simulated_run(command, **kwargs):
+                commands.append(command)
+                if len(commands) < 3:
+                    raise subprocess.TimeoutExpired(command, kwargs.get("timeout", 60))
+                if final_error:
+                    raise final_error
+            with self.subTest(final_error=final_error), \
+                 patch.object(verifier, "run", side_effect=simulated_run):
+                if final_error:
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        verifier.boot_simulator("owned-simulator", log=io.StringIO())
+                else:
+                    verifier.boot_simulator("owned-simulator", log=io.StringIO())
+            self.assertEqual([command[2] for command in commands],
+                             ["bootstatus", "shutdown", "bootstatus"])
+            self.assertTrue(all(command[3] == "owned-simulator" for command in commands))
+            self.assertEqual(commands[-1][-1], "-b")
 
     def test_boot_command_failure_is_not_retried(self):
         with patch.object(verifier, "run", side_effect=RuntimeError("boot failed")) as run, \
@@ -226,11 +247,17 @@ class SimulatorVerificationTests(unittest.TestCase):
             (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
             output = root / "reports"
             args = ["verify", "--app", str(app), "--output-dir", str(output)]
-            results = [json.dumps(dict(runtimes=[self.runtime("17.0.1")])), "owned-simulator",
-                       "", "", "", str(container), ""]
+            def simulated_run(command, **_kwargs):
+                if command[2] == "list":
+                    return json.dumps(dict(runtimes=[self.runtime("17.0.1")]))
+                if command[2] == "create":
+                    return "owned-simulator"
+                if command[2] == "get_app_container":
+                    return str(container)
+                return ""
             with patch.object(verifier.sys, "argv", args), patch.object(verifier.signal, "signal"), \
                  patch.object(verifier.uuid, "uuid4", return_value="fresh"), \
-                 patch.object(verifier, "run", side_effect=results) as run, \
+                 patch.object(verifier, "run", side_effect=simulated_run) as run, \
                  patch.object(verifier.subprocess, "run") as cleanup:
                 self.assertEqual(verifier.main(), 1)
             self.assertIn("realm: failed: storage_error", (output / "failure.txt").read_text())

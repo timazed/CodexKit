@@ -2,7 +2,7 @@
 
 [Documentation index](index.md) · [SDK integration](sdk-integration.md)
 
-For the current prerelease, see the [alpha.40 changelog](../CHANGELOG.md#200-alpha40---2026-10-08) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
+For the current prerelease, see the [alpha.41 changelog](../CHANGELOG.md#200-alpha41---2026-10-09) and the [CI workflow](https://github.com/timazed/CodexKit/actions/workflows/ci.yml?query=branch%3Amain). The streamlined workflows below replace repeated candidate/main/tag builds with exact-commit verification reuse. Historical reports retain the checks that ran for their original revisions.
 
 See [account metadata verification](account-metadata-verification.md) for the alpha.33 offline regression assertions and local evidence.
 
@@ -114,6 +114,8 @@ python3 Scripts/verify_macos_demo.py --mode smoke
 Both harnesses default to `smoke`; use `--mode full` for the retained extensive app scenarios. SDK tests retain the detailed transport, budget, validation, and tool-side-effect permutations. Neither smoke nor full mode uses live credentials. The iOS script creates only its own temporary simulator and removes it on success/failure. A matching run ID, mode, and completed report are mandatory. Both harnesses launch a second app process and require a fresh successful receipt-recovery report; a first-process report cannot satisfy the reopen check.
 
 Use `--output-dir` to choose the iOS report directory, `--derived-data` to choose its build directory, or `--runtime 17.0.1` to require a specific installed runtime. `--build-only` produces a portable signed app without simulator access. `--app /absolute/path/CodexKitIOSDemo.app` runs a prebuilt app without compilation. The macOS `--skip-build` option similarly runs an existing signed build.
+
+Simulator boot readiness uses `bootstatus -b` with at most two 180-second attempts. After the first timeout, shutdown is attempted once; a shutdown timeout still permits the final boot-if-needed readiness check. A second timeout or nonzero command exit remains a failure.
 
 Cold CoreSimulator runtime discovery retries only timed-out reads within 120 seconds. The iOS container lookup remains separately bounded: timed-out reads are retried within 180 seconds without reinstalling or relaunching. Failed commands, invalid paths, stale reports, and failed assertions are not retried. App report waits are also bounded to 180 seconds. The source guard enforces 600 physical lines per production Swift file and repository verification script.
 

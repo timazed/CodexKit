@@ -4,6 +4,15 @@
 
 Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Model discovery (alpha.41)
+
+Update to exact Swift package version `2.0.0-alpha.41`. Both backend configuration
+initializers now use discovery client version `0.160.0`; the former `0.153.0`
+request can omit GPT-6.1 Sol even when the same account’s newer catalog exposes
+it. Explicit `modelClientVersion` overrides remain supported, and the default
+generation model is unchanged. Model availability remains account- and
+server-dependent. No storage migration is required.
+
 ## Usage telemetry (alpha.40)
 
 Update to exact Swift package version `2.0.0-alpha.40`. The original `AgentUsage`

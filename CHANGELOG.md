@@ -6,7 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.41] - 2026-10-09
+
 ### Fixed
+
+- Preserve the iOS verifier’s bounded boot recovery when simulator shutdown times out. Use boot-if-needed status monitoring for the second attempt and require completed boot readiness; repeated timeouts and failed verification remain failures.
 
 - Update both `CodexResponsesBackendConfiguration` discovery defaults from `0.153.0` to the verified `0.160.0`. The older `client_version` can omit GPT-6.1 Sol from account catalogs, causing library clients with a Sol-first preferred-available policy to select another available candidate. Explicit caller versions remain supported; the default generation model is unchanged.
 - Add offline HTTP-boundary coverage for both initializer defaults and overrides, with synthetic version-dependent catalogs and preferred-available selection. Account isolation, cache freshness, discovery failure behavior, explicit model pins, and frozen recovery requests retain their existing behavior. Catalog access remains account- and server-dependent.

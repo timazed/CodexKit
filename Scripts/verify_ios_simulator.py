@@ -69,7 +69,6 @@ def boot_simulator(simulator, *, log, timeout=180):
     """Recover one stalled first-boot migration before installing or running tests."""
     for attempt in (1, 2):
         print(f"Boot attempt {attempt} for {simulator}", file=log, flush=True)
-        run(["xcrun", "simctl", "boot", simulator], log=log)
         try:
             run(["xcrun", "simctl", "bootstatus", simulator, "-b"], log=log, timeout=timeout)
             return
@@ -78,7 +77,14 @@ def boot_simulator(simulator, *, log, timeout=180):
             if attempt == 2:
                 raise
             print("Simulator boot stalled; restarting this run's device once.", flush=True)
-            run(["xcrun", "simctl", "shutdown", simulator], log=log)
+            try:
+                run(["xcrun", "simctl", "shutdown", simulator], log=log)
+            except subprocess.TimeoutExpired as shutdown_error:
+                # A stalled shutdown has an uncertain device state. bootstatus -b
+                # can resume a boot or boot a stopped device without a duplicate
+                # boot command. Success still requires the second status to finish.
+                print(str(shutdown_error), file=log, flush=True)
+                print("Simulator shutdown timed out; checking boot readiness once more.", flush=True)
 
 
 def validate_report(report, run_id, mode=VerificationMode.SMOKE):

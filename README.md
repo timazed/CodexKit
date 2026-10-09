@@ -1,7 +1,7 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.40-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.40)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.41-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.41)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
@@ -13,14 +13,14 @@ Both Debug demos show these features under **Structured → Local Cloud → Remo
 
 Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit/docs/releases.md).
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.40](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.40). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.41](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.41). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease adds detailed Codex usage telemetry: cache reads and writes,
-reasoning tokens, provider totals, and fractional budget units with explicit
-availability and partial coverage. Response identities prevent duplicate accounting
-across retries and saved receipt reuse. See the
-[usage integration guide](docs/usage-telemetry.md) and
-[alpha.40 changelog](CHANGELOG.md#200-alpha40---2026-10-08).
+This prerelease corrects the default model-discovery client version so current
+account catalogs can expose GPT-6.1 Sol, and repairs bounded iOS simulator boot
+recovery after a shutdown timeout. Explicit client-version overrides and the
+default generation model remain unchanged. See the
+[alpha.41 changelog](CHANGELOG.md#200-alpha41---2026-10-09).
+
 
 
 ## Capabilities
@@ -41,7 +41,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.40`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.41`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |
