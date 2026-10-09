@@ -37,7 +37,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         instructions: String = """
         You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
         """,
-        modelClientVersion: String = "0.153.0",
+        modelClientVersion: String = "0.160.0",
         originator: String = "codex_cli_rs",
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
@@ -83,7 +83,7 @@ public struct CodexResponsesBackendConfiguration: Sendable {
         instructions: String = """
         You are a helpful assistant embedded in an iOS app. Respond naturally, keep the user oriented, and use registered tools when they are helpful. Do not assume shell, terminal, repository, or desktop capabilities unless a host-defined tool explicitly provides them.
         """,
-        modelClientVersion: String = "0.153.0",
+        modelClientVersion: String = "0.160.0",
         originator: String = "codex_cli_rs",
         streamIdleTimeout: TimeInterval = 60,
         extraHeaders: [String: String] = [:],
