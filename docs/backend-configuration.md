@@ -128,6 +128,20 @@ let choices = catalog.visibleModels
 // Use .refresh for an explicit network refresh, or .cachedOnly for no network I/O.
 ```
 
+Both `CodexResponsesBackendConfiguration` initializers default `modelClientVersion`
+to `"0.160.0"`, sent as `client_version` to `/backend-api/codex/models`. This
+compatibility fix replaces `"0.153.0"`, which can omit GPT-6.1 Sol and cause clients
+with a Sol-first preferred-available policy to choose another available candidate.
+Explicit caller overrides are preserved. The default generation model remains
+`gpt-5.6-sol`; discovery does not grant model access or change pinned requests.
+
+The reported read-only comparison used the same authenticated comparison account:
+`0.153.0` returned seven models without GPT-6.1 Sol (Astra was present), while
+`0.160.0` returned ten models including text-capable GPT-6.1 Sol. That account was
+distinct from the affected client's account; this is not evidence of that client's
+exact catalog. Offline tests use synthetic catalogs to reproduce this distinction;
+no additional live catalog or generation requests are needed for this fix.
+
 Snapshots report their source, fetch time, and whether the metadata is stale. The bundled catalog excludes retired or deprecated GPT-5.2, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex Spark entries, and removes GPT-5.5 ahead of its October 14, 2026 retirement. GPT-5.6 models remain available during the GPT-6 rollout. Daybreak Blue/Red remain hidden from the fallback picker, and Codex Auto Review is marked for internal use. See [official model availability and retirement dates](https://learn.chatgpt.com/docs/models#deprecated-codex-models). Actual model access is account- and server-dependent; the catalog is metadata, not an authorization list. See [runtime progress, tools, and turn control](upstream-runtime-features.md) for discovery, caching, usage limits, and migration details. String-based configuration remains supported, and apps can use `CodexModel(rawValue:)` for a server-enabled or future identifier that this release does not yet know.
 
 `ReasoningEffort.ultra` matches the Codex client setting but maps to the backend-compatible `max` inference value. Ultra's proactive task delegation is a Codex host feature; CodexKit does not add delegation behavior by selecting that effort alone. Unknown non-empty effort strings decode as `.custom(...)` so persisted threads remain compatible with future model-defined values.

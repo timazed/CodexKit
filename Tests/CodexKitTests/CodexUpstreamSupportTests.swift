@@ -122,7 +122,7 @@ final class CodexUpstreamSupportTests: XCTestCase {
         let catalog = #"{"models":[{"slug":"future","display_name":"Future","description":"New","default_reasoning_level":"high","supported_reasoning_levels":[{"effort":"high"},{"effort":"future_effort"}],"input_modalities":["text"],"context_window":500000,"visibility":"list","supports_parallel_tool_calls":true}]}"#
         await TestURLProtocol.enqueue(.init(headers: ["ETag": "v1"], body: Data(catalog.utf8), inspect: { request in
             XCTAssertEqual(request.url?.path, "/backend-api/codex/models")
-            XCTAssertTrue(request.url?.query?.contains("client_version=") == true)
+            XCTAssertEqual(request.url?.query, "client_version=0.160.0")
         }))
         let remote = try await backend.listModels(session: session())
         XCTAssertEqual(remote.visibleModels.first?.model.rawValue, "future")
@@ -139,6 +139,56 @@ final class CodexUpstreamSupportTests: XCTestCase {
         let other = try await backend.listModels(session: session("other"), policy: .cachedOnly)
         if case .bundled = other.source {} else { XCTFail("Account caches must be separate") }
         XCTAssertTrue(other.visibleModels.contains { $0.model == .gpt6Astra })
+    }
+
+    func testDiscoveryInitializerDefaultsAndOverridesSelectFromVersionedCatalogs() async throws {
+        // Synthetic catalogs model the reported same-account comparison: seven models
+        // without GPT-6.1 Sol at 0.153.0, ten with text-capable Sol at 0.160.0.
+        // Other entries are placeholders, not a capture of any client's exact catalog.
+        let legacyModels = ["gpt-6-astra"] + (1...6).map { "fixture-legacy-\($0)" }
+        let currentModels = legacyModels + ["gpt-6.1-sol", "fixture-new-1", "fixture-new-2"]
+        let cases: [(CodexResponsesBackendConfiguration, String)] = [
+            (.init(), "0.160.0"),
+            (.init(model: .gpt56Sol), "0.160.0"),
+            (.init(modelClientVersion: "0.153.0"), "0.153.0"),
+            (.init(model: .gpt56Sol, modelClientVersion: "0.153.0"), "0.153.0")
+        ]
+        let selector = PreferredAvailableCodexModelSelector(candidates: [
+            .init(model: .gpt61Sol, reasoningEffort: .low),
+            .init(model: .gpt6Astra, reasoningEffort: .low)
+        ])
+        for (configuration, version) in cases {
+            XCTAssertEqual(configuration.modelClientVersion, version)
+            XCTAssertEqual(configuration.model, "gpt-5.6-sol")
+            let current = version == "0.160.0"
+            let models = current ? currentModels : legacyModels
+            let data = try JSONSerialization.data(withJSONObject: ["models": models.map {
+                ["slug": $0, "visibility": "list", "input_modalities": ["text"],
+                 "default_reasoning_level": "low", "supported_reasoning_levels": [["effort": "low"]]]
+            }])
+            let requested = expectation(description: "Catalog URL for \(version)")
+            await TestURLProtocol.enqueue(.init(body: data, inspect: { request in
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.absoluteString,
+                    "https://chatgpt.com/backend-api/codex/models?client_version=\(version)")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "ChatGPT-Account-ID"), "test-account")
+                requested.fulfill()
+            }))
+            let backend = CodexResponsesBackend(configuration: configuration,
+                urlSession: makeTestURLSession(), modelSelector: selector)
+            let selection = try await backend.prepareModelSelection(for: Request(text: "Hello"),
+                in: .init(id: "thread"), responseFormat: nil, session: session())
+            await fulfillment(of: [requested], timeout: 2)
+            XCTAssertEqual(selection.configuration.codexModel, current ? .gpt61Sol : .gpt6Astra)
+            XCTAssertEqual(selection.policyID, "preferred_available")
+            let catalog = try await backend.listModels(session: session(), policy: .cachedOnly)
+            XCTAssertFalse(catalog.isStale)
+            XCTAssertEqual(catalog.models.count, current ? 10 : 7)
+            XCTAssertEqual(catalog.models.contains { $0.model == .gpt61Sol }, current)
+            if current {
+                XCTAssertEqual(catalog.models.first { $0.model == .gpt61Sol }?.inputModalities, [.text])
+            }
+        }
     }
 
     func testCatalogFailureFallsBackButExplicitRefreshThrowsAnd429RetainsLimits() async throws {

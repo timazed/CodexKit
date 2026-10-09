@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Update both `CodexResponsesBackendConfiguration` discovery defaults from `0.153.0` to the verified `0.160.0`. The older `client_version` can omit GPT-6.1 Sol from account catalogs, causing library clients with a Sol-first preferred-available policy to select another available candidate. Explicit caller versions remain supported; the default generation model is unchanged.
+- Add offline HTTP-boundary coverage for both initializer defaults and overrides, with synthetic version-dependent catalogs and preferred-available selection. Account isolation, cache freshness, discovery failure behavior, explicit model pins, and frozen recovery requests retain their existing behavior. Catalog access remains account- and server-dependent.
+
 ## [2.0.0-alpha.40] - 2026-10-08
 
 This prerelease expands application-independent usage telemetry without changing generation requests, output, or retry policy. Existing usage initializers and numeric properties remain source compatible. Missing metrics are distinct from reported zeroes, and recovery receipt reads retain usage identities without new model spend.
