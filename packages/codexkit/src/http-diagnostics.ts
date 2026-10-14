@@ -1,56 +1,8 @@
 import type { ErrorDetails, ProviderReason } from "./errors.js";
 import { isObject, parseJson, utf8 } from "./json.js";
+import { identifier, parameter, providerCode as safeCode, providerType as safeType, retryAfter as safeRetry } from "./failure-policy.js";
 import { abortable, checkAbort } from "./stream.js";
 import type { ExecutionLimits, JsonValue } from "./types.js";
-
-// A token-shaped string can still contain private content. Only known categories
-// and protocol parameter paths may escape; extend these sets with offline fixtures.
-const codes = new Set([
-  "invalid_json_schema", "invalid_schema", "invalid_request_error", "invalid_request",
-  "invalid_value", "invalid_parameter", "unsupported_parameter", "unsupported_value",
-  "unknown_parameter", "missing_required_parameter", "missing_parameter",
-  "context_length_exceeded", "string_above_max_length", "array_above_max_length",
-  "invalid_api_key", "invalid_authentication", "authentication_error", "permission_denied",
-  "insufficient_permissions", "model_not_found", "rate_limit_exceeded", "insufficient_quota",
-  "usage_limit_reached", "content_policy_violation", "content_filter", "server_error",
-  "internal_server_error", "service_unavailable", "overloaded", "generation_failed",
-]);
-const types = new Set([
-  "invalid_request_error", "validation_error", "authentication_error", "permission_error",
-  "not_found_error", "rate_limit_error", "insufficient_quota", "usage_limit_reached",
-  "server_error", "api_error", "overloaded_error",
-]);
-const params = new Set([
-  "model", "instructions", "input", "text", "text.format", "text.format.type", "text.format.name",
-  "text.format.schema", "text.format.strict", "text.verbosity", "response_format",
-  "response_format.type", "response_format.json_schema", "response_format.json_schema.name",
-  "response_format.json_schema.schema", "response_format.json_schema.strict", "reasoning",
-  "reasoning.effort", "reasoning.summary", "temperature", "top_p", "max_output_tokens",
-  "max_completion_tokens", "max_tokens", "stream", "store", "tools", "tool_choice",
-  "parallel_tool_calls", "truncation", "include", "background", "previous_response_id",
-  "conversation", "prompt", "size", "quality", "images", "n",
-]);
-
-function member(value: unknown, allowed: ReadonlySet<string>): string | undefined {
-  return typeof value === "string" && allowed.has(value) ? value : undefined;
-}
-
-function parameter(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length > 128 || /[^\x21-\x7e]/.test(value)) return;
-  if (params.has(value)) return value;
-  // Indices are bounded; property names from user-defined schemas are never accepted.
-  if (/^input\[\d{1,4}\](?:\.(?:role|type|content)|\.content\[\d{1,4}\](?:\.(?:type|text|image_url|detail))?)?$/.test(value) ||
-      /^images\[\d{1,4}\](?:\.image_url)?$/.test(value)) return value;
-  return;
-}
-
-function identifier(value: unknown, kind: "request" | "response" | "image"): string | undefined {
-  if (typeof value !== "string" || value.length > 256 || /[^\x21-\x7e]/.test(value)) return;
-  const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
-  const prefix = kind === "response" ? /^resp[-_][A-Za-z0-9-]+$/ :
-    kind === "image" ? /^(?:req|image)[-_][A-Za-z0-9-]+$/ : /^(?:req|request)[-_][A-Za-z0-9-]+$/;
-  return prefix.test(value) || (kind !== "response" && uuid.test(value)) ? value : undefined;
-}
 
 function reason(status: number, code: string | undefined, type: string | undefined, param: string | undefined,
   message: unknown): ProviderReason {
@@ -118,21 +70,19 @@ export async function readHTTPErrorBody(response: Response, limits: ExecutionLim
 export function httpDiagnostics(response: Response, value: JsonValue | undefined): ErrorDetails {
   const root = isObject(value) ? value : undefined;
   const error = isObject(root?.error) ? root.error : undefined;
-  const providerCode = member(error?.code, codes);
-  const providerType = member(error?.type, types);
+  const providerCode = safeCode(error?.code);
+  const providerType = safeType(error?.type);
   const providerParam = parameter(error?.param);
   const requestId = identifier(response.headers.get("x-request-id"), "request") ??
     identifier(root?.request_id, "request") ?? identifier(error?.request_id, "request");
   const responseId = identifier(response.headers.get("x-response-id"), "response") ??
     identifier(root?.response_id, "response") ?? identifier(error?.response_id, "response") ??
     identifier(isObject(root?.response) ? root.response.id : undefined, "response");
-  const retryAfter = response.headers.get("retry-after");
-  const validRetry = retryAfter && retryAfter.length <= 128 && (/^\d+(?:\.\d+)?$/.test(retryAfter) ||
-    /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(retryAfter));
+  const retryAfter = safeRetry(response.headers.get("retry-after"));
   return {
     ...(providerCode ? { providerCode } : {}), ...(providerType ? { providerType } : {}),
     ...(providerParam ? { providerParam } : {}), ...(requestId ? { requestId } : {}),
-    ...(responseId ? { responseId } : {}), ...(validRetry ? { retryAfter } : {}),
+    ...(responseId ? { responseId } : {}), ...(retryAfter ? { retryAfter } : {}),
     providerReason: reason(response.status, providerCode, providerType, providerParam, error?.message),
   };
 }

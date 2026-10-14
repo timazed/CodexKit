@@ -1,5 +1,6 @@
 import { CodexKitCloudError, fail, type ErrorDetails, type ProviderOutcome } from "./errors.js";
 import { isObject, parseJson } from "./json.js";
+import { providerCode, incompleteReason } from "./failure-policy.js";
 import type { ValidatedRequest } from "./request.js";
 import { validateValue } from "./schema.js";
 import type { ServerEvent } from "./stream.js";
@@ -11,7 +12,8 @@ function identifier(value: unknown): string | undefined {
 
 export function providerFailure(error: unknown): Pick<ErrorDetails, "providerCode"> {
   if (!isObject(error)) return {};
-  return typeof error.code === "string" && /^[a-z][a-z0-9_]{0,99}$/.test(error.code) ? { providerCode: error.code } : {};
+  const code = providerCode(error.code);
+  return code ? { providerCode: code } : {};
 }
 
 /** Response state is per call; deltas never become successful output on their own. */
@@ -113,8 +115,8 @@ export class ResponseConsumer {
   }
 
   private incompleteDetails(response?: JsonObject): ErrorDetails {
-    const reason = isObject(response?.incomplete_details) ? response.incomplete_details.reason : undefined;
-    return typeof reason === "string" && /^[a-z][a-z0-9_]{0,99}$/.test(reason) ? { incompleteReason: reason } : {};
+    const reason = incompleteReason(isObject(response?.incomplete_details) ? response.incomplete_details.reason : undefined);
+    return reason ? { incompleteReason: reason } : {};
   }
 
   private finish(response: JsonObject, data: string): ExecutionResult {

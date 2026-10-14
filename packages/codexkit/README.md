@@ -1,6 +1,6 @@
 # CodexKit for TypeScript
 
-The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is [`0.2.4`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.4). Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
+The independently versioned `@timazed/codexkit` npm package lives in [`packages/codexkit`](https://github.com/timazed/CodexKit/tree/main/packages/codexkit) in the CodexKit repository and is distributed through GitHub Packages. Its current version is [`0.2.5`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.5). Swift builds and Swift consumers do not require Node or npm; this package has its own manifest, lockfile, build, and tests.
 
 A small TypeScript library that executes a CodexKit-prepared request against the Codex backend and returns its completed result. CodexKit is the authority for request construction, model/reasoning selection, response format, and retry policy.
 
@@ -171,6 +171,8 @@ Return `outputText` to CodexKit for its own typed decoding and application valid
 
 All execution failures reject with `CodexKitCloudError`. `error.toJSON()` returns `code`, a static message, and bounded diagnostic fields. Provider error messages, raw error bodies, transport causes, and callback/abort reasons are not retained. No logging is performed. Results and progress remain private application data, not log-safe diagnostics.
 
+Use `sanitizeCodexFailure(value: unknown): SanitizedCodexFailure | undefined` to normalize stored flat failure objects with the same SDK policy as `CodexKitCloudError.toJSON()`. It regenerates static messages, keeps diagnostics optional, and drops unknown/unsafe fields. See the [sanitizer contract, historical privacy limits, and mp-api migration](docs/failure-sanitizer.md).
+
 Unsuccessful HTTP responses include optional validated `providerCode`, `providerType`, `providerParam`, `requestId` and `responseId`, plus a static `providerReason` classification. The [HTTP error consumer contract](docs/http-errors.md) specifies the flat serialized field names, privacy rules, reason values, and mp-api/Swift integration and release steps. JSON inspection works even with missing or incorrect Content-Type. These diagnostics neither identify the root cause of a past incident nor authorize a retry.
 
 | Codes | Meaning |
@@ -218,7 +220,7 @@ npm run verify
 
 Tests inject synthetic fetch responses and disable accidental live fetch calls. They verify text/image request fidelity, framing, output validation, typed failures, cancellation, redaction, and one-attempt behavior. The packaging check installs a local tarball into a temporary consumer and verifies CommonJS, ESM, TypeScript declarations, and both included route examples, including successful execution and error responses. It performs no provider calls and requires no credentials. Real provider/account compatibility has not been tested by these offline fixtures.
 
-To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.2.4.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
+To try a local checkout without registry authentication, run `npm pack` after building, then install the resulting `timazed-codexkit-0.2.5.tgz` in the consuming backend. Normal consumers install the package by name with `npm install @timazed/codexkit`.
 
 The repository's root `Cloud CI` workflow runs `npm ci` and `npm run verify` independently on Node 22 and 24 with this package's lockfile. Build output, dependencies, and local tarballs are ignored. There is no root npm workspace or Swift build step that invokes npm.
 
