@@ -4,6 +4,7 @@ import { decodeImageResponse, imageHTTPFailure, imageIdentifier, readImageBody }
 import { authenticationHeaders } from "./request.js";
 import { abortable, checkAbort } from "./stream.js";
 import { privateSafe, type configure } from "./transport.js";
+import { redactHTTPIdentifiers } from "./http-diagnostics.js";
 import type { ExecuteImageInput, ImageExecutionResult } from "./image-types.js";
 
 export async function executeImage(input: ExecuteImageInput, configuration: ReturnType<typeof configure>): Promise<ImageExecutionResult> {
@@ -14,6 +15,7 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
   let attempted = false;
   let details: ErrorDetails = {};
   let secrets: string[] = [];
+  let requestBody: Uint8Array | undefined;
   try {
     if (!input || (input.signal !== undefined && !(input.signal instanceof AbortSignal))) fail("invalid_request");
     callerSignal = input.signal;
@@ -21,6 +23,7 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
     if (callerSignal?.aborted) cancel();
     checkAbort(controller.signal);
     const request = prepareImageRequest(input.preparedRequest, imageLimits, limits);
+    requestBody = request.body;
     const authentication = authenticationHeaders(input.authentication);
     secrets = [input.authentication.accessToken, input.authentication.accountId, ...Object.values(headers)];
     // Derive only from trusted constructor configuration, never from a request-supplied URL.
@@ -39,7 +42,10 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
     const requestId = imageIdentifier(response.headers.get("x-request-id"), secrets);
     const imageRequestId = imageIdentifier(response.headers.get("x-codex-imagegen-request-id"), secrets);
     details = { ...(requestId ? { requestId } : {}), ...(imageRequestId ? { imageRequestId } : {}) };
-    if (!response.ok) throw await imageHTTPFailure(response, limits, controller.signal);
+    if (!response.ok) {
+      secrets.push(...Object.values(request.headers));
+      throw await imageHTTPFailure(response, limits, controller.signal);
+    }
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") fail("invalid_response");
     const bytes = await readImageBody(response, imageLimits.maxResponseBytes, controller.signal);
     checkAbort(controller.signal);
@@ -50,8 +56,10 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
   } catch (error) {
     const code = controller.signal.aborted ? "cancelled" : error instanceof CodexKitCloudError ? error.code :
       attempted ? "transport_error" : "invalid_request";
-    throw new CodexKitCloudError(code, privateSafe({ outcome: attempted ? "unknown" : "not_started", ...details,
-      ...(error instanceof CodexKitCloudError ? error.details : {}) }, secrets));
+    const failureDetails: ErrorDetails = { outcome: attempted ? "unknown" : "not_started", ...details,
+      ...(error instanceof CodexKitCloudError ? error.details : {}) };
+    throw new CodexKitCloudError(code, privateSafe(response && !response.ok ?
+      redactHTTPIdentifiers(failureDetails, requestBody) : failureDetails, secrets));
   } finally {
     callerSignal?.removeEventListener("abort", cancel);
     if (response?.body && !response.body.locked) void response.body.cancel().catch(() => {});

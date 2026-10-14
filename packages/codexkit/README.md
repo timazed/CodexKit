@@ -171,11 +171,13 @@ Return `outputText` to CodexKit for its own typed decoding and application valid
 
 All execution failures reject with `CodexKitCloudError`. `error.toJSON()` returns `code`, a static message, and bounded diagnostic fields. Provider error messages, raw error bodies, transport causes, and callback/abort reasons are not retained. No logging is performed. Results and progress remain private application data, not log-safe diagnostics.
 
+Unsuccessful HTTP responses include optional validated `providerCode`, `providerType`, `providerParam`, `requestId` and `responseId`, plus a static `providerReason` classification. The [HTTP error consumer contract](docs/http-errors.md) specifies the flat serialized field names, privacy rules, reason values, and mp-api/Swift integration and release steps. JSON inspection works even with missing or incorrect Content-Type. These diagnostics neither identify the root cause of a past incident nor authorize a retry.
+
 | Codes | Meaning |
 | --- | --- |
 | `invalid_request`, `integrity_mismatch`, `unsupported_request`, `unsupported_schema` | Preflight rejection. |
 | `invalid_authentication` | Missing or malformed credential inputs. |
-| `authentication_failed`, `http_error` | Unsuccessful provider HTTP response; includes status and safe provider code / Retry-After when available. |
+| `authentication_failed`, `http_error` | Unsuccessful provider HTTP response; includes status, static rejection classification, and validated provider metadata / Retry-After when available. |
 | `image_usage_limit_exceeded` | Image allowance exhausted; optional reset time in `details.imageUsageLimit`. |
 | `transport_error`, `stream_interrupted` | Failed connection or EOF before terminal completion. |
 | `provider_failed`, `response_incomplete`, `response_refused` | Explicit unsuccessful provider outcome. |

@@ -15,6 +15,7 @@ try {
   assert.ok(packed.files.some(file => file.path === 'dist/index.js'));
   assert.ok(packed.files.some(file => file.path === 'dist/index.d.ts'));
   assert.ok(packed.files.some(file => file.path === 'docs/compatibility.md'));
+  assert.ok(packed.files.some(file => file.path === 'docs/http-errors.md'));
   assert.ok(packed.files.some(file => file.path === 'examples/api-route.ts'));
   assert.ok(packed.files.some(file => file.path === 'examples/image-api-route.ts'));
   const manifest = JSON.parse(readFileSync(join(root, 'package.json')));
@@ -66,6 +67,7 @@ client.execute({ preparedRequest,
   writeFileSync(join(directory, 'consumer.ts'), `
 import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport } from '@timazed/codexkit';
 import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from '@timazed/codexkit';
+import type { ErrorDetails, ProviderReason } from '@timazed/codexkit';
 import type { PreparedImageRequest, ExecuteImageInput, ImageExecutionResult, ImageAction, GeneratedImage } from '@timazed/codexkit';
 const preparedRequest: PreparedRequest = { body: new Uint8Array(), sha256: '', sessionId: '', clientRequestId: '', originator: '' };
 const input: ExecuteInput = { preparedRequest, authentication: { accessToken: '', accountId: '' },
@@ -75,6 +77,11 @@ const client = new CodexKitBridgeClient(options);
 client.validatePreparedRequest(preparedRequest);
 const result: Promise<ExecutionResult> = client.execute(input);
 const error = new CodexKitCloudError('invalid_request');
+const reason: ProviderReason = 'invalid_schema';
+const diagnostics: ErrorDetails = { httpStatus: 400, requestId: 'req-fixture', responseId: 'resp_fixture',
+  providerCode: 'invalid_json_schema', providerType: 'invalid_request_error', providerParam: 'text.format.schema', providerReason: reason };
+const wire: { providerReason?: ProviderReason } = new CodexKitCloudError('http_error', diagnostics).toJSON();
+void wire;
 void [result, error];
 const action: ImageAction = 'generate';
 const imageRequest: PreparedImageRequest = { body: new Uint8Array(), sha256: '', clientRequestId: '', imageTurnId: '', originator: '', action };
@@ -111,6 +118,8 @@ globalThis.fetch = async (_, init) => {
   assert.equal(init.headers.Authorization, 'Bearer synthetic-token');
   assert.equal(init.headers['ChatGPT-Account-ID'], 'synthetic-account');
   if (calls === 2) return new Response('', { status: 401 });
+  if (calls === 3) return new Response(JSON.stringify({ error: { code: 'invalid_json_schema',
+    type: 'invalid_request_error', param: 'text.format.schema', message: 'Private schema and prompt content' } }), { status: 400 });
   assert.equal(calls, 1, 'The route must not retry');
   return new Response('data: ' + JSON.stringify({ type: 'response.completed', response: {
     id: 'route-response', status: 'completed', output: [{ type: 'message', role: 'assistant',
@@ -119,7 +128,7 @@ globalThis.fetch = async (_, init) => {
 };
 const { executeCodexRoute } = require('./compiled/examples/api-route.js');
 const preparedRequest = { body, sha256: createHash('sha256').update(body).digest('hex'),
-  sessionId: 's', clientRequestId: 'c', originator: 'codex_cli_rs' };
+  sessionId: 'route-session-fixture', clientRequestId: 'route-client-fixture', originator: 'codex_cli_rs' };
 const authentication = { accessToken: 'synthetic-token', accountId: 'synthetic-account' };
 const response = { status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
 (async () => {
@@ -135,6 +144,12 @@ const response = { status(code) { this.code = code; return this; }, json(body) {
   assert.equal(response.code, 502);
   assert.equal(response.body.error.code, 'authentication_failed');
   assert.equal(calls, 2, 'Provider authentication failure must not reissue');
+  await executeCodexRoute(preparedRequest, authentication, response);
+  assert.equal(response.code, 502);
+  assert.deepEqual(response.body.error, { code: 'http_error', message: 'The provider returned an unsuccessful HTTP response.',
+    outcome: 'failed', httpStatus: 400, providerCode: 'invalid_json_schema', providerType: 'invalid_request_error',
+    providerParam: 'text.format.schema', providerReason: 'invalid_schema' });
+  assert.equal(calls, 3, 'Provider schema rejection must not reissue');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 `);
   run(['route-consumer.cjs']);
