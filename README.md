@@ -5,13 +5,7 @@
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
-This repository also contains [`@timazed/codexkit`](packages/codexkit/README.md), a separately built and versioned TypeScript backend library ([`0.2.3`](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.3)) distributed through GitHub Packages. Install it with `npm install @timazed/codexkit` after configuring GitHub Packages authentication, then `import { CodexKitBridgeClient } from "@timazed/codexkit"`. It executes one CodexKit-prepared text, JSON, or image generation/edit request with supplied authentication. Swift consumers do not need Node or npm. General bridge tool calling remains unsupported. See the [TypeScript image API](packages/codexkit/docs/images.md).
-
-Swift apps can submit prepared packets to mp-api-compatible middleware using `CodexRemoteExecutionClient`. Choose `completionPush: .regular` when creating a request's `CodexRemoteExecution`, or omit it for `.silent`. The option is preserved across submission retries and exposed in job metadata. See [remote execution and completion pushes](docs/remote-execution.md). Runtime request export and automatic conversation/result integration remain separate work.
-
-Both Debug demos show these features under **Structured → Local Cloud → Remote Execution**. Start the fixture API with `npm run dev:api` in `packages/codexkit`, then choose **Verify All Remote Features** for the 16-job end-to-end matrix. See [the demo guide](DemoApp/README.md#local-cloud-api-test).
-
-Cloud releases use `cloud-v*` tags and a separate verification/publishing workflow; see [GitHub Packages release setup](packages/codexkit/docs/releases.md).
+The optional [`@timazed/codexkit` npm package](#cloud-execution-with-npm) lets Node.js backends execute CodexKit-prepared **text, structured JSON, and image generation/edit requests**. It provides a focused execution bridge for your own middleware. Swift consumers do not need Node or npm.
 
 `main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.41](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.41). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
@@ -36,6 +30,50 @@ default generation model remain unchanged. See the
 Your app owns the tools and user interface. The built-in backend uses ChatGPT account access; model availability depends on the account. See the [feature matrix](docs/index.md#feature-matrix) for the full supported surface.
 
 ChatGPT account metadata now resolves namespaced claims and repairs persisted unknown metadata during restoration. See [account metadata compatibility](docs/account-metadata-compatibility.md) for precedence, new plan cases, and integration steps.
+
+## Cloud execution with npm
+
+[`@timazed/codexkit`](packages/codexkit/README.md) exists so a TypeScript backend can execute requests prepared by CodexKit from an API route or worker. It supplies transport, response parsing, output validation, and typed failures. For example, a backend can generate a story, produce schema-validated game data, or generate/edit an image, then store the result for an app to retrieve later. Your backend supplies the queue, durable job storage, and result lookup needed for work to continue after an app disconnects.
+
+The current Cloud release is [**0.2.4**](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.4), distributed through GitHub Packages. It supports **Node.js 22 and 24**, CommonJS and ESM imports, and TypeScript declarations, with zero runtime dependencies. It has its own build, tests, and version because it serves Node backends independently of the Swift SDK. Cloud releases use `cloud-v*` tags; Swift releases use `v*` tags.
+
+### What the npm package supports
+
+| Capability | API and behavior |
+| --- | --- |
+| Plain-text generation | `client.execute(...)` runs one self-contained prepared request and returns the completed answer as `outputText`. |
+| Structured JSON generation | The same `execute(...)` API uses the prepared request's native JSON schema and validates the completed output against the supported schema subset. Your app still owns domain/state validation. |
+| Streaming progress and usage | Optional `onProgress` callbacks deliver text and reasoning-summary deltas. The completed result includes provider usage when reported; provisional deltas are not a completed result. |
+| Image generation and editing | `client.executeImage(...)` returns validated PNG data and actual dimensions. Editing supports up to five inline PNG/JPEG/WebP references. See the [image contract](packages/codexkit/docs/images.md) for the supported model, settings, and limits. |
+| Validation, cancellation, and diagnostics | Preflight checks verify prepared bytes, digest, and supported request shape. Execution supports `AbortSignal`, bounded response parsing, and [privacy-safe HTTP failure diagnostics](packages/codexkit/docs/http-errors.md). |
+
+After [configuring GitHub Packages authentication](packages/codexkit/README.md#install-and-use), install the package in your backend:
+
+```sh
+npm install @timazed/codexkit
+```
+
+Your integration supplies the prepared provider bytes, SHA-256 digest, routing identifiers, and separate per-call authentication. Both text and JSON requests use this entry point; the format comes from the prepared body:
+
+```ts
+import { CodexKitBridgeClient } from "@timazed/codexkit";
+
+const client = new CodexKitBridgeClient();
+const result = await client.execute({ preparedRequest, authentication });
+// result.outputText contains the completed text or validated JSON text.
+```
+
+See the [backend guide and supported text subset](packages/codexkit/README.md#supported-text-request-subset), [API route example](packages/codexkit/examples/api-route.ts), and [results/progress contract](packages/codexkit/README.md#results-and-progress).
+
+### Current limits and host responsibilities
+
+- **A limited request executor:** text/JSON requests must be self-contained and tool-free. General tool calling, web search, image input through `execute`, assistant-history migration, previous-response/conversation references, and provider background mode are unsupported. JSON validation supports a bounded schema subset, not every JSON Schema assertion.
+- **No full agent runtime:** the npm package does not provide Swift's conversation persistence, personas, skills, memory, tool approvals, or typed JSON Lines/XML decoding. It preserves the prepared model, reasoning, format, and request bytes; it does not discover/select models, repair requests, or generate fallback answers.
+- **One provider attempt per call:** there are no automatic retries, sign-in flows, credential refresh, or built-in generation deadlines. The backend owns caller authorization, credential custody, deadlines, retry decisions, job deduplication, storage, and notification delivery. Cancelling local transport does not prove the provider stopped generating.
+
+Swift apps can submit already-prepared packets to mp-api-compatible middleware with `CodexRemoteExecutionClient` and choose silent or regular completion pushes. Runtime request export and automatic conversation/result integration remain separate work; installing the npm package does not supply a hosted service or those integrations. See [remote execution and completion pushes](docs/remote-execution.md).
+
+To explore text, JSON, and images locally, start `npm run dev:api` in `packages/codexkit`. In either Debug demo, open **Structured → Local Cloud → Remote Execution** and choose **Verify All Remote Features** for the 16-job fixture matrix. See [the demo guide](DemoApp/README.md#local-cloud-api-test). For package publishing, see [Cloud release setup](packages/codexkit/docs/releases.md).
 
 ## Installation
 
@@ -132,6 +170,7 @@ The [documentation index](docs/index.md) contains the full guide list, core conc
 
 - [Configure models and reasoning](docs/backend-configuration.md), including typed GPT-6.1 Sol, GPT-6 Sol/Luna, and Daybreak identifiers
 - [Use host-managed sessions, execution handles, and async observation](docs/sdk-integration.md)
+- [Execute prepared text, JSON, and image requests in a Node backend](packages/codexkit/README.md)
 - [Submit remote requests and choose completion pushes](docs/remote-execution.md)
 - [Recover saved structured results and authorize bounded replacements](docs/structured-request-recovery.md)
 - [Stream and validate typed output (text, JSON, JSON Lines, and XML)](docs/streaming-output.md)
@@ -158,7 +197,7 @@ Follow the [demo setup and walkthrough](DemoApp/README.md#try-the-runtime-featur
 
 ## Project
 
-- [Streaming validation and backend completion](docs/messaging.md#streaming-validation-and-backend-completion)
+- [Structured validation and backend completion](docs/messaging.md#structured-validation-and-backend-completion)
 - [Usage telemetry](docs/usage-telemetry.md): token details, partial coverage, retries and saved receipt reuse.
 - [Changelog](CHANGELOG.md) and [release conventions](docs/migration.md#versioning-and-releases)
 - [Contributing](CONTRIBUTING.md)
