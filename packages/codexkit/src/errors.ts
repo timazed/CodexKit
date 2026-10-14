@@ -10,12 +10,21 @@ export type ErrorCode =
 /** Unknown is deliberately distinct from a confirmed provider failure. Never implies permission to retry. */
 export type ProviderOutcome = "not_started" | "unknown" | "failed" | "incomplete" | "completed";
 
+/** Static HTTP rejection classifications, never provider-authored text or retry advice. */
+export type ProviderReason =
+  | "invalid_schema" | "invalid_parameter" | "unsupported_parameter" | "missing_parameter"
+  | "context_length_exceeded" | "content_policy" | "authentication" | "permission_denied"
+  | "rate_limit_exceeded" | "quota_exceeded" | "invalid_request" | "server_error" | "unclassified";
+
 export interface ErrorDetails {
   readonly outcome?: ProviderOutcome;
   readonly httpStatus?: number;
   readonly requestId?: string;
   readonly responseId?: string;
   readonly providerCode?: string;
+  readonly providerType?: string;
+  readonly providerParam?: string;
+  readonly providerReason?: ProviderReason;
   readonly incompleteReason?: string;
   readonly retryAfter?: string;
   readonly imageRequestId?: string;

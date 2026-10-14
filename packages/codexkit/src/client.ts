@@ -5,6 +5,7 @@ import { abortable, checkAbort, readEvents } from "./stream.js";
 import { configure, httpFailure, privateSafe, requestId } from "./transport.js";
 import { executeImage } from "./images.js";
 import { prepareImageRequest } from "./image-request.js";
+import { redactHTTPIdentifiers } from "./http-diagnostics.js";
 import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from "./types.js";
 import type { ExecuteImageInput, ImageExecutionResult, PreparedImageRequest } from "./image-types.js";
 
@@ -42,6 +43,7 @@ export class CodexKitBridgeClient {
     let consumer: ResponseConsumer | undefined;
     let providerRequestId: string | undefined;
     let response: Response | undefined;
+    let requestBody: Uint8Array | undefined;
     let secrets: string[] = [];
     let callerSignal: AbortSignal | undefined;
     try {
@@ -52,6 +54,7 @@ export class CodexKitBridgeClient {
       if (callerSignal?.aborted) cancel();
       checkAbort(controller.signal);
       const request = prepareRequest(input.preparedRequest, limits);
+      requestBody = request.body;
       const authentication = authenticationHeaders(input.authentication);
       secrets = [input.authentication.accessToken, input.authentication.accountId, ...Object.values(headers)];
       const onProgress = input.onProgress;
@@ -65,7 +68,10 @@ export class CodexKitBridgeClient {
         signal: controller.signal,
       }), controller.signal);
       providerRequestId = requestId(response);
-      if (!response.ok) throw await httpFailure(response, limits, controller.signal);
+      if (!response.ok) {
+        secrets.push(...Object.values(request.headers));
+        throw await httpFailure(response, limits, controller.signal);
+      }
       // Codex can omit MIME metadata; the SSE parser still requires valid events and terminal completion.
       const contentType = response.headers.get("content-type");
       if ((contentType != null && contentType.split(";")[0]?.trim().toLowerCase() !== "text/event-stream") || !response.body) fail("invalid_response");
@@ -92,7 +98,7 @@ export class CodexKitBridgeClient {
         ...(providerRequestId ? { requestId: providerRequestId } : {}),
         ...(error instanceof CodexKitCloudError ? error.details : {}),
       };
-      throw new CodexKitCloudError(code, privateSafe(details, secrets));
+      throw new CodexKitCloudError(code, privateSafe(response && !response.ok ? redactHTTPIdentifiers(details, requestBody) : details, secrets));
     } finally {
       callerSignal?.removeEventListener("abort", cancel);
       // Both failures and successful completion release the provider connection.

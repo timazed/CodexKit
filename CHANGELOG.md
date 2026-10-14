@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Cloud 0.2.4 (prepared; not yet published)
+
+- Add privacy-safe HTTP diagnostics for text and image execution: validated provider code/type, rejected protocol parameter, provider correlation IDs and static rejection classifications. Preserve existing error codes, status/outcome semantics and the flat serialized error shape. Unknown/unsafe metadata is omitted; provider messages and raw bodies are never retained.
+- Inspect bounded JSON errors even with missing/incorrect Content-Type, without letting malformed, oversized or broken bodies hide HTTP failures. Preserve cancellation, request bytes, models, validation and one-attempt behavior. Add offline fetch/native-HTTPS, redaction, bounds and packed-consumer fixtures; no live generation is performed.
+- Prepare `@timazed/codexkit` 0.2.4 and document the [consumer contract and mp-api/Swift rollout](packages/codexkit/docs/http-errors.md). Publish only after merge using `cloud-v0.2.4`; mp-api must then pin the released package. The Pocket POTUS incident's underlying request defect remains undetermined.
+
 ## [2.0.0-alpha.41] - 2026-10-09
 
 ### Fixed

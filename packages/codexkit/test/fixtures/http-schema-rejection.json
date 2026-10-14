@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "invalid_json_schema",
+    "type": "invalid_request_error",
+    "param": "text.format.schema",
+    "message": "Invalid schema for response_format 'private_world_name': In context=('properties', 'private_character'), 'additionalProperties' is required to be supplied and to be false. Prompt: private world narrative. Token: synthetic-secret-token.",
+    "request_id": "req-bodyfixture",
+    "response_id": "resp_schemafixture",
+    "account_id": "synthetic-account"
+  }
+}

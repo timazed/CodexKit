@@ -3,6 +3,7 @@ import { base64Bytes } from "./image-request.js";
 import { isObject, parseJson, utf8 } from "./json.js";
 import { inspectPNG } from "./png.js";
 import { providerFailure } from "./response.js";
+import { httpDiagnostics, readHTTPErrorBody } from "./http-diagnostics.js";
 import { abortable, checkAbort } from "./stream.js";
 import type { ExecutionLimits, JsonValue } from "./types.js";
 import type { GeneratedImage, ImageExecutionLimits, ImageExecutionResult } from "./image-types.js";
@@ -66,21 +67,15 @@ function quota(response: Response, value: JsonValue | undefined): ErrorDetails["
 }
 
 export async function imageHTTPFailure(response: Response, limits: ExecutionLimits, signal: AbortSignal): Promise<CodexKitCloudError> {
-  let value: JsonValue | undefined;
-  try {
-    if (response.headers.get("content-type")?.toLowerCase().includes("json")) {
-      value = parseJson(utf8(await readImageBody(response, 64 * 1024, signal), "invalid_response"), limits, "invalid_response");
-    }
-  } catch { checkAbort(signal); }
-  const imageUsageLimit = quota(response, value);
-  const retryAfter = response.headers.get("retry-after");
-  const validRetry = retryAfter && retryAfter.length <= 128 && (/^\d+(?:\.\d+)?$/.test(retryAfter) ||
-    /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(retryAfter));
+  // Preserve the image path's existing 64 KiB bound and MIME-gated quota code.
+  // MIME-independent parsing enriches diagnostics without reclassifying failures.
+  const value = await readHTTPErrorBody(response, limits, signal, 64 * 1024);
+  const imageUsageLimit = quota(response, response.headers.get("content-type")?.toLowerCase().includes("json") ? value : undefined);
   return new CodexKitCloudError(imageUsageLimit ? "image_usage_limit_exceeded" :
     response.status === 401 || response.status === 403 ? "authentication_failed" : "http_error", {
-      ...providerFailure(isObject(value) ? value.error : undefined), httpStatus: response.status,
+      ...httpDiagnostics(response, value), httpStatus: response.status,
       outcome: response.status >= 400 && response.status < 500 ? "failed" : "unknown",
-      ...(imageUsageLimit ? { imageUsageLimit } : {}), ...(validRetry ? { retryAfter } : {}),
+      ...(imageUsageLimit ? { imageUsageLimit } : {}),
     });
 }
 

@@ -5,7 +5,7 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { CodexKitBridgeClient, nodeHttpsTransport } = require('../dist/index.js');
 const { imagePrepared, imageResult } = require('./image-helpers.cjs');
-const { authentication, errorCode } = require('./helpers.cjs');
+const { authentication, errorCode, prepared } = require('./helpers.cjs');
 
 function mockRequest(t, respond) {
   const calls = [];
@@ -49,6 +49,27 @@ test('Node transport leaves redirects and HTTP errors to the SDK without retryin
   const client = new CodexKitBridgeClient({ fetch: nodeHttpsTransport });
   await assert.rejects(client.executeImage({ preparedRequest: imagePrepared(), authentication }), errorCode('http_error', 'unknown'));
   assert.equal(calls.length, 1);
+});
+
+test('Node HTTPS failures serialize the same safe diagnostics through text and image clients', async t => {
+  const fixture = require('./fixtures/http-schema-rejection.json');
+  const calls = mockRequest(t, callback => response(callback, 400, JSON.stringify(fixture), {
+    'content-type': 'text/plain', 'x-request-id': 'req-nativefixture',
+  }));
+  const client = new CodexKitBridgeClient({ fetch: nodeHttpsTransport });
+  for (const [method, preparedRequest] of [['execute', prepared()], ['executeImage', imagePrepared()]]) {
+    await assert.rejects(client[method]({ preparedRequest, authentication }), error => {
+      assert.deepEqual(JSON.parse(JSON.stringify(error)), {
+        code: 'http_error', message: 'The provider returned an unsuccessful HTTP response.',
+        outcome: 'failed', httpStatus: 400, requestId: 'req-nativefixture', responseId: 'resp_schemafixture',
+        providerCode: 'invalid_json_schema', providerType: 'invalid_request_error',
+        providerParam: 'text.format.schema', providerReason: 'invalid_schema',
+      });
+      return true;
+    });
+    assert.deepEqual(Buffer.from(calls.at(-1).body), Buffer.from(preparedRequest.body));
+  }
+  assert.equal(calls.length, 2);
 });
 
 test('Node transport releases a pending request on cancellation and maps socket errors safely', async t => {
