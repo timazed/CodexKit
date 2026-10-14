@@ -205,7 +205,7 @@ Defaults are exported as `DEFAULT_LIMITS` and can be adjusted in trusted client 
 | JSON nodes per document | 100,000 |
 | Schema validation work steps | 100,000 |
 
-HTTP error-body inspection is capped at 64 KiB or the configured event limit, whichever is smaller. Byte limits measure encoded content, not total JavaScript heap consumption. Unknown informational events are ignored; they cannot authorize tools or establish completion. Exact immediately repeated numbered events are suppressed; conflicting or backwards sequence numbers fail closed.
+Text HTTP error-body inspection is capped at 64 KiB or the configured event limit, whichever is smaller; image HTTP error inspection retains its 64 KiB cap. Byte limits measure encoded content, not total JavaScript heap consumption. Unknown informational events are ignored; they cannot authorize tools or establish completion. Exact immediately repeated numbered events are suppressed; conflicting or backwards sequence numbers fail closed.
 
 ## Development and verification
 

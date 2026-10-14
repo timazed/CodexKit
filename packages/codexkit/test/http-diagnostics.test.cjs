@@ -118,7 +118,7 @@ for (const [mode, make, prepare, withPrompt] of modes) {
   });
 
   test(`${mode}: byte cap rejects entire oversized body and cancels without draining`, async () => {
-    for (const maximum of [64 * 1024, 1024]) {
+    for (const maximum of mode === 'text' ? [64 * 1024, 1024] : [64 * 1024]) {
       const prefix = Buffer.from(JSON.stringify(fixture));
       for (const size of [maximum, maximum + 1]) {
         let pulls = 0, cancelled = false;
@@ -256,3 +256,16 @@ for (const [mode, make, prepare, withPrompt] of modes) {
     assert.equal(result.outcome, 'failed'); assert.equal(result.providerReason, 'invalid_schema');
   });
 }
+
+test('image quota codes preserve their original MIME evidence and 64 KiB inspection bound', async () => {
+  for (const contentType of [undefined, 'text/plain', 'application/json']) {
+    const body = { error: { type: 'usage_limit_reached', resets_at: 123 }, padding: ' '.repeat(2048) };
+    const result = await failure(imageHarness({ limits: { maxEventBytes: 1024 }, fetch: async () => http(body, {
+      status: 429, headers: { 'x-codex-active-limit': 'image_gen', ...(contentType ? { 'content-type': contentType } : {}) },
+    }) }).run);
+    assert.equal(result.code, contentType === 'application/json' ? 'image_usage_limit_exceeded' : 'http_error');
+    assert.equal(result.httpStatus, 429); assert.equal(result.outcome, 'failed');
+    assert.equal(result.providerType, 'usage_limit_reached'); assert.equal(result.providerReason, 'quota_exceeded');
+    assert.deepEqual(result.imageUsageLimit, contentType === 'application/json' ? { limitId: 'image_gen', resetsAt: 123 } : undefined);
+  }
+});

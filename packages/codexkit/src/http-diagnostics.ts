@@ -79,12 +79,12 @@ function reason(status: number, code: string | undefined, type: string | undefin
 }
 
 /** Complete, bounded JSON only; MIME metadata is not authoritative on HTTP failures. */
-export async function readHTTPErrorBody(response: Response, limits: ExecutionLimits, signal: AbortSignal): Promise<JsonValue | undefined> {
+export async function readHTTPErrorBody(response: Response, limits: ExecutionLimits, signal: AbortSignal,
+  maximum = Math.min(64 * 1024, limits.maxEventBytes)): Promise<JsonValue | undefined> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
     checkAbort(signal);
     if (!response.body) return;
-    const maximum = Math.min(64 * 1024, limits.maxEventBytes);
     const length = response.headers.get("content-length");
     if (length && /^\d+$/.test(length) && Number(length) > maximum) return;
     reader = response.body.getReader();

@@ -67,8 +67,10 @@ function quota(response: Response, value: JsonValue | undefined): ErrorDetails["
 }
 
 export async function imageHTTPFailure(response: Response, limits: ExecutionLimits, signal: AbortSignal): Promise<CodexKitCloudError> {
-  const value = await readHTTPErrorBody(response, limits, signal);
-  const imageUsageLimit = quota(response, value);
+  // Preserve the image path's existing 64 KiB bound and MIME-gated quota code.
+  // MIME-independent parsing enriches diagnostics without reclassifying failures.
+  const value = await readHTTPErrorBody(response, limits, signal, 64 * 1024);
+  const imageUsageLimit = quota(response, response.headers.get("content-type")?.toLowerCase().includes("json") ? value : undefined);
   return new CodexKitCloudError(imageUsageLimit ? "image_usage_limit_exceeded" :
     response.status === 401 || response.status === 403 ? "authentication_failed" : "http_error", {
       ...httpDiagnostics(response, value), httpStatus: response.status,
