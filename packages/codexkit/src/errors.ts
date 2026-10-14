@@ -1,3 +1,5 @@
+import { field, record, sanitizeFailureDetails } from "./failure-policy.js";
+
 export type ErrorCode =
   | "invalid_configuration" | "invalid_request" | "integrity_mismatch"
   | "unsupported_request" | "unsupported_schema" | "invalid_authentication"
@@ -31,6 +33,12 @@ export interface ErrorDetails {
   readonly imageUsageLimit?: { readonly limitId: "image_gen"; readonly resetsAt?: number };
 }
 
+/** Flat allowlisted failure. Optional diagnostics are never inferred from absent historical data. */
+export interface SanitizedCodexFailure extends ErrorDetails {
+  readonly code: ErrorCode;
+  readonly message: string;
+}
+
 const messages: Record<ErrorCode, string> = {
   invalid_configuration: "Invalid client configuration.",
   invalid_request: "The prepared request is malformed.",
@@ -55,6 +63,28 @@ const messages: Record<ErrorCode, string> = {
   image_usage_limit_exceeded: "The image generation allowance has been reached.",
 };
 
+/**
+ * Normalize an untrusted, parsed JSON failure (including toJSON() output).
+ * Returns undefined for non-record input or a missing/unknown SDK code; invalid
+ * optional fields are omitted. Supplied messages are replaced with static SDK labels.
+ * Synchronous, deterministic and non-mutating; returns fresh objects, without I/O.
+ * This validates diagnostic shapes, not provenance: without the original request
+ * and credentials it cannot detect private text disguised as a valid identifier.
+ * Pass the flat failure itself, not an envelope, Error instance or JSON string.
+ */
+export function sanitizeCodexFailure(value: unknown): SanitizedCodexFailure | undefined {
+  try {
+    const input = record(value);
+    if (!input) return;
+    const code = field(input, "code");
+    if (typeof code !== "string" || !Object.hasOwn(messages, code)) return;
+    return { code: code as ErrorCode, message: messages[code as ErrorCode], ...sanitizeFailureDetails(input) };
+  } catch {
+    // Exotic objects (for example revoked proxies) are not serialized failures.
+    return;
+  }
+}
+
 /** Messages and serialized errors never contain request text, raw provider errors, or transport causes. */
 export class CodexKitCloudError extends Error {
   readonly code: ErrorCode;
@@ -64,11 +94,13 @@ export class CodexKitCloudError extends Error {
     super(messages[code]);
     this.name = "CodexKitCloudError";
     this.code = code;
-    this.details = Object.freeze({ ...details });
+    const safe = sanitizeFailureDetails(details);
+    if (safe.imageUsageLimit) Object.freeze(safe.imageUsageLimit);
+    this.details = Object.freeze(safe);
   }
 
-  toJSON(): { code: ErrorCode; message: string } & ErrorDetails {
-    return { code: this.code, message: this.message, ...this.details };
+  toJSON(): SanitizedCodexFailure {
+    return { code: this.code, message: messages[this.code], ...sanitizeFailureDetails(this.details) };
   }
 }
 

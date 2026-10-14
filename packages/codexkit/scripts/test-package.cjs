@@ -16,6 +16,8 @@ try {
   assert.ok(packed.files.some(file => file.path === 'dist/index.d.ts'));
   assert.ok(packed.files.some(file => file.path === 'docs/compatibility.md'));
   assert.ok(packed.files.some(file => file.path === 'docs/http-errors.md'));
+  assert.ok(packed.files.some(file => file.path === 'docs/failure-sanitizer.md'));
+  assert.ok(packed.files.some(file => file.path === 'examples/failure-projection.ts'));
   assert.ok(packed.files.some(file => file.path === 'examples/api-route.ts'));
   assert.ok(packed.files.some(file => file.path === 'examples/image-api-route.ts'));
   const manifest = JSON.parse(readFileSync(join(root, 'package.json')));
@@ -33,6 +35,9 @@ const { createHash } = require('node:crypto');
 const api = require('@timazed/codexkit');
 const { CodexKitBridgeClient, nodeHttpsTransport } = api;
 assert.equal(typeof nodeHttpsTransport, 'function');
+assert.deepEqual(api.sanitizeCodexFailure({ code: 'http_error', message: 'private', prompt: 'private' }),
+  { code: 'http_error', message: 'The provider returned an unsuccessful HTTP response.' });
+assert.equal(api.sanitizeCodexFailure(null), undefined);
 assert.equal(api.execute, undefined);
 assert.equal(api.createExecutor, undefined);
 assert.equal(api.validatePreparedRequest, undefined);
@@ -56,7 +61,7 @@ client.execute({ preparedRequest,
 `;
   writeFileSync(join(directory, 'consumer.cjs'), common);
   run(['consumer.cjs']);
-  writeFileSync(join(directory, 'consumer.mjs'), `import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport } from '@timazed/codexkit';\nconst client = new CodexKitBridgeClient();\nif (typeof client.execute !== 'function' || typeof client.validatePreparedRequest !== 'function' || !CodexKitCloudError) throw new Error('ESM imports failed');\nimport './consumer.cjs';\n`);
+  writeFileSync(join(directory, 'consumer.mjs'), `import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport, sanitizeCodexFailure } from '@timazed/codexkit';\nconst client = new CodexKitBridgeClient();\nif (typeof client.execute !== 'function' || typeof client.validatePreparedRequest !== 'function' || !CodexKitCloudError || sanitizeCodexFailure({ code: 'cancelled' })?.code !== 'cancelled') throw new Error('ESM imports failed');\nimport './consumer.cjs';\n`);
   run(['consumer.mjs']);
   // The runnable API example must also resolve the scoped package after packing.
   run(['-e', "const { createLocalAPIServer } = require('./node_modules/@timazed/codexkit/examples/local-api/server.cjs'); createLocalAPIServer().close();"]);
@@ -64,10 +69,11 @@ client.execute({ preparedRequest,
   mkdirSync(join(directory, 'examples'));
   cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/api-route.ts'), join(directory, 'examples/api-route.ts'));
   cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/image-api-route.ts'), join(directory, 'examples/image-api-route.ts'));
+  cpSync(join(directory, 'node_modules/@timazed/codexkit/examples/failure-projection.ts'), join(directory, 'examples/failure-projection.ts'));
   writeFileSync(join(directory, 'consumer.ts'), `
-import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport } from '@timazed/codexkit';
+import { CodexKitBridgeClient, CodexKitCloudError, nodeHttpsTransport, sanitizeCodexFailure } from '@timazed/codexkit';
 import type { CodexKitBridgeClientOptions, ExecuteInput, ExecutionResult, PreparedRequest } from '@timazed/codexkit';
-import type { ErrorDetails, ProviderReason } from '@timazed/codexkit';
+import type { ErrorCode, ErrorDetails, ProviderOutcome, ProviderReason, SanitizedCodexFailure } from '@timazed/codexkit';
 import type { PreparedImageRequest, ExecuteImageInput, ImageExecutionResult, ImageAction, GeneratedImage } from '@timazed/codexkit';
 const preparedRequest: PreparedRequest = { body: new Uint8Array(), sha256: '', sessionId: '', clientRequestId: '', originator: '' };
 const input: ExecuteInput = { preparedRequest, authentication: { accessToken: '', accountId: '' },
@@ -81,6 +87,23 @@ const reason: ProviderReason = 'invalid_schema';
 const diagnostics: ErrorDetails = { httpStatus: 400, requestId: 'req-fixture', responseId: 'resp_fixture',
   providerCode: 'invalid_json_schema', providerType: 'invalid_request_error', providerParam: 'text.format.schema', providerReason: reason };
 const wire: { providerReason?: ProviderReason } = new CodexKitCloudError('http_error', diagnostics).toJSON();
+const unknownWire: unknown = JSON.parse(JSON.stringify(wire));
+const safe: SanitizedCodexFailure | undefined = sanitizeCodexFailure(unknownWire);
+if (safe) {
+  const code: ErrorCode = safe.code;
+  const outcome: ProviderOutcome | undefined = safe.outcome;
+  const reason: ProviderReason | undefined = safe.providerReason;
+  const details: ErrorDetails = safe;
+  const limitId: 'image_gen' | undefined = safe.imageUsageLimit?.limitId;
+  const resetsAt: number | undefined = safe.imageUsageLimit?.resetsAt;
+  void [code, outcome, reason, details, limitId, resetsAt];
+  // @ts-expect-error Diagnostics remain optional for historical failures.
+  const required: string = safe.requestId;
+  // @ts-expect-error Unknown fields are not part of the safe contract.
+  void safe.rawDiagnostics;
+}
+const legacy: SanitizedCodexFailure = { code: 'http_error', message: 'static label' };
+void legacy;
 void wire;
 void [result, error];
 const action: ImageAction = 'generate';
@@ -153,6 +176,13 @@ const response = { status(code) { this.code = code; return this; }, json(body) {
 })().catch(error => { console.error(error); process.exitCode = 1; });
 `);
   run(['route-consumer.cjs']);
+  run(['-e', `const assert = require('node:assert/strict');
+    const { projectStoredFailure } = require('./compiled/examples/failure-projection.js');
+    assert.deepEqual(projectStoredFailure({ code: 'http_error', message: 'private', outcome: 'failed',
+      httpStatus: 400, requestId: 'req-provider', httpRequestId: 'api-local', providerReason: 'invalid_schema',
+      providerCode: 'invalid_json_schema' }), { code: 'http_error', message: 'The provider returned an unsuccessful HTTP response.',
+      outcome: 'failed', httpStatus: 400, requestId: 'req-provider', providerReason: 'invalid_schema' });
+    assert.equal(projectStoredFailure({ code: 'application_specific' }), undefined);`]);
   require('./test-image-package.cjs')({ root, directory, run });
   console.log(`Package consumer checks passed: CommonJS, ESM, TypeScript declarations, text/image route examples (${packed.size} bytes packed).`);
 } finally {

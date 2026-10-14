@@ -35,7 +35,7 @@ ChatGPT account metadata now resolves namespaced claims and repairs persisted un
 
 [`@timazed/codexkit`](packages/codexkit/README.md) exists so a TypeScript backend can execute requests prepared by CodexKit from an API route or worker. It supplies transport, response parsing, output validation, and typed failures. For example, a backend can generate a story, produce schema-validated game data, or generate/edit an image, then store the result for an app to retrieve later. Your backend supplies the queue, durable job storage, and result lookup needed for work to continue after an app disconnects.
 
-The current Cloud release is [**0.2.4**](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.4), distributed through GitHub Packages. It supports **Node.js 22 and 24**, CommonJS and ESM imports, and TypeScript declarations, with zero runtime dependencies. It has its own build, tests, and version because it serves Node backends independently of the Swift SDK. Cloud releases use `cloud-v*` tags; Swift releases use `v*` tags.
+The current Cloud release is [**0.2.5**](https://github.com/timazed/CodexKit/releases/tag/cloud-v0.2.5), distributed through GitHub Packages. It supports **Node.js 22 and 24**, CommonJS and ESM imports, and TypeScript declarations, with zero runtime dependencies. It has its own build, tests, and version because it serves Node backends independently of the Swift SDK. Cloud releases use `cloud-v*` tags; Swift releases use `v*` tags.
 
 ### What the npm package supports
 
@@ -45,6 +45,7 @@ The current Cloud release is [**0.2.4**](https://github.com/timazed/CodexKit/rel
 | Structured JSON generation | The same `execute(...)` API uses the prepared request's native JSON schema and validates the completed output against the supported schema subset. Your app still owns domain/state validation. |
 | Streaming progress and usage | Optional `onProgress` callbacks deliver text and reasoning-summary deltas. The completed result includes provider usage when reported; provisional deltas are not a completed result. |
 | Image generation and editing | `client.executeImage(...)` returns validated PNG data and actual dimensions. Editing supports up to five inline PNG/JPEG/WebP references. See the [image contract](packages/codexkit/docs/images.md) for the supported model, settings, and limits. |
+| Stored failure normalization | `sanitizeCodexFailure` returns a fresh allowlisted failure with static SDK messages, or `undefined`; see the [contract and migration](packages/codexkit/docs/failure-sanitizer.md). |
 | Validation, cancellation, and diagnostics | Preflight checks verify prepared bytes, digest, and supported request shape. Execution supports `AbortSignal`, bounded response parsing, and [privacy-safe HTTP failure diagnostics](packages/codexkit/docs/http-errors.md). |
 
 After [configuring GitHub Packages authentication](packages/codexkit/README.md#install-and-use), install the package in your backend:

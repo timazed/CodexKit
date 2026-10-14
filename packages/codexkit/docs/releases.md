@@ -11,7 +11,7 @@ GitHub Packages uses your existing GitHub account. No npmjs.com account or npm a
 3. Call the existing Cloud CI matrix to run `npm ci` and `npm run verify` on Node 22 and 24, including packed-package consumer checks.
 4. Check out that exact verified commit in a separate publishing job and recheck the tag and main ancestry. The publishing job does not restore dependency caches.
 5. Install locked dependencies, build, and publish from `packages/codexkit` using Node 24.14.0. Publishing uses `--ignore-scripts` because the build is already complete.
-6. Install the exact published version from GitHub Packages in a temporary consumer and verify CommonJS and ESM imports of `CodexKitBridgeClient`. Only publishing and registry verification receive GitHub Actions' automatically generated `GITHUB_TOKEN` as `NODE_AUTH_TOKEN`.
+6. Install the exact published version from GitHub Packages in a temporary consumer and verify CommonJS and ESM imports of `CodexKitBridgeClient` and the `sanitizeCodexFailure` contract. Only publishing and registry verification receive GitHub Actions' automatically generated `GITHUB_TOKEN` as `NODE_AUTH_TOKEN`.
 
 Stable versions publish to the `latest` dist-tag. Prereleases such as `cloud-v0.2.0-beta.1` publish to `next`. Build-metadata tags are rejected. A moved tag, mismatched lockfile, failed verification, or unmerged commit prevents publishing. An existing package version cannot be overwritten; rerunning a completed publication fails instead of changing its contents.
 

@@ -39,7 +39,7 @@ In JavaScript, diagnostics are available on `error.details`. `error.toJSON()` an
 | `imageRequestId` | optional string | Existing `x-codex-imagegen-request-id` for image requests, subject to identifier/privacy validation. |
 | `imageUsageLimit` | optional object | Existing image allowance metadata `{ "limitId": "image_gen", "resetsAt"?: number }`; existing quota evidence rules still apply, including JSON-labelled MIME metadata. MIME-independent diagnostics do not change the existing image quota error code. |
 
-No fields were renamed, removed or nested. Existing `code`, `message`, `outcome` and `httpStatus` semantics are unchanged. `providerCode` and HTTP correlation identifiers now fail closed for unknown/unsafe values; consumers must already tolerate their absence. Stream-terminal errors and successful results retain their existing contracts. `ErrorDetails` and the new `ProviderReason` type are exported from `@timazed/codexkit`.
+No fields were renamed, removed or nested. Existing `code`, `message`, `outcome` and `httpStatus` semantics are unchanged. `providerCode` and HTTP correlation identifiers now fail closed for unknown/unsafe values; consumers must already tolerate their absence. For the shared serialization policy added in 0.2.5, including optional stream-terminal diagnostic filtering, see the [failure sanitizer contract](failure-sanitizer.md). Successful results retain their existing contracts. `ErrorDetails` and the new `ProviderReason` type are exported from `@timazed/codexkit`.
 
 ## Safe rejection reasons
 
@@ -79,7 +79,9 @@ Validation is stricter than a generic “looks like a token” regex:
 
 Cancellation still reports `cancelled`; before transmission its outcome is `not_started`, and while waiting for/reading an HTTP response it is `unknown`. Aborting body inspection does not convert cancellation into `http_error` or invent a completed provider failure. Errors after an HTTP status has arrived do not become `transport_error` merely because diagnostic body inspection failed.
 
-## mp-api and Swift rollout
+## mp-api and Swift rollout (0.2.4 historical guidance)
+
+For normalization of existing stored failures in 0.2.5, use the [public sanitizer migration](failure-sanitizer.md#mp-api-migration).
 
 1. Merge this PR, which prepares package and lockfile version **0.2.4**. It does not publish a package. After merge, use the [Cloud release procedure](releases.md) to tag the merged commit **`cloud-v0.2.4`**. Cloud CI must pass Node 22/24 verification before GitHub Packages publication. Do not use a Swift `v*` tag. If 0.2.4 has already been published by then, prepare a new patch version in both manifests; never overwrite a published version or move a tag.
 2. After Cloud Release and its registry-install checks succeed, update mp-api with `npm install --save-exact @timazed/codexkit@0.2.4` using its existing GitHub Packages authentication. Commit its manifest and lockfile, verify `npm ls @timazed/codexkit`, and deploy that locked version. This repository does not update or deploy mp-api.

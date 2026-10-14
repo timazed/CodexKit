@@ -6,11 +6,19 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
-### Cloud 0.2.4 (prepared; not yet published)
+## [cloud-0.2.5] - 2026-10-14
+
+### Added
+
+- Export synchronous `sanitizeCodexFailure(unknown)` and `SanitizedCodexFailure` for flat persisted SDK failures. Return a fresh allowlisted object or `undefined` for an invalid/missing SDK code; retain optional diagnostics and regenerate messages from static SDK labels.
+- Share the SDK's value validators with error construction/serialization, including closed categories for stream/manual failures. Unknown optional diagnostics are omitted without changing error codes, requests, models, retries, or successful results.
+- Add offline HTTP 400, JSON round-trip, legacy, unsafe-value, static-label, idempotence/immutability and packed consumer tests. Document [historical privacy limits and an mp-api migration](packages/codexkit/docs/failure-sanitizer.md); application codes and persistence remain outside the SDK. No mp-api deployment, production replay, or generation-defect fix is included.
+
+## [cloud-0.2.4] - 2026-10-14
 
 - Add privacy-safe HTTP diagnostics for text and image execution: validated provider code/type, rejected protocol parameter, provider correlation IDs and static rejection classifications. Preserve existing error codes, status/outcome semantics and the flat serialized error shape. Unknown/unsafe metadata is omitted; provider messages and raw bodies are never retained.
 - Inspect bounded JSON errors even with missing/incorrect Content-Type, without letting malformed, oversized or broken bodies hide HTTP failures. Preserve cancellation, request bytes, models, validation and one-attempt behavior. Add offline fetch/native-HTTPS, redaction, bounds and packed-consumer fixtures; no live generation is performed.
-- Prepare `@timazed/codexkit` 0.2.4 and document the [consumer contract and mp-api/Swift rollout](packages/codexkit/docs/http-errors.md). Publish only after merge using `cloud-v0.2.4`; mp-api must then pin the released package. The Pocket POTUS incident's underlying request defect remains undetermined.
+- Release `@timazed/codexkit` 0.2.4 and document the [consumer contract and mp-api/Swift rollout](packages/codexkit/docs/http-errors.md). Published from the merged commit using `cloud-v0.2.4`. The Pocket POTUS incident's underlying request defect remains undetermined.
 
 ## [2.0.0-alpha.41] - 2026-10-09
 

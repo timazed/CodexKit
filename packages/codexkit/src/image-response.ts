@@ -4,6 +4,7 @@ import { isObject, parseJson, utf8 } from "./json.js";
 import { inspectPNG } from "./png.js";
 import { providerFailure } from "./response.js";
 import { httpDiagnostics, readHTTPErrorBody } from "./http-diagnostics.js";
+import { resetTime } from "./failure-policy.js";
 import { abortable, checkAbort } from "./stream.js";
 import type { ExecutionLimits, JsonValue } from "./types.js";
 import type { GeneratedImage, ImageExecutionLimits, ImageExecutionResult } from "./image-types.js";
@@ -55,13 +56,14 @@ function quota(response: Response, value: JsonValue | undefined): ErrorDetails["
       !(response.headers.get("x-codex-active-limit") === "image_gen" ||
         windows.some(window => response.headers.has(`x-image-gen-${window}-used-percent`)))) return;
   const resets: number[] = [];
-  if (typeof error.resets_at === "number" && Number.isFinite(error.resets_at) && error.resets_at >= 0) {
-    resets.push(error.resets_at);
+  const bodyReset = resetTime(error.resets_at);
+  if (bodyReset !== undefined) {
+    resets.push(bodyReset);
   } else for (const window of windows) {
     const used = response.headers.get(`x-image-gen-${window}-used-percent`);
     const reset = response.headers.get(`x-image-gen-${window}-reset-at`);
     if (used && reset && Number.isFinite(Number(used)) && Number(used) >= 100 &&
-        Number.isFinite(Number(reset)) && Number(reset) >= 0) resets.push(Number(reset));
+        resetTime(Number(reset)) !== undefined) resets.push(Number(reset));
   }
   return Object.freeze({ limitId: "image_gen", ...(resets.length ? { resetsAt: Math.max(...resets) } : {}) });
 }
