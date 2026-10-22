@@ -152,8 +152,8 @@ actor AgentOutputSession<Format: AgentOutputFormat> {
             guard context?.messageID != delta.messageID else {
                 throw AgentOutputError.protocolViolation("Final output lost its phase identity.")
             }
-            var part = pending[delta.messageID] ?? (Data(), -1)
-            guard delta.contentIndex >= max(part.index, 0), delta.contentIndex <= part.index + 1 else {
+            let previousIndex = pending[delta.messageID]?.index ?? -1
+            guard delta.contentIndex >= max(previousIndex, 0), delta.contentIndex <= previousIndex + 1 else {
                 throw AgentOutputError.protocolViolation("Output content parts arrived out of order.")
             }
             let bytes = Data(delta.text.utf8)
@@ -162,9 +162,10 @@ actor AgentOutputSession<Format: AgentOutputFormat> {
             else {
                 throw AgentOutputError.limit("Unclassified output exceeds limits.")
             }
-            part.bytes.append(bytes)
-            part.index = delta.contentIndex
-            pending[delta.messageID] = part
+            // Mutate through the dictionary's modifying accessor so Data remains
+            // uniquely owned instead of copying the accumulated prefix per delta.
+            pending[delta.messageID, default: (Data(), -1)].bytes.append(bytes)
+            pending[delta.messageID]?.index = delta.contentIndex
             pendingBytes += bytes.count
             return
         }

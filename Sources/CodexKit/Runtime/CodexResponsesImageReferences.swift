@@ -16,11 +16,18 @@ enum CodexResponsesImageReferences {
         _ items: [JSONValue],
         using attachments: [AgentImageAttachment]
     ) throws -> [JSONValue] {
-        let byDigest = Dictionary(
-            attachments.map { (digest($0.data), $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return try items.map { try restore($0, using: byDigest) }
+        var required = Set<String>()
+        for item in items { collectReferenceDigests(in: item, into: &required) }
+        guard !required.isEmpty else { return items }
+        var byDigest: [String: AgentImageAttachment] = [:]
+        for attachment in attachments {
+            let key = digest(attachment.data)
+            if required.remove(key) != nil { byDigest[key] = attachment }
+            if required.isEmpty { break }
+        }
+        guard required.isEmpty else { throw missingImage() }
+        var expanded: [String: String] = [:]
+        return try items.map { try restore($0, using: byDigest, expanded: &expanded) }
     }
 
     /// Checks attachment ownership without allocating expanded base64 payloads.
@@ -94,26 +101,27 @@ enum CodexResponsesImageReferences {
 
     private static func restore(
         _ value: JSONValue,
-        using attachments: [String: AgentImageAttachment]
+        using attachments: [String: AgentImageAttachment],
+        expanded: inout [String: String]
     ) throws -> JSONValue {
         switch value {
         case let .array(values):
-            return .array(try values.map { try restore($0, using: attachments) })
+            return .array(try values.map { try restore($0, using: attachments, expanded: &expanded) })
         case let .object(original):
             var object = original
             for (key, child) in object {
                 if let encoded = child.stringValue,
-                   let replacement = try restoredString(encoded, using: attachments) {
+                   let replacement = try restoredString(encoded, using: attachments, expanded: &expanded) {
                     object[key] = .string(replacement)
                 } else {
-                    object[key] = try restore(child, using: attachments)
+                    object[key] = try restore(child, using: attachments, expanded: &expanded)
                 }
             }
             return .object(object)
         case .bool, .null, .number:
             return value
         case let .string(value):
-            if let replacement = try restoredString(value, using: attachments) {
+            if let replacement = try restoredString(value, using: attachments, expanded: &expanded) {
                 return .string(replacement)
             }
             return .string(value)
@@ -122,15 +130,19 @@ enum CodexResponsesImageReferences {
 
     private static func restoredString(
         _ value: String,
-        using attachments: [String: AgentImageAttachment]
+        using attachments: [String: AgentImageAttachment],
+        expanded: inout [String: String]
     ) throws -> String? {
         guard let digestValue = referenceDigest(in: value) else { return nil }
+        if let cached = expanded[value] { return cached }
         guard let attachment = attachments[digestValue] else {
             throw missingImage()
         }
-        return value.hasPrefix(dataURLPrefix)
+        let result = value.hasPrefix(dataURLPrefix)
             ? attachment.dataURLString
             : attachment.data.base64EncodedString()
+        expanded[value] = result
+        return result
     }
 
     private static func collectReferenceDigests(in value: JSONValue, into digests: inout Set<String>) {
