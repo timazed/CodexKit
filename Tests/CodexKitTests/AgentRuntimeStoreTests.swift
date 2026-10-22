@@ -53,6 +53,9 @@ final class AgentRuntimeStoreTests: XCTestCase {
         XCTAssertEqual(store.messages.filter { $0.role == .assistant }.count, 1)
         XCTAssertTrue(store.streamingText.isEmpty)
         XCTAssertNil(store.lastError)
+        // A delayed presentation update must not resurrect committed text.
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertTrue(store.streamingText.isEmpty)
     }
 
     func testRuntimeCoalescesRedundantPendingStoreOperations() async throws {

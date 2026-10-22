@@ -251,8 +251,7 @@ package struct AgentLogger: Sendable {
 
 private extension AgentLogEntry {
     var renderedLine: String {
-        let formatter = ISO8601DateFormatter()
-        var line = "[\(formatter.string(from: timestamp))] [\(level.renderedName)] [\(category.rawValue)] \(message)"
+        var line = "[\(timestamp.ISO8601Format())] [\(level.renderedName)] [\(category.rawValue)] \(message)"
         if !metadata.isEmpty {
             let renderedMetadata = metadata
                 .sorted { $0.key < $1.key }

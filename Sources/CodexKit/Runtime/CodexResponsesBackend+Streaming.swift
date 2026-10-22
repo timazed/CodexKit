@@ -74,18 +74,7 @@ struct StreamItem: Decodable, Sendable {
         let object = rawValue.objectValue ?? [:]
         type = ResponsesItemType(wireValue: object["type"])
 
-        switch type {
-        case .message:
-            kind = .message(try StreamMessageItem(from: decoder))
-        case .functionCall:
-            kind = .functionCall(try StreamFunctionCallItem(from: decoder))
-        case .imageGenerationCall:
-            kind = .imageGenerationCall(try StreamImageGenerationCallItem(from: decoder))
-        case .webSearchCall:
-            kind = .webSearchCall(try StreamWebSearchCallItem(from: decoder))
-        default:
-            kind = .other
-        }
+        kind = try StreamItemFields(object: object, codingPath: decoder.codingPath).kind(for: type)
     }
 
     var startedProgress: AgentProgress? { progress(completed: false) }
@@ -136,6 +125,10 @@ struct StreamMessageContent: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let object = try container.decode([String: JSONValue].self)
+        self.init(object: object)
+    }
+
+    init(object: [String: JSONValue]) {
         type = object["type"]?.stringValue ?? ""
         displayText = object["text"]?.stringValue ?? object["refusal"]?.stringValue
         imageAttachment = Self.parseImageAttachment(from: object)

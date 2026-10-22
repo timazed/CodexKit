@@ -375,14 +375,20 @@ public actor RealmRuntimeStateStore: RuntimeStateStoring, RuntimeStateInspecting
             if relationshipKeys.isEmpty {
                 companions = []
             } else {
-                companions = Array(historyObjects
-                    .filter("relationshipKey IN %@", Array(relationshipKeys))
-                    .prefix(candidateLimit))
-                guard companions.count < candidateLimit else {
-                    throw AgentStoreError.invalidInput(
-                        "stored activation relationships exceed their bounded cardinality"
-                    )
+                // Equality lookups use the relationship index. A broad IN query
+                // combined with threadID can scan the entire thread in Realm.
+                var matches: [RealmRuntimeHistoryObject] = []
+                for key in relationshipKeys {
+                    matches.append(contentsOf: realm.objects(RealmRuntimeHistoryObject.self)
+                        .filter("relationshipKey == %@ AND threadID == %@", key, id)
+                        .prefix(candidateLimit - matches.count))
+                    guard matches.count < candidateLimit else {
+                        throw AgentStoreError.invalidInput(
+                            "stored activation relationships exceed their bounded cardinality"
+                        )
+                    }
                 }
+                companions = matches
             }
             var candidates = Dictionary(uniqueKeysWithValues: recent.map { ($0.key, $0) })
             for object in companions { candidates[object.key] = object }

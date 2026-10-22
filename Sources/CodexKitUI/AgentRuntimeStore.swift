@@ -20,6 +20,8 @@ public final class AgentRuntimeStore {
     public let deviceCodeCoordinator: DeviceCodePromptCoordinator?
 
     private let runtime: AgentRuntime
+    @ObservationIgnored private let streamingUpdates = StreamingTextBatcher()
+    @ObservationIgnored private let reasoningUpdates = StreamingTextBatcher()
     private var activeThreadID: String?
     private var selectionGeneration = UUID()
     private var accountGeneration = UUID()
@@ -66,6 +68,8 @@ public final class AgentRuntimeStore {
 
     public func signIn() async {
         accountGeneration = UUID()
+        streamingUpdates.reset()
+        reasoningUpdates.reset()
         let account = accountGeneration
         do {
             let signedIn = try await runtime.signIn()
@@ -147,6 +151,8 @@ public final class AgentRuntimeStore {
         defer { sendingThreadIDs.remove(activeThreadID) }
         let account = accountGeneration
 
+        streamingUpdates.reset()
+        reasoningUpdates.reset()
         streamingText = ""
         latestProgress = nil
         runningTools = [:]
@@ -207,6 +213,12 @@ public final class AgentRuntimeStore {
         in threadID: String,
         account: UUID
     ) async throws {
+        defer {
+            if activeThreadID == threadID, accountGeneration == account {
+                streamingUpdates.flush()
+                reasoningUpdates.flush()
+            }
+        }
         for try await event in stream {
             guard accountGeneration == account else { continue }
             switch event {
@@ -224,9 +236,15 @@ public final class AgentRuntimeStore {
 
             case let .progress(progress):
                 if activeThreadID == threadID {
-                    latestProgress = progress
-                    if case let .reasoningSummaryDelta(_, _, delta) = progress.content {
-                        reasoningSummary = String((reasoningSummary + delta).suffix(8_000))
+                    if case let .reasoningSummaryDelta(_, _, delta) = progress.content, !delta.isEmpty {
+                        reasoningUpdates.append(delta) { [weak self] text in
+                            guard let self, accountGeneration == account, activeThreadID == threadID else { return }
+                            reasoningSummary = String((reasoningSummary + text).suffix(8_000))
+                            latestProgress = progress
+                        }
+                    } else {
+                        reasoningUpdates.flush()
+                        latestProgress = progress
                     }
                 }
             case let .rateLimitsUpdated(snapshots):
@@ -236,6 +254,8 @@ public final class AgentRuntimeStore {
                 }
             case .turnInterrupted:
                 if activeThreadID == threadID {
+                    streamingUpdates.flush()
+                    reasoningUpdates.flush()
                     latestProgress = nil
                     streamingText = ""
                 }
@@ -254,7 +274,12 @@ public final class AgentRuntimeStore {
                 if activeThreadID == threadID { runningTools[result.invocationID] = nil }
 
             case let .assistantMessageDelta(_, _, delta):
-                if activeThreadID == threadID { streamingText.append(delta) }
+                if activeThreadID == threadID {
+                    streamingUpdates.append(delta) { [weak self] text in
+                        guard let self, accountGeneration == account, activeThreadID == threadID else { return }
+                        streamingText.append(text)
+                    }
+                }
 
             case let .messageCommitted(message):
                 guard activeThreadID == threadID else { continue }
@@ -264,11 +289,14 @@ public final class AgentRuntimeStore {
                     messages.append(message)
                 }
                 if message.role == .assistant {
+                    streamingUpdates.flush()
                     streamingText = ""
                 }
 
             case .turnCompleted:
                 if activeThreadID == threadID {
+                    streamingUpdates.flush()
+                    reasoningUpdates.flush()
                     latestProgress = nil
                     streamingText = ""
                 }
@@ -282,6 +310,8 @@ public final class AgentRuntimeStore {
     }
 
     private func beginSelection(id: String?) -> UUID {
+        streamingUpdates.reset()
+        reasoningUpdates.reset()
         selectionGeneration = UUID()
         activeThreadID = id
         messages = []
