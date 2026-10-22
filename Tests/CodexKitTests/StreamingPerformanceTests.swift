@@ -16,13 +16,18 @@ final class StreamingPerformanceTests: XCTestCase {
         XCTAssertEqual(values, ["Hello 😀 café\n"])
     }
 
-    func testResetDiscardsPreviousSelectionAndCancelsItsTimer() async throws {
+    func testResetDiscardsPreviousSelectionAndCancelsItsTimer() async {
         let batch = StreamingTextBatcher(interval: .milliseconds(10))
+        let published = expectation(description: "New selection is published by the timer")
+        published.assertForOverFulfill = true
         var values: [String] = []
         batch.append("old chat") { values.append($0) }
         batch.reset()
-        batch.append("new chat") { values.append($0) }
-        try await Task.sleep(for: .milliseconds(80))
+        batch.append("new chat") {
+            values.append($0)
+            published.fulfill()
+        }
+        await fulfillment(of: [published], timeout: 5)
         XCTAssertEqual(values, ["new chat"])
         batch.flush()
         XCTAssertEqual(values.count, 1)
