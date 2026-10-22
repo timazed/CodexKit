@@ -46,7 +46,9 @@ final class PresentationPerformanceTests: XCTestCase {
         for batched in [false, true] {
             var text = ""
             var renders = 0
-            func publish(_ delta: String) {
+            // Swift 6.1 does not infer the actor isolation of a local function
+            // when converting it to the batcher's sendable callback type.
+            let publish: @MainActor @Sendable (String) -> Void = { delta in
                 text.append(delta)
                 let renderer = ImageRenderer(content: Text(text).font(.body)
                     .frame(width: 480, height: 240, alignment: .topLeading).clipped())
