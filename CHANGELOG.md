@@ -6,6 +6,21 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0-alpha.42] - 2026-10-23
+
+### Changed
+
+- Improve streamed output accumulation by appending pending bytes in place. Coalesce `AgentRuntimeStore` answer and reasoning presentation updates at 33 ms, flush terminal events and errors, and cancel pending publication on thread/account changes. Runtime events remain lossless.
+- Decode typed response items from existing JSON values while preserving validation and raw provider fields. Resolve only required image digests and reuse expanded image strings within each request.
+- Use bounded indexed Realm relationship lookups for history activation and avoid allocating a date formatter for every log timestamp.
+- Add reproducible optimized benchmarks and regression coverage for buffering, decoding, image expansion, presentation, history activation, and logging. See the [performance report](docs/performance-2026-10-23.md) for methodology and measurements; local benchmark gains do not imply equivalent model-turn or physical-device speedups.
+
+### Compatibility
+
+- Existing request behavior and public APIs remain unchanged. UI observers receive coalesced intermediate presentation updates; terminal output is flushed.
+- The independently versioned Cloud npm package remains at 0.2.5.
+
+
 ## [cloud-0.2.5] - 2026-10-14
 
 ### Added
@@ -703,7 +718,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.37...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.42...HEAD
+[2.0.0-alpha.42]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.41...v2.0.0-alpha.42
 [2.0.0-alpha.37]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.36...v2.0.0-alpha.37
 [2.0.0-alpha.36]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.35...v2.0.0-alpha.36
 [2.0.0-alpha.35]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.34...v2.0.0-alpha.35

@@ -1,19 +1,19 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.0.0--alpha.41-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.41)
+[![Version](https://img.shields.io/badge/release-2.0.0--alpha.42-orange)](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.42)
 
 `CodexKit` is a Swift SDK for embedding Codex-style agents in **iOS 17+ and macOS 14+** apps. It provides ChatGPT sign-in, persistent conversations, streaming, host-defined tools, and optional local memory.
 
 The optional [`@timazed/codexkit` npm package](#cloud-execution-with-npm) lets Node.js backends execute CodexKit-prepared **text, structured JSON, and image generation/edit requests**. It provides a focused execution bridge for your own middleware. Swift consumers do not need Node or npm.
 
-`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.41](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.41). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
+`main` tracks the upcoming **2.0** development line; the latest prerelease is [v2.0.0-alpha.42](https://github.com/timazed/CodexKit/releases/tag/v2.0.0-alpha.42). For the stable release, use the [v1.1.0 documentation](https://github.com/timazed/CodexKit/blob/v1.1.0/README.md). Upgrading an alpha integration? Read the [migration notes](docs/migration.md).
 
-This prerelease corrects the default model-discovery client version so current
-account catalogs can expose GPT-6.1 Sol, and repairs bounded iOS simulator boot
-recovery after a shutdown timeout. Explicit client-version overrides and the
-default generation model remain unchanged. See the
-[alpha.41 changelog](CHANGELOG.md#200-alpha41---2026-10-09).
+This prerelease improves streamed output buffering and presentation, response
+decoding, repeated image expansion, Realm history activation, and logging.
+Presentation updates are coalesced at 33 ms while runtime events remain lossless.
+See the [alpha.42 changelog](CHANGELOG.md#200-alpha42---2026-10-23) and
+[performance report](docs/performance-2026-10-23.md) for measurements and limits.
 
 
 
@@ -80,7 +80,7 @@ To explore text, JSON, and images locally, start `npm run dev:api` in `packages/
 
 Swift 6.1 or newer is required; Xcode projects require Xcode 16.3 or newer. The deployment targets remain iOS 17 and macOS 14.
 
-Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.41`, and select the products your app needs:
+Add `https://github.com/timazed/CodexKit` as a Swift package dependency in Xcode and choose the exact version `2.0.0-alpha.42`, and select the products your app needs:
 
 | Product | Purpose |
 | --- | --- |
