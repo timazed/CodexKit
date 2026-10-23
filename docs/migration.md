@@ -2,7 +2,15 @@
 
 [Documentation index](index.md) · [CodexKit](../README.md)
 
-Use these notes when moving from earlier 2.0 alpha snapshots. Release history remains in the changelog.
+Use these notes when upgrading from 1.x or earlier 2.0 alpha snapshots. Release history remains in the changelog.
+
+## Stable 2.0.0
+
+Select Swift package version `2.0.0`. This release promotes the alpha.42 implementation without additional runtime or persistence changes. Apps already using alpha.42 only need to update their package version.
+
+For 1.x integrations, review the [2.0 migration notes](#20-migration-notes), especially the messaging APIs, separate SQLite/Realm products, and runtime configuration changes. Earlier alpha users should review the intervening sections below; their version numbers identify when each change was introduced, rather than the version to install today.
+
+Requirements remain Swift 6.1 or newer, iOS 17 or newer, and macOS 14 or newer. Xcode projects require Xcode 16.3 or newer. The independently versioned Cloud npm package remains at 0.2.5.
 
 ## Model discovery (alpha.41)
 
@@ -259,7 +267,7 @@ The script compiles isolated baseline/current core and UI modules, then writes S
 
 ## Versioning And Releases
 
-`CodexKit` uses Semantic Versioning. The latest stable release is `v1.1.0`, while `main` tracks the upcoming 2.0 development line.
+`CodexKit` uses Semantic Versioning. The latest stable release is `v2.0.0`, and `main` tracks ongoing development.
 
 ### 2.0 Messaging API
 
