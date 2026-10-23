@@ -6,6 +6,27 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-23
+
+The stable 2.0 release promotes the verified alpha.42 implementation. There are no additional runtime or persistence changes from alpha.42.
+
+### Highlights since 1.x
+
+- Typed structured requests and responses, turn-based streaming with provisional output and committed results, and explicit interruption and steering.
+- Durable structured-request recovery, prepared requests, and remote execution with per-request completion preferences.
+- Separate SQLite and Realm persistence products, bounded history activation, and resumable conversation state.
+- Standalone image generation/editing, account model discovery, account metadata restoration, and expanded usage telemetry.
+- Opt-in parallel tool execution with approval and skill-policy constraints.
+- Improved streamed buffering and presentation, response decoding, image expansion, Realm lookups, and logging. See the [performance report](docs/performance-2026-10-23.md) for measured workloads and limitations.
+
+### Upgrading
+
+- Select Swift package version `2.0.0`. Alpha.42 consumers need only update their version selection.
+- This is a major-version upgrade from 1.x. Review the [migration guide](docs/migration.md) for messaging, configuration, persistence product, and model identifier changes.
+- Requires Swift 6.1+, iOS 17+, and macOS 14+; Xcode projects require Xcode 16.3+.
+- The Cloud npm package is independently versioned and remains at 0.2.5. Account-dependent provider access and model availability remain unchanged.
+
+
 ## [2.0.0-alpha.42] - 2026-10-23
 
 ### Changed
@@ -718,7 +739,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.42...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/timazed/CodexKit/compare/v1.1.0...v2.0.0
 [2.0.0-alpha.42]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.41...v2.0.0-alpha.42
 [2.0.0-alpha.37]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.36...v2.0.0-alpha.37
 [2.0.0-alpha.36]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.35...v2.0.0-alpha.36
