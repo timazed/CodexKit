@@ -53,10 +53,10 @@ def require_evidence(api, sha, wait_seconds=0, start_verification=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--wait-seconds", type=int, default=480)
+    parser.add_argument("--wait-seconds", type=int, default=2400)
     args = parser.parse_args()
-    if not 0 <= args.wait_seconds <= 480:
-        parser.error("--wait-seconds must be between 0 and 480")
+    if not 0 <= args.wait_seconds <= 2400:
+        parser.error("--wait-seconds must be between 0 and 2400")
     sha = release_commit(args.tag)
     changelog = subprocess.check_output(["git", "show", f"{sha}:CHANGELOG.md"], text=True)
     notes = release_notes(args.tag, changelog)

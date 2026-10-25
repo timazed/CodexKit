@@ -37,7 +37,7 @@ class GitHub:
         if not self.token:
             raise EvidenceError("A repository Actions token is required to start verification")
         request = urllib.request.Request(self.base + "/actions/workflows/ci.yml/dispatches",
-            data=json.dumps({"ref": tag, "inputs": {"extended": False}}).encode(),
+            data=json.dumps({"ref": tag, "inputs": {"extended": True}}).encode(),
             headers={"Accept": "application/vnd.github+json", "Authorization": "Bearer " + self.token,
                      "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -101,5 +101,5 @@ def find_evidence(api, sha, exclude_run_id=None):
         jobs = list(api.pages(f"/actions/runs/{run['id']}/jobs?filter=latest", "jobs"))
         if complete_jobs(jobs, sha):
             return run, pending
-        # A successful reuse-only workflow has skipped mandatory jobs. Find its original proof.
+        # Routine workflows skip compatibility/demo jobs. Find comprehensive proof.
     return None, pending
