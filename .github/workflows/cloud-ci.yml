@@ -2,7 +2,7 @@ name: Cloud CI
 
 on:
   push:
-    branches: [main, "codex/**", "feature/**", "bugfix/**", "chore/**", "improvement/**"]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloud-ci-${{ github.event.pull_request.number || github.ref }}
+  group: cloud-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref_type != 'tag' }}
 
 jobs:

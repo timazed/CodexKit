@@ -12,6 +12,7 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "Scripts"
 sys.path.insert(0, str(SCRIPTS))
 import ci_evidence as evidence
 import ci_plan
+import ci_gate
 import release_gate
 import verify_macos_demo
 
@@ -116,6 +117,22 @@ class ExactCommitEvidenceTests(unittest.TestCase):
             self.assertFalse(evidence.complete_jobs(values, SHA))
         self.assertTrue(evidence.complete_jobs(jobs() + [dict(name="Extended stress", status="completed", conclusion="skipped")], SHA))
 
+    def test_routine_pass_cannot_certify_release(self):
+        values = [{**job, "conclusion": "skipped"} if job["name"] in {
+            "SDK (minimum)", "Demo (iOS)", "Demo (macOS)", "Build iOS 17 verifier", "Demo (iOS 17)"
+        } else job for job in jobs()]
+        self.assertIsNone(evidence.find_evidence(FixtureAPI(job_sets={1: values}), SHA)[0])
+        api = FixtureAPI([run(2), run()], {1: jobs(), 2: values})
+        self.assertEqual(evidence.find_evidence(api, SHA)[0]["id"], 1)
+
+    def test_release_dispatch_requires_comprehensive_verification(self):
+        api = evidence.GitHub(REPOSITORY, token="fixture")
+        with patch.object(evidence.urllib.request, "urlopen") as request:
+            request.return_value.__enter__.return_value.status = 204
+            api.dispatch_ci("v2.0.0")
+        body = json.loads(request.call_args.args[0].data)
+        self.assertEqual(body, {"ref": "v2.0.0", "inputs": {"extended": True}})
+
     def test_api_failure_fails_release_closed(self):
         with patch.object(FixtureAPI, "get", side_effect=OSError("offline")), self.assertRaises(OSError):
             release_gate.require_evidence(FixtureAPI(), SHA)
@@ -171,54 +188,80 @@ class ExactCommitEvidenceTests(unittest.TestCase):
 
 
 class VerificationPlanningTests(unittest.TestCase):
-    def test_only_same_repository_codex_prs_delegate(self):
-        event = dict(pull_request=dict(head=dict(repo=dict(full_name=REPOSITORY), ref="codex/task", sha=SHA)))
-        self.assertEqual(ci_plan.delegated_revision(event, REPOSITORY), SHA)
-        event["pull_request"]["head"]["repo"]["full_name"] = "fork/library"
-        self.assertIsNone(ci_plan.delegated_revision(event, REPOSITORY))
-        event["pull_request"]["head"]["repo"]["full_name"] = REPOSITORY
-        event["pull_request"]["head"]["ref"] = "feature"
-        self.assertIsNone(ci_plan.delegated_revision(event, REPOSITORY))
+    def test_push_and_all_pr_branches_use_routine_checks(self):
+        for event_name in ("push", "pull_request", "workflow_dispatch"):
+            for branch in ("codex/task", "feature/task", "main"):
+                event = dict(pull_request=dict(head=dict(ref=branch)))
+                plan = ci_plan.verification_plan(event_name, event)
+                self.assertFalse(plan["extended"])
+                self.assertEqual([p["profile"] for p in plan["sdk_matrix"]["include"]], ["current"])
 
-    def test_delegated_pr_without_passing_branch_proof_cannot_become_green(self):
+    def test_schedule_manual_and_force_select_complete_matrix(self):
+        for event_name, event, force in (("schedule", {}, False),
+                                        ("workflow_dispatch", {"inputs": {"extended": True}}, False),
+                                        ("workflow_dispatch", {"inputs": {"extended": "true"}}, False),
+                                        ("push", {}, True)):
+            plan = ci_plan.verification_plan(event_name, event, force)
+            self.assertTrue(plan["extended"])
+            self.assertEqual(plan["sdk_matrix"]["include"][1]["runner"], "macos-15")
+            self.assertEqual([p["profile"] for p in plan["sdk_matrix"]["include"]], ["current", "minimum"])
+
+    def test_false_dispatch_input_does_not_enable_extended_checks(self):
+        for value in (False, "false", "", None):
+            self.assertFalse(ci_plan.verification_plan("workflow_dispatch", {"inputs": {"extended": value}})["extended"])
+
+    def test_outputs_are_valid_actions_boolean_and_matrix_json(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             event = root / "event.json"
-            event.write_text(json.dumps(dict(pull_request=dict(head=dict(
-                repo=dict(full_name=REPOSITORY), ref="codex/task", sha=SHA)))))
-            environment = dict(GITHUB_SHA="b" * 40, GITHUB_EVENT_PATH=str(event), GITHUB_EVENT_NAME="pull_request",
-                               GITHUB_REPOSITORY=REPOSITORY, GITHUB_RUN_ID="2", GITHUB_OUTPUT=str(root / "output"),
-                               GITHUB_STEP_SUMMARY=str(root / "summary"))
-            with patch.dict(os.environ, environment), patch.object(sys, "argv", ["ci_plan"]), \
-                 patch.object(ci_plan, "require_evidence", side_effect=evidence.EvidenceError("branch failed")) as require, \
-                 self.assertRaises(evidence.EvidenceError):
+            event.write_text('{}')
+            environment = dict(GITHUB_EVENT_PATH=str(event), GITHUB_EVENT_NAME="schedule",
+                               GITHUB_OUTPUT=str(root / "output"), GITHUB_STEP_SUMMARY=str(root / "summary"))
+            with patch.dict(os.environ, environment), patch.object(sys, "argv", ["ci_plan"]):
                 ci_plan.main()
-            self.assertEqual(require.call_args.args[1], SHA)
-            self.assertFalse((root / "output").exists())
+            outputs = dict(line.split("=", 1) for line in (root / "output").read_text().splitlines())
+            self.assertEqual(outputs["extended"], "true")
+            self.assertEqual(len(json.loads(outputs["sdk_matrix"])["include"]), 2)
 
-    def test_documentation_change_keeps_extended_work_optional(self):
-        self.assertEqual(ci_plan.extended_checks(["docs/guide.md"]), dict(stress=False, full_demos=False))
 
-    def test_relevant_changes_and_force_select_extended_work(self):
-        self.assertTrue(ci_plan.extended_checks(["Sources/CodexKitRealm/Store.swift"])["stress"])
-        self.assertTrue(ci_plan.extended_checks(["Tests/CodexKitTests/RuntimeConcurrencyStressTests.swift"])["stress"])
-        self.assertTrue(ci_plan.extended_checks(["DemoApp/CodexKitMacDemo/Model.swift"])["full_demos"])
-        self.assertEqual(ci_plan.extended_checks([".github/workflows/ci.yml"]), dict(stress=True, full_demos=True))
-        self.assertEqual(ci_plan.extended_checks([], force=True), dict(stress=True, full_demos=True))
+class VerificationGateTests(unittest.TestCase):
+    def results(self, extended):
+        return {"plan": {"result": "success", "outputs": {"extended": str(extended).lower()}},
+                **{name: {"result": "success"} for name in ci_gate.CORE_JOBS},
+                **{name: {"result": "success" if extended else "skipped"} for name in ci_gate.EXTENDED_JOBS}}
 
-    def test_api_error_makes_ci_run_fresh_instead_of_skipping(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            event = root / "event.json"
-            event.write_text("{}")
-            environment = dict(GITHUB_SHA=SHA, GITHUB_EVENT_PATH=str(event), GITHUB_EVENT_NAME="push",
-                               GITHUB_REPOSITORY=REPOSITORY, GITHUB_RUN_ID="2", GITHUB_OUTPUT=str(root / "output"),
-                               GITHUB_STEP_SUMMARY=str(root / "summary"))
-            with patch.dict(os.environ, environment), patch.object(sys, "argv", ["ci_plan"]), \
-                 patch.object(ci_plan, "find_evidence", side_effect=OSError()), \
-                 patch.object(ci_plan, "changed_paths", return_value=["docs/guide.md"]):
-                ci_plan.main()
-            self.assertIn("verify=true", (root / "output").read_text())
+    def test_routine_and_comprehensive_results_pass(self):
+        for extended in (False, True):
+            ci_gate.validate_results(self.results(extended))
+
+    def test_selected_jobs_cannot_fail_cancel_or_skip(self):
+        for extended in (False, True):
+            required = ("plan",) + ci_gate.CORE_JOBS + (ci_gate.EXTENDED_JOBS if extended else ())
+            for name in required:
+                for result in ("failure", "cancelled", "skipped", ""):
+                    with self.subTest(extended=extended, job=name, result=result):
+                        needs = self.results(extended)
+                        needs[name]["result"] = result
+                        with self.assertRaises(ValueError):
+                            ci_gate.validate_results(needs)
+
+    def test_missing_mode_and_missing_jobs_fail_closed(self):
+        needs = self.results(False)
+        needs["plan"]["outputs"] = {}
+        with self.assertRaises(ValueError):
+            ci_gate.validate_results(needs)
+        for name in ci_gate.CORE_JOBS + ci_gate.EXTENDED_JOBS:
+            needs = self.results(True)
+            del needs[name]
+            with self.assertRaises(ValueError):
+                ci_gate.validate_results(needs)
+
+    def test_unexpected_extended_execution_is_not_ignored(self):
+        for result in ("success", "failure", "cancelled"):
+            needs = self.results(False)
+            needs["demos"]["result"] = result
+            with self.assertRaises(ValueError):
+                ci_gate.validate_results(needs)
 
 
 class ReleaseNotesAndTagTests(unittest.TestCase):

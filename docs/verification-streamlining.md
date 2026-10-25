@@ -2,6 +2,18 @@
 
 This change affects repository verification and the Debug demo harnesses. It changes no production SDK API, recovery policy, or gameplay integration. It does not publish a new SDK version by itself.
 
+## Current policy (26 October 2026)
+
+Routine PR/main verification now runs current Debug and optimized SDK checks (two macOS jobs). Minimum-compiler, signed demo, iOS 17, remote-demo integration, and longer stress workloads run nightly or through manual `extended: true` dispatch. Feature-branch pushes no longer duplicate pull-request workflows. Planning is local and deterministic, with no API-based reuse or branch-proof polling.
+
+Release evidence still requires the complete original matrix for the tagged SHA. A routine green gate is insufficient; the release workflow requests comprehensive verification when needed and allows up to 40 minutes for it to finish. The existing gate check name is retained for branch protection. See [the current policy](verification.md#ci-and-release-promotion).
+
+The [25 October scheduled failure](https://github.com/timazed/CodexKit/actions/runs/40230402120) occurred when CoreSimulator timed out terminating the demo app; SDK jobs passed. Moving simulator-dependent work out of routine CI reduces its impact on ordinary changes, but does not claim to fix CoreSimulator itself. Demo/platform regressions now require comprehensive verification to detect. Hosted timings for this revision have not yet been measured.
+
+Compatibility execution has moved to macOS 15 / Xcode 16.4, retaining Swift 6.1.3 and explicitly installing iOS 17.5. macOS 14 and iOS 17.0.1 runtime execution are no longer covered by hosted CI; deployment targets remain unchanged.
+
+The sections below record the earlier alpha.30 implementation and measurements; their all-lanes-per-change and PR-delegation policy has been superseded.
+
 ## Measured baseline
 
 Alpha.30 commit `2dd82ad5f80e97debc0999c43dba81633abb5515` ran the current-host pipeline three times:
