@@ -240,6 +240,11 @@ jobs:
         with:
           name: minimum-simulator-app
           path: ${{ runner.temp }}/minimum-simulator-download
+      # Prime CoreSimulator before xcodebuild's runtime downloader connects to it.
+      # https://github.com/actions/runner-images/issues/12862
+      - name: Initialize CoreSimulator
+        timeout-minutes: 2
+        run: xcrun simctl list runtimes --json
       - name: Install the iOS 17 compatibility runtime
         timeout-minutes: 15
         run: xcodebuild -downloadPlatform iOS -buildVersion 17.5
