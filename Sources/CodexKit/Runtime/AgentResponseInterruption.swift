@@ -81,7 +81,8 @@ struct ResponsesAttemptObservation {
             interruption: .init(outcome: outcome, clientRequestID: clientRequestID, requestID: requestID,
                 responseID: responseID, lastSequenceNumber: lastSequenceNumber, hasOutput: hasOutput,
                 hasToolActivity: hasToolActivity, providerCompleted: providerCompleted,
-                transportErrorDomain: transport?.domain, transportErrorCode: transport?.code))
+                transportErrorDomain: transport?.domain, transportErrorCode: transport?.code),
+            imageGeneration: original?.imageGeneration, safetyRecourse: original?.safetyRecourse)
     }
 
     private static func transportError(_ error: Error, depth: Int = 0) -> NSError? {

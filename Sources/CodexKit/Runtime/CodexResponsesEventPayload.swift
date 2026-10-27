@@ -19,7 +19,11 @@ struct CodexResponsesEventPayload: Decodable {
         logsResponsePayload = discriminator?.logsResponsePayload == true
         let sequenceNumber = discriminator == .rateLimits
             ? nil : try container.decodeIfPresent(Int.self, forKey: .sequenceNumber)
-        if discriminator == .completed {
+        if type == "response.metadata" {
+            let object = try? [String: JSONValue](from: decoder)
+            event = .init(kind: .other, safetyRecourse: AgentSafetyRecourse.parse(object?["metadata"]),
+                sequenceNumber: sequenceNumber)
+        } else if discriminator == .completed {
             let response = try ResponsePayload(from: decoder).response
             let usage = response?.usage?.assistantUsage ?? .unavailable()
             if response == nil {

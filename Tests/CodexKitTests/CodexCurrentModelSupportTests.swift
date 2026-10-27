@@ -2,12 +2,13 @@
 import XCTest
 
 final class CodexCurrentModelSupportTests: XCTestCase {
-    // Model catalog capability snapshot as of 30 September 2026.
+    // Model catalog snapshot from September 30, with Terra added from upstream 126a0ee92.
     // Keep upstream data independent of the Swift catalog to detect metadata drift.
     private let upstreamCatalog = #"""
     {"models":[
         {"slug":"gpt-6-astra","display_name":"GPT-6-Astra","description":"Frontier intelligence for the most demanding work.","default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"context_window":272000,"input_modalities":["text","image"],"visibility":"list","supports_image_detail_original":true},
         {"slug":"gpt-6.1-sol","display_name":"GPT-6.1-Sol","description":"Latest workhorse model for coding and everyday work.","default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"context_window":272000,"input_modalities":["text","image"],"visibility":"list","supports_image_detail_original":true},
+        {"slug":"gpt-6.1-terra","display_name":"GPT-6.1 Terra","description":"GPT-6.1 Terra Codex model.","default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"context_window":500000,"input_modalities":["text","image"],"visibility":"list","supports_image_detail_original":true},
         {"slug":"gpt-6-sol","display_name":"GPT-6-Sol","description":"Previous generation workhorse model.","default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"context_window":272000,"input_modalities":["text","image"],"visibility":"list","supports_image_detail_original":true},
         {"slug":"gpt-6-luna","display_name":"GPT-6-Luna","description":"Fast and affordable model for easier tasks.","default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}],"context_window":272000,"input_modalities":["text","image"],"visibility":"list","supports_image_detail_original":true},
         {"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","description":"Older generation workhorse model.","default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"context_window":272000,"input_modalities":["text","image"],"visibility":"list","supports_image_detail_original":true},
@@ -52,7 +53,7 @@ final class CodexCurrentModelSupportTests: XCTestCase {
         let session = ChatGPTSession(accessToken: "test-token", refreshToken: "test-refresh",
             account: .init(id: "test-account", email: "test@example.com", plan: .plus))
         let thread = AgentThread(id: "test")
-        for model in [CodexModel.gpt61Sol, .gpt6Sol, .gpt6Luna, .daybreakBlueLatest, .daybreakRedLatest] {
+        for model in [CodexModel.gpt61Sol, .gpt61Terra, .gpt6Sol, .gpt6Luna, .daybreakBlueLatest, .daybreakRedLatest] {
             let info = try XCTUnwrap(model.info)
             var request = Request(text: "Hello")
             request.modelOverride = .init(model: model)
@@ -83,7 +84,7 @@ final class CodexCurrentModelSupportTests: XCTestCase {
         let input: [JSONValue] = [.object(["type": .string("message"), "role": .string("user"),
             "content": .array([.object(["type": .string("input_image"),
                 "image_url": .string("data:image/png;base64,AQID"), "detail": .string("original")])])])]
-        for model in [CodexModel.gpt61Sol, .gpt6Sol, .gpt6Luna, .daybreakBlueLatest, .daybreakRedLatest] {
+        for model in [CodexModel.gpt61Sol, .gpt61Terra, .gpt6Sol, .gpt6Luna, .daybreakBlueLatest, .daybreakRedLatest] {
             let info = try XCTUnwrap(model.info)
             let encoded = try JSONEncoder().encode(model)
             XCTAssertEqual(try JSONDecoder().decode(CodexModel.self, from: encoded), model)

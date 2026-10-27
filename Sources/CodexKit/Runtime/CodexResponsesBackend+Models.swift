@@ -357,7 +357,8 @@ struct CodexResponsesStreamEvent: Sendable {
         case other
     }
 
-    let kind: Kind
+    var kind: Kind
+    var safetyRecourse: AgentSafetyRecourse? = nil
     let sequenceNumber: Int?
     var completedOutput: [StreamItem]? = nil
     var terminalUsage: AgentUsage? = nil

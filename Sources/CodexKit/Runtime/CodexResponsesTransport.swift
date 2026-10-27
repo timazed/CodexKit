@@ -226,6 +226,7 @@ struct CodexResponsesEventStreamClient: Sendable {
             let producerTask = Task {
                 defer { bytes.task.cancel() }
                 var parser = SSEEventParser()
+                var recourse = CodexSafetyRecourseState()
 
                 do {
                     if !rateLimits.isEmpty {
@@ -244,7 +245,7 @@ struct CodexResponsesEventStreamClient: Sendable {
 
                             if let payload = try parser.consume(line: line),
                                let event = try parseStreamEvent(from: payload) {
-                                try await continuation.yield(event)
+                                try await continuation.yield(recourse.consume(event))
                             }
                             continue
                         }
@@ -267,13 +268,13 @@ struct CodexResponsesEventStreamClient: Sendable {
                         }
                         if let payload = try parser.consume(line: line),
                            let event = try parseStreamEvent(from: payload) {
-                            try await continuation.yield(event)
+                            try await continuation.yield(recourse.consume(event))
                         }
                     }
 
                     if let payload = parser.finish(),
                        let event = try parseStreamEvent(from: payload) {
-                        try await continuation.yield(event)
+                        try await continuation.yield(recourse.consume(event))
                     }
 
                     logger.debug(
@@ -415,6 +416,7 @@ struct CodexResponsesEventStreamClient: Sendable {
             )
             throw error
         }
+        if envelope.type == "response.metadata" { return envelope.event }
         let logsResponsePayload = envelope.logsResponsePayload
         let logsPayload = logger.isVerboseEnabled(for: .network)
             || (logsResponsePayload && logger.isEnabled(.debug, for: .network))

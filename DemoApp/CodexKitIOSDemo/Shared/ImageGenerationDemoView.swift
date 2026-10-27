@@ -21,7 +21,14 @@ struct ImageGenerationDemoView: View {
                     Button(images.action == .edit ? "Edit Image" : "Generate Image") { images.start() }
                         .buttonStyle(.borderedProminent).disabled(!images.canRun)
                     if images.isBusy {
-                        ProgressView()
+                        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                            if let percent = images.estimatedPercentage(at: context.date) {
+                                Text("Estimated \(percent)%").monospacedDigit()
+                                    .accessibilityLabel("Estimated image progress: \(percent) percent")
+                            } else {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
                         Button("Cancel") { images.cancel() }
                     } else if images.status == .cancelled {
                         Text("Cancelled").foregroundStyle(.secondary)

@@ -158,23 +158,26 @@ test('image errors redact private data and never retry HTTP failures or redirect
 });
 
 test('image quota exposes typed reset metadata with body precedence and no retry', async () => {
-  for (const [bodyReset, headers, reset] of [
-    [123, { 'x-codex-active-limit': 'image_gen', 'x-image-gen-primary-used-percent': '100', 'x-image-gen-primary-reset-at': '456' }, 123],
-    [undefined, { 'x-image-gen-primary-used-percent': '100', 'x-image-gen-primary-reset-at': '456',
-      'x-image-gen-secondary-used-percent': '100', 'x-image-gen-secondary-reset-at': '789' }, 789],
-    [undefined, { 'x-codex-active-limit': 'image_gen' }, undefined],
-  ]) {
-    const { run, calls } = imageHarness({ fetch: async () => Response.json({ error: { type: 'usage_limit_reached', resets_at: bodyReset } },
-      { status: 429, headers: { ...headers, 'retry-after': '60' } }) });
-    await assert.rejects(run(), error => {
-      assert.equal(error.code, 'image_usage_limit_exceeded');
-      assert.equal(error.details.outcome, 'failed');
-      assert.equal(error.details.imageUsageLimit.limitId, 'image_gen');
-      assert.equal(error.details.imageUsageLimit.resetsAt, reset);
-      assert.equal(error.details.retryAfter, '60');
-      return true;
-    });
-    assert.equal(calls.length, 1);
+  for (const limitId of ['image_gen', 'imagegen_premium']) {
+    for (const [bodyReset, headers, reset] of [
+      [123, { 'x-codex-active-limit': 'image_gen', 'x-image-gen-primary-used-percent': '100', 'x-image-gen-primary-reset-at': '456' }, 123],
+      [undefined, { 'x-image-gen-primary-used-percent': '100', 'x-image-gen-primary-reset-at': '456',
+        'x-image-gen-secondary-used-percent': '100', 'x-image-gen-secondary-reset-at': '789' }, 789],
+      [undefined, { 'x-codex-active-limit': 'image_gen' }, undefined],
+    ]) {
+      const { run, calls } = imageHarness({ fetch: async () => Response.json({ error: { type: 'usage_limit_reached', resets_at: bodyReset } },
+        { status: 429, headers: { ...Object.fromEntries(Object.entries(headers).map(([key, value]) =>
+          [key.replace('image-gen', limitId.replaceAll('_', '-')), value === 'image_gen' ? limitId : value])), 'retry-after': '60' } }) });
+      await assert.rejects(run(), error => {
+        assert.equal(error.code, 'image_usage_limit_exceeded');
+        assert.equal(error.details.outcome, 'failed');
+        assert.equal(error.details.imageUsageLimit.limitId, limitId);
+        assert.equal(error.details.imageUsageLimit.resetsAt, reset);
+        assert.equal(error.details.retryAfter, '60');
+        return true;
+      });
+      assert.equal(calls.length, 1);
+    }
   }
   await assert.rejects(imageHarness({ fetch: async () => Response.json({ error: { type: 'usage_limit_reached' } },
     { status: 429 }) }).run(), errorCode('http_error'));
@@ -233,3 +236,49 @@ for (const [name, png] of Object.entries(require('./fixtures/png-cases.json'))) 
     }
   });
 }
+
+
+test('image progress follows validated completion and respects cancellation', async () => {
+  const stages = [];
+  await imageHarness().run({ onProgress: stage => { stages.push(stage); } });
+  assert.deepEqual(stages, ['requesting', 'receiving', 'decoding', 'completed']);
+  const failed = [];
+  await assert.rejects(imageHarness({ fetch: async () => Response.json({}) }).run({
+    onProgress: stage => { failed.push(stage); },
+  }));
+  assert.deepEqual(failed, ['requesting', 'receiving', 'decoding']);
+  const controller = new AbortController();
+  const harness = imageHarness();
+  await assert.rejects(harness.run({ signal: controller.signal, onProgress: () => controller.abort() }), errorCode('cancelled'));
+  assert.equal(harness.calls.length, 0);
+  const broken = imageHarness();
+  await assert.rejects(broken.run({ onProgress: () => { throw new Error('PRIVATE'); } }), errorCode('progress_callback_failed'));
+  assert.equal(broken.calls.length, 0);
+});
+
+test('an unrelated active quota wins over image telemetry', async () => {
+  await assert.rejects(imageHarness({ fetch: async () => Response.json({ error: { type: 'usage_limit_reached' } }, {
+    status: 429, headers: { 'x-codex-active-limit': 'codex', 'x-image-gen-primary-used-percent': '100' },
+  }) }).run(), error => {
+    assert.equal(error.details.imageUsageLimit, undefined);
+    return true;
+  });
+});
+
+
+test('desktop image time estimate is monotonic, bounded and never claims completion', () => {
+  const { estimateImageGenerationProgress: estimate } = require('../dist/index.js');
+  for (const [seconds, expected] of [[0, 3], [4.5, 25], [24.75, 58], [38.25, 88], [45, 90], [90, 97], [1000, 99]]) {
+    assert.equal(estimate(seconds), expected);
+  }
+  let previous = 3;
+  for (let seconds = 0; seconds <= 1000; seconds++) {
+    const value = estimate(seconds);
+    assert.ok(value >= previous && value < 100);
+    previous = value;
+  }
+  assert.equal(estimate(-1), 3);
+  assert.equal(estimate(NaN), 3);
+  assert.equal(estimate(Infinity), 99);
+  assert.equal(estimate(-Infinity), 3);
+});

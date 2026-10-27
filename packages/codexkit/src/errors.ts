@@ -30,7 +30,7 @@ export interface ErrorDetails {
   readonly incompleteReason?: string;
   readonly retryAfter?: string;
   readonly imageRequestId?: string;
-  readonly imageUsageLimit?: { readonly limitId: "image_gen"; readonly resetsAt?: number };
+  readonly imageUsageLimit?: { readonly limitId: "image_gen" | "imagegen_premium"; readonly resetsAt?: number };
 }
 
 /** Flat allowlisted failure. Optional diagnostics are never inferred from absent historical data. */

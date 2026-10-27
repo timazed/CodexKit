@@ -77,17 +77,21 @@ enum CodexImageResponse {
     private static func usageLimit(response: HTTPURLResponse, body: Data) -> AgentImageGenerationUsageLimit? {
         let error = errorObject(body)
         guard response.statusCode == 429, error?["type"] as? String == "usage_limit_reached" else { return nil }
-        let imageLimits = CodexRateLimitParser.headers(response).first { $0.limitID == "image_gen" }
-        guard response.value(forHTTPHeaderField: "x-codex-active-limit") == "image_gen" || imageLimits != nil else {
-            return nil
-        }
+        let supported = ["image_gen", "imagegen_premium"]
+        let active = response.value(forHTTPHeaderField: "x-codex-active-limit")
+        // An explicit active limit wins over telemetry for unrelated buckets.
+        if let active, !supported.contains(active) { return nil }
+        let snapshots = CodexRateLimitParser.headers(response)
+        let limitID = active ?? supported.first { id in snapshots.contains { $0.limitID == id } }
+        guard let limitID else { return nil }
+        let imageLimits = snapshots.first { $0.limitID == limitID }
         let reset = (error?["resets_at"] as? Double).flatMap { seconds -> Date? in
             seconds.isFinite && seconds >= 0 ? Date(timeIntervalSince1970: seconds) : nil
         } ?? [imageLimits?.primary, imageLimits?.secondary].compactMap { window -> Date? in
             guard let window, window.usedPercent >= 100 else { return nil }
             return window.resetsAt
         }.max()
-        return .init(resetsAt: reset)
+        return .init(limitID: limitID, resetsAt: reset)
     }
 
     private static func identifier(_ value: String?) -> String? {
