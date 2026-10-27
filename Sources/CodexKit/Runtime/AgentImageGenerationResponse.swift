@@ -86,7 +86,8 @@ struct AgentImageGenerationResponse {
             AgentHTTPFailure(statusCode: $0.statusCode, providerCode: $0.providerCode, providerType: $0.providerType,
                 requestID: $0.requestID ?? http?.requestID, retryAfter: $0.retryAfter ?? http?.retryAfter)
         } ?? http
-        return .init(code: code, message: original.message, http: details, interruption: original.interruption)
+        return .init(code: code, message: original.message, http: details, interruption: original.interruption,
+            imageGeneration: original.imageGeneration, safetyRecourse: original.safetyRecourse)
     }
 
     private func tooLarge() -> AgentRuntimeError {

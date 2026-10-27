@@ -7,6 +7,8 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
     public let retry: AgentRetryInformation?
     public let interruption: AgentResponseInterruption?
     public let imageGeneration: AgentImageGenerationDiagnostics?
+    /// Optional provider guidance, validated and matched to this request's terminal policy error.
+    public let safetyRecourse: AgentSafetyRecourse?
 
     public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil) {
         self.init(code: code, message: message, http: http, retry: retry, imageGeneration: nil)
@@ -24,12 +26,20 @@ public struct AgentRuntimeError: Error, LocalizedError, Equatable, Hashable, Sen
 
     public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil,
                 interruption: AgentResponseInterruption?, imageGeneration: AgentImageGenerationDiagnostics?) {
+        self.init(code: code, message: message, http: http, retry: retry, interruption: interruption,
+            imageGeneration: imageGeneration, safetyRecourse: nil)
+    }
+
+    public init(code: String, message: String, http: AgentHTTPFailure? = nil, retry: AgentRetryInformation? = nil,
+                interruption: AgentResponseInterruption?, imageGeneration: AgentImageGenerationDiagnostics?,
+                safetyRecourse: AgentSafetyRecourse?) {
         self.code = code
         self.message = message
         self.http = http
         self.retry = retry
         self.interruption = interruption
         self.imageGeneration = imageGeneration
+        self.safetyRecourse = safetyRecourse
     }
 
     public init(code: AgentRuntimeErrorCode, message: String, http: AgentHTTPFailure? = nil,

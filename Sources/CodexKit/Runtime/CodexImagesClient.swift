@@ -9,7 +9,8 @@ struct CodexImagesClient: Sendable {
     var maximumResponseBytes = ((maximumImageBytes + 2) / 3) * 4 + 1_024 * 1_024
 
     func run(prompt: String, images: [AgentImageAttachment], session: ChatGPTSession,
-             options: AgentImageGenerationOptions) async throws -> [AgentGeneratedImage] {
+             options: AgentImageGenerationOptions,
+             onProgress: AgentImageGenerationProgressHandler? = nil) async throws -> [AgentGeneratedImage] {
         try Task.checkCancellation()
         let request = try makeRequest(prompt: prompt, images: images, session: session, options: options)
         let clientID = request.value(forHTTPHeaderField: "x-client-request-id")!
@@ -18,6 +19,8 @@ struct CodexImagesClient: Sendable {
         do {
             try await AgentStructuredRecoveryContext.current?.beforeTransmission()
             try Task.checkCancellation()
+            await onProgress?(.requesting)
+            try Task.checkCancellation()
             let (bytes, response) = try await urlSession.bytes(for: request)
             defer { bytes.task.cancel() }
             guard let response = response as? HTTPURLResponse else { throw invalidResponse() }
@@ -25,6 +28,7 @@ struct CodexImagesClient: Sendable {
             let success = (200..<300).contains(response.statusCode)
             let limit = success ? maximumResponseBytes : AgentStoreLimits.maximumResponseErrorBodyByteCount
             guard response.expectedContentLength <= limit else { throw tooLarge() }
+            if success { await onProgress?(.receiving) }
             body = try await withTaskCancellationHandler {
                 var data = Data()
                 for try await byte in bytes {
@@ -41,8 +45,12 @@ struct CodexImagesClient: Sendable {
                 throw CodexImageResponse.providerFailure(body: body, response: response)
             }
             if let type = response.mimeType, type.lowercased() != "application/json" { throw invalidResponse() }
+            await onProgress?(.decoding)
+            try Task.checkCancellation()
             let output = try CodexImageResponse.decode(body, response: response, clientID: clientID,
                 action: images.isEmpty ? .generate : .edit)
+            try Task.checkCancellation()
+            await onProgress?(.completed)
             try Task.checkCancellation()
             return output
         } catch {

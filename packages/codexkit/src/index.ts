@@ -6,3 +6,4 @@ export type * from "./types.js";
 export type * from "./image-types.js";
 export { DEFAULT_IMAGE_LIMITS } from "./image-limits.js";
 export { nodeHttpsTransport } from "./node-https-transport.js";
+export { estimateImageGenerationProgress } from "./image-progress.js";

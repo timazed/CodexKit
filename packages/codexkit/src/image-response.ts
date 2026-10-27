@@ -52,20 +52,25 @@ export function imageIdentifier(value: unknown, secrets: readonly string[]): str
 function quota(response: Response, value: JsonValue | undefined): ErrorDetails["imageUsageLimit"] {
   const error = isObject(value) && isObject(value.error) ? value.error : undefined;
   const windows = ["primary", "secondary"];
-  if (response.status !== 429 || error?.type !== "usage_limit_reached" ||
-      !(response.headers.get("x-codex-active-limit") === "image_gen" ||
-        windows.some(window => response.headers.has(`x-image-gen-${window}-used-percent`)))) return;
+  if (response.status !== 429 || error?.type !== "usage_limit_reached") return;
+  const supported = ["image_gen", "imagegen_premium"] as const;
+  const active = response.headers.get("x-codex-active-limit");
+  if (active !== null && !supported.some(id => id === active)) return;
+  const limitId = supported.find(id => active !== null ? id === active :
+    windows.some(window => response.headers.has(`x-${id.replaceAll("_", "-")}-${window}-used-percent`)));
+  if (!limitId) return;
+  const family = limitId.replaceAll("_", "-");
   const resets: number[] = [];
   const bodyReset = resetTime(error.resets_at);
   if (bodyReset !== undefined) {
     resets.push(bodyReset);
   } else for (const window of windows) {
-    const used = response.headers.get(`x-image-gen-${window}-used-percent`);
-    const reset = response.headers.get(`x-image-gen-${window}-reset-at`);
+    const used = response.headers.get(`x-${family}-${window}-used-percent`);
+    const reset = response.headers.get(`x-${family}-${window}-reset-at`);
     if (used && reset && Number.isFinite(Number(used)) && Number(used) >= 100 &&
         resetTime(Number(reset)) !== undefined) resets.push(Number(reset));
   }
-  return Object.freeze({ limitId: "image_gen", ...(resets.length ? { resetsAt: Math.max(...resets) } : {}) });
+  return Object.freeze({ limitId, ...(resets.length ? { resetsAt: Math.max(...resets) } : {}) });
 }
 
 export async function imageHTTPFailure(response: Response, limits: ExecutionLimits, signal: AbortSignal): Promise<CodexKitCloudError> {

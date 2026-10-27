@@ -17,7 +17,9 @@ enum ImageGenerationDemoVerification {
         let model = ImageGenerationDemoModel(session: { session }, generate: { request, _ in
             guard request.options == .init(action: .edit, transparentBackground: true),
                   request.images.first?.data == jpeg else { throw ImageDemoVerificationError("Image controls changed the request") }
+            await request.onProgress?(.requesting)
             await gate.wait()
+            await request.onProgress?(.completed)
             return [output]
         })
         model.action = .edit
@@ -28,9 +30,13 @@ enum ImageGenerationDemoVerification {
         model.start()
         await gate.waitUntilStarted()
         try require(model.isBusy && model.results.isEmpty, "Pending image appeared as completed")
+        try require(model.progress == .requesting && model.estimatedPercentage(at: Date()) != nil
+                    && model.estimatedPercentage(at: Date().addingTimeInterval(10_000)) == 99,
+                    "Image estimate must start on request and remain below completion")
         await gate.release()
         await model.waitUntilFinished()
         try require(model.status == .completed && model.results == [output] && !model.isBusy
+                    && model.estimatedPercentage(at: Date()) == nil
                     && model.results.first?.pixelSize == .init(width: 2, height: 2)
                     && model.results.first?.diagnostics?.generationID == "generation",
                     "Completed image did not become visible")
@@ -38,7 +44,8 @@ enum ImageGenerationDemoVerification {
         // An uncooperative operation can return after cancellation; the UI must still discard it.
         for invalidate in [false, true] {
             let gate = ImageVerificationGate()
-            let pending = ImageGenerationDemoModel(session: { session }, generate: { _, _ in
+            let pending = ImageGenerationDemoModel(session: { session }, generate: { request, _ in
+                await request.onProgress?(.requesting)
                 await gate.wait()
                 return [output]
             })
@@ -47,7 +54,8 @@ enum ImageGenerationDemoVerification {
             if invalidate { pending.invalidate() } else { pending.cancel() }
             await gate.release()
             await pending.waitUntilFinished()
-            try require(pending.results.isEmpty && !pending.isBusy && pending.error == nil,
+            try require(pending.results.isEmpty && !pending.isBusy && pending.error == nil
+                        && pending.estimatedPercentage(at: Date()) == nil,
                         "Cancelled or disconnected image request published a late result")
             try require(pending.status == (invalidate ? .ready : .cancelled), "Incorrect cancellation state")
             if invalidate { try require(!pending.canRun, "Disconnected image controls remained active") }
@@ -71,6 +79,7 @@ enum ImageGenerationDemoVerification {
         try require(empty.status == .failed && empty.results.isEmpty, "Empty image output became a success")
         return ["image controls preserve transparency and edit references with built-in Codex defaults",
                 "image completion publishes once and blocks overlapping requests",
+                "image estimate caps at 99 and stops after completion or cancellation",
                 "image cancellation and disconnect discard late completion",
                 "image errors preserve provider details and reject empty success"]
     }

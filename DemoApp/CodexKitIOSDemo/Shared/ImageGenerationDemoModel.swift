@@ -11,6 +11,7 @@ final class ImageGenerationDemoModel {
         let prompt: String
         let images: [AgentImageAttachment]
         let options: AgentImageGenerationOptions
+        var onProgress: AgentImageGenerationProgressHandler? = nil
     }
 
     typealias Generate = @Sendable (Request, ChatGPTSession) async throws -> [AgentGeneratedImage]
@@ -25,6 +26,23 @@ final class ImageGenerationDemoModel {
     private(set) var error: String?
     private(set) var failure: AgentRuntimeError?
     private(set) var isBusy = false
+    private(set) var progress: AgentImageGenerationProgress?
+    private var generationStartedAt: Date?
+
+    func estimatedPercentage(at date: Date) -> Int? {
+        guard isBusy, let generationStartedAt else { return nil }
+        return AgentImageGenerationEstimate.percent(elapsedSeconds: date.timeIntervalSince(generationStartedAt))
+    }
+
+    var progressLabel: String {
+        switch progress {
+        case .requesting: "Generating…"
+        case .receiving: "Receiving image…"
+        case .decoding: "Preparing image…"
+        case .completed: "Finishing…"
+        case nil: "Starting…"
+        }
+    }
     @ObservationIgnored private let session: @MainActor () async throws -> ChatGPTSession
     @ObservationIgnored private let generate: Generate
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -44,7 +62,16 @@ final class ImageGenerationDemoModel {
     func start() {
         guard canRun else { return }
         let request = Request(prompt: prompt, images: action == .generate ? [] : references,
-            options: .init(action: action, transparentBackground: transparentBackground))
+            options: .init(action: action, transparentBackground: transparentBackground),
+            onProgress: { [weak self] stage in
+                await MainActor.run {
+                    guard let self, self.isActive, self.isBusy else { return }
+                    if stage == .requesting { self.generationStartedAt = Date() }
+                    self.progress = stage
+                }
+            })
+        progress = nil
+        generationStartedAt = nil
         isBusy = true
         status = .running
         error = nil
@@ -118,9 +145,9 @@ final class ImageGenerationDemoModel {
     nonisolated static func perform(_ request: Request, session: ChatGPTSession) async throws -> [AgentGeneratedImage] {
         let client = AgentImageGenerationClient()
         if request.images.isEmpty {
-            return try await client.generate(prompt: request.prompt, session: session, options: request.options)
+            return try await client.generate(prompt: request.prompt, session: session, options: request.options, onProgress: request.onProgress)
         }
-        return try await client.edit(images: request.images, prompt: request.prompt, session: session, options: request.options)
+        return try await client.edit(images: request.images, prompt: request.prompt, session: session, options: request.options, onProgress: request.onProgress)
     }
 }
 

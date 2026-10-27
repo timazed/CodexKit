@@ -310,3 +310,13 @@ provider/account access; a provider can still reject unsupported requests.
 Host `maxToolCalls`, `maxToolRounds`, and per-tool limits do **not** budget hosted
 search. CodexKit cannot intercept those provider-executed calls before execution.
 For strict search-call budgets, expose search as a host-defined `ToolDefinition`.
+
+## Safety-block guidance
+
+For matching `bio_policy` and `cyber_policy` failures, Swift errors may include
+`AgentRuntimeError.safetyRecourse`: a domain, topic-specific explanation, and
+validated suggestions with labels and prompt text. Render these as optional
+choices and submit only after the user selects one. No automatic retry or rewrite
+is performed. Missing or unsupported metadata leaves the original error intact.
+See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
+request scoping, and the TypeScript bridge boundary.

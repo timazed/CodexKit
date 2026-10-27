@@ -106,21 +106,24 @@ final class CodexImagesClientTests: XCTestCase {
     }
 
     func testQuotaUsesBodyResetOrExhaustedHeaderWindowsAndAllowsUnknownReset() async throws {
-        for bodyReset in [true, false] {
-            var headers = imageHeaders
-            headers["x-codex-active-limit"] = "image_gen"
-            headers["x-image-gen-primary-used-percent"] = "100"
-            headers["x-image-gen-primary-reset-at"] = "2000"
-            headers["x-image-gen-secondary-used-percent"] = "100"
-            headers["x-image-gen-secondary-reset-at"] = "3000"
-            let error: [String: Any] = bodyReset ? ["type": "usage_limit_reached", "resets_at": 4000] : ["type": "usage_limit_reached"]
-            await TestURLProtocol.enqueue(.init(statusCode: 429, headers: headers,
-                body: try JSONSerialization.data(withJSONObject: ["error": error])))
-            let failure = try await failureForNextResponse()
-            XCTAssertEqual(failure.knownCode, .imageGenerationUsageLimitExceeded)
-            XCTAssertEqual(failure.imageGeneration?.usageLimit?.limitID, "image_gen")
-            XCTAssertEqual(failure.imageGeneration?.usageLimit?.resetsAt, Date(timeIntervalSince1970: bodyReset ? 4000 : 3000))
-            XCTAssertEqual(try JSONDecoder().decode(AgentRuntimeError.self, from: JSONEncoder().encode(failure)), failure)
+        for limitID in ["image_gen", "imagegen_premium"] {
+            for bodyReset in [true, false] {
+                var headers = imageHeaders
+                headers["x-codex-active-limit"] = limitID
+                let family = limitID.replacingOccurrences(of: "_", with: "-")
+                headers["x-\(family)-primary-used-percent"] = "100"
+                headers["x-\(family)-primary-reset-at"] = "2000"
+                headers["x-\(family)-secondary-used-percent"] = "100"
+                headers["x-\(family)-secondary-reset-at"] = "3000"
+                let error: [String: Any] = bodyReset ? ["type": "usage_limit_reached", "resets_at": 4000] : ["type": "usage_limit_reached"]
+                await TestURLProtocol.enqueue(.init(statusCode: 429, headers: headers,
+                    body: try JSONSerialization.data(withJSONObject: ["error": error])))
+                let failure = try await failureForNextResponse()
+                XCTAssertEqual(failure.knownCode, .imageGenerationUsageLimitExceeded)
+                XCTAssertEqual(failure.imageGeneration?.usageLimit?.limitID, limitID)
+                XCTAssertEqual(failure.imageGeneration?.usageLimit?.resetsAt, Date(timeIntervalSince1970: bodyReset ? 4000 : 3000))
+                XCTAssertEqual(try JSONDecoder().decode(AgentRuntimeError.self, from: JSONEncoder().encode(failure)), failure)
+            }
         }
         await TestURLProtocol.enqueue(.init(statusCode: 429, headers: ["x-codex-active-limit": "image_gen"],
             body: Data(#"{"error":{"type":"usage_limit_reached"}}"#.utf8)))
@@ -132,6 +135,46 @@ final class CodexImagesClientTests: XCTestCase {
         let other = try await failureForNextResponse()
         XCTAssertNil(other.imageGeneration?.usageLimit)
         XCTAssertEqual(other.code, "image_generation_http_status_429")
+    }
+
+    func testUnrelatedActiveLimitDoesNotUseImageTelemetry() throws {
+        let response = try XCTUnwrap(HTTPURLResponse(url: URL(string: "https://example.test")!,
+            statusCode: 429, httpVersion: nil, headerFields: [
+                "x-codex-active-limit": "codex", "x-image-gen-primary-used-percent": "100"]))
+        let body = Data(#"{"error":{"type":"usage_limit_reached"}}"#.utf8)
+        XCTAssertNil(CodexImageResponse.diagnostics(response: response, clientID: "c", body: body).usageLimit)
+    }
+
+    func testProgressCancellationPreventsTransmission() async throws {
+        let task = Task {
+            try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(
+                prompt: "Tree", session: demoSession(), onProgress: { _ in
+                    withUnsafeCurrentTask { $0?.cancel() }
+                })
+        }
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    func testProgressCompletesOnlyAfterValidImageAndStopsOnFailure() async throws {
+        actor Recorder {
+            var values: [AgentImageGenerationProgress] = []
+            func append(_ value: AgentImageGenerationProgress) { values.append(value) }
+        }
+        let png = try imageTestData(width: 8, height: 8, png: true)
+        for valid in [true, false] {
+            let recorder = Recorder()
+            await TestURLProtocol.enqueue(.init(headers: imageHeaders,
+                body: valid ? try codexImageJSON(png) : Data("{}".utf8)))
+            do {
+                _ = try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(
+                    prompt: "Tree", session: demoSession(), onProgress: { await recorder.append($0) })
+                XCTAssertTrue(valid)
+            } catch { XCTAssertFalse(valid) }
+            let stages = await recorder.values
+            XCTAssertEqual(stages, valid ? [.requesting, .receiving, .decoding, .completed]
+                : [.requesting, .receiving, .decoding])
+        }
     }
 
     func testMalformedMissingPartialAndErrorResponsesNeverSucceed() async throws {

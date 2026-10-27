@@ -315,3 +315,15 @@ backends and wrappers must advertise enforcement and preserve `Request.webSearch
 Otherwise constrained turns fail explicitly. Backend `enableWebSearch: false`
 remains an absolute upper bound. See [policy composition](personas-and-skills.md#execution-policy-composition-and-budgets)
 and [search constraints](upstream-runtime-features.md#turn-effective-hosted-web-search).
+
+### October 27 upstream compatibility additions
+
+The TypeScript image quota `limitId` union now includes `imagegen_premium`. Update
+exhaustive checks and consumers that previously narrowed it to `image_gen`.
+Swift's corresponding ID remains a string. The Swift fallback model list adds
+`CodexModel.gpt61Terra` with a 500,000-token default context window.
+
+Optional image progress callbacks and `AgentRuntimeError.safetyRecourse` are
+additive. Older serialized errors without safety guidance continue to decode.
+Progress callbacks report stages, not percentages; the existing no-callback
+image API remains supported.

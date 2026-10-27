@@ -94,7 +94,7 @@ if (safe) {
   const outcome: ProviderOutcome | undefined = safe.outcome;
   const reason: ProviderReason | undefined = safe.providerReason;
   const details: ErrorDetails = safe;
-  const limitId: 'image_gen' | undefined = safe.imageUsageLimit?.limitId;
+  const limitId: 'image_gen' | 'imagegen_premium' | undefined = safe.imageUsageLimit?.limitId;
   const resetsAt: number | undefined = safe.imageUsageLimit?.resetsAt;
   void [code, outcome, reason, details, limitId, resetsAt];
   // @ts-expect-error Diagnostics remain optional for historical failures.

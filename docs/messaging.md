@@ -460,3 +460,14 @@ Common annotations (`$schema`, `$id`, `$comment`, `title`, `description`, `defau
 Custom backends must emit a valid `turnCompleted` event for a successful turn. EOF alone is insufficient, including after an assistant message: `send` and both stream forms fail with `turn_summary_missing`, and persistent turns move to failed status.
 
 Backends that start network requests asynchronously can supply `waitUntilReady` in the full `AgentTurnStream` initializer. Resolve readiness once the initial request is accepted, before publishing response content or starting tool effects. Fail readiness only when it is safe for the runtime to recover/retry the initial request. Once ready, later failures belong to the event stream and must not cause whole-turn replay. The default readiness handler returns immediately for existing custom backends.
+
+### Image request progress
+
+`AgentImageGenerationClient.generate` and `edit` accept an optional async
+`onProgress` callback. The default Codex Images route reports `.requesting`,
+`.receiving`, `.decoding`, and `.completed`. These are transport/validation stages,
+not generation percentages. For an optional percentage display, use
+`AgentImageGenerationEstimate.percent(elapsedSeconds:)` and label it "Estimated".
+It follows the desktop elapsed-time curve and caps at 99; stop it on completion,
+failure, or cancellation.
+See the [upstream audit](upstream-image-runtime-2026-10-27.md) for endpoint limits.

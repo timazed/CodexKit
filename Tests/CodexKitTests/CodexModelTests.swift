@@ -8,6 +8,7 @@ final class CodexModelTests: XCTestCase {
             [
                 .gpt6Astra,
                 .gpt61Sol,
+                .gpt61Terra,
                 .gpt6Sol,
                 .gpt6Luna,
                 .gpt56Sol,
@@ -31,6 +32,7 @@ final class CodexModelTests: XCTestCase {
             [
                 .gpt6Astra,
                 .gpt61Sol,
+                .gpt61Terra,
                 .gpt6Sol,
                 .gpt6Luna,
                 .gpt56Sol,
@@ -46,6 +48,10 @@ final class CodexModelTests: XCTestCase {
     }
 
     func testCurrentModelMetadataMatchesCodexCatalog() throws {
+        let currentTerra = try XCTUnwrap(CodexModel.gpt61Terra.info)
+        XCTAssertEqual(currentTerra.contextWindowTokenCount, 500_000)
+        XCTAssertEqual(currentTerra.defaultReasoningEffort, .low)
+        XCTAssertTrue(currentTerra.supportsImageDetailOriginal)
         let sol = try XCTUnwrap(CodexModel.gpt56Sol.info)
         XCTAssertEqual(sol.defaultReasoningEffort, .low)
         XCTAssertEqual(

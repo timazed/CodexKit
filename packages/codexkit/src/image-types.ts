@@ -13,10 +13,14 @@ export interface PreparedImageRequest {
   readonly originator: string;
 }
 
+/** Transport stages, not a percentage of model computation. */
+export type ImageProgress = "requesting" | "receiving" | "decoding" | "completed";
+
 export interface ExecuteImageInput {
   readonly preparedRequest: PreparedImageRequest;
   readonly authentication: Authentication;
   readonly signal?: AbortSignal;
+  readonly onProgress?: (stage: ImageProgress) => void | Promise<void>;
 }
 
 export interface GeneratedImage {

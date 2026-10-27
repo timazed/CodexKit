@@ -5,7 +5,7 @@ import { authenticationHeaders } from "./request.js";
 import { abortable, checkAbort } from "./stream.js";
 import { privateSafe, type configure } from "./transport.js";
 import { redactHTTPIdentifiers } from "./http-diagnostics.js";
-import type { ExecuteImageInput, ImageExecutionResult } from "./image-types.js";
+import type { ExecuteImageInput, ImageExecutionResult, ImageProgress } from "./image-types.js";
 
 export async function executeImage(input: ExecuteImageInput, configuration: ReturnType<typeof configure>): Promise<ImageExecutionResult> {
   const { endpoint, headers, limits, imageLimits, fetcher } = configuration;
@@ -16,8 +16,17 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
   let details: ErrorDetails = {};
   let secrets: string[] = [];
   let requestBody: Uint8Array | undefined;
+  const progress = async (stage: ImageProgress): Promise<void> => {
+    checkAbort(controller.signal);
+    if (input.onProgress) {
+      try { await abortable(Promise.resolve(input.onProgress(stage)), controller.signal); }
+      catch { checkAbort(controller.signal); fail("progress_callback_failed"); }
+    }
+    checkAbort(controller.signal);
+  };
   try {
     if (!input || (input.signal !== undefined && !(input.signal instanceof AbortSignal))) fail("invalid_request");
+    if (input.onProgress !== undefined && typeof input.onProgress !== "function") fail("invalid_request");
     callerSignal = input.signal;
     callerSignal?.addEventListener("abort", cancel, { once: true });
     if (callerSignal?.aborted) cancel();
@@ -30,6 +39,7 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
     const url = new URL(endpoint);
     url.pathname = url.pathname.slice(0, -"responses".length) +
       (request.action === "generate" ? "images/generations" : "images/edits");
+    if (input.onProgress) await progress("requesting");
     attempted = true;
     const pending = fetcher(url.href, { method: "POST", redirect: "manual", signal: controller.signal,
       headers: { ...headers, ...request.headers, ...authentication, "Content-Type": "application/json", Accept: "application/json" },
@@ -47,10 +57,13 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
       throw await imageHTTPFailure(response, limits, controller.signal);
     }
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") fail("invalid_response");
+    if (input.onProgress) await progress("receiving");
     const bytes = await readImageBody(response, imageLimits.maxResponseBytes, controller.signal);
     checkAbort(controller.signal);
+    if (input.onProgress) await progress("decoding");
     const result = decodeImageResponse(bytes, imageLimits, limits, secrets);
     checkAbort(controller.signal);
+    if (input.onProgress) await progress("completed");
     return Object.freeze({ status: "completed", action: request.action, clientRequestId: request.clientRequestId,
       ...(requestId ? { requestId } : {}), ...(imageRequestId ? { imageRequestId } : {}), ...result });
   } catch (error) {

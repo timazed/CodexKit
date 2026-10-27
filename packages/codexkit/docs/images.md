@@ -70,3 +70,20 @@ Image count and decoded-byte limits may be lowered but cannot exceed the Swift c
 The [compatibility notes](compatibility.md) identify the Swift source used for this implementation. The local API supports `POST /v1/images/execute`, with synthetic PNG responses in fixture mode and real single-attempt execution in live mode. The existing Swift demo's Local Cloud card still exercises structured text; its Images screen uses direct Swift execution.
 
 A public Swift image request-export API, app routing through this bridge, importing cloud images into Swift persistence, and durable jobs/result lookup remain separate work. Offline tests cover both image actions, HTTP, cancellation, resource limits, package imports and the route adapter. They do not establish live provider/account compatibility.
+
+## Progress and premium allowances
+
+`executeImage({ ..., onProgress: stage => updateStatus(stage) })` reports
+`requesting`, `receiving`, `decoding`, and `completed`. Callbacks are awaited;
+keep them short. Stages do not represent generation percentages. Callback errors
+fail with `progress_callback_failed`, and cancellation still uses the supplied
+AbortSignal. Existing callers can omit the callback.
+
+Image quota diagnostics support both `image_gen` and `imagegen_premium`, retaining
+the selected bucket's reset time when available.
+
+For the desktop-style percentage loader, call
+`estimateImageGenerationProgress(elapsedSeconds)` from a host UI timer and label
+it "Estimated". It reaches 90 at 45 seconds and caps at 99. It does not measure
+provider computation, and it must stop when the request settles. The SDK does
+not start a timer or use this estimate to determine success.

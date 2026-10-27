@@ -37,7 +37,10 @@ for (const [mode, make, prepare, withPrompt] of modes) {
     const { run, calls } = make({ fetch: async () => http(fixture, { headers: {
       'content-type': 'application/json', 'x-request-id': 'req-headerfixture', 'retry-after': '30',
     } }) });
-    const result = await failure(run, { preparedRequest, onProgress: () => assert.fail('HTTP failures cannot generate progress') });
+    const result = await failure(run, { preparedRequest, onProgress: stage => {
+      assert.equal(mode, 'image');
+      assert.equal(stage, 'requesting');
+    } });
     assert.deepEqual(result, {
       code: 'http_error', message: 'The provider returned an unsuccessful HTTP response.',
       outcome: 'failed', httpStatus: 400, requestId: 'req-headerfixture', responseId: 'resp_schemafixture',

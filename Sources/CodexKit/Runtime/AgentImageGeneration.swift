@@ -156,15 +156,30 @@ public actor AgentImageGenerationClient {
     }
 
     public func generate(
+        prompt: String, session: ChatGPTSession,
+        options: AgentImageGenerationOptions = .generate
+    ) async throws -> [AgentGeneratedImage] {
+        try await generate(prompt: prompt, session: session, options: options, onProgress: nil)
+    }
+
+    public func edit(
+        images: [AgentImageAttachment], prompt: String, session: ChatGPTSession,
+        options: AgentImageGenerationOptions = .edit
+    ) async throws -> [AgentGeneratedImage] {
+        try await edit(images: images, prompt: prompt, session: session, options: options, onProgress: nil)
+    }
+
+    public func generate(
         prompt: String,
         session: ChatGPTSession,
-        options: AgentImageGenerationOptions = .generate
+        options: AgentImageGenerationOptions = .generate,
+        onProgress: AgentImageGenerationProgressHandler?
     ) async throws -> [AgentGeneratedImage] {
         try await run(
             prompt: prompt,
             images: [],
             session: session,
-            options: resolved(options, action: .generate)
+            options: resolved(options, action: .generate), onProgress: onProgress
         )
     }
 
@@ -172,7 +187,8 @@ public actor AgentImageGenerationClient {
         images: [AgentImageAttachment],
         prompt: String,
         session: ChatGPTSession,
-        options: AgentImageGenerationOptions = .edit
+        options: AgentImageGenerationOptions = .edit,
+        onProgress: AgentImageGenerationProgressHandler?
     ) async throws -> [AgentGeneratedImage] {
         guard !images.isEmpty else {
             throw AgentRuntimeError.invalidMessageContent()
@@ -182,7 +198,7 @@ public actor AgentImageGenerationClient {
             prompt: prompt,
             images: images,
             session: session,
-            options: resolved(options, action: .edit)
+            options: resolved(options, action: .edit), onProgress: onProgress
         )
     }
 
@@ -190,7 +206,8 @@ public actor AgentImageGenerationClient {
         prompt: String,
         images: [AgentImageAttachment],
         session: ChatGPTSession,
-        options: AgentImageGenerationOptions
+        options: AgentImageGenerationOptions,
+        onProgress: AgentImageGenerationProgressHandler?
     ) async throws -> [AgentGeneratedImage] {
         try Task.checkCancellation()
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -199,7 +216,7 @@ public actor AgentImageGenerationClient {
 
         if configuration.usesCodexImages {
             return try await CodexImagesClient(configuration: configuration, urlSession: urlSession)
-                .run(prompt: prompt, images: images, session: session, options: options)
+                .run(prompt: prompt, images: images, session: session, options: options, onProgress: onProgress)
         }
         guard !options.transparentBackground else {
             throw AgentRuntimeError(code: .imageGenerationUnsupportedOptions,
@@ -221,13 +238,18 @@ public actor AgentImageGenerationClient {
         var observation = ResponsesAttemptObservation()
         var http: AgentHTTPFailure?
         do {
+            await onProgress?(.requesting)
+            try Task.checkCancellation()
             let stream = try await streamClient.openEventStream(request: request)
+            await onProgress?(.receiving)
             http = stream.http
             var result = AgentImageGenerationResponse(outputFormat: options.outputFormat)
             for try await event in stream.events {
                 try Task.checkCancellation()
                 observation.observe(event)
                 if let images = try result.consume(event) {
+                    try Task.checkCancellation()
+                    await onProgress?(.completed)
                     try Task.checkCancellation()
                     return images
                 }

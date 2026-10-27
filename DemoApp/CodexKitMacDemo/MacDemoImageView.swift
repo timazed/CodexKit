@@ -16,8 +16,15 @@ struct MacDemoImageView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.isWorking || model.isOfflineDemo || !images.canRun)
                 if images.isBusy {
-                    ProgressView().controlSize(.small)
-                    Text("Generating…").foregroundStyle(.secondary)
+                    TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                        if let percent = images.estimatedPercentage(at: context.date) {
+                            Text("Estimated \(percent)%").monospacedDigit()
+                                .accessibilityLabel("Estimated image progress: \(percent) percent")
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    Text(images.progressLabel).foregroundStyle(.secondary)
                     Button("Cancel") { images.cancel() }
                 } else if images.status == .cancelled {
                     Text("Cancelled").foregroundStyle(.secondary)

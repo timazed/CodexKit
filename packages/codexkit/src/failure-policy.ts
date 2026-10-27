@@ -102,8 +102,9 @@ export function sanitizeFailureDetails(value: unknown): ErrorDetails {
   const imageRequestId = identifier(field(input, "imageRequestId"), "image");
   const limit = record(field(input, "imageUsageLimit"));
   const resetsAt = limit ? resetTime(field(limit, "resetsAt")) : undefined;
-  const imageUsageLimit = limit && field(limit, "limitId") === "image_gen" ? {
-    limitId: "image_gen" as const, ...(resetsAt !== undefined ? { resetsAt } : {}),
+  const limitId = limit && field(limit, "limitId");
+  const imageUsageLimit: ErrorDetails["imageUsageLimit"] = limitId === "image_gen" || limitId === "imagegen_premium" ? {
+    limitId, ...(resetsAt !== undefined ? { resetsAt } : {}),
   } : undefined;
   return {
     ...(outcome !== undefined ? { outcome } : {}), ...(httpStatus !== undefined ? { httpStatus } : {}),
