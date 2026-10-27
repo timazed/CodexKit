@@ -87,6 +87,19 @@ def boot_simulator(simulator, *, log, timeout=180):
                 print("Simulator shutdown timed out; checking boot readiness once more.", flush=True)
 
 
+def stop_for_cold_relaunch(simulator, bundle_id, *, log):
+    """Recover a stalled app termination without replaying verification or erasing data."""
+    try:
+        run(["xcrun", "simctl", "terminate", simulator, bundle_id], log=log, timeout=60)
+    except subprocess.TimeoutExpired as error:
+        print(str(error), file=log, flush=True)
+        print("App termination stalled; restarting this run's simulator for cold recovery.", flush=True)
+        # A successful shutdown proves that the old app process is gone. Do not
+        # continue on a shutdown error/timeout or merely assume termination worked.
+        run(["xcrun", "simctl", "shutdown", simulator], log=log, timeout=60)
+        boot_simulator(simulator, log=log)
+
+
 def validate_report(report, run_id, mode=VerificationMode.SMOKE):
     if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
@@ -149,7 +162,8 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     timings = Timings(output / "timings.json")
     for name in ("CodexKitVerification.json", "run.json", "failure.txt", "build.log", "boot.log", "container.log",
-                 "app-stdout.log", "app-stderr.log"):
+                 "app-stdout.log", "app-stderr.log", "relaunch.log", "reopen-stdout.log", "reopen-stderr.log",
+                 "CodexKitRecoveryReopen.json"):
         (output / name).unlink(missing_ok=True)
     derived = options.derived_data.resolve()
     run_id = str(uuid.uuid4())
@@ -214,11 +228,17 @@ def main():
                 report_bytes = report_path.read_bytes()
                 (output / "CodexKitVerification.json").write_bytes(report_bytes)
                 validate_report(json.loads(report_bytes), run_id, options.mode)
-                run(["xcrun", "simctl", "terminate", simulator, bundle_id])
-                run(["xcrun", "simctl", "launch", simulator, bundle_id,
-                     "--verify-runtime", "--verify-local-only", "--verify-recovery-reopen"] + mode_arguments,
-                    env=environment, timeout=180)
                 reopen_path = container / "Documents/CodexKitRecoveryReopen.json"
+                with timings.measure("cold_relaunch"), (output / "relaunch.log").open("w") as log:
+                    stop_for_cold_relaunch(simulator, bundle_id, log=log)
+                    # Even a matching run ID must not make an earlier report pass
+                    # this launch. Require the reopened process to write a new one.
+                    reopen_path.unlink(missing_ok=True)
+                    run(["xcrun", "simctl", "launch",
+                         f"--stdout={output / 'reopen-stdout.log'}", f"--stderr={output / 'reopen-stderr.log'}",
+                         simulator, bundle_id, "--verify-runtime", "--verify-local-only",
+                         "--verify-recovery-reopen"] + mode_arguments,
+                        env=environment, timeout=180, log=log)
                 reopen_deadline = time.monotonic() + options.report_timeout
                 while not reopen_path.is_file() and time.monotonic() < reopen_deadline:
                     time.sleep(1)
