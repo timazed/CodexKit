@@ -6,6 +6,28 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-28
+
+### Added
+
+- Add optional image-generation progress callbacks and elapsed-time percentage estimates, with progress presentation in the iOS and macOS demos. Percentages are local estimates, not backend completion measurements; completed images remain authoritative.
+- Add GPT-6.1 Terra model support and preserve premium image quota information.
+- Preserve structured safety-recourse information in Swift response interruptions and HTTP failures.
+
+### Fixed
+
+- Recover a timed-out simulator termination during CI cold-relaunch verification by restarting only the disposable simulator. Preserve app data and require a fresh successful recovery report; verification failures still fail CI.
+
+### Changed
+
+- Streamline CI verification and replace retiring macOS 14 runners while retaining iOS 17 compatibility checks and extended scheduled coverage.
+
+### Upgrading
+
+- Select Swift package version `2.1.0`. Existing image-generation call sites remain supported; progress reporting is optional.
+- Requires Swift 6.1+, iOS 17+, and macOS 14+. Model availability and quota remain account-dependent.
+- The independently published Cloud npm package remains at 0.2.5; changes to its repository sources are not included in that published package.
+
 ## [2.0.0] - 2026-10-23
 
 The stable 2.0 release promotes the verified alpha.42 implementation. There are no additional runtime or persistence changes from alpha.42.
