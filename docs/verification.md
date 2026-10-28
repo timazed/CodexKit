@@ -218,3 +218,22 @@ verified with offline fixtures, not deliberately triggered against the live
 account. Multiple-reference editing and iOS live generation remain unverified;
 the signed iOS demo passed offline verification using the same SDK and shared
 presentation model.
+
+### Scheduled simulator cold-relaunch recovery
+
+Scheduled runs [40589801483](https://github.com/timazed/CodexKit/actions/runs/40589801483)
+and [40230402120](https://github.com/timazed/CodexKit/actions/runs/40230402120)
+failed when `simctl terminate` timed out after a successful initial verification
+report. The intervening schedule passed on the same revision as the latest failure.
+
+The iOS harness now handles that specific timeout by shutting down its own
+disposable simulator and waiting for it to boot again before cold recovery. It
+keeps the installed app and its data, and does not repeat the initial verification
+or replace failed checks with retries. Shutdown and boot must succeed; command
+errors and missing/failed recovery reports still fail the job. A stale reopen
+report is removed before launch so it cannot satisfy the second-process check.
+
+Artifacts include `relaunch.log`, `reopen-stdout.log`, `reopen-stderr.log`, and a
+`cold_relaunch` timing, in addition to both validated reports. The normal path
+still terminates only the verifier app. Recovery and cleanup never target other
+simulators or restart the shared CoreSimulator service.

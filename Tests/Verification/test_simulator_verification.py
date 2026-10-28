@@ -17,6 +17,46 @@ spec.loader.exec_module(verifier)
 
 
 class SimulatorVerificationTests(unittest.TestCase):
+    def test_cold_relaunch_timeout_restarts_owned_device_without_replaying_tests(self):
+        commands = []
+        def simulated_run(command, **kwargs):
+            commands.append(command)
+            if command[2] == "terminate":
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        log = io.StringIO()
+        with patch.object(verifier, "run", side_effect=simulated_run):
+            verifier.stop_for_cold_relaunch("owned-simulator", "test.app", log=log)
+        self.assertEqual([command[2] for command in commands], ["terminate", "shutdown", "bootstatus"])
+        self.assertTrue(all(command[3] == "owned-simulator" for command in commands))
+        self.assertIn("timed out", log.getvalue())
+
+    def test_successful_termination_does_not_restart_simulator(self):
+        with patch.object(verifier, "run") as run:
+            verifier.stop_for_cold_relaunch("owned-simulator", "test.app", log=io.StringIO())
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["xcrun", "simctl", "terminate", "owned-simulator", "test.app"])
+
+    def test_termination_command_error_does_not_trigger_recovery(self):
+        with patch.object(verifier, "run", side_effect=RuntimeError("unexpected failure")) as run, \
+             self.assertRaisesRegex(RuntimeError, "unexpected failure"):
+            verifier.stop_for_cold_relaunch("owned-simulator", "test.app", log=io.StringIO())
+        self.assertEqual(run.call_count, 1)
+
+    def test_cold_relaunch_requires_confirmed_shutdown_and_boot(self):
+        for failure_step in ("shutdown", "bootstatus"):
+            commands = []
+            def simulated_run(command, **kwargs):
+                commands.append(command)
+                if command[2] == "terminate" or command[2] == failure_step:
+                    raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            with self.subTest(failure_step=failure_step), \
+                 patch.object(verifier, "run", side_effect=simulated_run), \
+                 self.assertRaises(subprocess.TimeoutExpired):
+                verifier.stop_for_cold_relaunch("owned-simulator", "test.app", log=io.StringIO())
+            self.assertNotIn("launch", [command[2] for command in commands])
+            self.assertEqual(sum(command[2] == "terminate" for command in commands), 1)
+            self.assertLessEqual(len(commands), 5)
+
     def test_requires_each_adapter_and_local_only_mode(self):
         valid = dict(runID="current", finishedAt="finished", sqlite="passed", realm="passed",
                      localAdapters="passed", recovery="passed", streaming="passed", liveProvider="skipped: local_only", mode="smoke")
@@ -147,7 +187,12 @@ class SimulatorVerificationTests(unittest.TestCase):
             self.assertIn("ARCHS=arm64 x86_64", command)
             self.assertIn("ONLY_ACTIVE_ARCH=NO", command)
 
-    def test_prebuilt_app_recovers_from_container_lookup_timeout_without_relaunching(self):
+    def test_prebuilt_app_recovers_without_replaying_checks_and_requires_fresh_reopen_report(self):
+        for termination_timeout, produce_report in [(False, True), (True, True), (True, False)]:
+            with self.subTest(termination_timeout=termination_timeout, produce_report=produce_report):
+                self.check_prebuilt_relaunch(termination_timeout, produce_report)
+
+    def check_prebuilt_relaunch(self, termination_timeout, produce_report):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             app = root / "Signed.app"
@@ -157,13 +202,20 @@ class SimulatorVerificationTests(unittest.TestCase):
             report = dict(runID="fresh", finishedAt="finished", sqlite="passed", realm="passed",
                           localAdapters="passed", recovery="passed", streaming="passed", liveProvider="skipped: local_only", mode="smoke")
             (container / "Documents/CodexKitVerification.json").write_text(json.dumps(report))
-            (container / "Documents/CodexKitRecoveryReopen.json").write_text(json.dumps(
-                dict(runID="fresh", passed="true", finishedAt="finished", mode="smoke")))
+            reopen_path = container / "Documents/CodexKitRecoveryReopen.json"
+            reopen_path.write_text("stale report must be removed")
             clock = [0]
             lookups = []
 
             def simulated_run(command, **_kwargs):
                 self.assertEqual(command[:2], ["xcrun", "simctl"])
+                if command[2] == "launch" and "--verify-recovery-reopen" in command:
+                    self.assertFalse(reopen_path.exists())
+                    if produce_report:
+                        reopen_path.write_text(json.dumps(dict(
+                            runID="fresh", passed="true", finishedAt="finished", mode="smoke")))
+                if command[2] == "terminate" and termination_timeout:
+                    raise subprocess.TimeoutExpired(command, 60)
                 if command[2] == "list":
                     return json.dumps(dict(runtimes=[self.runtime("17.0.1")]))
                 if command[2] == "create":
@@ -184,7 +236,10 @@ class SimulatorVerificationTests(unittest.TestCase):
                  patch.object(verifier.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
                  patch.object(verifier, "run", side_effect=simulated_run) as run, \
                  patch.object(verifier.subprocess, "run") as cleanup:
-                self.assertEqual(verifier.main(), 0)
+                self.assertEqual(verifier.main(), 0 if produce_report else 1)
+            if not produce_report:
+                self.assertIn("Cold recovery verification did not report a result", (output / "failure.txt").read_text())
+                self.assertFalse(reopen_path.exists())
             self.assertEqual(json.loads((output / "CodexKitVerification.json").read_text()), report)
             installs = [call.args[0] for call in run.call_args_list if call.args[0][2] == "install"]
             self.assertEqual(installs, [["xcrun", "simctl", "install", "owned-simulator", str(app.resolve())]])
@@ -192,6 +247,8 @@ class SimulatorVerificationTests(unittest.TestCase):
             self.assertEqual(commands.count("get_app_container"), 2)
             self.assertEqual(commands.count("launch"), 2)
             self.assertEqual(commands.count("terminate"), 1)
+            self.assertEqual(commands.count("bootstatus"), 2 if termination_timeout else 1)
+            self.assertEqual(commands.count("shutdown"), 1 if termination_timeout else 0)
             self.assertLess(max(i for i, command in enumerate(commands) if command == "get_app_container"),
                             commands.index("launch"))
             self.assertEqual([call.args[0] for call in cleanup.call_args_list], [
