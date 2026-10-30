@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 Scripts/ci_timed.py --name 'SDK optimized build' --output "$RUNNER_TEMP/timing-optimized-build.json" -- \
-            swift build --build-tests -c release --force-resolved-versions -Xswiftc -warnings-as-errors -Xswiftc -enable-testability \
+            swift test -c release --force-resolved-versions -Xswiftc -warnings-as-errors list \
             2>&1 | tee "$RUNNER_TEMP/optimized-build.log"
       - name: Optimized correctness checks (all four library targets)
         timeout-minutes: 10
