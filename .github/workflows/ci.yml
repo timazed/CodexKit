@@ -82,7 +82,9 @@ jobs:
     name: SDK (optimized)
     needs: plan
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 35
+    env:
+      NSUnbufferedIO: "YES"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-cache
@@ -98,16 +100,25 @@ jobs:
             .build/release.yaml
             .build/arm64-apple-macosx
             .build/x86_64-apple-macosx
+      - name: Build optimized test bundle (all four library targets)
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci_timed.py --name 'SDK optimized build' --output "$RUNNER_TEMP/timing-optimized-build.json" -- \
+            swift build --build-tests -c release --force-resolved-versions -Xswiftc -warnings-as-errors \
+            2>&1 | tee "$RUNNER_TEMP/optimized-build.log"
       - name: Optimized correctness checks (all four library targets)
+        timeout-minutes: 10
         env:
           CODEXKIT_STRESS_ROUNDS: ${{ needs.plan.outputs.extended == 'true' && '40' || '6' }}
         run: |
           set -euo pipefail
-          python3 Scripts/ci_timed.py --name 'SDK optimized build and tests' --output "$RUNNER_TEMP/timing-optimized.json" -- \
-            swift test -c release --force-resolved-versions -Xswiftc -warnings-as-errors \
+          python3 Scripts/ci_timed.py --name 'SDK optimized tests' --output "$RUNNER_TEMP/timing-optimized.json" -- \
+            swift test -c release --skip-build --force-resolved-versions \
             --filter 'RuntimePerformanceTests|SDKDesignTests|StorageQueueCancellationTests|StorageLockCancellationTests|RuntimeConcurrencyStressTests|StructuredRecoveryTests|ResponseRecoveryInvestigationTests' \
             2>&1 | tee "$RUNNER_TEMP/optimized-tests.log"
       - name: Extended image and storage benchmarks (reuse the built test bundle)
+        timeout-minutes: 5
         if: needs.plan.outputs.extended == 'true'
         env:
           CODEXKIT_RUN_PERFORMANCE_TESTS: "1"
@@ -123,6 +134,7 @@ jobs:
           name: sdk-optimized
           path: |
             ${{ runner.temp }}/timing-*.json
+            ${{ runner.temp }}/optimized-build.log
             ${{ runner.temp }}/optimized-tests.log
             ${{ runner.temp }}/benchmarks.log
           retention-days: 14
@@ -136,7 +148,7 @@ jobs:
       matrix:
         platform: [iOS, macOS]
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-cache
@@ -150,6 +162,7 @@ jobs:
             .build/macos-demo/SourcePackages
             .build/macos-demo/ModuleCache.noindex
       - name: Build and verify the signed demo
+        timeout-minutes: 15
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
@@ -165,6 +178,7 @@ jobs:
           cache: npm
           cache-dependency-path: packages/codexkit/package-lock.json
       - name: Verify remote demo features end to end
+        timeout-minutes: 12
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
