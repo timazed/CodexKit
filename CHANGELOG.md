@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-01
+
+### Added
+
+- Add Swift client session export and import through `AgentRuntime.exportSession()` and `importSession(_:)`. Clients can adopt supplied ChatGPT credentials without interactive sign-in or filesystem discovery.
+- Add a versioned JSON transfer format containing the access token, account metadata, and required expiry, with typed validation errors and redacted diagnostics. Refresh and ID tokens are excluded.
+- Add offline round-trip, malformed-input, expiry, redaction, session lifecycle, no-retry, and existing TypeScript authentication-conversion checks.
+
+### Changed
+
+- Imported sessions remain in memory and require explicit replacement after expiry or authentication rejection. The built-in text generation runner does not automatically retry with imported credentials; existing sign-in behavior remains unchanged.
+- Increase comprehensive CI job timeouts so required verification can finish without premature cancellation.
+
+### Upgrading
+
+- Select Swift package version `2.2.0`. Session export/import is opt-in; existing integrations remain supported.
+- Exported JSON contains sensitive plaintext credentials. Use authenticated transport and encrypted storage. Local validation does not verify provider acceptance. See [session transfer](docs/session-transfer.md) for the format, provider restrictions, and expiry behavior.
+- Requires Swift 6.1+, iOS 17+, and macOS 14+.
+- The independently published Cloud npm package remains at 0.2.5; no backend or TypeScript production API changes are included.
+
 ## [2.1.0] - 2026-10-28
 
 ### Added
