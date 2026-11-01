@@ -125,6 +125,7 @@ public actor ChatGPTSessionManager {
     @discardableResult
     public func refresh(reason: ChatGPTAuthRefreshReason) async throws -> ChatGPTSession {
         let current = try requireStoredSession()
+        if current.isTransferred { throw ChatGPTSessionTransferError.reauthenticationRequired }
         let startedGeneration = generation
         if let pendingRefresh, pendingRefresh.generation == startedGeneration {
             let refreshed = try await waitForRefresh(pendingRefresh.task)
@@ -196,6 +197,11 @@ public actor ChatGPTSessionManager {
             if let authenticationFailure, authenticationFailure != .disconnected { throw authenticationFailure }
             throw AgentRuntimeError.signedOut()
         }
+        if session.isTransferred {
+            guard session.accessToken != rejectedAccessToken else { throw ChatGPTSessionTransferError.reauthenticationRequired }
+            guard let expiry = session.expiresAt, expiry > now() else { throw ChatGPTSessionTransferError.expired }
+            return session
+        }
         if session.isExternallyManaged, externalSource != nil {
             let expected = generation
             let resolved = try await resolveExternalSession(session, generation: expected)
@@ -214,6 +220,10 @@ public actor ChatGPTSessionManager {
     ) async throws -> ChatGPTSession {
         // Recovery is only valid for the active account, never after sign-out.
         let current = try requireStoredSession()
+        if current.isTransferred {
+            rejectedAccessToken = current.accessToken
+            throw ChatGPTSessionTransferError.reauthenticationRequired
+        }
         logger.warning(
             .auth,
             "Attempting unauthorized-session recovery.",

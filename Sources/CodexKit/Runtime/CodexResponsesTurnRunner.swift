@@ -256,7 +256,7 @@ struct CodexResponsesTurnRunner {
     func runTurnPassWithRetry(
         state: inout TurnRunState
     ) async throws -> TurnPassDisposition {
-        let retryPolicy = AgentStructuredRecoveryContext.current == nil ? configuration.requestRetryPolicy : .disabled
+        let retryPolicy = AgentStructuredRecoveryContext.current == nil && !session.isTransferred ? configuration.requestRetryPolicy : .disabled
         // Build one request per pass. Retries replay the same request, while a new pass
         // is only started after tool output mutates the working history.
         let lease = try await authenticationContext?.resolve() ?? session

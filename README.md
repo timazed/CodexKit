@@ -181,6 +181,7 @@ The [documentation index](docs/index.md) contains the full guide list, core conc
 - [Stream and validate typed output (text, JSON, JSON Lines, and XML)](docs/streaming-output.md)
 - [Record codec benchmark and compact-format decision](docs/streaming-output-benchmarks.md)
 - [Reuse a local Codex session on macOS](docs/auth-on-macos.md)
+- [Export and import a supplied client session](docs/session-transfer.md)
 - [Add memory](docs/memory.md)
 - [Define personas and skills](docs/personas-and-skills.md)
 - [Integrate App Intents, sharing, and background completion](docs/apple-integrations.md)
