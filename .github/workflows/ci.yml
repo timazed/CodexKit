@@ -257,7 +257,7 @@ jobs:
       # Prime CoreSimulator before xcodebuild's runtime downloader connects to it.
       # https://github.com/actions/runner-images/issues/12862
       - name: Initialize CoreSimulator
-        timeout-minutes: 2
+        timeout-minutes: 5
         run: xcrun simctl list runtimes --json
       - name: Install the iOS 17 compatibility runtime
         timeout-minutes: 15
