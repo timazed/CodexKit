@@ -2,6 +2,8 @@
 
 [Documentation index](index.md) · [Integration example](../Examples/LocalCodexSession.swift)
 
+For the account-backed access model, usage limits, and provider dependencies, see [ChatGPT sign-in and access](chatgpt-account-access.md).
+
 For a runnable native app, open `DemoApp/CodexKitDemo.xcodeproj` and select the `CodexKitMacDemo` scheme. This project contains both the iOS and macOS demo targets. The [macOS demo walkthrough](../DemoApp/README.md#macos-demo) covers local connection, device-code fallback, chat, and the signed app's offline integration checks.
 
 CodexKit can borrow a compatible, accessible local ChatGPT access token while retaining its existing Responses backend, tool loop, typed requests, and structured outputs. The credential owner remains responsible for its login and refresh token. CodexKit never starts Codex to force refresh, calls Codex logout, or writes to external credential storage.

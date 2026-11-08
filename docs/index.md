@@ -2,7 +2,14 @@
 
 [Back to the README](../README.md)
 
-Start with the [quickstart](../README.md#quickstart), then choose a guide for the capability you are integrating. These guides describe the 2.0 development line on `main`.
+Start with the [quickstart](../README.md#quickstart), then choose a guide for the capability you are integrating. The current Swift release is 2.2.0; guides on `main` may also describe unreleased changes.
+
+## Start building
+
+- [Build a SwiftUI AI assistant with ChatGPT sign-in](swiftui-assistant.md): a complete starter with streaming and saved conversations.
+- [Build a Swift AI agent with app-defined tools](app-defined-tools.md): register a tool and present approvals.
+- [How the embedded agent runtime works](embedded-agent-runtime.md): local orchestration, remote inference, and integration choices.
+- [ChatGPT sign-in, account access, and usage](chatgpt-account-access.md): no API-key setup, credential handling, and provider dependencies.
 
 ## Guides
 
@@ -117,7 +124,7 @@ flowchart LR
     B --> F["CodexResponsesBackend"]
     B --> G["ToolRegistry + Executors"]
     B --> H["ApprovalPresenter<br/>ApprovalInbox"]
-    F --> I["OpenAI Responses API"]
+    F --> I["ChatGPT Codex backend"]
 ```
 
 ## Design notes

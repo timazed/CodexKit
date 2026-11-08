@@ -2,6 +2,8 @@
 
 [Documentation index](index.md) · [CodexKit](../README.md)
 
+For the account-backed access model, usage limits, and provider dependencies, see [ChatGPT sign-in and access](chatgpt-account-access.md).
+
 ## Upstream Codex Model
 
 Codex separates:

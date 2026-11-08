@@ -1,5 +1,8 @@
 # CodexKit Demo App
 
+Build AI-powered iOS and macOS apps with ChatGPT sign-in. These demos show the native Swift runtime, streaming, app-defined tools, and local persistence. For a smaller starting point, use the [SwiftUI assistant guide](../docs/swiftui-assistant.md); see [account access](../docs/chatgpt-account-access.md) for eligibility and provider dependencies.
+
+
 This folder contains checked-in iOS and macOS example apps for exercising the `CodexKit` embedded agent runtime. Both apps show the resolved ChatGPT account type (plan), name, email, and account ID after sign-in, restoration, or refresh.
 
 ## Local cloud API test
@@ -110,7 +113,7 @@ The Xcode project is the source of truth for the demo app. Edit it directly in X
 - **Memory:** automatic capture, guided writing, raw record management, and retrieval previews.
 - **Health Coach:** tools and memory combined with HealthKit context and local notifications.
 
-The shared `AgentRuntimeStore` keeps replies scoped to the selected conversation and upserts committed messages by ID during streaming. Interrupted streams can now fail after visible output instead of automatically replaying it. See the [streaming contract](../docs/messaging.md#streaming-validation-and-backend-completion).
+The shared `AgentRuntimeStore` keeps replies scoped to the selected conversation and upserts committed messages by ID during streaming. Interrupted streams can now fail after visible output instead of automatically replaying it. See the [streaming contract](../docs/messaging.md#structured-validation-and-backend-completion).
 
 ### Try the streaming output API
 
