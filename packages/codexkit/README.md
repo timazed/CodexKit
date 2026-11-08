@@ -248,3 +248,7 @@ const result = await codex.executeImage({
 ```
 
 This transport implements the SDK's HTTPS byte-backed POST contract with manual redirect handling and an abort signal. It is not a general replacement for the browser Fetch API. Queueing, durable storage, recovery, image hosting and notification delivery belong to the application.
+
+## License
+
+CodexKit is available under the [MIT License](LICENSE). You may use, modify, and redistribute it, including in commercial apps, while retaining the copyright and license notice. This license covers CodexKit's code; provider services and third-party dependencies remain subject to their own terms and licenses.
