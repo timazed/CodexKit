@@ -8,8 +8,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Added
 
-- Add per-request `30m` and `12h` prompt-cache TTL preferences, preserved through model passes, automatic compaction, structured recovery, and prepared Cloud request forwarding.
-- Add opt-in request-only placeholders for unavailable persisted image references during generation and compaction, preserving strict errors by default and original generation history for later recovery.
+- Add per-request `30m` and `12h` prompt-cache TTL preferences through model passes, automatic compaction, structured recovery, and prepared Cloud forwarding.
+- Port upstream image availability checks through `imageAvailabilityChecker`: check distinct provider file IDs concurrently, replace only confirmed-missing message/tool images in outbound generation and compaction requests, and retain references by default and on backend/access errors. Replaces the unreleased snapshot-based `missingImagePolicy` approximation.
 
 ### Fixed
 

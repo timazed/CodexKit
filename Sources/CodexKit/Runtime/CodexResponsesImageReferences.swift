@@ -14,8 +14,7 @@ enum CodexResponsesImageReferences {
 
     static func restore(
         _ items: [JSONValue],
-        using attachments: [AgentImageAttachment],
-        missingImagePolicy: AgentMissingImagePolicy = .fail
+        using attachments: [AgentImageAttachment]
     ) throws -> [JSONValue] {
         var required = Set<String>()
         for item in items { collectReferenceDigests(in: item, into: &required) }
@@ -25,10 +24,6 @@ enum CodexResponsesImageReferences {
             let key = digest(attachment.data)
             if required.remove(key) != nil { byDigest[key] = attachment }
             if required.isEmpty { break }
-        }
-        if !required.isEmpty, missingImagePolicy == .placeholder {
-            let prepared = items.map { replacingUnavailableImages($0, missing: required) }
-            return try restore(prepared, using: attachments)
         }
         guard required.isEmpty else { throw missingImage() }
         var expanded: [String: String] = [:]

@@ -321,32 +321,35 @@ is performed. Missing or unsupported metadata leaves the original error intact.
 See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
 request scoping, and the TypeScript bridge boundary.
 
-## Per-turn prompt-cache lifetime
+## Image availability (upstream port)
 
-Set `request.promptCacheTTL = .thirtyMinutes` or `.twelveHours` to request a
-minimum cache lifetime through `prompt_cache_options.ttl` (`30m` / `12h`). The
-preference applies to every model pass and automatic compaction for that turn.
-It is included in persisted requests and frozen structured-recovery bytes, and
-Cloud validates and forwards the exact prepared bytes. A later request without
-the preference omits the field. Manual compaction outside a turn has no override.
-This requests provider behavior; it does not guarantee retention or cache hits,
-change account capabilities, or alter the existing `prompt_cache_key`.
+Set `configuration.imageAvailabilityChecker` to your authoritative attachment store,
+conforming to `AgentImageAvailabilityChecking`. Its `isResolvable(fileID:)` method
+returns `false` only for confirmed absence. The default implementation retains all
+references, including provider-owned IDs the host cannot resolve. Thrown backend
+and access errors also retain the original reference; cancellation still propagates.
 
-## Unavailable persisted images
+This ports `cb66dbecf`'s `AttachmentStore::is_resolvable` and
+`context_manager/image_availability.rs`: each prepared request checks distinct
+`input_image.file_id` values, with at most eight checks in flight. Only confirmed
+missing images in message content, function-call outputs, and custom-tool outputs
+become `[image unavailable]`. Inline images, remote URLs, generated-image results,
+arbitrary JSON, and other content/annotations remain unchanged. An incomplete
+in-memory attachment snapshot is never treated as proof of absence.
+Message replacements receive upstream's `images.unavailable` classification and
+harness provenance in positional content metadata; other parts retain attribution.
 
-Set `configuration.missingImagePolicy = .placeholder` before creating a
-`CodexResponsesBackend` to replace unresolved persisted image content with
-`[image unavailable]` in generation and compaction requests. The default `.fail`
-retains existing strict errors. Available images and surrounding text are kept.
-Generation placeholders are request-only: saved provider references are retained
-and checked again on later turns, so an attachment can become available again.
-Compaction can retain the explicit placeholder in its reduced context; the full
-saved transcript is unchanged.
+Generation projects an outbound copy and preserves the original file IDs in saved
+history. Later requests recheck availability, including after file/SQLite/Realm
+reopening. Compaction uses the same projection; its reduced context can retain a
+placeholder while the saved full transcript remains unchanged. Checks await outside
+any synchronous lock, allowing other backend turns to proceed during a delayed
+compaction check. CodexKit retains its existing compaction scheduler.
 
-This policy covers references unresolved against the supplied attachment snapshot.
-Storage access, integrity, and transient read errors still propagate; it does not
-convert those errors into missing-image claims or probe remote image URLs.
-Unrecognized reference locations still fail rather than rewriting arbitrary text.
+The earlier unreleased `missingImagePolicy` approximation has been removed. This
+contract concerns provider file IDs, matching upstream; missing or corrupt local
+attachment blobs still raise storage errors. They are not silently converted into
+claims about provider-file availability.
 
 ## Context estimates and missing usage
 
@@ -377,3 +380,15 @@ status allowlist, and honor the existing attempt budget, server delay, and repla
 guards. Original provider codes, messages, and HTTP diagnostics remain available.
 Cloud exposes allowlisted codes and HTTP reasons `session_budget_exceeded` and
 `policy_capacity_unavailable`; it still performs no automatic retries.
+
+## Per-turn prompt-cache lifetime
+
+Set `request.promptCacheTTL = .thirtyMinutes` or `.twelveHours` to request a
+minimum cache lifetime through `prompt_cache_options.ttl` (`30m` / `12h`). The
+preference applies to every model pass and automatic compaction for that turn.
+It is included in persisted requests and frozen structured-recovery bytes, and
+Cloud validates and forwards the exact prepared bytes. A later request without
+the preference omits the field. Manual compaction outside a turn has no override.
+This requests provider behavior; it does not guarantee retention or cache hits,
+change account capabilities, or alter the existing `prompt_cache_key`.
+

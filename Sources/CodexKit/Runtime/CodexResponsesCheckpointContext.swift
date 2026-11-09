@@ -25,8 +25,16 @@ package enum CodexResponsesCheckpointContext {
             }
             replacement = retained.filter { prefixIDs.contains($0.id) }
         }
+        // Provider file IDs have no inline bytes to reconstruct from visible
+        // messages. Preserve the original retained item (and its annotations).
+        let originalItems = context.payload.objectValue?["items"]?.arrayValue ?? []
+        let byMessageID = Dictionary(zip(original.prefix(prefix.count), originalItems)
+            .map { ($0.0.id, ($0.0, $0.1)) }, uniquingKeysWith: { first, _ in first })
         guard let items = try? CodexResponsesImageReferences.externalize(
-            replacement.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
+            replacement.map { message in
+                if let (originalMessage, item) = byMessageID[message.id], originalMessage == message { return item }
+                return WorkingHistoryItem.visibleMessage(message).jsonValue
+            }
         ), var payload = context.payload.objectValue else { return nil }
         payload["items"] = .array(items + prefix.checkpointAndSuffix)
         // Item positions changed; the old usage boundary no longer describes this history.
@@ -50,7 +58,11 @@ package enum CodexResponsesCheckpointContext {
                   let expected = try? CodexResponsesImageReferences.externalize([
                     WorkingHistoryItem.visibleMessage(message).jsonValue
                   ]).first?.objectValue?["content"]?.arrayValue else { return nil }
-            let imageContent: (JSONValue) -> Bool = { $0.objectValue?["type"] == ResponsesContentType.inputImage.jsonValue }
+            // File IDs remain in provider context; the visible attachment model
+            // represents inline image bytes only.
+            let imageContent: (JSONValue) -> Bool = {
+                $0.objectValue?["type"] == ResponsesContentType.inputImage.jsonValue && $0.objectValue?["file_id"] == nil
+            }
             guard content.filter(imageContent) == expected.filter(imageContent) else { return nil }
         }
         return (index, Array(items[index...]))

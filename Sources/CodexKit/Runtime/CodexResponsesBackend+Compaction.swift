@@ -24,14 +24,15 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         let settings = thread.configuration ?? configuration.defaultThreadConfiguration
         let providerState = CodexResponsesProviderState(context: providerContext)
         try providerState?.validateClientManagedState()
-        let input: [JSONValue]
+        let restored: [JSONValue]
         if let items = providerState?.items, !items.isEmpty {
-            input = try CodexResponsesImageReferences.restore(items,
-                using: CodexResponsesImageReferences.attachments(in: effectiveHistory),
-                missingImagePolicy: configuration.missingImagePolicy)
+            restored = try CodexResponsesImageReferences.restore(items,
+                using: CodexResponsesImageReferences.attachments(in: effectiveHistory))
         } else {
-            input = effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
+            restored = effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
         }
+        let input = try await CodexResponsesImageAvailability.prepare(restored,
+            checker: configuration.imageAvailabilityChecker)
         let factory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder,
             supportsImageDetailOriginal: supportsImageDetailOriginal(for: settings.model, session: session))
         let request = try factory.buildURLRequest(threadConfiguration: settings,
