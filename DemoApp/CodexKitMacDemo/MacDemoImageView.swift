@@ -54,11 +54,9 @@ struct MacDemoImageView: View {
                 }
             }
             ForEach(images.results) { result in
-                GroupBox("Generated image") {
+                GroupBox(images.showingAnimationSample ? "Local animation sample" : "Generated image") {
                     VStack(spacing: 12) {
-                        if let preview = NSImage(data: result.image.data) {
-                            Image(nsImage: preview).resizable().scaledToFit().frame(maxHeight: 480)
-                        }
+                        GeneratedImagePreview(image: result.image)
                         HStack {
                             Text(result.image.mimeType.rawValue).font(.caption).foregroundStyle(.secondary)
                             if let actualSize = result.pixelSize {
@@ -87,8 +85,7 @@ struct MacDemoImageView: View {
                 Text("Edit").tag(AgentImageGenerationAction.edit)
             }
             Toggle("Transparent background", isOn: $images.transparentBackground)
-            Text("PNG output. Quality and dimensions are chosen by the service.")
-                .font(.caption).foregroundStyle(.secondary)
+            ImageGenerationOutputControls(images: images)
             TextField("Describe the image or edit", text: $images.prompt, axis: .vertical)
                 .lineLimit(3...8).textFieldStyle(.roundedBorder)
             if images.action != .generate {

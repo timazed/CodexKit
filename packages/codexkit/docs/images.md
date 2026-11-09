@@ -90,9 +90,9 @@ not start a timer or use this estimate to determine success.
 
 ## Animated GIF output
 
-Opt in with `output_format: "gif"` and `gif: {}` in the prepared Images body.
-Optional `gif.frame_count` accepts integers from 2 to 16;
-`gif.frame_duration_ms` accepts integers from 20 to 2000. Omitted controls use
+Opt in with `output_format: "gif"` in the prepared Images body.
+Optional sibling `frame_count` accepts integers from 2 to 16;
+`frame_duration_ms` accepts integers from 20 to 2000. Omitted controls use
 provider defaults. Both generation and editing support these output controls;
 reference images remain PNG/JPEG/WebP. PNG requests keep their original wire shape.
 

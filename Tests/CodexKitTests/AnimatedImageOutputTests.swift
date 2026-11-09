@@ -9,11 +9,20 @@ final class AnimatedImageOutputTests: XCTestCase {
 
     func testGenerateAndEditPreserveGIFBytesAndFrameControls() async throws {
         let gif = animatedGIF()
+        let reference = AgentImageAttachment.png(try imageTestData(width: 1, height: 1, png: true))
         for edit in [false, true] {
             await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "application/json"], body: try codexImageJSON(gif), inspect: { request in
                 let body = try imageRequestJSON(request)
                 XCTAssertEqual(body["output_format"] as? String, "gif")
-                XCTAssertEqual(body["gif"] as? [String: Int], ["frame_count": 2, "frame_duration_ms": 100])
+                // Matches upstream imagegen_extension.rs's expected HTTP request,
+                // rather than the different model-facing tool argument shape.
+                XCTAssertEqual(body["frame_count"] as? Int, 2)
+                XCTAssertEqual(body["frame_duration_ms"] as? Int, 100)
+                XCTAssertNil(body["gif"])
+                var expected: [String: Any] = ["prompt": "Animate", "background": "opaque", "model": "gpt-image-2",
+                    "quality": "auto", "size": "auto", "output_format": "gif", "frame_count": 2, "frame_duration_ms": 100]
+                if edit { expected["images"] = [["image_url": reference.dataURLString]] }
+                XCTAssertEqual(body as NSDictionary, expected as NSDictionary)
                 XCTAssertTrue(request.url?.path.hasSuffix(edit ? "images/edits" : "images/generations") == true)
             }))
             var options = AgentImageGenerationOptions(outputFormat: .gif)
@@ -21,7 +30,7 @@ final class AnimatedImageOutputTests: XCTestCase {
             let restored = try JSONDecoder().decode(AgentImageGenerationOptions.self, from: JSONEncoder().encode(options))
             let client = AgentImageGenerationClient(urlSession: makeTestURLSession())
             let result = try await (edit
-                ? client.edit(images: [.png(try imageTestData(width: 1, height: 1, png: true))], prompt: "Animate", session: demoSession(), options: restored)
+                ? client.edit(images: [reference], prompt: "Animate", session: demoSession(), options: restored)
                 : client.generate(prompt: "Animate", session: demoSession(), options: restored))
             let image = try XCTUnwrap(result.first)
             XCTAssertEqual(image.image.mimeType, .gif)
@@ -32,10 +41,13 @@ final class AnimatedImageOutputTests: XCTestCase {
         }
     }
 
-    func testDefaultGIFOptionsEmitEmptyControls() async throws {
+    func testDefaultGIFOptionsOmitFrameControls() async throws {
         await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "application/json"], body: try codexImageJSON(animatedGIF()), inspect: { request in
             let body = try imageRequestJSON(request)
-            XCTAssertEqual(body["gif"] as? [String: Int], [:])
+            XCTAssertEqual(body["output_format"] as? String, "gif")
+            XCTAssertNil(body["frame_count"])
+            XCTAssertNil(body["frame_duration_ms"])
+            XCTAssertNil(body["gif"])
         }))
         _ = try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(prompt: "Animate",
             session: demoSession(), options: .init(outputFormat: .gif))

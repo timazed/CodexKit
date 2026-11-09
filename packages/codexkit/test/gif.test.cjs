@@ -5,7 +5,7 @@ const { errorCode } = require('./helpers.cjs');
 const header = Buffer.from([...Buffer.from('GIF89a'), 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255]);
 const frame = Buffer.from([0x21, 0xf9, 4, 0, 10, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0]);
 const gif = Buffer.concat([header, frame, frame, Buffer.from([0x3b])]);
-const request = (controls = {}) => imagePrepared(imageBody({ output_format: 'gif', gif: controls }));
+const request = (controls = {}) => imagePrepared(imageBody({ output_format: 'gif', ...controls }));
 const response = bytes => imageResponse({ data: [{ b64_json: bytes.toString('base64') }] });
 
 for (const controls of [{}, { frame_count: 2, frame_duration_ms: 100 }]) {
@@ -20,7 +20,7 @@ for (const controls of [{}, { frame_count: 2, frame_duration_ms: 100 }]) {
   });
 }
 for (const controls of [{ frame_count: 1 }, { frame_count: 17 }, { frame_count: 2.5 },
-  { frame_duration_ms: 19 }, { frame_duration_ms: 2001 }, { extra: true }, null]) {
+  { frame_duration_ms: 19 }, { frame_duration_ms: 2001 }, { extra: true }, { gif: {} }]) {
   test(`rejects invalid GIF controls ${JSON.stringify(controls)} before fetching`, async () => {
     const { run, calls } = imageHarness();
     await assert.rejects(run({ preparedRequest: request(controls) }), errorCode('unsupported_request', 'not_started'));
@@ -35,6 +35,18 @@ for (const bytes of [gif.subarray(0, gif.length - 1), Buffer.concat([gif, Buffer
     await assert.rejects(run({ preparedRequest: request() }), errorCode('invalid_response'));
   });
 }
+test('upstream flat GIF fields are forwarded exactly and PNG rejects animation fields', async () => {
+  const controls = { frame_count: 2, frame_duration_ms: 200 };
+  const { run, calls } = imageHarness({ fetch: async () => response(gif) });
+  await run({ preparedRequest: request(controls) });
+  const body = JSON.parse(Buffer.from(calls[0].body).toString('utf8'));
+  assert.deepEqual(body, imageBody({ output_format: 'gif', ...controls }));
+  assert.equal(body.gif, undefined);
+  const png = imageHarness();
+  await assert.rejects(png.run({ preparedRequest: imagePrepared(imageBody(controls)) }),
+    errorCode('unsupported_request', 'not_started'));
+  assert.equal(png.calls.length, 0);
+});
 test('GIF total frame pixels respect limits', async () => {
   const { run } = imageHarness({ imageLimits: { maxPixels: 1 }, fetch: async () => response(gif) });
   await assert.rejects(run({ preparedRequest: request() }), errorCode('limit_exceeded'));

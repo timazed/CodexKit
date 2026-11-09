@@ -83,7 +83,8 @@ struct CodexImagesClient: Sendable {
         let body = Request(prompt: prompt, background: options.transparentBackground ? "transparent" : "opaque",
             images: images.isEmpty ? nil : images.map { .init(image_url: $0.dataURLString) },
             output_format: options.outputFormat == .gif ? "gif" : nil,
-            gif: options.outputFormat == .gif ? options.animation ?? .init() : nil)
+            frame_count: options.outputFormat == .gif ? options.animation?.frameCount : nil,
+            frame_duration_ms: options.outputFormat == .gif ? options.animation?.frameDurationMilliseconds : nil)
         let clientID = UUID().uuidString
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent(
             images.isEmpty ? "images/generations" : "images/edits"))
@@ -109,7 +110,8 @@ struct CodexImagesClient: Sendable {
         let size = "auto"
         let images: [Reference]?
         let output_format: String?
-        let gif: AgentGIFOptions?
+        let frame_count: Int?
+        let frame_duration_ms: Int?
     }
 
     private func invalidResponse() -> AgentRuntimeError {

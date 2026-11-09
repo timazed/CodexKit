@@ -77,11 +77,56 @@ enum ImageGenerationDemoVerification {
         empty.start()
         await empty.waitUntilFinished()
         try require(empty.status == .failed && empty.results.isEmpty, "Empty image output became a success")
-        return ["image controls preserve transparency and edit references with built-in Codex defaults",
+        try await verifyGIF(session: session)
+        return ["animated GIF controls, playback timing, original bytes and export type",
+                "image controls preserve transparency and edit references with built-in Codex defaults",
                 "image completion publishes once and blocks overlapping requests",
                 "image estimate caps at 99 and stops after completion or cancellation",
                 "image cancellation and disconnect discard late completion",
                 "image errors preserve provider details and reject empty success"]
+    }
+
+    private static func verifyGIF(session: ChatGPTSession) async throws {
+        let data = syntheticGIF()
+        let output = AgentGeneratedImage(id: "gif-fixture", image: .init(mimeType: .gif, data: data))
+        for custom in [false, true] {
+            let demo = ImageGenerationDemoModel(session: { session }, generate: { request, _ in
+                guard request.options.outputFormat == .gif,
+                      request.options.animation == (custom ? .init(frameCount: 2, frameDurationMilliseconds: 100) : nil) else {
+                    throw ImageDemoVerificationError("GIF controls did not reach the SDK")
+                }
+                return [output]
+            })
+            demo.outputFormat = .gif
+            demo.customAnimation = custom
+            demo.frameCount = 2
+            demo.frameDurationMilliseconds = 100
+            demo.start()
+            await demo.waitUntilFinished()
+            try require(demo.status == .completed && demo.results.first?.image.data == data,
+                        "GIF completion lost original animation bytes")
+            try require(demo.results.first?.demoExportType == .gif, "GIF export used PNG")
+        }
+        let sample = ImageGenerationDemoModel(session: { throw ImageDemoVerificationError("Sample requested authentication") },
+            generate: { _, _ in throw ImageDemoVerificationError("Sample contacted the provider") })
+        sample.showAnimationSample()
+        try require(sample.showingAnimationSample && sample.status == .completed
+                    && sample.results.first?.demoExportType == .gif
+                    && sample.results.first.flatMap({ DemoImageAnimation(data: $0.image.data) })?.frames.count == 8,
+                    "Local GIF sample must play without authentication or a provider call")
+        guard let animation = DemoImageAnimation(data: data) else {
+            throw ImageDemoVerificationError("GIF playback could not decode its frames")
+        }
+        try require(animation.frames.count == 2 && abs(animation.duration - 0.2) < 0.001,
+                    "GIF playback lost frame timing")
+        try require(animation.frameIndex(elapsed: 0) == 0 && animation.frameIndex(elapsed: 0.11) == 1
+                    && animation.frameIndex(elapsed: 0.21) == 0, "GIF playback did not advance and loop")
+    }
+
+    static func syntheticGIF() -> Data {
+        let header: [UInt8] = Array("GIF89a".utf8) + [1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255]
+        let prefix: [UInt8] = [0x21, 0xf9, 4, 0, 10, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2]
+        return Data(header + prefix + [0x44, 1, 0] + prefix + [0x4c, 1, 0, 0x3b])
     }
 
     private static func syntheticPNG() throws -> Data {

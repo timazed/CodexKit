@@ -24,18 +24,17 @@ export function prepareImageRequest(input: PreparedImageRequest, limits: ImageEx
   if (createHash("sha256").update(body).digest("hex") !== input.sha256) fail("integrity_mismatch");
   const value = parseJson(utf8(body, "invalid_request"), jsonLimits, "invalid_request");
   if (!isObject(value) || typeof value.prompt !== "string" || !value.prompt.trim()) fail("invalid_request");
-  if (Object.keys(value).some(key => !["prompt", "background", "model", "quality", "size", "images", "output_format", "gif"].includes(key)) ||
+  if (Object.keys(value).some(key => !["prompt", "background", "model", "quality", "size", "images", "output_format", "frame_count", "frame_duration_ms"].includes(key)) ||
       value.model !== "gpt-image-2" || value.quality !== "auto" || value.size !== "auto" ||
       (value.background !== "transparent" && value.background !== "opaque")) fail("unsupported_request");
   const outputFormat = value.output_format === "gif" ? "gif" : "png";
   if (value.output_format !== undefined && value.output_format !== "gif") fail("unsupported_request");
   if (outputFormat === "gif") {
-    if (!isObject(value.gif) || Object.keys(value.gif).some(key => !["frame_count", "frame_duration_ms"].includes(key))) fail("unsupported_request");
     for (const [key, low, high] of [["frame_count", 2, 16], ["frame_duration_ms", 20, 2000]] as const) {
-      const n = value.gif[key];
+      const n = value[key];
       if (n !== undefined && (typeof n !== "number" || !Number.isInteger(n) || n < low || n > high)) fail("unsupported_request");
     }
-  } else if (value.gif !== undefined) fail("unsupported_request");
+  } else if (value.frame_count !== undefined || value.frame_duration_ms !== undefined) fail("unsupported_request");
   if (input.action === "generate") {
     if (value.images !== undefined) fail("unsupported_request");
   } else {
