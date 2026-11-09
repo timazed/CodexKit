@@ -135,6 +135,9 @@ private enum ImageAvailabilityDemoVerification {
     static func run(session: ChatGPTSession) async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("image-availability-\(UUID()).png")
         defer { try? FileManager.default.removeItem(at: file) }
+        guard let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=") else {
+            throw ImageDemoVerificationError("Invalid PNG fixture")
+        }
         let original: JSONValue = .object(["type": .string("message"), "role": .string("user"),
             "content": .array([.object(["type": .string("input_image"), "file_id": .string("demo-owned-file")])])])
         var context = AgentProviderContext(providerID: "openai.responses", payload: .object(["items": .array([original])]))
@@ -144,7 +147,7 @@ private enum ImageAvailabilityDemoVerification {
         transport.protocolClasses = [AvailabilityTransport.self]
         let backend = CodexResponsesBackend(configuration: configuration, urlSession: URLSession(configuration: transport))
         for present in [true, false, true] {
-            if present { try Data([137, 80, 78, 71]).write(to: file) }
+            if present { try png.write(to: file) }
             else { try FileManager.default.removeItem(at: file) }
             let turn = try await backend.beginTurn(thread: .init(id: "availability-demo"), history: [], providerContext: context,
                 message: Request(text: present ? "present" : "missing"), instructions: "", responseFormat: nil,
