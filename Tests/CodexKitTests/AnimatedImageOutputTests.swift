@@ -60,7 +60,7 @@ final class AnimatedImageOutputTests: XCTestCase {
     }
 
     func testMalformedGIFAndUnexpectedPNGAreRejected() async throws {
-        for bytes in [Data(animatedGIF().dropLast(4)), try imageTestData(width: 1, height: 1, png: true)] {
+        for bytes in [Data(animatedGIF().dropLast()), Data(animatedGIF().dropLast(4)), try imageTestData(width: 1, height: 1, png: true)] {
             await TestURLProtocol.enqueue(.init(headers: ["Content-Type": "application/json"], body: try codexImageJSON(bytes)))
             do {
                 _ = try await AgentImageGenerationClient(urlSession: makeTestURLSession()).generate(prompt: "Animate",

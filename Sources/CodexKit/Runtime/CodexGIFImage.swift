@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// only in model requests. No preview replaces the original saved animation.
 enum CodexGIFImage {
     static func isValidAnimation(_ data: Data) -> Bool {
-        guard let source = source(data), CGImageSourceGetCount(source) >= 2,
+        guard data.last == 0x3b, let source = source(data), CGImageSourceGetCount(source) >= 2,
               CGImageSourceGetCount(source) <= 16 else { return false }
         var pixels = 0
         for index in 0..<CGImageSourceGetCount(source) {
