@@ -6,6 +6,8 @@ public enum CodexResponsesStateManagement: String, Codable, Hashable, Sendable {
 }
 
 public struct CodexResponsesBackendConfiguration: Sendable {
+    /// Opt in to request-only placeholders for unresolved persisted image references.
+    public var missingImagePolicy: AgentMissingImagePolicy = .fail
     public let baseURL: URL
     public let model: String
     public let reasoningEffort: ReasoningEffort
