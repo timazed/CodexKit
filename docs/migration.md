@@ -6,11 +6,11 @@ Use these notes when upgrading from 1.x or earlier 2.0 alpha snapshots. Release 
 
 ## Stable 2.3.0
 
-Select Swift package version `2.3.0`. This release combines terminal provider-budget handling, policy-capacity diagnostics/retry advice, retained-context token accounting, authoritative image-file availability checks, and per-turn prompt-cache TTL.
+Select Swift package version `2.3.0`. This release combines terminal provider-budget handling, policy-capacity diagnostics/retry advice, retained-context token accounting, and authoritative image-file availability checks.
 
 Image availability is opt-in: supply `CodexResponsesBackendConfiguration.imageAvailabilityChecker`, conforming to `AgentImageAvailabilityChecking`. Return false only for confirmed absence; unknown IDs and access/backend failures retain the reference. This replaces the unreleased `missingImagePolicy` approximation. Existing released integrations retain strict local attachment-integrity behavior.
 
-Set `Request.promptCacheTTL` to `.thirtyMinutes` or `.twelveHours` when wanted; requests without an override omit the field. Retention and cache hits remain provider-dependent. See [runtime features](upstream-runtime-features.md) for the contracts and scope.
+See [runtime features](upstream-runtime-features.md) for the supported contracts and scope. Prompt-cache TTL was dropped after live rejection on the ChatGPT endpoint; it is not a released API. See the [investigation](prompt-cache-ttl-investigation.md).
 
 The coordinated Cloud package is `@timazed/codexkit@0.2.6`. Existing successful-result contracts remain unchanged. No storage migration is required. GIF generation is excluded.
 
