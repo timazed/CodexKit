@@ -157,7 +157,8 @@ extension CodexResponsesTurnRunner {
             try await continuation.yield(.structuredOutputValidationFailed(validationFailure))
             return .assistantDelta
 
-        case .completed:
+        case let .completed(usage, _):
+            state.completedPassUsage = usage
             try await resolvePendingFunctionCalls(state: &state)
             commitCompletedPass(state: &state)
             return .none
@@ -357,6 +358,10 @@ extension CodexResponsesTurnRunner {
             .map { WorkingHistoryItem.raw($0.value) }
 
         state.workingHistory.append(contentsOf: completedItems)
+        if let usage = state.completedPassUsage, let tokens = usage.derivedTotalTokens {
+            state.contextUsage = .init(tokens: tokens, coveredItemCount: state.workingHistory.count)
+        }
+        state.completedPassUsage = nil
         state.workingHistory.append(contentsOf: state.pendingToolOutputs)
 
         state.pendingResponseItems.removeAll(keepingCapacity: true)

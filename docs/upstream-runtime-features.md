@@ -320,3 +320,20 @@ choices and submit only after the user selects one. No automatic retry or rewrit
 is performed. Missing or unsupported metadata leaves the original error intact.
 See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
 request scoping, and the TypeScript bridge boundary.
+
+## Context estimates and missing usage
+
+Automatic pre-turn compaction and effective-context observations also consider
+client-managed provider items, including reasoning that is absent from the visible
+transcript. A usable response input/output token report covers an explicit item
+prefix. Later provider items are estimated until another complete report arrives;
+missing and spending-only usage never advance the boundary. Empty successful
+responses still cover their input. Reasoning tokens are included in output tokens
+and are not charged a second time.
+
+The boundary is persisted with provider context and invalidated when checkpoint
+rebasing changes item positions. Older contexts estimate all provider items.
+Opaque unreported content uses a conservative character estimate; this is not an
+exact tokenizer or a provider quota measurement. Failed response items that the
+SDK does not retain are not added to future context. Tool arguments and results
+now contribute to pre-turn compaction estimates as well as context observations.

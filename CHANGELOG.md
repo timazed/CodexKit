@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Include tool payloads and retained provider-only history in context estimates, preserving the last usable token-usage boundary when later responses omit token counts.
+
 ## [2.2.0] - 2026-11-01
 
 ### Added
