@@ -336,3 +336,33 @@ This policy covers references unresolved against the supplied attachment snapsho
 Storage access, integrity, and transient read errors still propagate; it does not
 convert those errors into missing-image claims or probe remote image URLs.
 Unrecognized reference locations still fail rather than rewriting arbitrary text.
+
+## Context estimates and missing usage
+
+Automatic pre-turn compaction and effective-context observations also consider
+client-managed provider items, including reasoning that is absent from the visible
+transcript. A usable response input/output token report covers an explicit item
+prefix. Later provider items are estimated until another complete report arrives;
+missing and spending-only usage never advance the boundary. Empty successful
+responses still cover their input. Reasoning tokens are included in output tokens
+and are not charged a second time.
+
+The boundary is persisted with provider context and invalidated when checkpoint
+rebasing changes item positions. Older contexts estimate all provider items.
+Instruction growth beyond the size covered by a usage report is added to the
+estimate; shorter instructions do not reduce the reported context baseline.
+Opaque unreported content uses a conservative character estimate; this is not an
+exact tokenizer or a provider quota measurement. Failed response items that the
+SDK does not retain are not added to future context. Tool arguments and results
+now contribute to pre-turn compaction estimates as well as context observations.
+
+## Provider budget and capacity failures
+
+`AgentHTTPFailure.isSessionBudgetExceeded` identifies `budget_reached` and blocks
+automatic transport and structured-recovery retries, including when a server sends
+`Retry-After`. `isPolicyCapacityUnavailable` identifies `policy_capacity_unavailable`;
+transport retries require valid `Retry-After` advice, respect the configured HTTP
+status allowlist, and honor the existing attempt budget, server delay, and replay-safety
+guards. Original provider codes, messages, and HTTP diagnostics remain available.
+Cloud exposes allowlisted codes and HTTP reasons `session_budget_exceeded` and
+`policy_capacity_unavailable`; it still performs no automatic retries.

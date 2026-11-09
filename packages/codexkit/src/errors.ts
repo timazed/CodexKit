@@ -16,6 +16,7 @@ export type ProviderOutcome = "not_started" | "unknown" | "failed" | "incomplete
 export type ProviderReason =
   | "invalid_schema" | "invalid_parameter" | "unsupported_parameter" | "missing_parameter"
   | "context_length_exceeded" | "content_policy" | "authentication" | "permission_denied"
+  | "session_budget_exceeded" | "policy_capacity_unavailable"
   | "rate_limit_exceeded" | "quota_exceeded" | "invalid_request" | "server_error" | "unclassified";
 
 export interface ErrorDetails {

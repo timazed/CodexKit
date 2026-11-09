@@ -16,6 +16,8 @@ enum TurnPassDisposition {
 struct TurnRunState {
     var workingHistory: [WorkingHistoryItem]
     var availableAttachments: [AgentImageAttachment] = []
+    var contextUsage: CodexContextUsage?
+    var completedPassUsage: AgentUsage?
     var usageAccumulator = AgentUsageAccumulator()
     var aggregateUsage: AgentUsage { usageAccumulator.usage }
     var passNumber = 0

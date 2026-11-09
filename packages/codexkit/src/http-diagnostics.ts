@@ -6,6 +6,8 @@ import type { ExecutionLimits, JsonValue } from "./types.js";
 
 function reason(status: number, code: string | undefined, type: string | undefined, param: string | undefined,
   message: unknown): ProviderReason {
+  if (code === "budget_reached") return "session_budget_exceeded";
+  if (code === "policy_capacity_unavailable") return "policy_capacity_unavailable";
   if (code === "invalid_json_schema" || code === "invalid_schema") return "invalid_schema";
   if (code === "unsupported_parameter" || code === "unknown_parameter") return "unsupported_parameter";
   if (code === "missing_required_parameter" || code === "missing_parameter") return "missing_parameter";

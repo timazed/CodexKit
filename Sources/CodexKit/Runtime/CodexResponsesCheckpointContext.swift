@@ -29,6 +29,8 @@ package enum CodexResponsesCheckpointContext {
             replacement.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
         ), var payload = context.payload.objectValue else { return nil }
         payload["items"] = .array(items + prefix.checkpointAndSuffix)
+        // Item positions changed; the old usage boundary no longer describes this history.
+        payload.removeValue(forKey: "context_usage")
         return .init(providerID: context.providerID, payload: .object(payload))
     }
 

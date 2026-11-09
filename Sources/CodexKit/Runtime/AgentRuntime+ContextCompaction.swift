@@ -121,11 +121,13 @@ extension AgentRuntime {
         guard !priorHistory.isEmpty else { return }
 
         let threshold = max(1, contextCompactionConfiguration.trigger.estimatedTokenThreshold)
-        let estimatedTokens = approximateTokenCount(
+        let estimatedTokens = max(approximateTokenCount(
             for: priorHistory,
             pendingMessage: request,
             instructions: resolvedInstructions.contextCompactionText
-        )
+        ), CodexContextUsage.estimate(context: providerContext(for: thread.id),
+            history: priorHistory, pending: request,
+            instructions: resolvedInstructions.contextCompactionText))
         logger.debug(
             .compaction,
             "Evaluated pre-turn compaction threshold.",
@@ -466,7 +468,7 @@ extension AgentRuntime {
         instructions: String
     ) -> Int {
         let historyCharacters = history.reduce(0) { partialResult, message in
-            partialResult + message.text.count + (message.images.count * 512)
+            AgentCounter.saturatingAdd(partialResult, message.estimatedContextCharacterCount)
         }
         let pendingStructuredCharacters = pendingMessage.map { message in
             let contextCharacters = message.context?.payload.prettyJSONString.count ?? 0
@@ -479,7 +481,7 @@ extension AgentRuntime {
         let pendingCharacters = (pendingMessage?.text.count ?? 0)
             + ((pendingMessage?.images.count ?? 0) * 512)
             + pendingStructuredCharacters
-        return max(1, (historyCharacters + pendingCharacters + instructions.count) / 4)
+        return max(1, AgentCounter.saturatingAdd(AgentCounter.saturatingAdd(historyCharacters, pendingCharacters), instructions.count) / 4)
     }
 
     private enum ContextPressureCode: String {
