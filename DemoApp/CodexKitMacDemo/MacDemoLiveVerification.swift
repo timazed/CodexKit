@@ -16,7 +16,8 @@ enum MacDemoLiveVerification {
         }
         let suite = "org.codexkit.application-check.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
-        let liveChat = args.contains("--send-live-request")
+        let verifyTTL = args.contains("--verify-prompt-cache-ttl")
+        let liveChat = args.contains("--send-live-request") || verifyTTL
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("codexkit-oauth-check-\(UUID())")
         defer {
             defaults.removePersistentDomain(forName: suite)
@@ -30,14 +31,26 @@ enum MacDemoLiveVerification {
         model.runtimeOptions.webSearch = false
         model.runtimeOptions.imageGeneration = false
         await model.restore()
-        if liveChat, model.isConnected { await model.sendMessage("Reply exactly CODEXKIT_OAUTH_SESSION_OK") }
-        let replied = model.chat?.messages.contains(where: {
+        var ttlResults: [String: Bool] = [:]
+        if verifyTTL, model.isConnected, let runtime = model.runtime {
+            for ttl in [AgentPromptCacheTTL.thirtyMinutes, .twelveHours] {
+                do {
+                    let thread = try await runtime.createThread(configuration: .init(model: model.modelID, reasoningEffort: model.reasoningEffort))
+                    var request = Request(text: "Reply exactly CODEXKIT_OAUTH_SESSION_OK")
+                    request.promptCacheTTL = ttl
+                    let reply = try await runtime.send(request, in: thread.id)
+                    ttlResults[ttl.rawValue] = reply.trimmingCharacters(in: .whitespacesAndNewlines) == "CODEXKIT_OAUTH_SESSION_OK"
+                } catch { ttlResults[ttl.rawValue] = false }
+            }
+        } else if liveChat, model.isConnected { await model.sendMessage("Reply exactly CODEXKIT_OAUTH_SESSION_OK") }
+        let replied = verifyTTL ? ttlResults.count == 2 && ttlResults.values.allSatisfy { $0 } : model.chat?.messages.contains(where: {
             $0.role == .assistant && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == "CODEXKIT_OAUTH_SESSION_OK"
         }) == true
         let unchanged = before != nil && before == (try? keychain.loadSession())
         let report: [String: Any] = ["passed": model.isConnected && (!liveChat || replied) && unchanged,
             "authenticated": model.authentication.status == .connected,
             "liveReplyVerified": replied, "savedCredentialsUnchanged": unchanged,
+            "promptCacheTTLReplies": ttlResults,
             "error": model.errorMessage ?? model.chat?.lastError ?? ""]
         do { try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             .write(to: URL(fileURLWithPath: args[index + 1])) }
