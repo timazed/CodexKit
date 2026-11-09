@@ -140,7 +140,7 @@ enum DemoRuntimeVerification {
     private static func failureCode(_ error: Error) -> String {
         let code = (error as? AgentRuntimeError)?.code ?? "verification_failed"
         let underlying = error as NSError
-        return "failed: \(code): \(error.localizedDescription) [\(String(reflecting: type(of: error))); \(underlying.domain) \(underlying.code)]"
+        return "failed: \(code): \(error.localizedDescription) [\(String(describing: type(of: error))); \(underlying.domain) \(underlying.code)]"
     }
 }
 

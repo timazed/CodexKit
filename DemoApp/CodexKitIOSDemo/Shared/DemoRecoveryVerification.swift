@@ -59,14 +59,20 @@ enum DemoRecoveryVerification {
             stage = "task cancellation"
             let cancelled = try runtime()
             let cancelledHandle = try await prepare(cancelled, store: store)
-            let task = Task { try await cancelled.sendRecovering(cancelledHandle, response: Output.self, store: store) { _ in true } }
+            let task = Task {
+                // Regression: slow fixture startup must not fail readiness before cancellation is tested.
+                // This deliberately exceeds the verifier's former three-second polling budget.
+                try await Task.sleep(for: .seconds(4))
+                return try await cancelled.sendRecovering(cancelledHandle, response: Output.self, store: store) { _ in true }
+            }
+            defer { task.cancel() }
             try await waitForCursor(cancelledHandle, store: store)
             task.cancel()
             do { _ = try await task.value; throw Failure("Cancelled generation returned output") }
             catch is CancellationError {}
             let cancelledStatus = try await cancelled.structuredRecoveryStatus(cancelledHandle, store: store)
             try require(cancelledStatus.availability == .suspended && cancelledStatus.attemptsUsed == 1
-                && DemoRecoveryTransport.count == 1, "Task cancellation did not suspend safely")
+                && DemoRecoveryTransport.count == 1, "Task cancellation did not suspend safely: availability=\(cancelledStatus.availability), attempts=\(cancelledStatus.attemptsUsed), requests=\(DemoRecoveryTransport.count)")
             DemoRecoveryTransport.configure([created + message + completed])
             stage = "resume after task cancellation"
             let resumed = try runtime()
@@ -75,7 +81,7 @@ enum DemoRecoveryVerification {
             }
             let resumedStatus = try await resumed.structuredRecoveryStatus(cancelledHandle, store: store)
             try require(resumedValue.value == "ok" && resumedStatus.attemptsUsed == 2
-                && DemoRecoveryTransport.count == 1, "Suspension lost its original attempt budget")
+                && DemoRecoveryTransport.count == 1, "Suspension lost its original attempt budget: attempts=\(resumedStatus.attemptsUsed), requests=\(DemoRecoveryTransport.count)")
             try await resumed.acknowledgeStructuredRecovery(cancelledHandle, store: store)
             checks.append("task cancellation suspends after 1 POST; reopening uses exactly attempt 2")
 
@@ -86,6 +92,7 @@ enum DemoRecoveryVerification {
             let permanentTask = Task {
                 try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in true }
             }
+            defer { permanentTask.cancel() }
             try await waitForCursor(permanentHandle, store: store)
             try await permanent.cancelStructuredRecovery(permanentHandle, store: store)
             do { _ = try await permanentTask.value; throw Failure("Permanent cancellation returned output") }
@@ -107,13 +114,14 @@ enum DemoRecoveryVerification {
             let expiringTask = Task {
                 try await expiring.sendRecovering(expiringHandle, response: Output.self, store: store) { _ in true }
             }
+            defer { expiringTask.cancel() }
             try await waitForCursor(expiringHandle, store: store)
             background.expire()
             do { _ = try await expiringTask.value; throw Failure("Expired background activity returned output") }
             catch is CancellationError {}
             let expiredStatus = try await expiring.structuredRecoveryStatus(expiringHandle, store: store)
             try require(expiredStatus.availability == .suspended && expiredStatus.attemptsUsed == 1
-                && DemoRecoveryTransport.count == 1, "Background expiration lost its saved budget")
+                && DemoRecoveryTransport.count == 1, "Background expiration lost its saved budget: availability=\(expiredStatus.availability), attempts=\(expiredStatus.attemptsUsed), requests=\(DemoRecoveryTransport.count)")
             DemoRecoveryTransport.configure([created + message + completed])
             stage = "resume after background expiration"
             let foreground = try runtime()
@@ -136,7 +144,7 @@ enum DemoRecoveryVerification {
             checks.append("completed receipt saved before host acknowledgement for next-process recovery")
             return checks
         } catch {
-            throw Failure("\(stage): \(error.localizedDescription) [\(String(reflecting: type(of: error)))]")
+            throw Failure("\(stage): \(error.localizedDescription) [\(String(describing: type(of: error)))]")
         }
     }
 
@@ -195,13 +203,21 @@ enum DemoRecoveryVerification {
 
     private static func waitForCursor(_ handle: AgentStructuredRecoveryHandle, store: AgentStructuredRecoveryStore) async throws {
         let url = store.directory.appendingPathComponent(handle.id.uuidString + ".json")
-        for _ in 0..<300 {
+        // The cursor is persisted through real fsyncs; cold simulators need a readiness budget,
+        // not a three-second performance assertion. Keep the wait bounded and require the cursor.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(30))
+        var observation = "receipt unavailable"
+        while clock.now < deadline {
             if let data = try? Data(contentsOf: url),
-               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               object["lastSequenceNumber"] as? Int == 1 { return }
+               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let cursor = object["lastSequenceNumber"] as? Int
+                observation = "state=\(object["state"] as? String ?? "missing"), cursor=\(cursor.map(String.init) ?? "missing")"
+                if cursor == 1 { return }
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
-        throw Failure("Timed out waiting for controlled partial output")
+        throw Failure("Timed out after 30s waiting for controlled partial output: \(observation), requests=\(DemoRecoveryTransport.count)")
     }
 
     private static func require(_ condition: Bool, _ message: String) throws {
