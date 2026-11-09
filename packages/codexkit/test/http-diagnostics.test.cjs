@@ -272,3 +272,16 @@ test('image quota codes preserve their original MIME evidence and 64 KiB inspect
     assert.deepEqual(result.imageUsageLimit, contentType === 'application/json' ? { limitId: 'image_gen', resetsAt: 123 } : undefined);
   }
 });
+
+for (const [code, reason] of [['budget_reached', 'session_budget_exceeded'],
+  ['policy_capacity_unavailable', 'policy_capacity_unavailable']]) {
+  test(`provider ${code} survives safe failure serialization`, async () => {
+    const result = await failure(harness(undefined, { fetch: async () => http({ error: {
+      code, message: 'private provider text',
+    } }, { status: 503, headers: { 'retry-after': '1' } }) }).run);
+    assert.equal(result.providerCode, code);
+    assert.equal(result.providerReason, reason);
+    assert.equal(result.retryAfter, '1');
+    assert.ok(!JSON.stringify(result).includes('private provider text'));
+  });
+}
