@@ -77,7 +77,9 @@ enum ImageGenerationDemoVerification {
         empty.start()
         await empty.waitUntilFinished()
         try require(empty.status == .failed && empty.results.isEmpty, "Empty image output became a success")
-        return ["image controls preserve transparency and edit references with built-in Codex defaults",
+        try await ImageAvailabilityDemoVerification.run(session: session)
+        return ["image availability rechecks a removed/restored file without rewriting original references",
+                "image controls preserve transparency and edit references with built-in Codex defaults",
                 "image completion publishes once and blocks overlapping requests",
                 "image estimate caps at 99 and stops after completion or cancellation",
                 "image cancellation and disconnect discard late completion",
@@ -126,5 +128,80 @@ private actor ImageVerificationGate {
 private struct ImageDemoVerificationError: Error {
     let message: String
     init(_ message: String) { self.message = message }
+}
+
+/// Exercise the public store hook and actual Responses request preparation in both demos.
+private enum ImageAvailabilityDemoVerification {
+    static func run(session: ChatGPTSession) async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("image-availability-\(UUID()).png")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let original: JSONValue = .object(["type": .string("message"), "role": .string("user"),
+            "content": .array([.object(["type": .string("input_image"), "file_id": .string("demo-owned-file")])])])
+        var context = AgentProviderContext(providerID: "openai.responses", payload: .object(["items": .array([original])]))
+        var configuration = CodexResponsesBackendConfiguration(requestRetryPolicy: .disabled)
+        configuration.imageAvailabilityChecker = FileAvailability(file: file)
+        let transport = URLSessionConfiguration.ephemeral
+        transport.protocolClasses = [AvailabilityTransport.self]
+        let backend = CodexResponsesBackend(configuration: configuration, urlSession: URLSession(configuration: transport))
+        for present in [true, false, true] {
+            if present { try Data([137, 80, 78, 71]).write(to: file) }
+            else { try FileManager.default.removeItem(at: file) }
+            let turn = try await backend.beginTurn(thread: .init(id: "availability-demo"), history: [], providerContext: context,
+                message: Request(text: present ? "present" : "missing"), instructions: "", responseFormat: nil,
+                streamedStructuredOutput: nil, tools: [], session: session)
+            for try await event in turn.events {
+                if case let .providerContextUpdated(_, updated) = event { context = updated }
+            }
+            guard context.payload.objectValue?["items"]?.arrayValue?.first == original else {
+                throw ImageDemoVerificationError("Availability projection rewrote saved history")
+            }
+        }
+    }
+
+    private struct FileAvailability: AgentImageAvailabilityChecking {
+        let file: URL
+        func isResolvable(fileID: String) async throws -> Bool {
+            guard fileID == "demo-owned-file" else { return true }
+            do { _ = try FileManager.default.attributesOfItem(atPath: file.path); return true }
+            catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return false }
+        }
+    }
+
+    private final class AvailabilityTransport: URLProtocol, @unchecked Sendable {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func stopLoading() {}
+        override func startLoading() {
+            do {
+                var bytes = request.httpBody ?? Data()
+                if let stream = request.httpBodyStream {
+                    stream.open()
+                    defer { stream.close() }
+                    var buffer = [UInt8](repeating: 0, count: 4096)
+                    while true {
+                        let count = stream.read(&buffer, maxLength: buffer.count)
+                        if count < 0 { throw ImageDemoVerificationError("Cannot inspect prepared request") }
+                        if count == 0 { break }
+                        bytes.append(contentsOf: buffer.prefix(count))
+                        guard bytes.count <= 128 * 1024 else { throw ImageDemoVerificationError("Unexpected request size") }
+                    }
+                }
+                let body = try JSONDecoder().decode(JSONValue.self, from: bytes)
+                let items = body.objectValue?["input"]?.arrayValue
+                let missing = items?.last?.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"] == .string("missing")
+                let expected: JSONValue = missing
+                    ? .object(["type": .string("input_text"), "text": .string("[image unavailable]")])
+                    : .object(["type": .string("input_image"), "file_id": .string("demo-owned-file")])
+                guard items?.first?.objectValue?["content"]?.arrayValue == [expected] else {
+                    throw ImageDemoVerificationError("File availability request projection differs from upstream")
+                }
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"])!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"availability\"}}\n\n".utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            } catch { client?.urlProtocol(self, didFailWithError: error) }
+        }
+    }
 }
 #endif

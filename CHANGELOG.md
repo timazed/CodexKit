@@ -8,7 +8,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Added
 
-- Add opt-in request-only placeholders for unavailable persisted image references during generation and compaction, preserving strict errors by default and original generation history for later recovery.
+- Port upstream image availability checks through `imageAvailabilityChecker`: check distinct provider file IDs concurrently, replace only confirmed-missing message/tool images in outbound generation and compaction requests, and retain references by default and on backend/access errors. Replaces the unreleased snapshot-based `missingImagePolicy` approximation.
 
 ### Fixed
 
