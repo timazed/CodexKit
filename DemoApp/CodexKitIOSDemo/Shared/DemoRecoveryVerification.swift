@@ -8,123 +8,136 @@ enum DemoRecoveryVerification {
         try? FileManager.default.removeItem(at: directory)
         let store = AgentStructuredRecoveryStore(directory: directory)
         var checks: [String] = []
-        let scenarios = smoke ? [] : [("before output", created), ("mid response", created + delta),
-                                     ("lost terminal event", created + message)]
-        for (name, prefix) in scenarios {
-            // Baseline: the existing send API with SDK retries disabled fails after one interrupted POST.
-            DemoRecoveryTransport.configure([prefix, message + completed])
-            let baseline = try runtime()
-            let baselineThread = try await baseline.createThread()
-            do {
-                _ = try await baseline.send(Request(text: "Synthetic preparation", executionMode: .ephemeral),
-                    in: baselineThread.id, response: Output.self)
-                throw Failure("Baseline unexpectedly completed: \(name)")
-            } catch let error as AgentRuntimeError {
-                try require(error.knownCode == .responsesStreamDisconnected, "Unexpected baseline error")
-            }
-            try require(DemoRecoveryTransport.count == 1, "Baseline request count")
-
-            DemoRecoveryTransport.configure([prefix, message + completed])
-            let recovering = try runtime()
-            let handle = try await prepare(recovering, store: store)
-            let value = try await recovering.sendRecovering(handle, response: Output.self, store: store) {
-                $0.number <= 3
-            }
-            try require(value.value == "ok" && DemoRecoveryTransport.count == 2, "Replacement did not complete: \(name)")
-            let status = try await recovering.structuredRecoveryStatus(handle, store: store)
-            try require(status.state == .completed && status.attemptsUsed == 2, "Incorrect saved budget")
-            checks.append("\(name): baseline fails with 1 POST; recovery succeeds with 2 POSTs")
-            try await recovering.acknowledgeStructuredRecovery(handle, store: store)
-        }
-
-        if !smoke {
-            DemoRecoveryTransport.configure([created, created, created, message + completed])
-            let bounded = try runtime()
-            let boundedHandle = try await prepare(bounded, store: store)
-            do {
-                _ = try await bounded.sendRecovering(boundedHandle, response: Output.self, store: store) { _ in true }
-                throw Failure("Exhausted request succeeded")
-            } catch let failure as AgentRuntimeError {
-                try require(failure.interruption?.outcome == .disconnected, "Incorrect exhaustion failure")
-            }
-            try require(DemoRecoveryTransport.count == 3, "Exceeded three-attempt budget")
-            checks.append("repeated drops stop after exactly 3 POSTs")
-        }
-
-        DemoRecoveryTransport.configure([created + delta], hold: true)
-        let cancelled = try runtime()
-        let cancelledHandle = try await prepare(cancelled, store: store)
-        let task = Task { try await cancelled.sendRecovering(cancelledHandle, response: Output.self, store: store) { _ in true } }
-        try await waitForCursor(cancelledHandle, store: store)
-        task.cancel()
-        do { _ = try await task.value; throw Failure("Cancelled generation returned output") }
-        catch is CancellationError {}
-        let cancelledStatus = try await cancelled.structuredRecoveryStatus(cancelledHandle, store: store)
-        try require(cancelledStatus.availability == .suspended && cancelledStatus.attemptsUsed == 1
-            && DemoRecoveryTransport.count == 1, "Task cancellation did not suspend safely")
-        DemoRecoveryTransport.configure([created + message + completed])
-        let resumed = try runtime()
-        let resumedValue = try await resumed.sendRecovering(cancelledHandle, response: Output.self, store: store) {
-            $0.number == 2
-        }
-        let resumedStatus = try await resumed.structuredRecoveryStatus(cancelledHandle, store: store)
-        try require(resumedValue.value == "ok" && resumedStatus.attemptsUsed == 2
-            && DemoRecoveryTransport.count == 1, "Suspension lost its original attempt budget")
-        try await resumed.acknowledgeStructuredRecovery(cancelledHandle, store: store)
-        checks.append("task cancellation suspends after 1 POST; reopening uses exactly attempt 2")
-
-        DemoRecoveryTransport.configure([created + delta], hold: true)
-        let permanent = try runtime()
-        let permanentHandle = try await prepare(permanent, store: store)
-        let permanentTask = Task {
-            try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in true }
-        }
-        try await waitForCursor(permanentHandle, store: store)
-        try await permanent.cancelStructuredRecovery(permanentHandle, store: store)
-        do { _ = try await permanentTask.value; throw Failure("Permanent cancellation returned output") }
-        catch is CancellationError {}
+        var stage = "initialization"
         do {
-            _ = try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in
-                throw Failure("Permanently cancelled operation requested authorization")
+            let scenarios = smoke ? [] : [("before output", created), ("mid response", created + delta),
+                                         ("lost terminal event", created + message)]
+            for (name, prefix) in scenarios {
+                stage = name
+                // Baseline: the existing send API with SDK retries disabled fails after one interrupted POST.
+                DemoRecoveryTransport.configure([prefix, message + completed])
+                let baseline = try runtime()
+                let baselineThread = try await baseline.createThread()
+                do {
+                    _ = try await baseline.send(Request(text: "Synthetic preparation", executionMode: .ephemeral),
+                        in: baselineThread.id, response: Output.self)
+                    throw Failure("Baseline unexpectedly completed: \(name)")
+                } catch let error as AgentRuntimeError {
+                    try require(error.knownCode == .responsesStreamDisconnected, "Unexpected baseline error")
+                }
+                try require(DemoRecoveryTransport.count == 1, "Baseline request count")
+
+                DemoRecoveryTransport.configure([prefix, message + completed])
+                let recovering = try runtime()
+                let handle = try await prepare(recovering, store: store)
+                let value = try await recovering.sendRecovering(handle, response: Output.self, store: store) {
+                    $0.number <= 3
+                }
+                try require(value.value == "ok" && DemoRecoveryTransport.count == 2, "Replacement did not complete: \(name)")
+                let status = try await recovering.structuredRecoveryStatus(handle, store: store)
+                try require(status.state == .completed && status.attemptsUsed == 2, "Incorrect saved budget")
+                checks.append("\(name): baseline fails with 1 POST; recovery succeeds with 2 POSTs")
+                try await recovering.acknowledgeStructuredRecovery(handle, store: store)
             }
-            throw Failure("Permanently cancelled operation restarted")
-        } catch AgentRecoveryError.cancelled {}
-        try require(DemoRecoveryTransport.count == 1, "Permanent cancellation retried")
-        checks.append("explicit permanent cancellation remains terminal with exactly 1 POST")
 
-        DemoRecoveryTransport.configure([created + delta], hold: true)
-        let background = ExpiringBackgroundActivity()
-        let expiring = try runtime(background: background)
-        let expiringHandle = try await prepare(expiring, store: store)
-        let expiringTask = Task {
-            try await expiring.sendRecovering(expiringHandle, response: Output.self, store: store) { _ in true }
-        }
-        try await waitForCursor(expiringHandle, store: store)
-        background.expire()
-        do { _ = try await expiringTask.value; throw Failure("Expired background activity returned output") }
-        catch is CancellationError {}
-        let expiredStatus = try await expiring.structuredRecoveryStatus(expiringHandle, store: store)
-        try require(expiredStatus.availability == .suspended && expiredStatus.attemptsUsed == 1
-            && DemoRecoveryTransport.count == 1, "Background expiration lost its saved budget")
-        DemoRecoveryTransport.configure([created + message + completed])
-        let foreground = try runtime()
-        let foregroundValue = try await foreground.sendRecovering(expiringHandle, response: Output.self, store: store) {
-            $0.number == 2
-        }
-        try require(foregroundValue.value == "ok" && DemoRecoveryTransport.count == 1,
-            "Background-suspended operation did not recover in the next lifecycle")
-        try await foreground.acknowledgeStructuredRecovery(expiringHandle, store: store)
-        checks.append("injected background expiration suspends with no output; foreground recovery uses attempt 2")
+            if !smoke {
+                stage = "attempt budget exhaustion"
+                DemoRecoveryTransport.configure([created, created, created, message + completed])
+                let bounded = try runtime()
+                let boundedHandle = try await prepare(bounded, store: store)
+                do {
+                    _ = try await bounded.sendRecovering(boundedHandle, response: Output.self, store: store) { _ in true }
+                    throw Failure("Exhausted request succeeded")
+                } catch let failure as AgentRuntimeError {
+                    try require(failure.interruption?.outcome == .disconnected, "Incorrect exhaustion failure")
+                }
+                try require(DemoRecoveryTransport.count == 3, "Exceeded three-attempt budget")
+                checks.append("repeated drops stop after exactly 3 POSTs")
+            }
 
-        // Leave a completed receipt unacknowledged. The harness terminates this process and reopens it.
-        DemoRecoveryTransport.configure([created + message + completed])
-        let firstProcess = try runtime()
-        let handle = try await prepare(firstProcess, store: store)
-        try JSONEncoder().encode(handle).write(to: directory.appendingPathComponent("handle.json"), options: .atomic)
-        _ = try await firstProcess.sendRecovering(handle, response: Output.self, store: store) { _ in true }
-        try require(DemoRecoveryTransport.count == 1, "Receipt preparation made extra requests")
-        checks.append("completed receipt saved before host acknowledgement for next-process recovery")
-        return checks
+            DemoRecoveryTransport.configure([created + delta], hold: true)
+            stage = "task cancellation"
+            let cancelled = try runtime()
+            let cancelledHandle = try await prepare(cancelled, store: store)
+            let task = Task { try await cancelled.sendRecovering(cancelledHandle, response: Output.self, store: store) { _ in true } }
+            try await waitForCursor(cancelledHandle, store: store)
+            task.cancel()
+            do { _ = try await task.value; throw Failure("Cancelled generation returned output") }
+            catch is CancellationError {}
+            let cancelledStatus = try await cancelled.structuredRecoveryStatus(cancelledHandle, store: store)
+            try require(cancelledStatus.availability == .suspended && cancelledStatus.attemptsUsed == 1
+                && DemoRecoveryTransport.count == 1, "Task cancellation did not suspend safely")
+            DemoRecoveryTransport.configure([created + message + completed])
+            stage = "resume after task cancellation"
+            let resumed = try runtime()
+            let resumedValue = try await resumed.sendRecovering(cancelledHandle, response: Output.self, store: store) {
+                $0.number == 2
+            }
+            let resumedStatus = try await resumed.structuredRecoveryStatus(cancelledHandle, store: store)
+            try require(resumedValue.value == "ok" && resumedStatus.attemptsUsed == 2
+                && DemoRecoveryTransport.count == 1, "Suspension lost its original attempt budget")
+            try await resumed.acknowledgeStructuredRecovery(cancelledHandle, store: store)
+            checks.append("task cancellation suspends after 1 POST; reopening uses exactly attempt 2")
+
+            DemoRecoveryTransport.configure([created + delta], hold: true)
+            stage = "permanent cancellation"
+            let permanent = try runtime()
+            let permanentHandle = try await prepare(permanent, store: store)
+            let permanentTask = Task {
+                try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in true }
+            }
+            try await waitForCursor(permanentHandle, store: store)
+            try await permanent.cancelStructuredRecovery(permanentHandle, store: store)
+            do { _ = try await permanentTask.value; throw Failure("Permanent cancellation returned output") }
+            catch is CancellationError {}
+            do {
+                _ = try await permanent.sendRecovering(permanentHandle, response: Output.self, store: store) { _ in
+                    throw Failure("Permanently cancelled operation requested authorization")
+                }
+                throw Failure("Permanently cancelled operation restarted")
+            } catch AgentRecoveryError.cancelled {}
+            try require(DemoRecoveryTransport.count == 1, "Permanent cancellation retried")
+            checks.append("explicit permanent cancellation remains terminal with exactly 1 POST")
+
+            DemoRecoveryTransport.configure([created + delta], hold: true)
+            stage = "background expiration"
+            let background = ExpiringBackgroundActivity()
+            let expiring = try runtime(background: background)
+            let expiringHandle = try await prepare(expiring, store: store)
+            let expiringTask = Task {
+                try await expiring.sendRecovering(expiringHandle, response: Output.self, store: store) { _ in true }
+            }
+            try await waitForCursor(expiringHandle, store: store)
+            background.expire()
+            do { _ = try await expiringTask.value; throw Failure("Expired background activity returned output") }
+            catch is CancellationError {}
+            let expiredStatus = try await expiring.structuredRecoveryStatus(expiringHandle, store: store)
+            try require(expiredStatus.availability == .suspended && expiredStatus.attemptsUsed == 1
+                && DemoRecoveryTransport.count == 1, "Background expiration lost its saved budget")
+            DemoRecoveryTransport.configure([created + message + completed])
+            stage = "resume after background expiration"
+            let foreground = try runtime()
+            let foregroundValue = try await foreground.sendRecovering(expiringHandle, response: Output.self, store: store) {
+                $0.number == 2
+            }
+            try require(foregroundValue.value == "ok" && DemoRecoveryTransport.count == 1,
+                "Background-suspended operation did not recover in the next lifecycle")
+            try await foreground.acknowledgeStructuredRecovery(expiringHandle, store: store)
+            checks.append("injected background expiration suspends with no output; foreground recovery uses attempt 2")
+
+            // Leave a completed receipt unacknowledged. The harness terminates this process and reopens it.
+            DemoRecoveryTransport.configure([created + message + completed])
+            stage = "save receipt for cold reopen"
+            let firstProcess = try runtime()
+            let handle = try await prepare(firstProcess, store: store)
+            try JSONEncoder().encode(handle).write(to: directory.appendingPathComponent("handle.json"), options: .atomic)
+            _ = try await firstProcess.sendRecovering(handle, response: Output.self, store: store) { _ in true }
+            try require(DemoRecoveryTransport.count == 1, "Receipt preparation made extra requests")
+            checks.append("completed receipt saved before host acknowledgement for next-process recovery")
+            return checks
+        } catch {
+            throw Failure("\(stage): \(error.localizedDescription) [\(String(reflecting: type(of: error)))]")
+        }
     }
 
     static func reopen(directory: URL) async throws -> [String] {
