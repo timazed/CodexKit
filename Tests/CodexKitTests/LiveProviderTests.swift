@@ -2,12 +2,63 @@ import CodexKit
 import CodexKitRealm
 import CodexKitSQLite
 import CoreGraphics
+import CryptoKit
 import ImageIO
 import UniformTypeIdentifiers
 import XCTest
 
 /// Explicitly opt in; ordinary CI never reads a real account or uses its quota.
 final class LiveProviderTests: XCTestCase {
+    /// Explicit filesystem-only opt-in. Never reads Keychain or refreshes credentials.
+    func testLivePromptCacheTTLUsingReadOnlyCodexFileSession() async throws {
+        continueAfterFailure = true
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["CODEXKIT_RUN_FILE_TTL_TESTS"] == "1" else {
+            throw XCTSkip("Set CODEXKIT_RUN_FILE_TTL_TESTS=1 to verify both TTLs with local Codex credentials.")
+        }
+        let home = CodexLocalSessionConfiguration.selectedHome(environment: environment,
+            userHome: FileManager.default.homeDirectoryForCurrentUser)
+        let credentialURL = home.appendingPathComponent("auth.json")
+        let before = SHA256.hash(data: try Data(contentsOf: credentialURL))
+        defer {
+            if let after = try? Data(contentsOf: credentialURL) {
+                XCTAssertEqual(SHA256.hash(data: after), before, "Owner credential file changed")
+            } else { XCTFail("Owner credential file is no longer readable") }
+        }
+        let configuration = CodexLocalSessionConfiguration(codexHome: home, storage: .file)
+        let source = CodexLocalSessionSource(configuration: { configuration }, reader: LiveFileCredentialReader())
+        let session: ChatGPTSession
+        do { session = try await source.discover() }
+        catch { XCTFail("The filesystem Codex session is unavailable, invalid, or expired; credentials were not refreshed."); return }
+        let model = environment["CODEXKIT_LIVE_TTL_MODEL"] ?? "gpt-6.1-sol"
+        let headers = environment["CODEXKIT_LIVE_TTL_USER_AGENT"].map { ["User-Agent": $0] } ?? [:]
+        let backend = CodexResponsesBackend(configuration: .init(model: model, reasoningEffort: .low,
+            extraHeaders: headers, enableWebSearch: false, enableImageGeneration: false,
+            requestRetryPolicy: .disabled, maximumModelPasses: 1, maximumResponseBytes: 1_024 * 1_024))
+        let runtime = try AgentRuntime(configuration: .init(sessionProvider: LiveSessionProvider(session: session),
+            backend: backend, approvalPresenter: AutoApprovalPresenter(), stateStore: InMemoryRuntimeStateStore(),
+            turnLimits: .init(maximumToolCalls: 0, maximumDuration: 60)))
+        var failures: [String] = []
+        for ttl: AgentPromptCacheTTL? in [nil, .thirtyMinutes, .twelveHours] {
+            let label = ttl?.rawValue ?? "default"
+            let thread = try await runtime.createThread()
+            var request = Request(text: "Reply exactly CODEXKIT_TTL_OK. Do not use tools.")
+            request.promptCacheTTL = ttl
+            do {
+                let reply = try await runtime.send(request, in: thread.id)
+                XCTAssertEqual(reply.trimmingCharacters(in: .whitespacesAndNewlines), "CODEXKIT_TTL_OK", label)
+                print("Live TTL \(label): reply verified")
+            } catch {
+                let status = (error as? AgentRuntimeError)?.http?.statusCode
+                var reason = (error as? AgentRuntimeError)?.message ?? "Unknown failure"
+                for secret in [session.accessToken, session.account.id, session.account.email, session.account.name ?? "", session.binding.userID ?? ""] where !secret.isEmpty {
+                    reason = reason.replacingOccurrences(of: secret, with: "[redacted]")
+                }
+                failures.append("Live TTL \(label) failed; HTTP status \(status.map(String.init) ?? "unavailable"): \(reason.prefix(500))")
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
     func testLiveStreamingOutputFormats() async throws {
         let session = try currentSession()
         let backend = CodexResponsesBackend(configuration: .init(enableWebSearch: false, enableImageGeneration: false,
@@ -130,6 +181,12 @@ final class LiveProviderTests: XCTestCase {
         XCTAssertTrue(CGImageDestinationFinalize(destination))
         return .init(mimeType: "image/png", data: data as Data)
     }
+}
+
+private struct LiveFileCredentialReader: CodexCredentialReading {
+    func canonicalHome(_ home: URL) throws -> URL { home.resolvingSymlinksInPath().standardizedFileURL }
+    func readFile(_ url: URL) throws -> Data? { try Data(contentsOf: url) }
+    func readKeychain(service: String, account: String) throws -> Data? { throw ChatGPTSessionError.storageUnavailable }
 }
 
 private struct LiveSessionProvider: AgentSessionProviding {
