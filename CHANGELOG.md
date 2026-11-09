@@ -9,6 +9,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 ### Added
 
 - Add per-request `30m` and `12h` prompt-cache TTL preferences, preserved through model passes, automatic compaction, structured recovery, and prepared Cloud request forwarding.
+- Add opt-in request-only placeholders for unavailable persisted image references during generation and compaction, preserving strict errors by default and original generation history for later recovery.
+
+### Fixed
+
+- Include tool payloads and retained provider-only history in context estimates, preserving the last usable token-usage boundary when later responses omit token counts.
+- Treat provider session budget exhaustion as terminal and expose policy-restricted capacity separately in Swift and sanitized Cloud diagnostics.
 
 ## [2.2.0] - 2026-11-01
 

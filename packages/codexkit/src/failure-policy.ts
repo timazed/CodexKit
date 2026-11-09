@@ -10,6 +10,7 @@ const codes = new Set([
   "invalid_api_key", "invalid_authentication", "authentication_error", "permission_denied",
   "insufficient_permissions", "model_not_found", "rate_limit_exceeded", "insufficient_quota",
   "usage_limit_reached", "content_policy_violation", "content_filter", "server_error",
+  "budget_reached", "policy_capacity_unavailable",
   "internal_server_error", "service_unavailable", "overloaded", "generation_failed",
 ]);
 const types = new Set([
@@ -66,7 +67,8 @@ const outcomes: ReadonlySet<ProviderOutcome> = new Set(["not_started", "unknown"
 const reasons: ReadonlySet<ProviderReason> = new Set([
   "invalid_schema", "invalid_parameter", "unsupported_parameter", "missing_parameter",
   "context_length_exceeded", "content_policy", "authentication", "permission_denied",
-  "rate_limit_exceeded", "quota_exceeded", "invalid_request", "server_error", "unclassified",
+  "rate_limit_exceeded", "quota_exceeded", "session_budget_exceeded", "policy_capacity_unavailable",
+  "invalid_request", "server_error", "unclassified",
 ]);
 // Incomplete diagnostics, like provider codes, must be categories rather than arbitrary tokens.
 const incompleteReasons = new Set(["max_output_tokens", "content_filter"]);

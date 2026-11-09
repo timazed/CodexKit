@@ -27,7 +27,8 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         let input: [JSONValue]
         if let items = providerState?.items, !items.isEmpty {
             input = try CodexResponsesImageReferences.restore(items,
-                using: CodexResponsesImageReferences.attachments(in: effectiveHistory))
+                using: CodexResponsesImageReferences.attachments(in: effectiveHistory),
+                missingImagePolicy: configuration.missingImagePolicy)
         } else {
             input = effectiveHistory.map { WorkingHistoryItem.visibleMessage($0).jsonValue }
         }

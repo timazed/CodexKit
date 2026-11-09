@@ -18,7 +18,9 @@ extension AgentRuntime {
         return AgentThreadContextUsage(
             threadID: threadID,
             visibleEstimatedTokenCount: approximateTokenCount(for: snapshot.messages),
-            effectiveEstimatedTokenCount: approximateTokenCount(for: snapshot.effectiveMessages),
+            effectiveEstimatedTokenCount: max(approximateTokenCount(for: snapshot.effectiveMessages),
+                CodexContextUsage.estimate(context: snapshot.contextState?.providerContext,
+                    history: snapshot.effectiveMessages)),
             modelContextWindowTokenCount: await modelContextWindowTokenCount(for: model),
             usableContextWindowTokenCount: await usableContextWindowTokenCount(for: model)
         )

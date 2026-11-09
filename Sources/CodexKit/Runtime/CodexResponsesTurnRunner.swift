@@ -102,6 +102,8 @@ struct CodexResponsesTurnRunner {
             )
         )
 
+        state.availableAttachments = CodexResponsesImageReferences.attachments(in: history, additional: request.images)
+        state.contextUsage = providerState?.contextUsage
         try await runTurnPasses(state: &state)
         try await emitPendingAssistantFallbackIfNeeded(state: &state)
         logger.info(
@@ -121,9 +123,10 @@ struct CodexResponsesTurnRunner {
     private func turnResult(
         from state: TurnRunState
     ) throws -> CodexResponsesTurnResult {
-        let updatedProviderState = CodexResponsesProviderState(items: try CodexResponsesImageReferences.externalize(
+        var updatedProviderState = CodexResponsesProviderState(items: try CodexResponsesImageReferences.externalize(
             state.workingHistory.map(\.jsonValue)
         ))
+        updatedProviderState.contextUsage = state.contextUsage
         return CodexResponsesTurnResult(
             usage: state.aggregateUsage,
             usageObservations: state.usageAccumulator.observations,
@@ -138,13 +141,9 @@ struct CodexResponsesTurnRunner {
     ) throws -> [WorkingHistoryItem] {
         var workingHistory: [WorkingHistoryItem]
         if let items = providerState?.items, !items.isEmpty {
-            workingHistory = try CodexResponsesImageReferences.restore(
-                items,
-                using: CodexResponsesImageReferences.attachments(
-                    in: history,
-                    additional: newMessage.images
-                )
-            ).map(WorkingHistoryItem.raw)
+            // Expand references only in the outbound request so missing-image
+            // placeholders never overwrite the saved provider history.
+            workingHistory = items.map(WorkingHistoryItem.raw)
         } else {
             workingHistory = workingHistoryItems(from: history)
         }
@@ -362,7 +361,9 @@ struct CodexResponsesTurnRunner {
             instructions: instructions,
             responseContract: responseContract,
             threadID: threadID,
-            items: state.workingHistory,
+            items: try CodexResponsesImageReferences.restore(state.workingHistory.map(\.jsonValue),
+                using: state.availableAttachments, missingImagePolicy: configuration.missingImagePolicy)
+                .map(WorkingHistoryItem.raw),
             tools: tools,
             session: session ?? self.session,
             webSearch: request.webSearch,

@@ -87,7 +87,8 @@ struct CodexResponsesEventPayload: Decodable {
             let error = try payload.error ?? StreamErrorPayload(from: decoder)
             return .failed(.init(code: .responsesStreamFailed,
                 message: error.message ?? "The ChatGPT responses stream failed.",
-                http: .init(statusCode: 200, providerCode: error.code, providerType: error.type)), responseID: nil)
+                http: .init(statusCode: 200, providerCode: error.code, providerType: error.type,
+                    retryAfter: error.retryAfter)), responseID: nil)
         case nil:
             return .other
         }
@@ -99,7 +100,8 @@ struct CodexResponsesEventPayload: Decodable {
             : "The ChatGPT responses stream failed."
         return .failed(.init(code: incomplete ? .responsesStreamIncomplete : .responsesStreamFailed,
             message: response?.error?.message ?? message,
-            http: .init(statusCode: 200, providerCode: response?.error?.code, providerType: response?.error?.type)),
+            http: .init(statusCode: 200, providerCode: response?.error?.code, providerType: response?.error?.type,
+                retryAfter: response?.error?.retryAfter)),
             responseID: response?.id)
     }
 

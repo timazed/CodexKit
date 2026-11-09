@@ -7,6 +7,12 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
     public let requestID: String?
     public let retryAfter: TimeInterval?
 
+    /// A terminal provider session budget; retry headers do not make it recoverable.
+    public var isSessionBudgetExceeded: Bool { providerCode == "budget_reached" }
+
+    /// Capacity withheld by provider policy, distinct from general server overload.
+    public var isPolicyCapacityUnavailable: Bool { providerCode == "policy_capacity_unavailable" }
+
     /// Exhausted quota requires an account/billing change rather than backoff.
     public var isQuotaExceeded: Bool {
         guard statusCode == 429 else { return false }
