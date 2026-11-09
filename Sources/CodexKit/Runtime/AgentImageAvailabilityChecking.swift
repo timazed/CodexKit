@@ -47,10 +47,30 @@ enum CodexResponsesImageAvailability {
         return items.map { item in
             guard var object = item.objectValue, let key = contentKey(in: item),
                   let values = object[key]?.arrayValue else { return item }
+            let replaced = values.indices.filter { index in fileID(values[index]).map { missing.contains($0) } ?? false }
+            guard !replaced.isEmpty else { return item }
             object[key] = .array(values.map { part in
                 guard let id = fileID(part), missing.contains(id) else { return part }
                 return .object(["type": .string("input_text"), "text": .string("[image unavailable]")])
             })
+            if key == "content" {
+                // Match set_annotated_content: annotate only the replacement as
+                // harness-owned, preserving positional attribution for other parts.
+                let field = "internal_chat_message_metadata_passthrough"
+                var metadata = object[field]?.objectValue ?? [:]
+                let oldKinds = metadata["content_item_kinds"]?.arrayValue ?? []
+                let oldSources = metadata["content_item_metadata"]?.arrayValue ?? []
+                let unknown: JSONValue = .object(["provenance": .object(["type": .string("unknown")])])
+                var kinds = values.indices.map { $0 < oldKinds.count ? oldKinds[$0] : .string("unknown") }
+                var sources = values.indices.map { $0 < oldSources.count ? oldSources[$0] : unknown }
+                for index in replaced {
+                    kinds[index] = .string("images.unavailable")
+                    sources[index] = .object(["provenance": .object(["type": .string("harness"), "hook": .bool(false)])])
+                }
+                metadata["content_item_kinds"] = .array(kinds)
+                metadata["content_item_metadata"] = .array(sources)
+                object[field] = .object(metadata)
+            }
             return .object(object)
         }
     }

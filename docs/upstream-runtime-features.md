@@ -336,6 +336,8 @@ missing images in message content, function-call outputs, and custom-tool output
 become `[image unavailable]`. Inline images, remote URLs, generated-image results,
 arbitrary JSON, and other content/annotations remain unchanged. An incomplete
 in-memory attachment snapshot is never treated as proof of absence.
+Message replacements receive upstream's `images.unavailable` classification and
+harness provenance in positional content metadata; other parts retain attribution.
 
 Generation projects an outbound copy and preserves the original file IDs in saved
 history. Later requests recheck availability, including after file/SQLite/Realm

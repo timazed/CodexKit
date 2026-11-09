@@ -32,6 +32,10 @@ final class ImageAvailabilityPortTests: XCTestCase {
         for index in 0..<3 {
             var object = try XCTUnwrap(expected[index].objectValue)
             object[index == 0 ? "content" : "output"] = .array([text, placeholder, image("available")])
+            if index == 0 {
+                object["internal_chat_message_metadata_passthrough"] = attribution(kinds: ["unknown", "images.unavailable", "unknown"],
+                    sources: ["unknown", "harness", "unknown"])
+            }
             expected[index] = .object(object)
         }
         let output = try await CodexResponsesImageAvailability.prepare(items, checker: store)
@@ -87,10 +91,15 @@ final class ImageAvailabilityPortTests: XCTestCase {
             // Every prepared request checks again: present, removed, restored.
             for available in [true, false, true] {
                 if available { try bytes.write(to: file) } else { try FileManager.default.removeItem(at: file) }
-                let expected = message([available ? image("owned-file") : placeholder])
+                var expected = message([available ? image("owned-file") : placeholder])
+                if !available, var object = expected.objectValue {
+                    object["internal_chat_message_metadata_passthrough"] = attribution(kinds: ["images.unavailable"], sources: ["harness"])
+                    expected = .object(object)
+                }
+                let expectedBodyItem = expected
                 await TestURLProtocol.enqueue(.init(body: completed, inspect: { wire in
                     let body = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(try requestBodyData(for: wire)))
-                    XCTAssertEqual(body.objectValue?["input"]?.arrayValue?.first, expected)
+                    XCTAssertEqual(body.objectValue?["input"]?.arrayValue?.first, expectedBodyItem)
                 }))
                 let stream = try await begin(backend, context: context)
                 for try await event in stream.events {
@@ -139,6 +148,19 @@ final class ImageAvailabilityPortTests: XCTestCase {
         catch { XCTAssertTrue(error is CancellationError) }
     }
 
+    func testReplacementKeepsOtherPositionalAttributionAndMessageMetadata() async throws {
+        var original = try XCTUnwrap(message([image("available"), image("missing")]).objectValue)
+        var metadata = try XCTUnwrap(attribution(kinds: ["images.user", "images.user"], sources: ["user", "user"]).objectValue)
+        metadata["custom_field"] = .string("keep")
+        original["internal_chat_message_metadata_passthrough"] = .object(metadata)
+        let output = try await CodexResponsesImageAvailability.prepare([.object(original)], checker: CountingStore(missing: ["missing"]))
+        let result = try XCTUnwrap(output.first?.objectValue?["internal_chat_message_metadata_passthrough"]?.objectValue)
+        XCTAssertEqual(result["custom_field"], .string("keep"))
+        XCTAssertEqual(result["content_item_kinds"], .array([.string("images.user"), .string("images.unavailable")]))
+        XCTAssertEqual(result["content_item_metadata"], attribution(kinds: [], sources: ["user", "harness"]).objectValue?["content_item_metadata"])
+        XCTAssertEqual(original["internal_chat_message_metadata_passthrough"], .object(metadata))
+    }
+
     func testAvailableFileIDsSurviveCompactionDiskReopenAndCheckpointTrimming() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -175,6 +197,11 @@ final class ImageAvailabilityPortTests: XCTestCase {
             "id": .string("original-message")])
     }
     private var placeholder: JSONValue { .object(["type": .string("input_text"), "text": .string("[image unavailable]")]) }
+    private func attribution(kinds: [String], sources: [String]) -> JSONValue {
+        .object(["content_item_kinds": .array(kinds.map(JSONValue.string)), "content_item_metadata": .array(sources.map {
+            .object(["provenance": .object($0 == "harness" ? ["type": .string($0), "hook": .bool(false)] : ["type": .string($0)])])
+        })])
+    }
     private var completed: Data { Data("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"done\"}}\n\n".utf8) }
     private func begin(_ backend: CodexResponsesBackend, context: AgentProviderContext?) async throws -> AgentTurnStream {
         try await backend.beginTurn(thread: .init(id: "t"), history: [], providerContext: context, message: Request(text: "Next"),
