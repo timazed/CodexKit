@@ -225,10 +225,12 @@ struct CodexResponsesProviderState: Sendable {
 
     var items: [JSONValue]
     var previousResponseID: String?
+    var contextUsage: CodexContextUsage?
 
     init(items: [JSONValue] = []) {
         self.items = items
         self.previousResponseID = nil
+        self.contextUsage = nil
     }
 
     init?(context: AgentProviderContext?) {
@@ -240,6 +242,7 @@ struct CodexResponsesProviderState: Sendable {
         }
         items = object["items"]?.arrayValue ?? []
         previousResponseID = object["previous_response_id"]?.stringValue
+        contextUsage = CodexContextUsage(json: object["context_usage"], itemCount: items.count)
     }
 
     func validateClientManagedState() throws {
@@ -255,6 +258,7 @@ struct CodexResponsesProviderState: Sendable {
             providerID: Self.providerID,
             payload: .object([
                 "items": .array(items),
+                "context_usage": contextUsage?.json ?? .null,
                 "previous_response_id": .null,
             ])
         )
