@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-09
+
 ### Added
 
 - Port upstream image availability checks through `imageAvailabilityChecker`: check distinct provider file IDs concurrently, replace only confirmed-missing message/tool images in outbound generation and compaction requests, and retain references by default and on backend/access errors. Replaces the unreleased snapshot-based `missingImagePolicy` approximation.
@@ -14,6 +16,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - Include tool payloads and retained provider-only history in context estimates, preserving the last usable token-usage boundary when later responses omit token counts.
 - Treat provider session budget exhaustion as terminal and expose policy-restricted capacity separately in Swift and sanitized Cloud diagnostics.
+
+### Upgrading
+
+- Select Swift package version `2.3.0`. Swift 6.1+, iOS 17+, and macOS 14+ remain supported.
+- Image availability is opt-in through `imageAvailabilityChecker`; only authoritative absence produces a placeholder. The unreleased `missingImagePolicy` approximation is replaced. Local attachment-integrity failures remain errors.
+- Prompt-cache TTL is opt-in and does not guarantee cache retention or hits.
+- The coordinated Cloud package version is `0.2.6`, adding TTL request validation/forwarding and safe budget/capacity diagnostics. Swift consumers do not require Node.
+- Animated GIF generation is excluded from this release.
 
 ## [2.2.0] - 2026-11-01
 
