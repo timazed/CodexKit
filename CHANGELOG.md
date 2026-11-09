@@ -9,6 +9,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 ### Fixed
 
 - Include tool payloads and retained provider-only history in context estimates, preserving the last usable token-usage boundary when later responses omit token counts.
+- Treat provider session budget exhaustion as terminal and expose policy-restricted capacity separately in Swift and sanitized Cloud diagnostics.
 
 ## [2.2.0] - 2026-11-01
 

@@ -244,6 +244,14 @@ struct StreamErrorPayload: Decodable {
     let message: String?
     let code: String?
     let type: String?
+    let headers: JSONValue?
+
+    var retryAfter: TimeInterval? {
+        guard case .object(let values) = headers,
+              let entry = values.first(where: { $0.key.lowercased() == "retry-after" }),
+              case .string(let value) = entry.value else { return nil }
+        return AgentHTTPFailure.retryAfter(value, now: Date())
+    }
 }
 
 struct StreamIncompleteDetails: Decodable {

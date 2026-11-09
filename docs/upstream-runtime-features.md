@@ -339,3 +339,14 @@ Opaque unreported content uses a conservative character estimate; this is not an
 exact tokenizer or a provider quota measurement. Failed response items that the
 SDK does not retain are not added to future context. Tool arguments and results
 now contribute to pre-turn compaction estimates as well as context observations.
+
+## Provider budget and capacity failures
+
+`AgentHTTPFailure.isSessionBudgetExceeded` identifies `budget_reached` and blocks
+automatic transport and structured-recovery retries, including when a server sends
+`Retry-After`. `isPolicyCapacityUnavailable` identifies `policy_capacity_unavailable`;
+transport retries require valid `Retry-After` advice, respect the configured HTTP
+status allowlist, and honor the existing attempt budget, server delay, and replay-safety
+guards. Original provider codes, messages, and HTTP diagnostics remain available.
+Cloud exposes allowlisted codes and HTTP reasons `session_budget_exceeded` and
+`policy_capacity_unavailable`; it still performs no automatic retries.
