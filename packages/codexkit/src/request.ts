@@ -33,6 +33,11 @@ export function prepareRequest(input: PreparedRequest, limits: ExecutionLimits):
   }
   if (value.background !== undefined && value.background !== false) fail("unsupported_request");
   if (value.reasoning !== undefined && (!isObject(value.reasoning) || typeof value.reasoning.effort !== "string" || !value.reasoning.effort.length)) fail("invalid_request");
+  if (value.prompt_cache_options !== undefined) {
+    const options = value.prompt_cache_options;
+    if (!isObject(options) || Object.keys(options).some(key => key !== "ttl") ||
+        (options.ttl !== "30m" && options.ttl !== "12h")) fail("unsupported_request");
+  }
   if (!Array.isArray(value.input) || !value.input.length) fail("unsupported_request");
   for (const message of value.input) {
     if (!isObject(message) || message.type !== "message" || !["system", "developer", "user"].includes(String(message.role)) || !Array.isArray(message.content)) fail("unsupported_request");

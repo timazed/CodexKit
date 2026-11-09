@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Add per-request `30m` and `12h` prompt-cache TTL preferences, preserved through model passes, automatic compaction, structured recovery, and prepared Cloud request forwarding.
+
 ## [2.2.0] - 2026-11-01
 
 ### Added

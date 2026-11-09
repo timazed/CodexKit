@@ -12,6 +12,8 @@ public enum AgentSkillSelection: Codable, Hashable, Sendable {
 }
 
 public struct Request: Codable, Hashable, Sendable {
+    /// Optional minimum lifetime for newly written provider prompt-cache entries.
+    public var promptCacheTTL: AgentPromptCacheTTL?
     public var text: String
     public var images: [AgentImageAttachment]
     /// Host-owned correlation identifier. CodexKit stores it with durable
@@ -211,7 +213,7 @@ public struct Request: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case selectionPurpose, modelOverride, modelRequirements, webSearch
+        case selectionPurpose, modelOverride, modelRequirements, webSearch, promptCacheTTL
         case text
         case images
         case clientRequestID
@@ -238,6 +240,7 @@ public struct Request: Codable, Hashable, Sendable {
         modelOverride = try container.decodeIfPresent(AgentThreadConfiguration.self, forKey: .modelOverride)
         modelRequirements = try container.decodeIfPresent(AgentModelRequirements.self, forKey: .modelRequirements)
         webSearch = try container.decodeIfPresent(AgentWebSearchPolicy.self, forKey: .webSearch)
+        promptCacheTTL = try container.decodeIfPresent(AgentPromptCacheTTL.self, forKey: .promptCacheTTL)
         resolvedModelSelection = nil
     }
 }

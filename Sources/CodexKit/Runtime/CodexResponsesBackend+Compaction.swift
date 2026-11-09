@@ -36,7 +36,7 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
         let request = try factory.buildURLRequest(threadConfiguration: settings,
             instructions: instructions, responseContract: nil, threadID: thread.id,
             items: (input + [.object(["type": ResponsesItemType.compactionTrigger.jsonValue])]).map(WorkingHistoryItem.raw),
-            tools: tools, session: session, isCompaction: true)
+            tools: tools, session: session, isCompaction: true, promptCacheTTL: AgentPromptCacheContext.current)
         logger.info(.compaction, "Starting streamed remote context compaction.",
             metadata: ["thread_id": thread.id, "history_count": "\(effectiveHistory.count)"])
         let transport = CodexResponsesCompactionTransport(configuration: configuration,

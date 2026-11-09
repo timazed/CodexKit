@@ -85,58 +85,60 @@ extension AgentRuntime {
         }
 
         let producer = Task {
-            let activity = await backgroundActivityProvider.beginActivity(
-                named: "CodexKit agent turn", expirationHandler: { cancellation.cancel() }
-            )
-            defer {
-                authenticatedExecutionControls.removeValue(forKey: control.id)
-                control.finish()
-                budget.finish()
-                watchdog.cancel()
-                activity.end()
-                cancellation.clear()
-                if let execution = prepared.execution { releaseTurn(in: threadID, executionID: execution.id) }
-            }
-            do {
-                try Task.checkCancellation()
-                async let initialEvents: Void = emitInitialEvents(prepared, sink: sink)
-                let session = try await sessionManager.requireSession()
-                try validateThreadAuthentication(thread(for: threadID) ?? prepared.thread, session: session)
-                let skills = try resolveTurnSkills(thread: prepared.thread, message: prepared.request)
-                let instructions = try await resolveInstructions(thread: prepared.thread,
-                    message: prepared.request, resolvedTurnSkills: skills)
-                let registrations = await toolRegistry.snapshot()
-                let tools = registrations.values.map(\.definition).sorted { $0.name < $1.name }
-                if prepared.storesTurnState {
-                    try await maybeCompactThreadContextBeforeTurn(thread: prepared.thread, request: prepared.request,
-                        priorHistory: prepared.priorHistory, pendingUserMessage: prepared.userMessage,
-                        resolvedInstructions: instructions, resolvedTurnSkills: skills, tools: tools, session: session)
+            await AgentPromptCacheContext.$current.withValue(prepared.request.promptCacheTTL) {
+                let activity = await backgroundActivityProvider.beginActivity(
+                    named: "CodexKit agent turn", expirationHandler: { cancellation.cancel() }
+                )
+                defer {
+                    authenticatedExecutionControls.removeValue(forKey: control.id)
+                    control.finish()
+                    budget.finish()
+                    watchdog.cancel()
+                    activity.end()
+                    cancellation.clear()
+                    if let execution = prepared.execution { releaseTurn(in: threadID, executionID: execution.id) }
                 }
-                let start = try await beginTurnWithUnauthorizedRecovery(
-                    thread: prepared.thread,
-                    history: prepared.storesTurnState
-                        ? historyBeforePendingMessage(in: threadID, pendingUserMessage: prepared.userMessage) : [],
-                    providerContext: prepared.storesTurnState ? providerContext(for: threadID) : nil,
-                    message: prepared.request, resolvedInstructions: instructions, resolvedTurnSkills: skills,
-                    pendingUserMessage: prepared.userMessage, responseContract: prepared.responseContract,
-                    tools: tools, session: session, allowsContextCompaction: prepared.storesTurnState,
-                    outputInstructions: output?.instructions)
-                control.install(start.turnStream)
-                await control.readiness.resolve(.success(()))
-                try await initialEvents
-                if let execution = prepared.execution, activeTurnExecutions[threadID]?.id == execution.id {
-                    activeTurnExecutions[threadID]?.stream = start.turnStream
+                do {
+                    try Task.checkCancellation()
+                    async let initialEvents: Void = emitInitialEvents(prepared, sink: sink)
+                    let session = try await sessionManager.requireSession()
+                    try validateThreadAuthentication(thread(for: threadID) ?? prepared.thread, session: session)
+                    let skills = try resolveTurnSkills(thread: prepared.thread, message: prepared.request)
+                    let instructions = try await resolveInstructions(thread: prepared.thread,
+                        message: prepared.request, resolvedTurnSkills: skills)
+                    let registrations = await toolRegistry.snapshot()
+                    let tools = registrations.values.map(\.definition).sorted { $0.name < $1.name }
+                    if prepared.storesTurnState {
+                        try await maybeCompactThreadContextBeforeTurn(thread: prepared.thread, request: prepared.request,
+                            priorHistory: prepared.priorHistory, pendingUserMessage: prepared.userMessage,
+                            resolvedInstructions: instructions, resolvedTurnSkills: skills, tools: tools, session: session)
+                    }
+                    let start = try await beginTurnWithUnauthorizedRecovery(
+                        thread: prepared.thread,
+                        history: prepared.storesTurnState
+                            ? historyBeforePendingMessage(in: threadID, pendingUserMessage: prepared.userMessage) : [],
+                        providerContext: prepared.storesTurnState ? providerContext(for: threadID) : nil,
+                        message: prepared.request, resolvedInstructions: instructions, resolvedTurnSkills: skills,
+                        pendingUserMessage: prepared.userMessage, responseContract: prepared.responseContract,
+                        tools: tools, session: session, allowsContextCompaction: prepared.storesTurnState,
+                        outputInstructions: output?.instructions)
+                    control.install(start.turnStream)
+                    await control.readiness.resolve(.success(()))
+                    try await initialEvents
+                    if let execution = prepared.execution, activeTurnExecutions[threadID]?.id == execution.id {
+                        activeTurnExecutions[threadID]?.stream = start.turnStream
+                    }
+                    try Task.checkCancellation()
+                    await consumeTurnStream(start.turnStream, for: threadID, userMessage: prepared.userMessage,
+                        session: start.session, budget: budget, control: control, registrations: registrations, resolvedTurnSkills: skills, resolvedInstructions: instructions,
+                        clientRequestID: prepared.request.clientRequestID, storesTurnState: prepared.storesTurnState,
+                        completionCapture: completionCapture, structured: structured,
+                        oneShotValidation: oneShotValidation, output: output, continuation: sink)
+                } catch {
+                    await output?.cancel()
+                    await control.readiness.resolve(.failure(budget.error ?? error))
+                    await finishFailedTurn(error, in: threadID, turnID: nil, storesTurnState: prepared.storesTurnState, budget: budget, control: control, sink: sink)
                 }
-                try Task.checkCancellation()
-                await consumeTurnStream(start.turnStream, for: threadID, userMessage: prepared.userMessage,
-                    session: start.session, budget: budget, control: control, registrations: registrations, resolvedTurnSkills: skills, resolvedInstructions: instructions,
-                    clientRequestID: prepared.request.clientRequestID, storesTurnState: prepared.storesTurnState,
-                    completionCapture: completionCapture, structured: structured,
-                    oneShotValidation: oneShotValidation, output: output, continuation: sink)
-            } catch {
-                await output?.cancel()
-                await control.readiness.resolve(.failure(budget.error ?? error))
-                await finishFailedTurn(error, in: threadID, turnID: nil, storesTurnState: prepared.storesTurnState, budget: budget, control: control, sink: sink)
             }
         }
         if Task.isCancelled { cancellation.cancel() }

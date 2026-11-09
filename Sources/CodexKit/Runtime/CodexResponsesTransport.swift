@@ -15,7 +15,8 @@ struct CodexResponsesRequestFactory: Sendable {
         session: ChatGPTSession,
         recoveryMode: Bool = false,
         isCompaction: Bool = false,
-        webSearch: AgentWebSearchPolicy? = nil
+        webSearch: AgentWebSearchPolicy? = nil,
+        promptCacheTTL: AgentPromptCacheTTL? = nil
     ) throws -> URLRequest {
         let search = try configuration.webSearchCapabilities.resolve(webSearch)
         return try buildURLRequest(
@@ -40,6 +41,7 @@ struct CodexResponsesRequestFactory: Sendable {
             parallelToolCalls: tools.contains(where: \.supportsParallelExecution),
             include: [.encryptedReasoning],
             promptCacheKey: threadID,
+            promptCacheTTL: promptCacheTTL,
             requestID: threadID,
             session: session,
             sortedKeys: recoveryMode || AgentStructuredRecoveryContext.current != nil,
@@ -59,6 +61,7 @@ struct CodexResponsesRequestFactory: Sendable {
         parallelToolCalls: Bool = false,
         include: [ResponsesRequestBody.IncludedField] = [],
         promptCacheKey: String? = nil,
+        promptCacheTTL: AgentPromptCacheTTL? = nil,
         requestID: String,
         session: ChatGPTSession,
         sortedKeys: Bool = false,
@@ -69,7 +72,8 @@ struct CodexResponsesRequestFactory: Sendable {
             input: CodexResponsesImageDetail.normalize(input, supportsOriginal: supportsImageDetailOriginal
                 ?? CodexModel(rawValue: model).info?.supportsImageDetailOriginal ?? false),
             tools: tools, toolChoice: toolChoice, parallelToolCalls: parallelToolCalls,
-            store: false, stream: true, include: include, promptCacheKey: promptCacheKey
+            store: false, stream: true, include: include, promptCacheKey: promptCacheKey,
+            promptCacheOptions: promptCacheTTL.map { .init(ttl: $0) }
         )
 
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("responses"))

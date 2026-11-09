@@ -320,3 +320,14 @@ choices and submit only after the user selects one. No automatic retry or rewrit
 is performed. Missing or unsupported metadata leaves the original error intact.
 See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
 request scoping, and the TypeScript bridge boundary.
+
+## Per-turn prompt-cache lifetime
+
+Set `request.promptCacheTTL = .thirtyMinutes` or `.twelveHours` to request a
+minimum cache lifetime through `prompt_cache_options.ttl` (`30m` / `12h`). The
+preference applies to every model pass and automatic compaction for that turn.
+It is included in persisted requests and frozen structured-recovery bytes, and
+Cloud validates and forwards the exact prepared bytes. A later request without
+the preference omits the field. Manual compaction outside a turn has no override.
+This requests provider behavior; it does not guarantee retention or cache hits,
+change account capabilities, or alter the existing `prompt_cache_key`.

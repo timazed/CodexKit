@@ -34,7 +34,7 @@ public struct AgentStructuredRecoveryAdapter: Sendable {
         let wire = try CodexResponsesRequestFactory(configuration: config, encoder: JSONEncoder()).buildURLRequest(
             threadConfiguration: thread.configuration ?? config.defaultThreadConfiguration, instructions: instructions,
             responseContract: .init(format: format, deliveryMode: .oneShot), threadID: thread.id,
-            items: items, tools: [], session: session, recoveryMode: true)
+            items: items, tools: [], session: session, recoveryMode: true, promptCacheTTL: request.promptCacheTTL)
         guard let body = wire.httpBody else { throw AgentRecoveryError.stateInvalid }
         return .init(endpoint: config.baseURL, body: body,
                      digest: Self.digest(body), enableReasoningSummaries: config.enableReasoningSummaries)

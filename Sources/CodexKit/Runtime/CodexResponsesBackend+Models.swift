@@ -56,6 +56,7 @@ struct ResponsesRequestBody: Encodable {
     let stream: Bool
     let include: [IncludedField]
     let promptCacheKey: String?
+    var promptCacheOptions: ResponsesPromptCacheOptions? = nil
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -70,6 +71,7 @@ struct ResponsesRequestBody: Encodable {
         case stream
         case include
         case promptCacheKey = "prompt_cache_key"
+        case promptCacheOptions = "prompt_cache_options"
     }
 }
 

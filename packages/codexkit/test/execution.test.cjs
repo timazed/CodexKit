@@ -205,3 +205,18 @@ test('preserves optional provider usage and future details through result serial
   const missing = await harness([complete('result', { usage: undefined })]).run();
   assert.equal(missing.usage, undefined);
 });
+
+for (const ttl of ['30m', '12h']) test(`forwards prompt cache TTL ${ttl} without changing prepared bytes`, async () => {
+  const request = prepared(requestBody({ prompt_cache_options: { ttl } }));
+  const { run, calls } = harness();
+  await run({ preparedRequest: request });
+  assert.deepEqual(Buffer.from(calls[0].body), request.body);
+});
+for (const options of [null, {}, { ttl: '24h' }, { ttl: 30 }, { ttl: '12h', extra: true }]) {
+  test(`rejects malformed cache options ${JSON.stringify(options)} before fetching`, async () => {
+    const { run, calls } = harness();
+    await assert.rejects(run({ preparedRequest: prepared(requestBody({ prompt_cache_options: options })) }),
+      errorCode('unsupported_request', 'not_started'));
+    assert.equal(calls.length, 0);
+  });
+}
