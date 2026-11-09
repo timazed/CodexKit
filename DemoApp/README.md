@@ -293,7 +293,11 @@ report. It uses synthetic offline demo state and sends zero image requests.
 A live attempt on 9 November 2026 reached the image endpoint with upstream's
 flat GIF fields, but returned HTTP 400: `GIF output is not enabled for this
 request.` This session/request path has **not** demonstrated live GIF generation.
-The demo preserves that provider error and does not retry or silently use PNG.
+The demo preserves that provider error and does not retry or silently use PNG. The same rejection
+was reproduced with the official `0.169.0-alpha.3` client and its GIF flag enabled,
+including service-default frame options. Advertising the GIF beta feature header
+also failed. See the [native enablement investigation](../docs/upstream-gif-enablement-2026-11-09.md).
+The GIF PR remains a draft pending successful native generation.
 
 These checks require explicit live-generation approval and an existing demo
 session; they never start sign-in or retry. They start from the app delegate even

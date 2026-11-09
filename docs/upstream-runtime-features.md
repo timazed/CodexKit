@@ -344,3 +344,9 @@ play/pause with Reduce Motion support, and format-preserving export. A labelled
 local sample is available without making a provider request. A live test on
 9 November 2026 was rejected with HTTP 400 (`GIF output is not enabled for this
 request.`); live GIF availability on that session/request path remains unverified.
+
+The [native enablement investigation](upstream-gif-enablement-2026-11-09.md)
+reproduced that rejection with the official Codex client, its animation flag
+enabled, and both custom and service-default frame options. Adding the beta
+feature header did not enable generation. Native GIF support remains draft work
+pending a successful service request.
