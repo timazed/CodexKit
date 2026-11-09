@@ -61,7 +61,7 @@ export async function executeImage(input: ExecuteImageInput, configuration: Retu
     const bytes = await readImageBody(response, imageLimits.maxResponseBytes, controller.signal);
     checkAbort(controller.signal);
     if (input.onProgress) await progress("decoding");
-    const result = decodeImageResponse(bytes, imageLimits, limits, secrets);
+    const result = decodeImageResponse(bytes, imageLimits, limits, secrets, request.outputFormat);
     checkAbort(controller.signal);
     if (input.onProgress) await progress("completed");
     return Object.freeze({ status: "completed", action: request.action, clientRequestId: request.clientRequestId,

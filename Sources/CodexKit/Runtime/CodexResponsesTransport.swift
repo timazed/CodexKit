@@ -66,7 +66,7 @@ struct CodexResponsesRequestFactory: Sendable {
     ) throws -> URLRequest {
         let requestBody = ResponsesRequestBody(
             model: model, reasoning: reasoning, instructions: instructions, text: text,
-            input: CodexResponsesImageDetail.normalize(input, supportsOriginal: supportsImageDetailOriginal
+            input: CodexResponsesImageDetail.normalize(CodexGIFImage.modelPreviews(input), supportsOriginal: supportsImageDetailOriginal
                 ?? CodexModel(rawValue: model).info?.supportsImageDetailOriginal ?? false),
             tools: tools, toolChoice: toolChoice, parallelToolCalls: parallelToolCalls,
             store: false, stream: true, include: include, promptCacheKey: promptCacheKey

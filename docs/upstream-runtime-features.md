@@ -320,3 +320,19 @@ choices and submit only after the user selects one. No automatic retry or rewrit
 is performed. Missing or unsupported metadata leaves the original error intact.
 See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
 request scoping, and the TypeScript bridge boundary.
+
+## Animated image output
+
+Use `AgentImageGenerationOptions(outputFormat: .gif)` with the default Codex Images
+client to opt in to animated output. Set `options.animation` to `AgentGIFOptions`
+for optional `frameCount` (2–16) and `frameDurationMilliseconds` (20–2000). With no
+controls the request sends `gif: {}` for provider defaults. Both generate and edit
+support GIF output; edit references remain PNG/JPEG/WebP. The legacy Responses
+image route rejects animation options before transmission.
+
+GIF output is validated and returned as `image/gif` with original bytes, dimensions,
+and generation diagnostics. Saved attachments retain every frame. Later model
+requests use a still PNG preview, bounded to 2048 pixels on its longest side,
+without replacing the saved animation. PNG remains the default. GIF validation
+limits animations to 16 frames and 32 million total frame pixels. No live provider
+generation is used for verification; account support remains provider-owned.

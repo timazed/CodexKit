@@ -24,9 +24,9 @@ export interface ExecuteImageInput {
 }
 
 export interface GeneratedImage {
-  /** Canonical base64 PNG bytes; no URL fetch is required. Private application data. */
+  /** Canonical base64 PNG or GIF bytes; no URL fetch is required. Private application data. */
   readonly base64: string;
-  readonly mimeType: "image/png";
+  readonly mimeType: "image/png" | "image/gif";
   readonly pixelSize: { readonly width: number; readonly height: number };
   readonly generationId?: string;
 }

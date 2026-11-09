@@ -48,7 +48,7 @@ struct CodexImagesClient: Sendable {
             await onProgress?(.decoding)
             try Task.checkCancellation()
             let output = try CodexImageResponse.decode(body, response: response, clientID: clientID,
-                action: images.isEmpty ? .generate : .edit)
+                action: images.isEmpty ? .generate : .edit, outputFormat: options.outputFormat)
             try Task.checkCancellation()
             await onProgress?(.completed)
             try Task.checkCancellation()
@@ -68,10 +68,12 @@ struct CodexImagesClient: Sendable {
     private func makeRequest(prompt: String, images: [AgentImageAttachment], session: ChatGPTSession,
                              options: AgentImageGenerationOptions) throws -> URLRequest {
         let action: AgentImageGenerationAction = images.isEmpty ? .generate : .edit
-        guard options.outputFormat == .png, options.quality == nil || options.quality == .auto,
+        try options.animation?.validate()
+        guard (options.outputFormat == .png && options.animation == nil || options.outputFormat == .gif),
+              options.quality == nil || options.quality == .auto,
               options.action == .auto || options.action == action else {
             throw AgentRuntimeError(code: .imageGenerationUnsupportedOptions,
-                message: "Codex Images uses automatic quality and PNG output. The action must match generate or edit. "
+                message: "Codex Images uses automatic quality and PNG or opt-in GIF output. The action must match generate or edit. "
                     + "Explicit Responses configurations retain legacy model, quality, and format options.")
         }
         guard images.count <= 5, images.reduce(0, { $0 + $1.data.count }) <= Self.maximumImageBytes else {
@@ -79,7 +81,9 @@ struct CodexImagesClient: Sendable {
                 message: "Use at most five reference images totaling no more than 32 MiB.")
         }
         let body = Request(prompt: prompt, background: options.transparentBackground ? "transparent" : "opaque",
-            images: images.isEmpty ? nil : images.map { .init(image_url: $0.dataURLString) })
+            images: images.isEmpty ? nil : images.map { .init(image_url: $0.dataURLString) },
+            output_format: options.outputFormat == .gif ? "gif" : nil,
+            gif: options.outputFormat == .gif ? options.animation ?? .init() : nil)
         let clientID = UUID().uuidString
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent(
             images.isEmpty ? "images/generations" : "images/edits"))
@@ -104,6 +108,8 @@ struct CodexImagesClient: Sendable {
         let quality = "auto"
         let size = "auto"
         let images: [Reference]?
+        let output_format: String?
+        let gif: AgentGIFOptions?
     }
 
     private func invalidResponse() -> AgentRuntimeError {
