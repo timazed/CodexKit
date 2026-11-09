@@ -321,6 +321,22 @@ is performed. Missing or unsupported metadata leaves the original error intact.
 See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
 request scoping, and the TypeScript bridge boundary.
 
+## Unavailable persisted images
+
+Set `configuration.missingImagePolicy = .placeholder` before creating a
+`CodexResponsesBackend` to replace unresolved persisted image content with
+`[image unavailable]` in generation and compaction requests. The default `.fail`
+retains existing strict errors. Available images and surrounding text are kept.
+Generation placeholders are request-only: saved provider references are retained
+and checked again on later turns, so an attachment can become available again.
+Compaction can retain the explicit placeholder in its reduced context; the full
+saved transcript is unchanged.
+
+This policy covers references unresolved against the supplied attachment snapshot.
+Storage access, integrity, and transient read errors still propagate; it does not
+convert those errors into missing-image claims or probe remote image URLs.
+Unrecognized reference locations still fail rather than rewriting arbitrary text.
+
 ## Context estimates and missing usage
 
 Automatic pre-turn compaction and effective-context observations also consider

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Add opt-in request-only placeholders for unavailable persisted image references during generation and compaction, preserving strict errors by default and original generation history for later recovery.
+
 ### Fixed
 
 - Include tool payloads and retained provider-only history in context estimates, preserving the last usable token-usage boundary when later responses omit token counts.
