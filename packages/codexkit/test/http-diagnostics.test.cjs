@@ -1,7 +1,7 @@
 const { test: nodeTest } = require('node:test');
 const assert = require('node:assert/strict');
 const { CodexKitCloudError } = require('../dist/index.js');
-const { harness, prepared, requestBody, authentication, errorCode } = require('./helpers.cjs');
+const { harness, prepared, requestBody, authentication, errorCode, complete } = require('./helpers.cjs');
 const { imageHarness, imagePrepared, imageBody } = require('./image-helpers.cjs');
 const fixture = require('./fixtures/http-schema-rejection.json');
 const test = (name, run) => nodeTest(name, { timeout: 5000 }, run);
@@ -275,6 +275,13 @@ test('image quota codes preserve their original MIME evidence and 64 KiB inspect
 
 for (const [code, reason] of [['budget_reached', 'session_budget_exceeded'],
   ['policy_capacity_unavailable', 'policy_capacity_unavailable']]) {
+  test(`streamed provider ${code} cannot be hidden by later completion`, async () => {
+    const { run, calls } = harness([{ type: 'error', error: { code, message: 'private provider text' } }, complete('unexpected')]);
+    const result = await failure(run);
+    assert.equal(result.providerCode, code);
+    assert.ok(!JSON.stringify(result).includes('private provider text'));
+    assert.equal(calls.length, 1);
+  });
   test(`provider ${code} survives safe failure serialization`, async () => {
     const result = await failure(harness(undefined, { fetch: async () => http({ error: {
       code, message: 'private provider text',

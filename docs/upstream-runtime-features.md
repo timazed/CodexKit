@@ -326,7 +326,8 @@ request scoping, and the TypeScript bridge boundary.
 `AgentHTTPFailure.isSessionBudgetExceeded` identifies `budget_reached` and blocks
 automatic transport and structured-recovery retries, including when a server sends
 `Retry-After`. `isPolicyCapacityUnavailable` identifies `policy_capacity_unavailable`;
-transport retries honor the existing attempt budget, server delay, and replay-safety
+transport retries require valid `Retry-After` advice, respect the configured HTTP
+status allowlist, and honor the existing attempt budget, server delay, and replay-safety
 guards. Original provider codes, messages, and HTTP diagnostics remain available.
 Cloud exposes allowlisted codes and HTTP reasons `session_budget_exceeded` and
 `policy_capacity_unavailable`; it still performs no automatic retries.

@@ -29,7 +29,7 @@ final class ProviderBudgetFailureTests: XCTestCase {
 
     func testPolicyCapacityRetriesBeforeOutputAndRetainsClassification() async throws {
         await TestURLProtocol.enqueue(.init(body: Data("""
-        data: {"type":"error","code":"policy_capacity_unavailable","message":"Policy capacity"}
+        data: {"type":"error","code":"policy_capacity_unavailable","message":"Policy capacity","headers":{"Retry-After":"0"}}
 
         """.utf8)))
         await TestURLProtocol.enqueue(.init(statusCode: 503, body: Data(
@@ -37,9 +37,27 @@ final class ProviderBudgetFailureTests: XCTestCase {
         let error = try await failure(attempts: 2)
         XCTAssertTrue(error.http?.isPolicyCapacityUnavailable == true)
         XCTAssertEqual(error.retry?.attempt, 2)
-        XCTAssertEqual(error.retry?.isRetryable, true)
+        XCTAssertEqual(error.retry?.isRetryable, false)
         XCTAssertEqual(error.http?.providerCode, "policy_capacity_unavailable")
         XCTAssertEqual(try JSONDecoder().decode(AgentRuntimeError.self, from: JSONEncoder().encode(error)), error)
+    }
+
+    func testCapacityWithoutRetryAdviceIsTerminal() async throws {
+        await TestURLProtocol.enqueue(.init(body: Data("data: {\"type\":\"error\",\"code\":\"policy_capacity_unavailable\"}\n\n".utf8)))
+        let error = try await failure()
+        XCTAssertEqual(error.retry?.attempt, 1)
+        XCTAssertEqual(error.retry?.isRetryable, false)
+    }
+
+    func testCapacityRespectsHTTPPolicyAndRequiresValidRetryAdvice() {
+        let client = CodexResponsesEventStreamClient(urlSession: makeTestURLSession(), decoder: JSONDecoder(), logger: AgentLogger())
+        let policy = RequestRetryPolicy(maxAttempts: 3, retryableHTTPStatusCodes: [503])
+        for (status, advice, expected) in [(200, Optional(0.0), true), (503, 0, true),
+                                          (401, 0, false), (502, 0, false), (503, nil, false)] {
+            let error = AgentRuntimeError(code: .responsesStreamFailed, message: "Capacity",
+                http: .init(statusCode: status, providerCode: "policy_capacity_unavailable", retryAfter: advice))
+            XCTAssertEqual(client.shouldRetry(error, policy: policy), expected, "status \(status), advice \(String(describing: advice))")
+        }
     }
 
     private func failure(attempts: Int = 3) async throws -> AgentRuntimeError {

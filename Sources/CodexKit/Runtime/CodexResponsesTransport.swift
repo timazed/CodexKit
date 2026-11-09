@@ -309,7 +309,10 @@ struct CodexResponsesEventStreamClient: Sendable {
     ) -> Bool {
         if let runtimeError = error as? AgentRuntimeError {
             if runtimeError.http?.isSessionBudgetExceeded == true { return false }
-            if runtimeError.http?.isPolicyCapacityUnavailable == true { return true }
+            if let failure = runtimeError.http, failure.isPolicyCapacityUnavailable {
+                return failure.retryAfter != nil && (failure.statusCode == 200 ||
+                    policy.retryableHTTPStatusCodes.contains(failure.statusCode))
+            }
             if runtimeError.http?.isQuotaExceeded == true || runtimeError.knownCode == .quotaExceeded { return false }
             if let code = runtimeError.interruption?.transportErrorCode {
                 return policy.retryableURLErrorCodes.contains(code)
