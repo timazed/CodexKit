@@ -76,6 +76,43 @@ final class MissingImageRecoveryTests: XCTestCase {
         XCTAssertEqual(CodexResponsesProviderState(context: context)?.items, items)
     }
 
+    func testPlaceholderRoundTripThroughDiskStoresPreservesRecoverableImage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = try XCTUnwrap(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="))
+        let image = AgentImageAttachment.png(bytes)
+        let items = try CodexResponsesImageReferences.externalize([
+            WorkingHistoryItem.userMessage(.init(threadID: "t", role: .user, text: "Keep", images: [image])).jsonValue])
+        for adapter in [TestStorageBackend.file, .sqlite, .realm] {
+            let url = root.appendingPathComponent(adapter.rawValue)
+            let store = try adapter.open(at: url)
+            try await store.saveState(.init(threads: [.init(id: "t")], contextStateByThread: ["t": .init(
+                threadID: "t", effectiveMessages: [], providerContext: CodexResponsesProviderState(items: items).agentProviderContext,
+                generation: 1)]))
+            let reopened = try adapter.open(at: url)
+            let loaded = try await reopened.loadState()
+            let context = try XCTUnwrap(loaded.contextStateByThread["t"]?.providerContext)
+            var configuration = CodexResponsesBackendConfiguration()
+            configuration.missingImagePolicy = .placeholder
+            await TestURLProtocol.enqueue(.init(body: completed, inspect: { wire in
+                let body = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(try requestBodyData(for: wire)))
+                let content = body.objectValue?["input"]?.arrayValue?.first?.objectValue?["content"]?.arrayValue
+                XCTAssertEqual(content, [.object(["type": .string("input_text"), "text": .string("Keep")]),
+                    .object(["type": .string("input_text"), "text": .string("[image unavailable]")])])
+            }))
+            let stream = try await begin(CodexResponsesBackend(configuration: configuration, urlSession: makeTestURLSession()),
+                context: context, history: [])
+            for try await event in stream.events {
+                if case let .providerContextUpdated(_, updated) = event {
+                    let retained = try XCTUnwrap(CodexResponsesProviderState(context: updated)?.items.first)
+                    XCTAssertEqual(retained, items.first)
+                    XCTAssertEqual(try CodexResponsesImageReferences.restore([retained], using: [image]),
+                        [WorkingHistoryItem.userMessage(.init(threadID: "t", role: .user, text: "Keep", images: [image])).jsonValue])
+                }
+            }
+        }
+    }
+
     private var completed: Data { Data("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"done\"}}\n\n".utf8) }
     private func begin(_ backend: CodexResponsesBackend, context: AgentProviderContext?, history: [AgentMessage]) async throws -> AgentTurnStream {
         try await backend.beginTurn(thread: .init(id: "t"), history: history, providerContext: context,
