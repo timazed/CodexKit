@@ -1,6 +1,6 @@
 # Image generation and editing
 
-`CodexKitBridgeClient.executeImage(...)` executes one prepared request using the dedicated Codex Images endpoints. It returns validated PNG data, actual pixel dimensions, creation time, and correlation IDs. This does not enable Responses tools or change `execute(...)`.
+`CodexKitBridgeClient.executeImage(...)` executes one prepared request using the dedicated Codex Images endpoints. It returns validated PNG or opt-in GIF data, actual pixel dimensions, creation time, and correlation IDs. This does not enable Responses tools or change `execute(...)`.
 
 ```ts
 import { CodexKitBridgeClient } from "@timazed/codexkit";
@@ -35,15 +35,15 @@ The host supplies an existing CodexKit request without rewriting its JSON:
 
 Authentication is the same separate `{ accessToken, accountId }` argument used by text execution. The bridge snapshots and validates the request and credentials before its first asynchronous operation. `validatePreparedImageRequest(request)` performs preflight without transmitting.
 
-The accepted provider body matches Swift's dedicated `CodexImagesClient` contract: a nonblank `prompt`, `background` of `"transparent"` or `"opaque"`, `model: "gpt-image-2"`, `quality: "auto"`, and `size: "auto"`. Generation omits `images`; editing includes one to five `{ image_url: "data:image/<png|jpeg|webp>;base64,..." }` references totaling at most 32 MiB of decoded bytes. Reference bytes remain unchanged; the provider validates their image content. Remote URLs, tools, extra body fields, and quality/model/size overrides are rejected before transmission.
+The accepted provider body matches Swift's dedicated `CodexImagesClient` contract: a nonblank `prompt`, `background` of `"transparent"` or `"opaque"`, `model: "gpt-image-2"`, `quality: "auto"`, and `size: "auto"`. Generation omits `images`; editing includes one to five `{ image_url: "data:image/<png|jpeg|webp>;base64,..." }` references totaling at most 32 MiB of decoded bytes. Reference bytes remain unchanged; the provider validates their image content. Remote URLs, tools, unknown body fields, and quality/model/size overrides are rejected before transmission.
 
 The default endpoints are `https://chatgpt.com/backend-api/codex/images/generations` and `/images/edits`. A trusted constructor `endpoint` ending in `/responses` selects sibling image routes under that same base path. Incoming requests cannot supply endpoints or override authentication headers. Redirects are not followed.
 
 ## Completion, failures and cancellation
 
-A successful return requires the entire JSON HTTP body to finish, a successful provider outcome, and one or more valid PNG images. Partial bodies, URL-only output, failed/incomplete responses, invalid base64, corrupt PNG chunks or compressed scanlines, and exhausted limits reject with `CodexKitCloudError`. Dimensions come from the PNG bytes; a provider `size` hint cannot override them. PNG validation follows the [PNG specification](https://www.w3.org/TR/png-3/), including CRCs, scanline framing, palettes and Adam7 interlacing. Animated PNG is outside this contract. Ancillary color profiles are preserved without interpretation.
+A successful return requires the entire JSON HTTP body to finish, a successful provider outcome, and one or more valid images in the requested format. Partial bodies, URL-only output, failed/incomplete responses, invalid base64, corrupt PNG chunks or compressed scanlines, and exhausted limits reject with `CodexKitCloudError`. Dimensions come from the PNG bytes; a provider `size` hint cannot override them. PNG validation follows the [PNG specification](https://www.w3.org/TR/png-3/), including CRCs, scanline framing, palettes and Adam7 interlacing. Animated PNG is outside this contract. Ancillary color profiles are preserved without interpretation.
 
-`ImageExecutionResult` contains `status: "completed"`, `action`, `created` (Unix seconds), `clientRequestId`, optional `requestId`/`imageRequestId`, optional recognized `background`/`quality`, and `images`. Each image has canonical `base64`, `mimeType: "image/png"`, `pixelSize: { width, height }`, and an optional sanitized `generationId`.
+`ImageExecutionResult` contains `status: "completed"`, `action`, `created` (Unix seconds), `clientRequestId`, optional `requestId`/`imageRequestId`, optional recognized `background`/`quality`, and `images`. Each image has canonical `base64`, `mimeType: "image/png" | "image/gif"`, `pixelSize: { width, height }`, and an optional sanitized `generationId`.
 
 An image-specific allowance error uses `code: "image_usage_limit_exceeded"`, with `details.imageUsageLimit.limitId: "image_gen"` and optional `resetsAt` in Unix seconds. The provider's body reset takes precedence over exhausted image-window headers. Missing reset metadata stays unknown. Other HTTP and transport errors use the existing error codes. Provider messages and raw error bodies are not exposed.
 
@@ -87,3 +87,18 @@ For the desktop-style percentage loader, call
 it "Estimated". It reaches 90 at 45 seconds and caps at 99. It does not measure
 provider computation, and it must stop when the request settles. The SDK does
 not start a timer or use this estimate to determine success.
+
+## Animated GIF output
+
+Opt in with `output_format: "gif"` in the prepared Images body.
+Optional sibling `frame_count` accepts integers from 2 to 16;
+`frame_duration_ms` accepts integers from 20 to 2000. Omitted controls use
+provider defaults. Both generation and editing support these output controls;
+reference images remain PNG/JPEG/WebP. PNG requests keep their original wire shape.
+
+GIF results preserve the full animation bytes and report `image/gif`. Validation
+checks complete framing, image dimensions, LZW pixel counts, palette references,
+2–16 frames, and total frame pixel/inflated-byte budgets. A response in a different
+format is rejected. Animated PNG remains unsupported. This is an opt-in backend
+capability, not evidence of account availability; offline tests do not generate
+live images.

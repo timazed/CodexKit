@@ -10,6 +10,7 @@ public enum AgentImageOutputFormat: String, Codable, Hashable, Sendable {
     case png
     case jpeg
     case webp
+    case gif
 
     var mimeType: AgentImageMIMEType {
         switch self {
@@ -19,6 +20,8 @@ public enum AgentImageOutputFormat: String, Codable, Hashable, Sendable {
             .jpeg
         case .webp:
             .webp
+        case .gif:
+            .gif
         }
     }
 }
@@ -31,6 +34,8 @@ public enum AgentImageGenerationQuality: String, Codable, Hashable, Sendable {
 }
 
 public struct AgentImageGenerationOptions: Codable, Hashable, Sendable {
+    /// Optional GIF frame controls, valid only with `outputFormat: .gif`.
+    public var animation: AgentGIFOptions? = nil
     public var action: AgentImageGenerationAction
     public var outputFormat: AgentImageOutputFormat
     public var quality: AgentImageGenerationQuality?
@@ -42,7 +47,7 @@ public struct AgentImageGenerationOptions: Codable, Hashable, Sendable {
         self.init(action: action, outputFormat: outputFormat, quality: quality, transparentBackground: false)
     }
 
-    /// The default Codex Images path supports transparency, PNG, and automatic quality.
+    /// The default Codex Images path supports transparency, PNG, opt-in GIF, and automatic quality.
     /// Explicit Responses configurations also support the legacy quality/format options.
     public init(
         action: AgentImageGenerationAction = .auto,
@@ -56,10 +61,11 @@ public struct AgentImageGenerationOptions: Codable, Hashable, Sendable {
         self.transparentBackground = transparentBackground
     }
 
-    private enum CodingKeys: String, CodingKey { case action, outputFormat, quality, transparentBackground }
+    private enum CodingKeys: String, CodingKey { case action, outputFormat, quality, transparentBackground, animation }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        animation = try values.decodeIfPresent(AgentGIFOptions.self, forKey: .animation)
         action = try values.decode(AgentImageGenerationAction.self, forKey: .action)
         outputFormat = try values.decode(AgentImageOutputFormat.self, forKey: .outputFormat)
         quality = try values.decodeIfPresent(AgentImageGenerationQuality.self, forKey: .quality)
@@ -218,9 +224,9 @@ public actor AgentImageGenerationClient {
             return try await CodexImagesClient(configuration: configuration, urlSession: urlSession)
                 .run(prompt: prompt, images: images, session: session, options: options, onProgress: onProgress)
         }
-        guard !options.transparentBackground else {
+        guard !options.transparentBackground, options.outputFormat != .gif, options.animation == nil else {
             throw AgentRuntimeError(code: .imageGenerationUnsupportedOptions,
-                message: "Transparent backgrounds require the built-in Codex Images configuration.")
+                message: "Transparency and animated output require the built-in Codex Images configuration.")
         }
 
         let request = try buildURLRequest(

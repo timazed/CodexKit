@@ -7,6 +7,7 @@ struct ImageGenerationDemoView: View {
     @State private var importing = false
     @State private var exporting = false
     @State private var exportDocument = ImageExportDocument(data: Data())
+    @State private var exportType = UTType.png
 
     init(session: @escaping @MainActor () async throws -> ChatGPTSession) {
         _images = State(initialValue: ImageGenerationDemoModel(session: session))
@@ -49,14 +50,13 @@ struct ImageGenerationDemoView: View {
                     }
                 }
                 ForEach(images.results) { result in
-                    GroupBox("Generated image") {
+                    GroupBox(images.showingAnimationSample ? "Local animation sample" : "Generated image") {
                         VStack(alignment: .leading, spacing: 12) {
-                            if let preview = Image(platformData: result.image.data) {
-                                preview.resizable().scaledToFit().frame(maxHeight: 480)
-                            }
-                            Text("PNG · \(result.pixelSize?.description ?? "Dimensions unavailable")").font(.caption)
+                            GeneratedImagePreview(image: result.image)
+                            Text("\(result.image.mimeType == .gif ? "GIF" : "PNG") · \(result.pixelSize?.description ?? "Dimensions unavailable")").font(.caption)
                             Button("Save Image…") {
                                 exportDocument = ImageExportDocument(data: result.image.data)
+                                exportType = result.demoExportType
                                 exporting = true
                             }
                             if let details = result.diagnostics {
@@ -74,7 +74,7 @@ struct ImageGenerationDemoView: View {
             case let .failure(error): images.reportImportError(error)
             }
         }
-        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .png, defaultFilename: "generated-image") { result in
+        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: exportType, defaultFilename: "generated-image") { result in
             if case let .failure(error) = result { images.reportImportError(error) }
         }
         .onDisappear { images.cancel() }
@@ -87,8 +87,7 @@ struct ImageGenerationDemoView: View {
                 Text("Edit").tag(AgentImageGenerationAction.edit)
             }.pickerStyle(.segmented)
             Toggle("Transparent background", isOn: $images.transparentBackground)
-            Text("PNG output. Quality and dimensions are chosen by the service.")
-                .font(.caption).foregroundStyle(.secondary)
+            ImageGenerationOutputControls(images: images)
             TextField("Describe the image or edit", text: $images.prompt, axis: .vertical)
                 .lineLimit(3...8).textFieldStyle(.roundedBorder)
             if images.action == .edit {
@@ -110,7 +109,7 @@ struct ImageGenerationDemoView: View {
 }
 
 private struct ImageExportDocument: FileDocument {
-    static let readableContentTypes: [UTType] = [.png]
+    static let readableContentTypes: [UTType] = [.png, .gif]
     let data: Data
     init(data: Data) { self.data = data }
     init(configuration: ReadConfiguration) throws { data = configuration.file.regularFileContents ?? Data() }

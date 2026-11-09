@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AF0911000000000000000001 /* ImageGenerationPresentation.swift iOS */ = {isa = PBXBuildFile; fileRef = AF0911000000000000000003; };
+		AF0911000000000000000002 /* ImageGenerationPresentation.swift macOS */ = {isa = PBXBuildFile; fileRef = AF0911000000000000000003; };
         AD0800000000000000000103 /* RemoteExecutionDemoView.swift iOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000003; };
         AD0800000000000000000203 /* RemoteExecutionDemoView.swift macOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000003; };
         AD0800000000000000000102 /* RemoteExecutionDemoProbe.swift iOS */ = {isa = PBXBuildFile; fileRef = AD0800000000000000000002; };
@@ -142,6 +144,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AF0911000000000000000003 /* ImageGenerationPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationPresentation.swift; sourceTree = "<group>"; };
         AD0800000000000000000003 /* RemoteExecutionDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteExecutionDemoView.swift; sourceTree = "<group>"; };
         AD0800000000000000000002 /* RemoteExecutionDemoProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteExecutionDemoProbe.swift; sourceTree = "<group>"; };
         AD0800000000000000000001 /* RemoteExecutionDemoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteExecutionDemoModels.swift; sourceTree = "<group>"; };
@@ -367,6 +370,7 @@
 				2A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift */,
 				AC2900000000000000000008 /* ImageGenerationDemoVerification.swift */,
 				AD2900000000000000000000 /* ImageGenerationDemoModel.swift */,
+				AF0911000000000000000003 /* ImageGenerationPresentation.swift */,
 				AD2900000000000000000001 /* ImageGenerationDiagnosticsView.swift */,
 				AD2900000000000000000002 /* ImageGenerationDemoView.swift */,
 				AB2300000000000000000007 /* ProgressiveOutputDemoModel.swift */,
@@ -533,6 +537,7 @@
 				1A2B3C4D5E6F70000000000A /* DemoAppShortcuts.swift in Sources */,
 				1A2B3C4D5E6F70000000000B /* DemoStructuredOutputExamples.swift in Sources */,
 				AD2900000000000000000101 /* ImageGenerationDemoModel.swift iOS */,
+				AF0911000000000000000001 /* ImageGenerationPresentation.swift iOS */,
 				AD2900000000000000000201 /* ImageGenerationDiagnosticsView.swift iOS */,
 				AD2900000000000000000301 /* ImageGenerationDemoView.swift iOS */,
 				AD2900000000000000000401 /* ImageGenerationDemoVerification.swift iOS */,
@@ -586,6 +591,7 @@
                 AD0800000000000000000203 /* RemoteExecutionDemoView.swift macOS */,
                 AC0600000000000000000006 /* Local cloud view macOS */,
 				AD2900000000000000000102 /* ImageGenerationDemoModel.swift macOS */,
+				AF0911000000000000000002 /* ImageGenerationPresentation.swift macOS */,
 				AD2900000000000000000202 /* ImageGenerationDiagnosticsView.swift macOS */,
 				AB2300000000000000000002 /* Streaming model macOS */,
 				AB2300000000000000000004 /* Streaming view macOS */,

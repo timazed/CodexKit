@@ -60,7 +60,13 @@ final class MacDemoAppDelegate: NSObject, NSApplicationDelegate, ObservableObjec
         } else if CommandLine.arguments.contains("--run-image-demo") {
             // Launch Services can restore an app with no window. Start the explicitly
             // requested check independently of SwiftUI's window-bound .task lifecycle.
-            Task { await MacDemoImageVerification.run(model: model) }
+            Task {
+                if CommandLine.arguments.contains("--image-demo-sample") {
+                    do { model = try await MacDemoVerification.makePreview() }
+                    catch { model.errorMessage = "Could not prepare the offline animation sample."; return }
+                }
+                await MacDemoImageVerification.run(model: model)
+            }
         }
         #endif
     }

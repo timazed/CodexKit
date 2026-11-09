@@ -16,7 +16,7 @@ enum CodexImageResponse {
     }
 
     static func decode(_ body: Data, response: HTTPURLResponse, clientID: String,
-                       action: AgentImageGenerationAction) throws -> [AgentGeneratedImage] {
+                       action: AgentImageGenerationAction, outputFormat: AgentImageOutputFormat = .png) throws -> [AgentGeneratedImage] {
         let value = try JSONDecoder().decode(Response.self, from: body)
         if let error = value.error, error != .null { throw providerFailure(body: body, response: response) }
         guard let created = value.created, created.isFinite, created >= 0,
@@ -35,16 +35,18 @@ enum CodexImageResponse {
             guard let data = Data(base64Encoded: item.b64_json), !data.isEmpty else { throw missingImage() }
             totalBytes += data.count
             guard totalBytes <= CodexImagesClient.maximumImageBytes else { throw tooLarge() }
-            guard RuntimeDownloadedImage.mimeType(for: data) == .png else {
+            let expected: AgentImageMIMEType = outputFormat == .gif ? .gif : .png
+            guard RuntimeDownloadedImage.mimeType(for: data) == expected,
+                  expected != .gif || CodexGIFImage.isValidAnimation(data) else {
                 throw AgentRuntimeError(code: .imageGenerationInvalidResponse,
-                    message: "The image service did not return a complete PNG image.")
+                    message: "The image service did not return a complete image in the requested format.")
             }
             let id = UUID().uuidString
             let metadata = AgentImageGenerationMetadata(id: id, status: "completed", action: action.rawValue,
                 background: value.background.flatMap { ["transparent", "opaque", "auto"].contains($0) ? $0 : nil },
-                outputFormat: "png", quality: value.quality.flatMap { AgentImageGenerationQuality(rawValue: $0)?.rawValue },
+                outputFormat: outputFormat.rawValue, quality: value.quality.flatMap { AgentImageGenerationQuality(rawValue: $0)?.rawValue },
                 size: value.size.map { String($0.prefix(64)) })
-            return AgentGeneratedImage(id: id, image: .init(id: id, mimeType: .png, data: data, generationMetadata: metadata),
+            return AgentGeneratedImage(id: id, image: .init(id: id, mimeType: expected, data: data, generationMetadata: metadata),
                 createdAt: Date(timeIntervalSince1970: created),
                 diagnostics: diagnostics(response: response, clientID: clientID, generationID: item.generation_id))
         }

@@ -14,8 +14,8 @@ extension ImageGenerationDemoModel {
 
     func save(_ generated: AgentGeneratedImage) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "generated-image.png"
+        panel.allowedContentTypes = [generated.demoExportType]
+        panel.nameFieldStringValue = "generated-image.\(generated.demoExportType.preferredFilenameExtension ?? "png")"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try generated.image.data.write(to: url, options: .atomic) }
         catch { reportImportError(error) }

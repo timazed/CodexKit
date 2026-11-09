@@ -320,3 +320,33 @@ choices and submit only after the user selects one. No automatic retry or rewrit
 is performed. Missing or unsupported metadata leaves the original error intact.
 See the [upstream audit](upstream-image-runtime-2026-10-27.md) for validation,
 request scoping, and the TypeScript bridge boundary.
+
+## Animated image output
+
+Use `AgentImageGenerationOptions(outputFormat: .gif)` with the default Codex Images
+client to opt in to animated output. Set `options.animation` to `AgentGIFOptions`
+for optional `frameCount` (2–16) and `frameDurationMilliseconds` (20–2000). With no
+controls the request omits frame fields for provider defaults. The HTTP body sends
+`frame_count` and `frame_duration_ms` beside `output_format`, matching upstream
+`imagegen_extension.rs` request assertions. Both generate and edit
+support GIF output; edit references remain PNG/JPEG/WebP. The legacy Responses
+image route rejects animation options before transmission.
+
+GIF output is validated and returned as `image/gif` with original bytes, dimensions,
+and generation diagnostics. Saved attachments retain every frame. Later model
+requests use a still PNG preview, bounded to 2048 pixels on its longest side,
+without replacing the saved animation. PNG remains the default. GIF validation
+limits animations to 16 frames and 32 million total frame pixels. No live provider
+generation is used for verification; account support remains provider-owned.
+
+The iOS/macOS Images demos expose PNG/GIF selection, optional frame controls,
+play/pause with Reduce Motion support, and format-preserving export. A labelled
+local sample is available without making a provider request. A live test on
+9 November 2026 was rejected with HTTP 400 (`GIF output is not enabled for this
+request.`); live GIF availability on that session/request path remains unverified.
+
+The [native enablement investigation](upstream-gif-enablement-2026-11-09.md)
+reproduced that rejection with the official Codex client, its animation flag
+enabled, and both custom and service-default frame options. Adding the beta
+feature header did not enable generation. Native GIF support remains draft work
+pending a successful service request.

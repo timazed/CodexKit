@@ -37,7 +37,7 @@ The native SwiftUI demo includes:
 
 - Local Codex session reuse, browser OAuth (localhost callback on port 1455), and device-code sign-in.
 - An Assistant workspace with persisted conversations, model discovery, bundled fallback picker choices including GPT-6.1 Sol and GPT-6 Sol/Luna, supported reasoning levels, image attachments, generated images, reasoning summaries, account usage, Add to Turn, and Stop.
-- An Images workspace for generation and reference-image editing, with transparent backgrounds, up to five reference images, cancellation, previews, and PNG saving. Results show actual pixel dimensions, diagnostic IDs, and image allowance reset details.
+- An Images workspace for generation and reference-image editing, with transparent backgrounds, up to five reference images, cancellation, PNG/GIF output, animation playback, and format-preserving saving. Results show actual pixel dimensions, diagnostic IDs, and image allowance reset details.
 - Turn-based streaming text, JSON Lines records, XML with attributes, and native JSON Schema using the iOS demo's shared UI and schemas, alongside the existing shipping, imported-content, and text-with-payload examples.
 - MemoryWriter and raw-record authoring, retrieval, prompt previews, explicit capture, and optional automatic capture after turns.
 - Tool approval/denial, parallel lookups, travel skills, skill-policy comparison, personas and per-request reviewer overrides.
@@ -267,8 +267,37 @@ HTTP responses. These checks do not establish live account availability.
 The macOS `--run-image-demo --verification-result /absolute/path/report.json`
 opt-in launch performs one transparent PNG edit through the dedicated Codex
 endpoint using a synthetic JPEG reference. Add `--image-demo-generate` to perform
-one prompt-only generation with an opaque background instead. Use a separate
-report directory for each check to preserve its report and output PNG.
+one prompt-only generation with an opaque background instead. Add
+`--image-demo-gif` for a two-frame GIF request. Use a separate report directory
+for each check to preserve its report and original output.
+
+In **Images**, select **Animated GIF**, optionally enable **Custom animation
+settings**, then choose 2–16 frames and a 20–2000 ms duration. Returned GIFs play
+with **Pause animation** / **Play animation** controls and save as `.gif`. Reduce
+Motion starts playback paused. **Preview sample animation** exercises playback
+and saving locally without authentication or a provider request; sample output
+is explicitly labelled.
+
+To capture the signed macOS demo's local sample and verify that the rendered
+frames change, run:
+
+```sh
+open -n .build/macos-demo/Build/Products/Debug/CodexKitMacDemo.app --args \
+  --run-image-demo --image-demo-sample \
+  --verification-result /absolute/path/gif-sample/report.json
+```
+
+This saves the GIF, decoded frame PNGs, two demo playback screenshots, and a
+report. It uses synthetic offline demo state and sends zero image requests.
+
+A live attempt on 9 November 2026 reached the image endpoint with upstream's
+flat GIF fields, but returned HTTP 400: `GIF output is not enabled for this
+request.` This session/request path has **not** demonstrated live GIF generation.
+The demo preserves that provider error and does not retry or silently use PNG. The same rejection
+was reproduced with the official `0.169.0-alpha.3` client and its GIF flag enabled,
+including service-default frame options. Advertising the GIF beta feature header
+also failed. See the [native enablement investigation](../docs/upstream-gif-enablement-2026-11-09.md).
+The GIF PR remains a draft pending successful native generation.
 
 These checks require explicit live-generation approval and an existing demo
 session; they never start sign-in or retry. They start from the app delegate even

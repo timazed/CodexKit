@@ -20,7 +20,21 @@ final class ImageGenerationDemoModel {
     var prompt = "A watercolor illustration of a small orange fox with soft, detailed brushwork."
     var action: AgentImageGenerationAction = .generate
     var transparentBackground = false
+    var outputFormat: AgentImageOutputFormat = .png
+    var customAnimation = false
+    var frameCount = 9
+    var frameDurationMilliseconds = 200
+
+    var generationOptions: AgentImageGenerationOptions {
+        var options = AgentImageGenerationOptions(action: action, outputFormat: outputFormat,
+            transparentBackground: transparentBackground)
+        if outputFormat == .gif, customAnimation {
+            options.animation = .init(frameCount: frameCount, frameDurationMilliseconds: frameDurationMilliseconds)
+        }
+        return options
+    }
     var references: [AgentImageAttachment] = []
+    private(set) var showingAnimationSample = false
     private(set) var results: [AgentGeneratedImage] = []
     private(set) var status = Status.ready
     private(set) var error: String?
@@ -62,7 +76,7 @@ final class ImageGenerationDemoModel {
     func start() {
         guard canRun else { return }
         let request = Request(prompt: prompt, images: action == .generate ? [] : references,
-            options: .init(action: action, transparentBackground: transparentBackground),
+            options: generationOptions,
             onProgress: { [weak self] stage in
                 await MainActor.run {
                     guard let self, self.isActive, self.isBusy else { return }
@@ -77,6 +91,7 @@ final class ImageGenerationDemoModel {
         error = nil
         failure = nil
         results = []
+        showingAnimationSample = false
         task = Task {
             defer { isBusy = false }
             do {
@@ -105,6 +120,20 @@ final class ImageGenerationDemoModel {
         }
     }
 
+    func showAnimationSample() {
+        guard isActive, !isBusy else { return }
+        do {
+            let image = AgentImageAttachment(mimeType: .gif, data: try DemoImageAnimation.sampleGIF())
+            results = [.init(id: UUID().uuidString, image: image)]
+            showingAnimationSample = true
+            status = .completed
+            error = nil
+            failure = nil
+            progress = nil
+            generationStartedAt = nil
+        } catch { reportImportError(error) }
+    }
+
     func cancel() { task?.cancel() }
 
     func invalidate() {
@@ -112,6 +141,7 @@ final class ImageGenerationDemoModel {
         task?.cancel()
         references = []
         results = []
+        showingAnimationSample = false
         error = nil
         failure = nil
         status = .ready

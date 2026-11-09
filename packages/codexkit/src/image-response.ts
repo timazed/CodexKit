@@ -1,6 +1,7 @@
 import { CodexKitCloudError, fail, type ErrorDetails } from "./errors.js";
 import { base64Bytes } from "./image-request.js";
 import { isObject, parseJson, utf8 } from "./json.js";
+import { inspectGIF } from "./gif.js";
 import { inspectPNG } from "./png.js";
 import { providerFailure } from "./response.js";
 import { httpDiagnostics, readHTTPErrorBody } from "./http-diagnostics.js";
@@ -86,7 +87,7 @@ export async function imageHTTPFailure(response: Response, limits: ExecutionLimi
     });
 }
 
-export function decodeImageResponse(bytes: Buffer, limits: ImageExecutionLimits, jsonLimits: ExecutionLimits, secrets: readonly string[]):
+export function decodeImageResponse(bytes: Buffer, limits: ImageExecutionLimits, jsonLimits: ExecutionLimits, secrets: readonly string[], outputFormat: string = "png"):
   Pick<ImageExecutionResult, "created" | "images" | "background" | "quality"> {
   const value = parseJson(utf8(bytes, "invalid_response"), jsonLimits, "invalid_response");
   if (!isObject(value)) fail("invalid_response");
@@ -102,10 +103,12 @@ export function decodeImageResponse(bytes: Buffer, limits: ImageExecutionLimits,
     if (!isObject(item)) fail("invalid_response");
     const data = base64Bytes(item.b64_json, remainingBytes, "invalid_response");
     remainingBytes -= data.length;
-    const pixelSize = inspectPNG(data, { ...limits, maxPixels: remainingPixels });
-    remainingPixels -= pixelSize.width * pixelSize.height;
+    const inspected = outputFormat === "gif" ? inspectGIF(data, { ...limits, maxPixels: remainingPixels }) :
+      { ...inspectPNG(data, { ...limits, maxPixels: remainingPixels }), frames: 1 };
+    const pixelSize = Object.freeze({ width: inspected.width, height: inspected.height });
+    remainingPixels -= pixelSize.width * pixelSize.height * inspected.frames;
     const generationId = imageIdentifier(item.generation_id, secrets);
-    return Object.freeze({ base64: item.b64_json as string, mimeType: "image/png", pixelSize,
+    return Object.freeze({ base64: item.b64_json as string, mimeType: outputFormat === "gif" ? "image/gif" : "image/png", pixelSize,
       ...(generationId ? { generationId } : {}) });
   });
   const background = value.background;

@@ -1,6 +1,8 @@
 #if DEBUG
 import AppKit
 import CodexKit
+import CryptoKit
+import SwiftUI
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -21,13 +23,15 @@ enum MacDemoImageVerification {
         }
         let destination = URL(fileURLWithPath: args[index + 1])
         let directory = destination.deletingLastPathComponent()
-        let generate = args.contains("--image-demo-generate")
+        let sample = args.contains("--image-demo-sample")
+        let generate = args.contains("--image-demo-generate") || sample
+        let animated = args.contains("--image-demo-gif") || sample
         var report: [String: String] = [
             "runID": UUID().uuidString,
             "startedAt": ISO8601DateFormatter().string(from: Date()),
             "status": "preparing",
-            "imageModel": "gpt-image-2", "backend": "codex_images",
-            "action": generate ? "generate" : "edit", "quality": "auto", "size": "auto", "outputFormat": "png",
+            "imageModel": sample ? "none" : "gpt-image-2", "backend": sample ? "local_sample" : "codex_images",
+            "action": generate ? "generate" : "edit", "quality": "auto", "size": "auto", "outputFormat": animated ? "gif" : "png",
             "background": generate ? "opaque" : "transparent",
             "source": generate ? "prompt_only" : "synthetic_jpeg_portrait", "imageAttempts": "0",
         ]
@@ -42,18 +46,29 @@ enum MacDemoImageVerification {
             if !generate { try source.write(to: directory.appendingPathComponent("input.jpg"), options: .atomic) }
             try Task.checkCancellation()
             report["status"] = "running"
-            report["imageAttempts"] = "1"
+            report["imageAttempts"] = sample ? "0" : "1"
             report["inputByteCount"] = String(source.count)
             try save(report, to: destination)
             let demo = features.images
             demo.action = generate ? .generate : .edit
+            demo.outputFormat = animated ? .gif : .png
+            demo.customAnimation = animated
+            demo.frameCount = sample ? 8 : 2
+            demo.frameDurationMilliseconds = 200
             demo.transparentBackground = !generate
             demo.references = generate ? [] : [.jpeg(source)]
             demo.prompt = generate
                 ? "A small orange fox painted in watercolor on a pale blue opaque background. Return the image."
                 : "Edit this synthetic portrait into a polished watercolor portrait with a transparent background. Keep the head and shoulders centered. Return the edited image."
-            model.runImageGeneration()
-            await demo.waitUntilFinished()
+            if animated {
+                demo.prompt = generate
+                    ? "Create a simple seamless two-frame animated GIF: a small bright orange ball moves from the left to the right on a plain white background. Clearly different positions in each frame. No text."
+                    : "Create a two-frame animated GIF from this synthetic portrait: animate a gentle blink with visibly open eyes in one frame and closed eyes in the other. Keep the head centered. No text."
+                report["requestedFrameCount"] = String(demo.frameCount)
+                report["requestedFrameDurationMilliseconds"] = String(demo.frameDurationMilliseconds)
+            }
+            if sample { demo.showAnimationSample() }
+            else { model.runImageGeneration(); await demo.waitUntilFinished() }
             if demo.status == .cancelled { throw CancellationError() }
             if let failure = demo.failure { throw failure }
             guard demo.status == .completed else { throw CheckFailure(code: "image_demo_failed") }
@@ -65,7 +80,7 @@ enum MacDemoImageVerification {
             report["reportedMIMEType"] = generated.image.mimeType.rawValue
             let metadata = generated.image.generationMetadata
             report["reportedStatus"] = known(metadata?.status, in: ["generating", "completed"])
-            report["reportedFormat"] = known(metadata?.outputFormat, in: ["png", "jpeg", "webp"])
+            report["reportedFormat"] = known(metadata?.outputFormat, in: ["png", "jpeg", "webp", "gif"])
             report["reportedQuality"] = known(metadata?.quality, in: ["auto", "low", "medium", "high", "xhigh", "max"])
             report["reportedSize"] = safeSize(metadata?.size)
             report["reportedAction"] = known(metadata?.action, in: ["auto", "generate", "edit"])
@@ -86,9 +101,29 @@ enum MacDemoImageVerification {
             report["generationID"] = generated.diagnostics?.generationID
             let hasTransparency = try containsTransparentPixels(image)
             report["hasTransparentPixels"] = String(hasTransparency)
-            guard detectedType == .png, image.width > 0, image.height > 0,
-                  hasTransparency == !generate else {
+            guard detectedType == (animated ? .gif : .png), image.width > 0, image.height > 0,
+                  animated || hasTransparency == !generate else {
                 throw CheckFailure(code: "provider_output_options_mismatch")
+            }
+            if animated {
+                guard let animation = DemoImageAnimation(data: generated.image.data),
+                      animation.frames.count == demo.frameCount else { throw CheckFailure(code: "gif_frame_count_mismatch") }
+                report["decodedFrameCount"] = String(animation.frames.count)
+                report["decodedLoopDuration"] = String(animation.duration)
+                report["decodedFrameDurations"] = animation.delays.map { String($0) }.joined(separator: ",")
+                let signatures = try animation.frames.map { frame -> SHA256.Digest in
+                    guard let data = frame.dataProvider?.data else { throw CheckFailure(code: "gif_frame_unreadable") }
+                    return SHA256.hash(data: data as Data)
+                }
+                guard Set(signatures.map { Data($0) }).count > 1 else { throw CheckFailure(code: "gif_frames_identical") }
+                report["distinctFrames"] = "true"
+                report["gifExportType"] = generated.demoExportType.preferredMIMEType
+                for (index, frame) in animation.frames.enumerated() {
+                    try savePNG(frame, to: directory.appendingPathComponent("frame-\(index).png"))
+                }
+                report["previewFramesDiffer"] = String(try await capturePlayback(model: model, images: demo,
+                    delay: animation.delays[0], directory: directory))
+                guard report["previewFramesDiffer"] == "true" else { throw CheckFailure(code: "gif_preview_did_not_animate") }
             }
             report["status"] = "passed"
         } catch is CancellationError {
@@ -120,6 +155,43 @@ enum MacDemoImageVerification {
         do { try save(report, to: destination) }
         catch { NSLog("Could not save the image verification report.") }
 
+    }
+
+    private static func savePNG(_ image: CGImage, to destination: URL) throws {
+        guard let output = CGImageDestinationCreateWithURL(destination as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw CheckFailure(code: "preview_export_failed")
+        }
+        CGImageDestinationAddImage(output, image, nil)
+        guard CGImageDestinationFinalize(output) else { throw CheckFailure(code: "preview_export_failed") }
+    }
+
+    /// Render the actual demo component in an attached host so TimelineView runs.
+    private static func capturePlayback(model: MacDemoModel, images: ImageGenerationDemoModel,
+                                        delay: TimeInterval, directory: URL) async throws -> Bool {
+        let host = NSHostingView(rootView: MacDemoImageView(model: model, images: images)
+            .padding(24).frame(width: 900).background(Color(nsColor: .windowBackgroundColor)))
+        let window = NSWindow(contentRect: CGRect(x: 80, y: 80, width: 900, height: 1_200),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(300))
+        var snapshots: [Data] = []
+        for index in 0..<2 {
+            host.layoutSubtreeIfNeeded()
+            guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                throw CheckFailure(code: "demo_snapshot_failed")
+            }
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            guard let data = bitmap.representation(using: .png, properties: [:]) else {
+                throw CheckFailure(code: "demo_snapshot_failed")
+            }
+            try data.write(to: directory.appendingPathComponent("demo-playback-\(index).png"), options: .atomic)
+            snapshots.append(data)
+            if index == 0 { try await Task.sleep(for: .seconds(delay)) }
+        }
+        return snapshots[0] != snapshots[1]
     }
 
     private static func save(_ report: [String: String], to destination: URL) throws {

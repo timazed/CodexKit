@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- Add opt-in animated GIF generation/editing with bounded frame controls in Swift and Cloud, matching upstream HTTP fields. Preserve validated animation bytes and use a still PNG preview only in subsequent Swift model requests. Both demos include animation controls, playback, GIF saving, and a local sample; live generation remains subject to provider availability.
+
 ## [2.2.0] - 2026-11-01
 
 ### Added
