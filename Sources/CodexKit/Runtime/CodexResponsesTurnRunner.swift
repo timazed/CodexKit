@@ -259,7 +259,7 @@ struct CodexResponsesTurnRunner {
         // Build one request per pass. Retries replay the same request, while a new pass
         // is only started after tool output mutates the working history.
         let lease = try await authenticationContext?.resolve() ?? session
-        let request = try makeRequest(for: state, session: lease)
+        let request = try await makeRequest(for: state, session: lease)
         logger.debug(
             .network,
             "Starting backend turn pass.",
@@ -355,14 +355,16 @@ struct CodexResponsesTurnRunner {
 
     func makeRequest(
         for state: TurnRunState, session: ChatGPTSession? = nil
-    ) throws -> URLRequest {
+    ) async throws -> URLRequest {
+        let projected = try await CodexResponsesImageAvailability.prepare(state.workingHistory.map(\.jsonValue),
+            checker: configuration.imageAvailabilityChecker)
         var wire = try requestFactory.buildURLRequest(
             threadConfiguration: threadConfiguration,
             instructions: instructions,
             responseContract: responseContract,
             threadID: threadID,
-            items: try CodexResponsesImageReferences.restore(state.workingHistory.map(\.jsonValue),
-                using: state.availableAttachments, missingImagePolicy: configuration.missingImagePolicy)
+            items: try CodexResponsesImageReferences.restore(projected,
+                using: state.availableAttachments)
                 .map(WorkingHistoryItem.raw),
             tools: tools,
             session: session ?? self.session,
