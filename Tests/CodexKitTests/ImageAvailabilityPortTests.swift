@@ -189,6 +189,12 @@ final class ImageAvailabilityPortTests: XCTestCase {
         let expanded = CodexResponsesProviderState(items: [WorkingHistoryItem.visibleMessage(older).jsonValue, original, checkpoint]).agentProviderContext
         let rebased = CodexResponsesCheckpointContext.rebase(context: expanded, original: [older, recent], retained: [recent])
         XCTAssertEqual(CodexResponsesProviderState(context: rebased)?.items, [original, checkpoint])
+        let summary = AgentMessage(id: recent.id, threadID: "t", role: .system, text: "Bounded summary")
+        let summarized = CodexResponsesCheckpointContext.rebase(context: compacted.providerContext,
+            original: [recent], retained: [summary])
+        let compactedCheckpoint = try XCTUnwrap(CodexResponsesProviderState(context: compacted.providerContext)?.items.last)
+        XCTAssertEqual(CodexResponsesProviderState(context: summarized)?.items,
+            [WorkingHistoryItem.visibleMessage(summary).jsonValue, compactedCheckpoint])
     }
 
     private func image(_ id: String) -> JSONValue { .object(["type": .string("input_image"), "file_id": .string(id)]) }

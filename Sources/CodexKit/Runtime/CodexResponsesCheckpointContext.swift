@@ -29,9 +29,12 @@ package enum CodexResponsesCheckpointContext {
         // messages. Preserve the original retained item (and its annotations).
         let originalItems = context.payload.objectValue?["items"]?.arrayValue ?? []
         let byMessageID = Dictionary(zip(original.prefix(prefix.count), originalItems)
-            .map { ($0.0.id, $0.1) }, uniquingKeysWith: { first, _ in first })
+            .map { ($0.0.id, ($0.0, $0.1)) }, uniquingKeysWith: { first, _ in first })
         guard let items = try? CodexResponsesImageReferences.externalize(
-            replacement.map { byMessageID[$0.id] ?? WorkingHistoryItem.visibleMessage($0).jsonValue }
+            replacement.map { message in
+                if let (originalMessage, item) = byMessageID[message.id], originalMessage == message { return item }
+                return WorkingHistoryItem.visibleMessage(message).jsonValue
+            }
         ), var payload = context.payload.objectValue else { return nil }
         payload["items"] = .array(items + prefix.checkpointAndSuffix)
         // Item positions changed; the old usage boundary no longer describes this history.
