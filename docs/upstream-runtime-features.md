@@ -333,6 +333,8 @@ and are not charged a second time.
 
 The boundary is persisted with provider context and invalidated when checkpoint
 rebasing changes item positions. Older contexts estimate all provider items.
+Instruction growth beyond the size covered by a usage report is added to the
+estimate; shorter instructions do not reduce the reported context baseline.
 Opaque unreported content uses a conservative character estimate; this is not an
 exact tokenizer or a provider quota measurement. Failed response items that the
 SDK does not retain are not added to future context. Tool arguments and results

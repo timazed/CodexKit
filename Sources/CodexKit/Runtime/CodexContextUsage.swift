@@ -5,10 +5,12 @@ import Foundation
 struct CodexContextUsage: Sendable {
     let tokens: Int
     let coveredItemCount: Int
+    let instructionCharacters: Int
 
-    init(tokens: Int, coveredItemCount: Int) {
+    init(tokens: Int, coveredItemCount: Int, instructionCharacters: Int = 0) {
         self.tokens = tokens
         self.coveredItemCount = coveredItemCount
+        self.instructionCharacters = max(0, instructionCharacters)
     }
 
     init?(json: JSONValue?, itemCount: Int) {
@@ -18,11 +20,20 @@ struct CodexContextUsage: Sendable {
               tokens.isFinite, count.isFinite, tokens >= 0, count >= 0,
               tokens.rounded(.down) == tokens, count.rounded(.down) == count,
               tokens < Double(Int.max), count <= Double(itemCount) else { return nil }
-        self.init(tokens: Int(tokens), coveredItemCount: Int(count))
+        let savedInstructions: Double
+        if let value = object["instruction_characters"] {
+            guard case .number(let count) = value else { return nil }
+            savedInstructions = count
+        } else { savedInstructions = 0 }
+        guard savedInstructions.isFinite, savedInstructions >= 0,
+              savedInstructions.rounded(.down) == savedInstructions,
+              savedInstructions < Double(Int.max) else { return nil }
+        self.init(tokens: Int(tokens), coveredItemCount: Int(count), instructionCharacters: Int(savedInstructions))
     }
 
     var json: JSONValue {
-        .object(["tokens": .number(Double(tokens)), "covered_items": .number(Double(coveredItemCount))])
+        .object(["tokens": .number(Double(tokens)), "covered_items": .number(Double(coveredItemCount)),
+                 "instruction_characters": .number(Double(instructionCharacters))])
     }
 
     static func estimate(context: AgentProviderContext?, history: [AgentMessage],
@@ -32,8 +43,9 @@ struct CodexContextUsage: Sendable {
         let suffix = state.items.dropFirst(boundary?.coveredItemCount ?? 0)
         let characters = suffix.reduce(0) { AgentCounter.saturatingAdd($0, characterCount($1)) }
         var estimate = AgentCounter.saturatingAdd(boundary?.tokens ?? 0, characters / 4)
-        // Reported input already includes instructions; do not charge them twice.
-        if boundary == nil { estimate = AgentCounter.saturatingAdd(estimate, instructions.count / 4) }
+        // Charge growth beyond the instructions already included in reported usage.
+        let instructionGrowth = max(0, instructions.count - (boundary?.instructionCharacters ?? 0))
+        estimate = AgentCounter.saturatingAdd(estimate, instructionGrowth / 4)
         if let pending {
             let message = AgentMessage(threadID: "", role: .user, text: pending.text, images: pending.images)
             var count = message.estimatedContextCharacterCount

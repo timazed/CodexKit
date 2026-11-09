@@ -359,7 +359,8 @@ extension CodexResponsesTurnRunner {
 
         state.workingHistory.append(contentsOf: completedItems)
         if let usage = state.completedPassUsage, let tokens = usage.derivedTotalTokens {
-            state.contextUsage = .init(tokens: tokens, coveredItemCount: state.workingHistory.count)
+            state.contextUsage = .init(tokens: tokens, coveredItemCount: state.workingHistory.count,
+                instructionCharacters: instructions.count)
         }
         state.completedPassUsage = nil
         state.workingHistory.append(contentsOf: state.pendingToolOutputs)
