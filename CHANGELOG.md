@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Treat provider session budget exhaustion as terminal and expose policy-restricted capacity separately in Swift and sanitized Cloud diagnostics.
+
 ## [2.2.0] - 2026-11-01
 
 ### Added
