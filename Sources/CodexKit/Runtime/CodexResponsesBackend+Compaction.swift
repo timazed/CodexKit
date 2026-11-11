@@ -35,10 +35,6 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             checker: configuration.imageAvailabilityChecker)
         let factory = CodexResponsesRequestFactory(configuration: configuration, encoder: encoder,
             supportsImageDetailOriginal: supportsImageDetailOriginal(for: settings.model, session: session))
-        let request = try factory.buildURLRequest(threadConfiguration: settings,
-            instructions: instructions, responseContract: nil, threadID: thread.id,
-            items: (input + [.object(["type": ResponsesItemType.compactionTrigger.jsonValue])]).map(WorkingHistoryItem.raw),
-            tools: tools, session: session, isCompaction: true)
         logger.info(.compaction, "Starting streamed remote context compaction.",
             metadata: ["thread_id": thread.id, "history_count": "\(effectiveHistory.count)"])
         let transport = CodexResponsesCompactionTransport(configuration: configuration,
@@ -46,9 +42,14 @@ extension CodexResponsesBackend: AgentBackendContextCompacting {
             rateLimitObserver: { snapshots in
                 await self.rateLimitStore.update(snapshots, accountID: session.binding.cacheKey)
             })
-        let compaction = try await transport.compact(request: request)
+        let compacted = try await transport.compact(input: input) { input in
+            try factory.buildURLRequest(threadConfiguration: settings,
+                instructions: instructions, responseContract: nil, threadID: thread.id,
+                items: (input + [.object(["type": ResponsesItemType.compactionTrigger.jsonValue])]).map(WorkingHistoryItem.raw),
+                tools: tools, session: session, isCompaction: true)
+        }
         try Task.checkCancellation()
-        let result = try CodexResponsesCompactedHistory.build(input: input, compaction: compaction, threadID: thread.id)
+        let result = try CodexResponsesCompactedHistory.build(input: compacted.input, compaction: compacted.checkpoint, threadID: thread.id)
         logger.info(.compaction, "Remote context compaction completed.",
             metadata: ["thread_id": thread.id, "message_count_after": "\(result.effectiveMessages.count)"])
         return result

@@ -78,6 +78,56 @@ final class StreamedCompactionTests: XCTestCase {
         XCTAssertEqual(old.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"]?.stringValue?.count, 100_000)
     }
 
+    func testContextLimitRebuildsRequestWithLessHistory() async throws {
+        for status in [400, 200] {
+            let error = #"{"type":"response.failed","response":{"error":{"code":"context_length_exceeded"}}}"#
+            let body = status == 200 ? "data: " + error + "\n\n" : #"{"error":{"code":"context_length_exceeded"}}"#
+            await TestURLProtocol.enqueue(.init(statusCode: status, body: Data(body.utf8), inspect: { request in
+                let json = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
+                XCTAssertEqual(json.objectValue?["input"]?.arrayValue?.count, 3)
+            }))
+            await TestURLProtocol.enqueue(.init(body: streamedCompactionReply(), inspect: { request in
+                let json = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
+                let items = try XCTUnwrap(json.objectValue?["input"]?.arrayValue)
+                XCTAssertEqual(items.count, 2)
+                XCTAssertEqual(items.first?.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"], .string("Recent"))
+                XCTAssertEqual(items.last?.objectValue?["type"], .string("compaction_trigger"))
+                XCTAssertEqual(json.objectValue?["instructions"], .string("Keep instructions"))
+            }))
+            let backend = CodexResponsesBackend(configuration: .init(requestRetryPolicy: .init(maxAttempts: 2)),
+                urlSession: makeTestURLSession())
+            let history = ["Old", "Recent"].map { AgentMessage(threadID: "thread", role: .user, text: $0) }
+            let result = try await backend.compactContext(thread: .init(id: "thread"), effectiveHistory: history,
+                instructions: "Keep instructions", tools: [], session: demoSession())
+            XCTAssertEqual(result.effectiveMessages.map(\.text), ["Recent"])
+        }
+    }
+
+    func testContextLimitPreservesLastUserMessageAndDropsPairedToolOutput() async throws {
+        let user = WorkingHistoryItem.visibleMessage(.init(threadID: "thread", role: .user, text: "Recent")).jsonValue
+        let call: JSONValue = .object(["type": .string("function_call"), "call_id": .string("call")])
+        let output: JSONValue = .object(["type": .string("function_call_output"), "call_id": .string("call"), "output": .string("Large")])
+        let rejection = Data(#"{"error":{"code":"context_length_exceeded"}}"#.utf8)
+        await TestURLProtocol.enqueue(.init(statusCode: 400, body: rejection))
+        await TestURLProtocol.enqueue(.init(statusCode: 400, body: rejection, inspect: { request in
+            let json = try JSONDecoder().decode(JSONValue.self, from: XCTUnwrap(requestBodyData(for: request)))
+            XCTAssertEqual(json.objectValue?["input"]?.arrayValue?.first, user)
+            XCTAssertEqual(json.objectValue?["input"]?.arrayValue?.count, 2)
+        }))
+        await TestURLProtocol.enqueue(.init(body: streamedCompactionReply(), inspect: { _ in
+            XCTFail("Must preserve the only user message")
+        }))
+        let backend = CodexResponsesBackend(urlSession: makeTestURLSession())
+        do {
+            _ = try await backend.compactContext(thread: .init(id: "thread"), effectiveHistory: [],
+                providerContext: CodexResponsesProviderState(items: [call, output, user]).agentProviderContext,
+                instructions: "", tools: [], session: demoSession())
+            XCTFail("Expected the original context error")
+        } catch let error as AgentRuntimeError {
+            XCTAssertEqual(error.http?.providerCode, "context_length_exceeded")
+        }
+    }
+
     private func compact(policy: RequestRetryPolicy = .disabled) async throws -> AgentCompactionResult {
         try await CodexResponsesBackend(configuration: .init(requestRetryPolicy: policy), urlSession: makeTestURLSession())
             .compactContext(thread: .init(id: "thread"), effectiveHistory: [], instructions: "", tools: [], session: demoSession())

@@ -8,21 +8,30 @@ struct CodexResponsesCompactionTransport {
     let logger: AgentLogger
     var rateLimitObserver: @Sendable ([AgentRateLimitSnapshot]) async -> Void = { _ in }
 
-    func compact(request: URLRequest) async throws -> JSONValue {
-        if let body = request.httpBody, logger.isEnabled(.debug, for: .network) {
-            logger.debug(.network, "Streamed compaction request payload.",
-                metadata: ["payload": sanitizedResponsesJSONString(from: body)])
-        }
+    func compact(input: [JSONValue], buildRequest: ([JSONValue]) throws -> URLRequest)
+        async throws -> (checkpoint: JSONValue, input: [JSONValue]) {
+        var input = input
+        var request = try buildRequest(input)
         let client = CodexResponsesEventStreamClient(urlSession: urlSession, decoder: decoder, logger: logger)
         let budget = CodexResponseBudget(maximumBytes: configuration.maximumResponseBytes)
         let policy = configuration.requestRetryPolicy
-        // Like upstream, allow at most two stream retries for compaction.
         let attempts = min(3, policy.maxAttempts)
         for attempt in 1...attempts {
-            do { return try await collect(request: request, client: client, budget: budget) }
-            catch {
+            do {
+                let checkpoint = try await collect(request: request, client: client, budget: budget)
+                return (checkpoint, input)
+            } catch {
                 try Task.checkCancellation()
-                guard attempt < attempts, client.shouldRetry(error, policy: policy) else { throw error }
+                guard attempt < attempts else { throw error }
+                if let failure = (error as? AgentRuntimeError)?.http,
+                   failure.providerCode == "context_length_exceeded",
+                   failure.statusCode == 400 || failure.statusCode == 200 {
+                    guard let trimmed = trimOldestItem(from: input) else { throw error }
+                    input = trimmed
+                    request = try buildRequest(input)
+                    continue
+                }
+                guard client.shouldRetry(error, policy: policy) else { throw error }
                 let delay = max(policy.delayBeforeRetry(attempt: attempt),
                     (error as? AgentRuntimeError)?.http?.retryAfter ?? 0)
                 if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
@@ -31,8 +40,41 @@ struct CodexResponsesCompactionTransport {
         preconditionFailure("Compaction attempts must be positive")
     }
 
+    private func trimOldestItem(from input: [JSONValue]) -> [JSONValue]? {
+        guard input.count > 1, let oldest = input.first?.objectValue else { return nil }
+        let remaining = input.dropFirst()
+        if oldest["type"] == .string("message"), oldest["role"] == .string("user"),
+           !remaining.contains(where: {
+               $0.objectValue?["type"] == .string("message") && $0.objectValue?["role"] == .string("user")
+           }) { return nil }
+
+        let counterparts: [String]
+        switch oldest["type"]?.stringValue {
+        case "function_call", "local_shell_call": counterparts = ["function_call_output"]
+        case "function_call_output": counterparts = ["function_call", "local_shell_call"]
+        case "custom_tool_call": counterparts = ["custom_tool_call_output"]
+        case "custom_tool_call_output": counterparts = ["custom_tool_call"]
+        case "tool_search_call": counterparts = ["tool_search_output"]
+        case "tool_search_output": counterparts = ["tool_search_call"]
+        default: return Array(remaining)
+        }
+        var trimmed = Array(remaining)
+        if let callID = oldest["call_id"]?.stringValue,
+           let index = trimmed.firstIndex(where: {
+               guard let object = $0.objectValue, let type = object["type"]?.stringValue else { return false }
+               return counterparts.contains(type) && object["call_id"] == .string(callID)
+           }) {
+            trimmed.remove(at: index)
+        }
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func collect(request: URLRequest, client: CodexResponsesEventStreamClient,
         budget: CodexResponseBudget) async throws -> JSONValue {
+        if let body = request.httpBody, logger.isEnabled(.debug, for: .network) {
+            logger.debug(.network, "Streamed compaction request payload.",
+                metadata: ["payload": sanitizedResponsesJSONString(from: body)])
+        }
         let (bytes, response) = try await urlSession.bytes(for: request)
         defer { bytes.task.cancel() }
         guard let response = response as? HTTPURLResponse else {
