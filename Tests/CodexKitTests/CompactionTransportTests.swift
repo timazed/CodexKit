@@ -191,6 +191,24 @@ final class CompactionTransportTests: XCTestCase {
         }
     }
 
+    func testPolicyDenialStopsCompactionWithoutChangingStoredHistory() async throws {
+        let store = InMemoryRuntimeStateStore()
+        let runtime = try runtime(provider: CompactionSessionProvider(), strategy: .preferRemoteThenLocal, store: store)
+        let thread = try await runtime.createThread()
+        try await runtime.appendMessage(.init(threadID: thread.id, role: .user, text: "Retain me"))
+        let before = try await store.loadState()
+        await TestURLProtocol.enqueue(.init(statusCode: 400,
+            body: Data(#"{"error":{"code":"content_policy_violation","message":"Denied"}}"#.utf8)))
+        do {
+            _ = try await runtime.compactThreadContext(id: thread.id)
+            XCTFail("Expected policy denial instead of a local checkpoint")
+        } catch let error as AgentRuntimeError {
+            XCTAssertEqual(error.http?.providerCode, "content_policy_violation")
+        }
+        let after = try await store.loadState()
+        XCTAssertEqual(after, before)
+    }
+
     func testNonAuthenticationFailureStillPermitsConfiguredLocalFallback() async throws {
         let runtime = try runtime(provider: CompactionSessionProvider(), strategy: .preferRemoteThenLocal)
         let thread = try await runtime.createThread()

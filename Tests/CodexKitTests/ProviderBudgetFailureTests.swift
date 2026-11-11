@@ -60,6 +60,37 @@ final class ProviderBudgetFailureTests: XCTestCase {
         }
     }
 
+    func testExplicitDenialsOverrideConfiguredHTTPReplay() {
+        let client = CodexResponsesEventStreamClient(urlSession: makeTestURLSession(), decoder: JSONDecoder(), logger: AgentLogger())
+        let policy = RequestRetryPolicy(maxAttempts: 3, retryableHTTPStatusCodes: [200, 400, 403, 503])
+        let denials = [(400, "content_policy_violation"), (403, "inference_hook_denied"),
+                       (403, "invalid_workspace_selected"), (403, "codex_workspace_access_denied"),
+                       (403, "access_program_not_enabled"), (200, "invalid_access_program"),
+                       (200, "unsupported_access_program")]
+        for (status, code) in denials {
+            let error = AgentRuntimeError(code: .responsesStreamFailed, message: "Denied",
+                http: .init(statusCode: status, providerCode: code, retryAfter: 0))
+            XCTAssertFalse(client.shouldRetry(error, policy: policy), code)
+        }
+        let overload = AgentRuntimeError(code: .responsesStreamFailed, message: "Unavailable",
+            http: .init(statusCode: 503, providerCode: "invalid_workspace_selected", retryAfter: 0))
+        XCTAssertTrue(client.shouldRetry(overload, policy: policy))
+    }
+
+    func testStreamedAccessProgramDenialCannotBecomeCompletion() async throws {
+        await TestURLProtocol.enqueue(.init(body: Data("""
+        data: {"type":"response.failed","response":{"error":{"code":"unsupported_access_program","headers":{"Retry-After":"0"}}}}
+
+        data: {"type":"response.completed","response":{"id":"must-not-complete"}}
+
+        """.utf8)))
+        let error = try await failure()
+        XCTAssertEqual(error.http?.providerCode, "unsupported_access_program")
+        XCTAssertEqual(error.retry?.isRetryable, false)
+        XCTAssertEqual(error.interruption?.outcome, .providerFailed)
+        XCTAssertFalse(AgentRecoveryRetryPolicy(retryableProviderCodes: ["unsupported_access_program"]).canReplace(error))
+    }
+
     private func failure(attempts: Int = 3) async throws -> AgentRuntimeError {
         let backend = CodexResponsesBackend(configuration: .init(requestRetryPolicy:
             .init(maxAttempts: attempts, initialBackoff: 0, maxBackoff: 0, jitterFactor: 0)),

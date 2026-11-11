@@ -10,6 +10,21 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
     /// A terminal provider session budget; retry headers do not make it recoverable.
     public var isSessionBudgetExceeded: Bool { providerCode == "budget_reached" }
 
+    /// Explicit provider denials that replay or local fallback cannot resolve.
+    public var isTerminalProviderDenial: Bool {
+        switch (providerCode, statusCode) {
+        case ("content_policy_violation", 200), ("content_policy_violation", 400),
+             ("inference_hook_denied", 200), ("inference_hook_denied", 403),
+             ("invalid_workspace_selected", 403), ("codex_workspace_access_denied", 403),
+             ("access_program_not_enabled", 200), ("access_program_not_enabled", 403),
+             ("invalid_access_program", 200), ("invalid_access_program", 400),
+             ("unsupported_access_program", 200), ("unsupported_access_program", 400):
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Capacity withheld by provider policy, distinct from general server overload.
     public var isPolicyCapacityUnavailable: Bool { providerCode == "policy_capacity_unavailable" }
 
