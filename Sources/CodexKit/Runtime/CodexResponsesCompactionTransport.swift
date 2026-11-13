@@ -25,7 +25,8 @@ struct CodexResponsesCompactionTransport {
                 guard attempt < attempts else { throw error }
                 if let failure = (error as? AgentRuntimeError)?.http,
                    failure.providerCode == "context_length_exceeded",
-                   failure.statusCode == 400 || failure.statusCode == 200 {
+                   let status = HTTPStatusCode(rawValue: failure.statusCode),
+                   status == .badRequest || status == .ok {
                     guard let trimmed = trimOldestItem(from: input) else { throw error }
                     input = trimmed
                     request = try buildRequest(input)
