@@ -27,7 +27,11 @@ enum ResponsesItemType: String, Sendable {
     case message
     case functionCall = "function_call"
     case functionCallOutput = "function_call_output"
+    case localShellCall = "local_shell_call"
+    case customToolCall = "custom_tool_call"
     case customToolCallOutput = "custom_tool_call_output"
+    case toolSearchCall = "tool_search_call"
+    case toolSearchOutput = "tool_search_output"
     case imageGenerationCall = "image_generation_call"
     case webSearchCall = "web_search_call"
     case compaction
