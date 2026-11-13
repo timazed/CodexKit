@@ -43,25 +43,27 @@ struct CodexResponsesCompactionTransport {
     private func trimOldestItem(from input: [JSONValue]) -> [JSONValue]? {
         guard input.count > 1, let oldest = input.first?.objectValue else { return nil }
         let remaining = input.dropFirst()
-        if oldest["type"] == .string("message"), oldest["role"] == .string("user"),
+        let oldestType = ResponsesItemType(wireValue: oldest["type"])
+        if oldestType == .message, oldest["role"] == .string(AgentRole.user.rawValue),
            !remaining.contains(where: {
-               $0.objectValue?["type"] == .string("message") && $0.objectValue?["role"] == .string("user")
+               $0.objectValue?["type"] == ResponsesItemType.message.jsonValue
+                   && $0.objectValue?["role"] == .string(AgentRole.user.rawValue)
            }) { return nil }
 
-        let counterparts: [String]
-        switch oldest["type"]?.stringValue {
-        case "function_call", "local_shell_call": counterparts = ["function_call_output"]
-        case "function_call_output": counterparts = ["function_call", "local_shell_call"]
-        case "custom_tool_call": counterparts = ["custom_tool_call_output"]
-        case "custom_tool_call_output": counterparts = ["custom_tool_call"]
-        case "tool_search_call": counterparts = ["tool_search_output"]
-        case "tool_search_output": counterparts = ["tool_search_call"]
+        let counterparts: [ResponsesItemType]
+        switch oldestType {
+        case .functionCall, .localShellCall: counterparts = [.functionCallOutput]
+        case .functionCallOutput: counterparts = [.functionCall, .localShellCall]
+        case .customToolCall: counterparts = [.customToolCallOutput]
+        case .customToolCallOutput: counterparts = [.customToolCall]
+        case .toolSearchCall: counterparts = [.toolSearchOutput]
+        case .toolSearchOutput: counterparts = [.toolSearchCall]
         default: return Array(remaining)
         }
         var trimmed = Array(remaining)
         if let callID = oldest["call_id"]?.stringValue,
            let index = trimmed.firstIndex(where: {
-               guard let object = $0.objectValue, let type = object["type"]?.stringValue else { return false }
+               guard let object = $0.objectValue, let type = ResponsesItemType(wireValue: object["type"]) else { return false }
                return counterparts.contains(type) && object["call_id"] == .string(callID)
            }) {
             trimmed.remove(at: index)
