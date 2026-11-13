@@ -12,17 +12,35 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
 
     /// Explicit provider denials that replay or local fallback cannot resolve.
     public var isTerminalProviderDenial: Bool {
-        switch (providerCode, statusCode) {
-        case ("content_policy_violation", 200), ("content_policy_violation", 400),
-             ("inference_hook_denied", 200), ("inference_hook_denied", 403),
-             ("invalid_workspace_selected", 403), ("codex_workspace_access_denied", 403),
-             ("access_program_not_enabled", 200), ("access_program_not_enabled", 403),
-             ("invalid_access_program", 200), ("invalid_access_program", 400),
-             ("unsupported_access_program", 200), ("unsupported_access_program", 400):
-            return true
-        default:
-            return false
+        guard let providerCode,
+              let denial = ProviderDenialCode(rawValue: providerCode),
+              let status = DenialHTTPStatus(rawValue: statusCode) else { return false }
+
+        switch denial {
+        case .contentPolicyViolation, .invalidAccessProgram, .unsupportedAccessProgram:
+            return status == .ok || status == .badRequest
+        case .inferenceHookDenied, .accessProgramNotEnabled:
+            return status == .ok || status == .forbidden
+        case .invalidWorkspaceSelected, .workspaceAccessDenied:
+            return status == .forbidden
         }
+    }
+
+    private enum ProviderDenialCode: String {
+        case contentPolicyViolation = "content_policy_violation"
+        case inferenceHookDenied = "inference_hook_denied"
+        case invalidWorkspaceSelected = "invalid_workspace_selected"
+        case workspaceAccessDenied = "codex_workspace_access_denied"
+        case accessProgramNotEnabled = "access_program_not_enabled"
+        case invalidAccessProgram = "invalid_access_program"
+        case unsupportedAccessProgram = "unsupported_access_program"
+    }
+
+    private enum DenialHTTPStatus: Int {
+        // Provider failures in an established SSE stream carry HTTP 200.
+        case ok = 200
+        case badRequest = 400
+        case forbidden = 403
     }
 
     /// Capacity withheld by provider policy, distinct from general server overload.
