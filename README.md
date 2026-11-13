@@ -1,7 +1,7 @@
 # CodexKit
 
 [![CI](https://github.com/timazed/CodexKit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/timazed/CodexKit/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-2.2.0-blue)](https://github.com/timazed/CodexKit/releases/tag/v2.2.0)
+[![Version](https://img.shields.io/badge/release-2.3.0-blue)](https://github.com/timazed/CodexKit/releases/tag/v2.3.0)
 
 **Build AI-powered iOS and macOS apps with ChatGPT sign-in.**
 
@@ -33,7 +33,7 @@ CodexKit is an independent project, not an official OpenAI SDK. Account eligibil
 
 ## Installation
 
-In Xcode, choose **File → Add Package Dependencies**, enter the URL below, and select version **2.2.0**:
+In Xcode, choose **File → Add Package Dependencies**, enter the URL below, and select version **2.3.0**:
 
 ```text
 https://github.com/timazed/CodexKit
@@ -117,7 +117,7 @@ Use the [documentation index](docs/index.md) for the complete guide list. Common
 
 ## Project
 
-Latest Swift release: [v2.2.0](https://github.com/timazed/CodexKit/releases/tag/v2.2.0). See the [changelog](CHANGELOG.md) and [migration guide](docs/migration.md) for changes and upgrades.
+Latest Swift release: [v2.3.0](https://github.com/timazed/CodexKit/releases/tag/v2.3.0). See the [changelog](CHANGELOG.md) and [migration guide](docs/migration.md) for changes and upgrades.
 
 To build and test a checkout on macOS with Xcode installed:
 
