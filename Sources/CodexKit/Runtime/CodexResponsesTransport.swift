@@ -247,7 +247,7 @@ struct CodexResponsesEventStreamClient: Sendable {
                                let event = try parseStreamEvent(from: payload) {
                                 try await continuation.yield(recourse.consume(event))
                                 if case let .failed(error, _) = event.kind,
-                                   error.http?.isSessionBudgetExceeded == true {
+                                   (error.http?.isSessionBudgetExceeded == true || error.http?.isTerminalProviderDenial == true) {
                                     continuation.finish()
                                     return
                                 }
@@ -308,7 +308,7 @@ struct CodexResponsesEventStreamClient: Sendable {
         policy: RequestRetryPolicy
     ) -> Bool {
         if let runtimeError = error as? AgentRuntimeError {
-            if runtimeError.http?.isSessionBudgetExceeded == true { return false }
+            if runtimeError.http?.isSessionBudgetExceeded == true || runtimeError.http?.isTerminalProviderDenial == true { return false }
             if let failure = runtimeError.http, failure.isPolicyCapacityUnavailable {
                 return failure.retryAfter != nil && (failure.statusCode == 200 ||
                     policy.retryableHTTPStatusCodes.contains(failure.statusCode))

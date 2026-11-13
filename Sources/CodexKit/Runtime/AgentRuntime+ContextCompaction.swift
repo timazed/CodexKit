@@ -398,7 +398,8 @@ extension AgentRuntime {
                 return (recovered.result, true)
             } catch {
                 try preserveCompactionCancellation(error)
-                if strategy == .remoteOnly || encounteredUnauthorized { throw error }
+                if strategy == .remoteOnly || encounteredUnauthorized ||
+                    (error as? AgentRuntimeError)?.http?.isTerminalProviderDenial == true { throw error }
             }
         }
         return (localCompactionResult(for: thread.id, from: effectiveHistory), false)

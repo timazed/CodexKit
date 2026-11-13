@@ -10,6 +10,33 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
     /// A terminal provider session budget; retry headers do not make it recoverable.
     public var isSessionBudgetExceeded: Bool { providerCode == "budget_reached" }
 
+    /// Explicit provider denials that replay or local fallback cannot resolve.
+    public var isTerminalProviderDenial: Bool {
+        guard let providerCode,
+              let denial = ProviderDenialCode(rawValue: providerCode),
+              let status = HTTPStatusCode(rawValue: statusCode) else { return false }
+
+        // Provider failures in an established SSE stream carry HTTP 200.
+        switch denial {
+        case .contentPolicyViolation, .invalidAccessProgram, .unsupportedAccessProgram:
+            return status == .ok || status == .badRequest
+        case .inferenceHookDenied, .accessProgramNotEnabled:
+            return status == .ok || status == .forbidden
+        case .invalidWorkspaceSelected, .workspaceAccessDenied:
+            return status == .forbidden
+        }
+    }
+
+    private enum ProviderDenialCode: String {
+        case contentPolicyViolation = "content_policy_violation"
+        case inferenceHookDenied = "inference_hook_denied"
+        case invalidWorkspaceSelected = "invalid_workspace_selected"
+        case workspaceAccessDenied = "codex_workspace_access_denied"
+        case accessProgramNotEnabled = "access_program_not_enabled"
+        case invalidAccessProgram = "invalid_access_program"
+        case unsupportedAccessProgram = "unsupported_access_program"
+    }
+
     /// Capacity withheld by provider policy, distinct from general server overload.
     public var isPolicyCapacityUnavailable: Bool { providerCode == "policy_capacity_unavailable" }
 
