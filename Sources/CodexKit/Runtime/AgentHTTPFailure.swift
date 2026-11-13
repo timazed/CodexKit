@@ -14,8 +14,9 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
     public var isTerminalProviderDenial: Bool {
         guard let providerCode,
               let denial = ProviderDenialCode(rawValue: providerCode),
-              let status = DenialHTTPStatus(rawValue: statusCode) else { return false }
+              let status = HTTPStatusCode(rawValue: statusCode) else { return false }
 
+        // Provider failures in an established SSE stream carry HTTP 200.
         switch denial {
         case .contentPolicyViolation, .invalidAccessProgram, .unsupportedAccessProgram:
             return status == .ok || status == .badRequest
@@ -34,13 +35,6 @@ public struct AgentHTTPFailure: Codable, Hashable, Sendable {
         case accessProgramNotEnabled = "access_program_not_enabled"
         case invalidAccessProgram = "invalid_access_program"
         case unsupportedAccessProgram = "unsupported_access_program"
-    }
-
-    private enum DenialHTTPStatus: Int {
-        // Provider failures in an established SSE stream carry HTTP 200.
-        case ok = 200
-        case badRequest = 400
-        case forbidden = 403
     }
 
     /// Capacity withheld by provider policy, distinct from general server overload.
