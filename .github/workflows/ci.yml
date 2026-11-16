@@ -213,11 +213,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-cache
         with:
-          kind: demo-iOS17-universal
-          paths: |
-            .build/minimum-simulator/Build
-            .build/minimum-simulator/SourcePackages
-            .build/minimum-simulator/ModuleCache.noindex
+          # Xcode build intermediates can reference SDK modules whose timestamps
+          # differ across runners even when the Xcode version matches.
+          kind: demo-iOS17-package-sources
+          paths: .build/minimum-simulator/SourcePackages
       - name: Build portable signed simulator app
         run: |
           set -euo pipefail
