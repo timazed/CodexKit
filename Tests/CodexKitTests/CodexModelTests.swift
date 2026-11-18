@@ -6,6 +6,8 @@ final class CodexModelTests: XCTestCase {
         XCTAssertEqual(
             CodexModel.knownModels,
             [
+                .gpt62Sol,
+                .gpt62Astra,
                 .gpt6Astra,
                 .gpt61Sol,
                 .gpt61Terra,
@@ -30,6 +32,8 @@ final class CodexModelTests: XCTestCase {
         XCTAssertEqual(
             CodexModel.userFacingModels,
             [
+                .gpt62Sol,
+                .gpt62Astra,
                 .gpt6Astra,
                 .gpt61Sol,
                 .gpt61Terra,
@@ -48,6 +52,9 @@ final class CodexModelTests: XCTestCase {
     }
 
     func testCurrentModelMetadataMatchesCodexCatalog() throws {
+        XCTAssertEqual(CodexModel.gpt62Sol.info?.contextWindowTokenCount, 500_000)
+        XCTAssertEqual(CodexModel.gpt62Astra.info?.contextWindowTokenCount, 272_000)
+        XCTAssertEqual(CodexModel.gpt61Sol.info?.contextWindowTokenCount, 500_000)
         let currentTerra = try XCTUnwrap(CodexModel.gpt61Terra.info)
         XCTAssertEqual(currentTerra.contextWindowTokenCount, 500_000)
         XCTAssertEqual(currentTerra.defaultReasoningEffort, .low)

@@ -118,6 +118,8 @@ public struct CodexModelInfo: Codable, Hashable, Sendable, Identifiable {
 }
 
 public extension CodexModel {
+    static let gpt62Sol = CodexModel(rawValue: "gpt-6.2-sol")
+    static let gpt62Astra = CodexModel(rawValue: "gpt-6.2-astra")
     static let gpt6Astra = CodexModel(rawValue: "gpt-6-astra")
     static let gpt61Terra = CodexModel(rawValue: "gpt-6.1-terra")
     static let gpt61Sol = CodexModel(rawValue: "gpt-6.1-sol")
@@ -132,6 +134,26 @@ public extension CodexModel {
 
     /// Models described by this CodexKit release, including internal entries.
     static let catalog: [CodexModelInfo] = [
+        CodexModelInfo(
+            model: .gpt62Sol,
+            displayName: "GPT-6.2-Sol",
+            summary: "Fast, go-to model for coding and everyday work.",
+            defaultReasoningEffort: .low,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
+            contextWindowTokenCount: 500_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
+        CodexModelInfo(
+            model: .gpt62Astra,
+            displayName: "GPT-6.2-Astra",
+            summary: "Our most capable model for complex coding and professional work.",
+            defaultReasoningEffort: .low,
+            supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
+            contextWindowTokenCount: 272_000,
+            inputModalities: [.text, .image],
+            supportsImageDetailOriginal: true
+        ),
         CodexModelInfo(
             model: .gpt6Astra,
             displayName: "GPT-6-Astra",
@@ -148,7 +170,7 @@ public extension CodexModel {
             summary: "Latest workhorse model for coding and everyday work.",
             defaultReasoningEffort: .low,
             supportedReasoningEfforts: [.low, .medium, .high, .extraHigh, .max, .ultra],
-            contextWindowTokenCount: 272_000,
+            contextWindowTokenCount: 500_000,
             inputModalities: [.text, .image],
             supportsImageDetailOriginal: true
         ),
@@ -253,6 +275,8 @@ public extension CodexModel {
     /// Hidden identifiers remain available in `catalog`; obsolete models are omitted.
     static var userFacingModels: [CodexModel] {
         [
+            .gpt62Sol,
+            .gpt62Astra,
             .gpt6Astra,
             .gpt61Sol,
             .gpt61Terra,

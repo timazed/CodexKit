@@ -122,7 +122,7 @@ final class CodexUpstreamSupportTests: XCTestCase {
         let catalog = #"{"models":[{"slug":"future","display_name":"Future","description":"New","default_reasoning_level":"high","supported_reasoning_levels":[{"effort":"high"},{"effort":"future_effort"}],"input_modalities":["text"],"context_window":500000,"visibility":"list","supports_parallel_tool_calls":true}]}"#
         await TestURLProtocol.enqueue(.init(headers: ["ETag": "v1"], body: Data(catalog.utf8), inspect: { request in
             XCTAssertEqual(request.url?.path, "/backend-api/codex/models")
-            XCTAssertEqual(request.url?.query, "client_version=0.160.0")
+            XCTAssertEqual(request.url?.query, "client_version=0.166.0")
         }))
         let remote = try await backend.listModels(session: session())
         XCTAssertEqual(remote.visibleModels.first?.model.rawValue, "future")
@@ -143,13 +143,13 @@ final class CodexUpstreamSupportTests: XCTestCase {
 
     func testDiscoveryInitializerDefaultsAndOverridesSelectFromVersionedCatalogs() async throws {
         // Synthetic catalogs model the reported same-account comparison: seven models
-        // without GPT-6.1 Sol at 0.153.0, ten with text-capable Sol at 0.160.0.
+        // without GPT-6.1 Sol at 0.153.0, ten with text-capable Sol at 0.166.0.
         // Other entries are placeholders, not a capture of any client's exact catalog.
         let legacyModels = ["gpt-6-astra"] + (1...6).map { "fixture-legacy-\($0)" }
         let currentModels = legacyModels + ["gpt-6.1-sol", "fixture-new-1", "fixture-new-2"]
         let cases: [(CodexResponsesBackendConfiguration, String)] = [
-            (.init(), "0.160.0"),
-            (.init(model: .gpt56Sol), "0.160.0"),
+            (.init(), "0.166.0"),
+            (.init(model: .gpt56Sol), "0.166.0"),
             (.init(modelClientVersion: "0.153.0"), "0.153.0"),
             (.init(model: .gpt56Sol, modelClientVersion: "0.153.0"), "0.153.0")
         ]
@@ -160,7 +160,7 @@ final class CodexUpstreamSupportTests: XCTestCase {
         for (configuration, version) in cases {
             XCTAssertEqual(configuration.modelClientVersion, version)
             XCTAssertEqual(configuration.model, "gpt-5.6-sol")
-            let current = version == "0.160.0"
+            let current = version == "0.166.0"
             let models = current ? currentModels : legacyModels
             let data = try JSONSerialization.data(withJSONObject: ["models": models.map {
                 ["slug": $0, "visibility": "list", "input_modalities": ["text"],
