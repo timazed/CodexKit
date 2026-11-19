@@ -4,6 +4,14 @@
 
 Use these notes when upgrading from 1.x or earlier 2.0 alpha snapshots. Release history remains in the changelog.
 
+## Stable 2.4.0
+
+Select Swift package version `2.4.0`. GPT-6.2 Sol and Astra are available through `.gpt62Sol` and `.gpt62Astra`, with account-dependent model discovery. Existing model selections and the default remain supported.
+
+Bundled context windows follow upstream defaults: 500,000 tokens for GPT-6.2 Sol, 272,000 for GPT-6.2 Astra, and 500,000 for GPT-6.1 Sol. These are default windows, not the models' maximum configurable windows.
+
+Swift 6.1+, iOS 17+, and macOS 14+ remain supported. No storage migration is required. The Cloud package remains at `0.2.6`.
+
 ## Stable 2.3.0
 
 Select Swift package version `2.3.0`. This release combines terminal provider-budget handling, policy-capacity diagnostics/retry advice, retained-context token accounting, and authoritative image-file availability checks.
