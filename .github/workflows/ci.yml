@@ -278,7 +278,9 @@ jobs:
   verified:
     name: Verification gate v1
     needs: [plan, sdk, optimized, demos, build-minimum-simulator, minimum-simulator]
-    if: always() && needs.plan.result != 'skipped'
+    # A cancelled workflow has no verification result; do not turn cancellation
+    # into an additional failing gate. Actual failed checks still reach the gate.
+    if: always() && !cancelled() && needs.plan.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
