@@ -6,6 +6,27 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-20
+
+### Added
+
+- Add typed GPT-6.2 Sol and Astra model identifiers and bundled catalog entries. Both are available in the demo model pickers when supported by the account.
+
+### Changed
+
+- Update model discovery to client version 0.166.0 so the hosted catalog can advertise GPT-6.2 models.
+- Use upstream default context windows of 500,000 tokens for GPT-6.2 Sol, 272,000 for GPT-6.2 Astra, and 500,000 for GPT-6.1 Sol.
+
+### Fixed
+
+- Cache only package sources for the iOS 17 verifier, preventing stale compiled modules from surviving runner SDK changes.
+
+### Upgrading
+
+- Select Swift package version `2.4.0`. Swift 6.1+, iOS 17+, and macOS 14+ remain supported.
+- Select `.gpt62Sol` or `.gpt62Astra` to use the new models. Model availability remains account-dependent; the existing default and GPT-5.6 choices remain supported.
+- No storage migration is required. The independently published Cloud package remains at `0.2.6`.
+
 ## [2.3.0] - 2026-11-09
 
 ### Added
@@ -799,7 +820,8 @@ This prerelease adds account names, host-managed sessions, and execution handles
 - Refactored demo app into smaller Swift files for clearer ownership and readability.
 - Updated README docs with production setup guidance and end-to-end examples.
 
-[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/timazed/CodexKit/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/timazed/CodexKit/compare/v2.3.0...v2.4.0
 [2.0.0]: https://github.com/timazed/CodexKit/compare/v1.1.0...v2.0.0
 [2.0.0-alpha.42]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.41...v2.0.0-alpha.42
 [2.0.0-alpha.37]: https://github.com/timazed/CodexKit/compare/v2.0.0-alpha.36...v2.0.0-alpha.37
