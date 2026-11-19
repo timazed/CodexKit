@@ -102,6 +102,23 @@ class ExactCommitEvidenceTests(unittest.TestCase):
         self.assertTrue(pending)
         self.assertEqual(proof["id"], 1)
 
+    def test_newer_pending_run_waits_instead_of_rejecting_old_failure_or_using_old_pass(self):
+        for failure in ("failure", "cancelled", "timed_out"):
+            with self.subTest(failure=failure):
+                candidates = [run(), {**run(2), "conclusion": failure},
+                              {**run(3), "status": "in_progress", "conclusion": None}]
+                self.assertEqual(evidence.find_evidence(FixtureAPI(candidates), SHA), (None, True))
+                candidates[-1] = run(3)
+                self.assertEqual(evidence.find_evidence(FixtureAPI(candidates, {3: jobs()}), SHA)[0]["id"], 3)
+                candidates[-1] = {**run(3), "conclusion": "failure"}
+                with self.assertRaises(evidence.EvidenceError):
+                    evidence.find_evidence(FixtureAPI(candidates), SHA)
+
+    def test_older_pending_run_cannot_override_newer_failure(self):
+        candidates = [{**run(), "status": "in_progress"}, {**run(2), "conclusion": "failure"}]
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.find_evidence(FixtureAPI(candidates), SHA)
+
     def test_current_run_does_not_certify_itself(self):
         self.assertEqual(evidence.find_evidence(FixtureAPI(), SHA, exclude_run_id="1"), (None, False))
 
@@ -127,11 +144,22 @@ class ExactCommitEvidenceTests(unittest.TestCase):
 
     def test_release_dispatch_requires_comprehensive_verification(self):
         api = evidence.GitHub(REPOSITORY, token="fixture")
-        with patch.object(evidence.urllib.request, "urlopen") as request:
-            request.return_value.__enter__.return_value.status = 204
-            api.dispatch_ci("v2.0.0")
-        body = json.loads(request.call_args.args[0].data)
-        self.assertEqual(body, {"ref": "v2.0.0", "inputs": {"extended": True}})
+        for main_sha, expected_ref in ((SHA, "main"), ("b" * 40, "v2.0.0")):
+            with self.subTest(main_sha=main_sha), \
+                 patch.object(api, "get", return_value={"object": {"sha": main_sha}}) as get, \
+                 patch.object(evidence.urllib.request, "urlopen") as request:
+                request.return_value.__enter__.return_value.status = 204
+                api.dispatch_ci("v2.0.0", SHA)
+            get.assert_called_once_with("/git/ref/heads/main")
+            body = json.loads(request.call_args.args[0].data)
+            self.assertEqual(body, {"ref": expected_ref, "inputs": {"extended": True}})
+
+    def test_dispatch_ref_lookup_failure_does_not_dispatch_unverified_ref(self):
+        api = evidence.GitHub(REPOSITORY, token="fixture")
+        with patch.object(api, "get", side_effect=OSError("offline")), \
+             patch.object(evidence.urllib.request, "urlopen") as dispatch, self.assertRaises(OSError):
+            api.dispatch_ci("v2.0.0", SHA)
+        dispatch.assert_not_called()
 
     def test_api_failure_fails_release_closed(self):
         with patch.object(FixtureAPI, "get", side_effect=OSError("offline")), self.assertRaises(OSError):

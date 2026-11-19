@@ -100,6 +100,25 @@ def stop_for_cold_relaunch(simulator, bundle_id, *, log):
         boot_simulator(simulator, log=log)
 
 
+def install_app(simulator, app, *, log):
+    """Recover one timed-out install before verification starts; never replay tests."""
+    command = ["xcrun", "simctl", "install", simulator, str(app)]
+    for attempt in (1, 2):
+        print(f"Install attempt {attempt} on {simulator}", file=log, flush=True)
+        try:
+            run(command, log=log, timeout=180)
+            return
+        except subprocess.TimeoutExpired as error:
+            print(str(error), file=log, flush=True)
+            if attempt == 2:
+                raise
+            print("Simulator installation stalled; restarting this run's device once before verification.", flush=True)
+            # A confirmed shutdown stops the uncertain install before retrying.
+            # Reinstall only on this run's device, before any verifier is launched.
+            run(["xcrun", "simctl", "shutdown", simulator], log=log, timeout=60)
+            boot_simulator(simulator, log=log)
+
+
 def validate_report(report, run_id, mode=VerificationMode.SMOKE):
     if report.get("runID") != run_id or not report.get("finishedAt") or report.get("mode") != mode:
         raise RuntimeError("Simulator verification returned a stale or incomplete report.")
@@ -163,7 +182,7 @@ def main():
     timings = Timings(output / "timings.json")
     for name in ("CodexKitVerification.json", "run.json", "failure.txt", "build.log", "boot.log", "container.log",
                  "app-stdout.log", "app-stderr.log", "relaunch.log", "reopen-stdout.log", "reopen-stderr.log",
-                 "CodexKitRecoveryReopen.json"):
+                 "CodexKitRecoveryReopen.json", "install.log"):
         (output / name).unlink(missing_ok=True)
     derived = options.derived_data.resolve()
     run_id = str(uuid.uuid4())
@@ -208,7 +227,8 @@ def main():
         print("Booting the temporary simulator.", flush=True)
         with (output / "boot.log").open("w") as log:
             boot_simulator(simulator, log=log)
-        run(["xcrun", "simctl", "install", simulator, str(app)], timeout=180)
+        with timings.measure("installation"), (output / "install.log").open("w") as log:
+            install_app(simulator, app, log=log)
         print("Locating the installed app's data container before launch.", flush=True)
         with (output / "container.log").open("w") as log:
             container = resolve_app_container(simulator, bundle_id, log=log)

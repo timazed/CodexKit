@@ -61,7 +61,7 @@ def main():
     changelog = subprocess.check_output(["git", "show", f"{sha}:CHANGELOG.md"], text=True)
     notes = release_notes(args.tag, changelog)
     api = GitHub(os.environ["GITHUB_REPOSITORY"])
-    proof = require_evidence(api, sha, args.wait_seconds, lambda: api.dispatch_ci(args.tag))
+    proof = require_evidence(api, sha, args.wait_seconds, lambda: api.dispatch_ci(args.tag, sha))
     # Pin the object identity again before handing publication to the next job.
     if release_commit(args.tag) != sha:
         raise EvidenceError("Release tag changed during verification")

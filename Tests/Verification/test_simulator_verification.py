@@ -17,6 +17,47 @@ spec.loader.exec_module(verifier)
 
 
 class SimulatorVerificationTests(unittest.TestCase):
+    def test_install_timeout_recovers_owned_device_once_before_retry(self):
+        commands = []
+        def simulated_run(command, **kwargs):
+            commands.append(command)
+            if len(commands) == 1:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        log = io.StringIO()
+        with patch.object(verifier, "run", side_effect=simulated_run):
+            verifier.install_app("owned-simulator", Path("/Signed.app"), log=log)
+        self.assertEqual([command[2] for command in commands], ["install", "shutdown", "bootstatus", "install"])
+        self.assertTrue(all(command[3] == "owned-simulator" for command in commands))
+        self.assertIn("timed out", log.getvalue())
+        self.assertIn("Install attempt 2", log.getvalue())
+
+    def test_repeated_install_timeout_fails_after_two_attempts(self):
+        def simulated_run(command, **kwargs):
+            if command[2] == "install":
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        with patch.object(verifier, "run", side_effect=simulated_run) as run, \
+             self.assertRaises(subprocess.TimeoutExpired):
+            verifier.install_app("owned-simulator", Path("/Signed.app"), log=io.StringIO())
+        self.assertEqual([call.args[0][2] for call in run.call_args_list],
+                         ["install", "shutdown", "bootstatus", "install"])
+
+    def test_install_recovery_requires_confirmed_shutdown_and_boot(self):
+        for action in ("shutdown", "bootstatus"):
+            def simulated_run(command, **kwargs):
+                if command[2] in ("install", action):
+                    raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            with self.subTest(action=action), patch.object(verifier, "run", side_effect=simulated_run) as run, \
+                 self.assertRaises(subprocess.TimeoutExpired):
+                verifier.install_app("owned-simulator", Path("/Signed.app"), log=io.StringIO())
+            self.assertEqual(sum(call.args[0][2] == "install" for call in run.call_args_list), 1)
+
+    def test_install_command_errors_are_not_retried(self):
+        for error in (RuntimeError("invalid bundle"), OSError("missing simctl")):
+            with self.subTest(error=error), patch.object(verifier, "run", side_effect=error) as run, \
+                 self.assertRaises(type(error)):
+                verifier.install_app("owned-simulator", Path("/Signed.app"), log=io.StringIO())
+            self.assertEqual(run.call_count, 1)
+
     def test_cold_relaunch_timeout_restarts_owned_device_without_replaying_tests(self):
         commands = []
         def simulated_run(command, **kwargs):
@@ -192,7 +233,10 @@ class SimulatorVerificationTests(unittest.TestCase):
             with self.subTest(termination_timeout=termination_timeout, produce_report=produce_report):
                 self.check_prebuilt_relaunch(termination_timeout, produce_report)
 
-    def check_prebuilt_relaunch(self, termination_timeout, produce_report):
+    def test_prebuilt_install_recovery_still_runs_checks_once_and_requires_fresh_reports(self):
+        self.check_prebuilt_relaunch(False, True, install_timeout=True)
+
+    def check_prebuilt_relaunch(self, termination_timeout, produce_report, install_timeout=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             app = root / "Signed.app"
@@ -206,9 +250,14 @@ class SimulatorVerificationTests(unittest.TestCase):
             reopen_path.write_text("stale report must be removed")
             clock = [0]
             lookups = []
+            install_attempts = []
 
             def simulated_run(command, **_kwargs):
                 self.assertEqual(command[:2], ["xcrun", "simctl"])
+                if command[2] == "install":
+                    install_attempts.append(command)
+                    if install_timeout and len(install_attempts) == 1:
+                        raise subprocess.TimeoutExpired(command, 180)
                 if command[2] == "launch" and "--verify-recovery-reopen" in command:
                     self.assertFalse(reopen_path.exists())
                     if produce_report:
@@ -242,13 +291,16 @@ class SimulatorVerificationTests(unittest.TestCase):
                 self.assertFalse(reopen_path.exists())
             self.assertEqual(json.loads((output / "CodexKitVerification.json").read_text()), report)
             installs = [call.args[0] for call in run.call_args_list if call.args[0][2] == "install"]
-            self.assertEqual(installs, [["xcrun", "simctl", "install", "owned-simulator", str(app.resolve())]])
+            self.assertEqual(installs, [["xcrun", "simctl", "install", "owned-simulator", str(app.resolve())]]
+                             * (2 if install_timeout else 1))
             commands = [call.args[0][2] for call in run.call_args_list]
             self.assertEqual(commands.count("get_app_container"), 2)
             self.assertEqual(commands.count("launch"), 2)
             self.assertEqual(commands.count("terminate"), 1)
-            self.assertEqual(commands.count("bootstatus"), 2 if termination_timeout else 1)
-            self.assertEqual(commands.count("shutdown"), 1 if termination_timeout else 0)
+            self.assertEqual(commands.count("bootstatus"), 1 + int(termination_timeout) + int(install_timeout))
+            self.assertEqual(commands.count("shutdown"), int(termination_timeout) + int(install_timeout))
+            self.assertLess(max(i for i, command in enumerate(commands) if command == "install"),
+                            commands.index("launch"))
             self.assertLess(max(i for i, command in enumerate(commands) if command == "get_app_container"),
                             commands.index("launch"))
             self.assertEqual([call.args[0] for call in cleanup.call_args_list], [

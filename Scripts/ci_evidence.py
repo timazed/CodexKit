@@ -33,11 +33,17 @@ class GitHub:
         with urllib.request.urlopen(request, timeout=15) as response:
             return json.load(response)
 
-    def dispatch_ci(self, tag):
+    def dispatch_ci(self, tag, sha):
         if not self.token:
             raise EvidenceError("A repository Actions token is required to start verification")
+        # Keep the main badge current when it still identifies the release.
+        # If main advances, verify the immutable tag instead. Evidence always
+        # checks the resulting run's SHA, including a race after this read.
+        main = self.get("/git/ref/heads/main")
+        ref = "main" if main["object"]["sha"] == sha else tag
+        print(f"Starting comprehensive verification on {ref} for {sha}.", flush=True)
         request = urllib.request.Request(self.base + "/actions/workflows/ci.yml/dispatches",
-            data=json.dumps({"ref": tag, "inputs": {"extended": True}}).encode(),
+            data=json.dumps({"ref": ref, "inputs": {"extended": True}}).encode(),
             headers={"Accept": "application/vnd.github+json", "Authorization": "Bearer " + self.token,
                      "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -96,6 +102,10 @@ def find_evidence(api, sha, exclude_run_id=None):
             pending = True
             continue
         if run.get("conclusion") != "success":
+            if pending:
+                # A newer run may supersede this failure, but cannot certify the
+                # release until it finishes. Never fall back to an older pass.
+                return None, True
             # Do not fall back to an older pass after a later failure/cancellation.
             raise EvidenceError("The latest completed verification did not pass: " + str(run["id"]))
         jobs = list(api.pages(f"/actions/runs/{run['id']}/jobs?filter=latest", "jobs"))
