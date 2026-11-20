@@ -237,3 +237,28 @@ Artifacts include `relaunch.log`, `reopen-stdout.log`, `reopen-stderr.log`, and 
 `cold_relaunch` timing, in addition to both validated reports. The normal path
 still terminates only the verifier app. Recovery and cleanup never target other
 simulators or restart the shared CoreSimulator service.
+
+
+### Simulator installation and release verification
+
+An iOS 17 hosted run timed out in `simctl install` before the verifier started.
+The harness now recovers a timed-out installation once by confirming shutdown
+of its own disposable simulator, booting it again, and reinstalling before the
+first launch. It retains `install.log` and an `installation` timing. A second
+install timeout, failed shutdown/boot, or nonzero install exit fails verification.
+The recovery never erases app data or repeats app checks; reports still require
+fresh run IDs and a successful cold reopen.
+
+Release verification dispatches comprehensive CI on `main` when its SHA matches
+the tagged release, keeping the README's branch-specific badge in sync. If `main`
+has advanced, it dispatches the tag instead. The release gate validates the
+resulting run's exact SHA regardless of the dispatched ref; a branch movement
+cannot certify the wrong commit. Do not cancel routine `main` CI to free runners:
+its result also drives the branch badge. A green tag run does not update that
+badge.
+
+When a newer same-commit verification is pending, the release gate waits instead
+of stopping at an older failure or cancellation. It cannot use a pass older than
+that failure; the newer run must finish successfully with every required job.
+A completed latest failure still blocks publication and is not automatically
+retried. The release tag remains immutable.
